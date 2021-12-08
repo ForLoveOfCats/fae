@@ -1,0 +1,8 @@
+use module::a
+use module::b
+
+fn main() {
+	println(a::THING)
+	println(b::THING)
+	println("Hello")
+}
