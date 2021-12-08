@@ -1,24 +1,24 @@
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 
-mod file_list;
-mod location;
 mod error;
+mod file_walker;
+mod location;
 mod tokenizer;
 
-use file_list::FileList;
+use file_walker::FileWalker;
 
 pub const THREAD_COUNT: u64 = 4;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let file_list = FileList::discover_files("./example")?;
-	let file_list = Arc::new(Mutex::new(file_list));
+	let file_walker = FileWalker::new("./example")?;
+	let file_walker = Arc::new(Mutex::new(file_walker));
 
 	let threads = (0..THREAD_COUNT)
 		.into_iter()
 		.map(|index| {
-			let file_list = file_list.clone(); //Clone the Arc
-			std::thread::spawn(move || thread_main(index, file_list))
+			let file_walker = file_walker.clone(); //Clone the Arc
+			std::thread::spawn(move || thread_main(index, file_walker))
 		})
 		.collect::<Vec<_>>();
 
@@ -29,18 +29,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	Ok(())
 }
 
-fn thread_main(thread_index: u64, file_list: Arc<Mutex<FileList>>) {
+fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 	loop {
 		let mut file = {
-			let mut file_list = file_list.lock().unwrap();
-			let file = file_list.take_file();
+			let mut file_walker = file_walker.lock().unwrap();
+			let file = file_walker.next_file();
+			drop(file_walker); //Release lock ASAP
 
 			match file {
-				Some(file) => file,
-				None => return,
+				Ok(Some(file)) => file,
+				Ok(None) => return,
+				Err(_) => return, //TODO: Report this error
 			}
 		};
-		println!("thread {} got file", thread_index);
+		println!("Thread {} got file", thread_index);
 
 		let capacity = file.metadata().map(|m| m.len()).unwrap_or(0);
 		let mut source = String::with_capacity(capacity as usize);
@@ -49,8 +51,8 @@ fn thread_main(thread_index: u64, file_list: Arc<Mutex<FileList>>) {
 		}
 
 		let mut tokenizer = tokenizer::Tokenizer::new(&source);
-		while let Ok(token) = tokenizer.next() {
-			println!("{}: {:?}", thread_index, token);
+		while let Ok(_token) = tokenizer.next() {
+			println!("Thread {} read token", thread_index);
 		}
 	}
 }
