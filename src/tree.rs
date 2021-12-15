@@ -83,4 +83,8 @@ impl<'a> Tree<'a> {
 	pub fn push(&mut self, node: Node<'a>) {
 		self.nodes.push(node);
 	}
+
+	pub fn len(&self) -> usize {
+		self.nodes.len()
+	}
 }

@@ -10,7 +10,7 @@ mod tree;
 
 use file_walker::FileWalker;
 
-pub const THREAD_COUNT: u64 = 1;
+pub const THREAD_COUNT: u64 = 4;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let file_walker = FileWalker::new("./example")?;
@@ -52,7 +52,7 @@ fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 			return;
 		}
 
-		let tree = {
+		let (tree, token_count) = {
 			let mut tokenizer = tokenizer::Tokenizer::new(&source);
 			let mut tree = tree::Tree::new();
 
@@ -62,9 +62,14 @@ fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 				return;
 			}
 
-			tree
+			(tree, tokenizer.token_count())
 		};
 
-		println!("{:#?}", tree);
+		println!(
+			"    Thread {} finished with {} tokens and {} tree children",
+			thread_index,
+			token_count,
+			tree.len()
+		);
 	}
 }

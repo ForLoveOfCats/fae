@@ -145,6 +145,7 @@ pub struct Tokenizer<'a> {
 	source: &'a str,
 	byte_index: usize,
 	peeked: Option<PeekedInfo<'a>>,
+	token_count: usize,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -153,11 +154,16 @@ impl<'a> Tokenizer<'a> {
 			source,
 			byte_index: 0,
 			peeked: None,
+			token_count: 0,
 		}
 	}
 
 	pub fn source(&self) -> &str {
 		self.source
+	}
+
+	pub fn token_count(&self) -> usize {
+		self.token_count
 	}
 
 	pub fn has_next(&mut self) -> bool {
@@ -185,6 +191,7 @@ impl<'a> Tokenizer<'a> {
 	pub fn next(&mut self) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked.take() {
 			self.byte_index = peeked.byte_index;
+			self.token_count += 1;
 			return Ok(peeked.token);
 		}
 
@@ -192,7 +199,10 @@ impl<'a> Tokenizer<'a> {
 			let token = self.next_with_comments()?;
 			match token.kind {
 				TokenKind::LineComment { .. } | TokenKind::DelimitedComment { .. } => continue,
-				_ => return Ok(token),
+				_ => {
+					self.token_count += 1;
+					return Ok(token);
+				}
 			}
 		}
 	}
