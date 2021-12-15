@@ -20,6 +20,9 @@ pub enum NodeKind<'a> {
 	//Followed by zero or more PathSegment then a StartExpression
 	Let { name: &'a str },
 
+	//Followed by a StartExpression
+	Return,
+
 	//Expressed in "normal" infix notation, precedence handled in semantic pass
 	StartExpression,
 	EndExpression,

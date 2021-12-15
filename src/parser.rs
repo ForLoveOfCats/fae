@@ -55,6 +55,14 @@ pub fn parse_block<'a>(
 			}
 
 			Token {
+				kind: TokenKind::Word,
+				text: "return",
+				..
+			} => {
+				parse_return_statement(tokenizer, tree)?;
+			}
+
+			Token {
 				kind: TokenKind::CloseBrace,
 				..
 			} => break,
@@ -443,6 +451,18 @@ fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -
 	tokenizer.expect(TokenKind::Equal)?;
 
 	parse_expression(tokenizer, tree)
+}
+
+fn parse_return_statement<'a>(
+	tokenizer: &mut Tokenizer<'a>,
+	tree: &mut Tree<'a>,
+) -> ParseResult<()> {
+	let return_token = tokenizer.expect_word("return")?;
+	tree.push(Node::from_token(NodeKind::Return, return_token));
+
+	parse_expression(tokenizer, tree)?;
+
+	Ok(())
 }
 
 fn reached_close_paren(tokenizer: &mut Tokenizer) -> bool {
