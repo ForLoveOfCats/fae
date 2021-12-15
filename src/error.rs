@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use unicode_width::UnicodeWidthChar;
 
 use crate::location::SourceLocation;
@@ -30,7 +32,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
-	pub fn print(&self, source: &str) {
+	pub fn print(&self, path: &Path, source: &str) {
 		let (line, start, end) = {
 			let mut line_start = self.location.start;
 			while line_start > 0 {
@@ -49,11 +51,8 @@ impl ParseError {
 			}
 
 			let mut line_end = self.location.start;
-			while line_end < source.len() {
+			while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
 				line_end += 1;
-				if matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
-					break;
-				}
 			}
 
 			(
@@ -65,8 +64,11 @@ impl ParseError {
 
 		let line_num = self.get_line_num(source);
 		let column_start = calc_spaces_from_byte_offset(line, start);
-		//TODO: Print line num & handle multi-line errors
-		print!("Parse error line {}, column {}: ", line_num, column_start);
+		//TODO: Handle multi-line errors
+		print!(
+			"Parse error {:?}, line {}, column {}: ",
+			path, line_num, column_start
+		);
 
 		match &self.kind {
 			ParseErrorKind::UnexpectedEof => print!("Unexpected EOF"),
@@ -154,12 +156,7 @@ pub fn calc_spaces_from_byte_offset(line: &str, offset: usize) -> usize {
 		}
 	}
 
-	panic!(
-		"Offset provided {} is past end of line '{}' with len {}",
-		offset,
-		line,
-		line.len()
-	);
+	spaces
 }
 
 pub fn print_normalized_tabs(line: &str) {

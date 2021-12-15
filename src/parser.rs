@@ -56,6 +56,14 @@ pub fn parse_block<'a>(
 
 			Token {
 				kind: TokenKind::Word,
+				text: "struct",
+				..
+			} => {
+				parse_struct_declaration(tokenizer, tree)?;
+			}
+
+			Token {
+				kind: TokenKind::Word,
 				text: "return",
 				..
 			} => {
@@ -406,6 +414,44 @@ fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> P
 	Ok(())
 }
 
+fn parse_struct_declaration<'a>(
+	tokenizer: &mut Tokenizer<'a>,
+	tree: &mut Tree<'a>,
+) -> ParseResult<()> {
+	tokenizer.expect_word("struct")?;
+
+	let struct_name_token = tokenizer.expect(TokenKind::Word)?;
+	tree.push(Node::from_token(
+		NodeKind::Struct {
+			name: struct_name_token.text,
+		},
+		struct_name_token,
+	));
+
+	tokenizer.expect(TokenKind::OpenBrace)?;
+	tokenizer.expect(TokenKind::Newline)?;
+
+	while !reached_close_brace(tokenizer) {
+		let field_name_token = tokenizer.expect(TokenKind::Word)?;
+		tree.push(Node::from_token(
+			NodeKind::Field {
+				name: field_name_token.text,
+			},
+			field_name_token,
+		));
+
+		tokenizer.expect(TokenKind::Colon)?;
+
+		parse_path_segments(tokenizer, tree)?;
+
+		tokenizer.expect(TokenKind::Newline)?;
+	}
+
+	tokenizer.expect(TokenKind::CloseBrace)?;
+
+	Ok(())
+}
+
 fn parse_const_statement<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 	tree: &mut Tree<'a>,
@@ -469,5 +515,12 @@ fn reached_close_paren(tokenizer: &mut Tokenizer) -> bool {
 	tokenizer
 		.peek()
 		.map(|peeked| peeked.kind == TokenKind::CloseParen)
+		.unwrap_or(false)
+}
+
+fn reached_close_brace(tokenizer: &mut Tokenizer) -> bool {
+	tokenizer
+		.peek()
+		.map(|peeked| peeked.kind == TokenKind::CloseBrace)
 		.unwrap_or(false)
 }

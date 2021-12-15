@@ -3,6 +3,10 @@ use module::b
 
 const A = 5 + (8 - 4) + 4 * 7 - 3
 
+struct MyType {
+	field_name: a::Z
+}
+
 fn main(): void {
 	function_name(5)
 

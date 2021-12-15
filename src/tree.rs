@@ -14,6 +14,12 @@ pub enum NodeKind<'a> {
 	//Followed by one or more PathSegment
 	Parameter { name: &'a str },
 
+	//Followed by zero ore more Field
+	Struct { name: &'a str },
+
+	//Followed by one or more PathSegment
+	Field { name: &'a str },
+
 	//Followed by zero or more PathSegment then a StartExpression
 	Const { name: &'a str },
 
@@ -74,16 +80,38 @@ impl<'a> Node<'a> {
 }
 
 #[derive(Debug)]
+pub enum UnorderedItem {
+	Function { index: usize },
+	Struct { index: usize },
+}
+
+#[derive(Debug)]
 pub struct Tree<'a> {
 	nodes: Vec<Node<'a>>,
+	unordered_items: Vec<UnorderedItem>,
 }
 
 impl<'a> Tree<'a> {
 	pub fn new() -> Tree<'a> {
-		Tree { nodes: Vec::new() }
+		Tree {
+			nodes: Vec::new(),
+			unordered_items: Vec::new(),
+		}
 	}
 
 	pub fn push(&mut self, node: Node<'a>) {
+		match node.kind {
+			NodeKind::Function { .. } => self.unordered_items.push(UnorderedItem::Function {
+				index: self.nodes.len(),
+			}),
+
+			NodeKind::Struct { .. } => self.unordered_items.push(UnorderedItem::Struct {
+				index: self.nodes.len(),
+			}),
+
+			_ => {}
+		}
+
 		self.nodes.push(node);
 	}
 

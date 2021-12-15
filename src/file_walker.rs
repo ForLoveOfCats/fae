@@ -1,5 +1,5 @@
 use std::fs::{read_dir, File, ReadDir};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, std::io::Error>;
 
@@ -14,7 +14,7 @@ impl FileWalker {
 		})
 	}
 
-	pub fn next_file(&mut self) -> Result<Option<File>> {
+	pub fn next_file(&mut self) -> Result<Option<(File, PathBuf)>> {
 		loop {
 			let reader = match self.stack.last_mut() {
 				Some(reader) => reader,
@@ -28,7 +28,8 @@ impl FileWalker {
 				if file_type.is_dir() {
 					self.stack.push(read_dir(entry.path())?);
 				} else if file_type.is_file() {
-					return Ok(Some(File::open(entry.path())?));
+					let path = entry.path();
+					return Ok(Some((File::open(&path)?, path)));
 				}
 			} else {
 				self.stack.pop();

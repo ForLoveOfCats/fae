@@ -33,13 +33,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 	loop {
-		let mut file = {
+		let (mut file, path) = {
 			let mut file_walker = file_walker.lock().unwrap();
-			let file = file_walker.next_file();
+			let file_info = file_walker.next_file();
 			drop(file_walker); //Release lock ASAP
 
-			match file {
-				Ok(Some(file)) => file,
+			match file_info {
+				Ok(Some((file, path))) => (file, path),
 				Ok(None) => return,
 				Err(_) => return, //TODO: Report this error
 			}
@@ -58,7 +58,7 @@ fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 
 			if let Err(err) = parser::parse_block(&mut tokenizer, &mut tree, true) {
 				//TODO: Block other threads from reporting errors during/after first error print
-				err.print(&source);
+				err.print(&path, &source);
 				return;
 			}
 
@@ -66,7 +66,7 @@ fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 		};
 
 		println!(
-			"    Thread {} finished with {} tokens and {} tree children",
+			"Thread {} finished with {} tokens and {} tree children",
 			thread_index,
 			token_count,
 			tree.len()
