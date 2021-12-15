@@ -4,7 +4,7 @@ use crate::location::SourceLocation;
 
 pub const TABULATOR_SIZE: usize = 4;
 
-pub type ParserResult<T> = std::result::Result<T, ParseError>;
+pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
 #[derive(Debug, Clone)]
 pub enum ParseErrorKind {
@@ -17,6 +17,10 @@ pub enum ParseErrorKind {
 	ExpectedExpression { found: String },
 
 	ExpectedOperator { found: String },
+
+	InvalidIntegerLiteral,
+
+	InvalidFloatLiteral,
 }
 
 #[derive(Debug, Clone)]
@@ -29,9 +33,15 @@ impl ParseError {
 	pub fn print(&self, source: &str) {
 		let (line, start, end) = {
 			let mut line_start = self.location.start;
-			while line_start > 0 && !matches!(source.as_bytes()[line_start], b'\r' | b'\n') {
+			while line_start > 0 {
+				if matches!(source.as_bytes()[line_start], b'\r' | b'\n')
+					&& line_start != self.location.start
+				{
+					break;
+				}
 				line_start -= 1;
 			}
+
 			if line_start < self.location.start
 				&& matches!(source.as_bytes()[line_start], b'\r' | b'\n')
 			{
@@ -39,8 +49,11 @@ impl ParseError {
 			}
 
 			let mut line_end = self.location.start;
-			while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
+			while line_end < source.len() {
 				line_end += 1;
+				if matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
+					break;
+				}
 			}
 
 			(
@@ -61,16 +74,20 @@ impl ParseError {
 			ParseErrorKind::Unexpected { unexpected } => print!("Unexpected '{}'", unexpected),
 
 			ParseErrorKind::Expected { expected, found } => {
-				print!("Expected '{}' but found '{}'", expected, found)
+				print!("Expected {} but found {}", expected, found);
 			}
 
 			ParseErrorKind::ExpectedExpression { found } => {
-				print!("Expected expression but found '{}'", found)
+				print!("Expected expression but found {}", found);
 			}
 
 			ParseErrorKind::ExpectedOperator { found } => {
-				print!("Expected operator but found '{}'", found)
+				print!("Expected operator but found {}", found);
 			}
+
+			ParseErrorKind::InvalidIntegerLiteral => print!("Invalid integer literal"),
+
+			ParseErrorKind::InvalidFloatLiteral => print!("Invalid float literal"),
 		}
 
 		if start != end {

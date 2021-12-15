@@ -1,4 +1,4 @@
-use super::error::{ParseError, ParseErrorKind, ParserResult};
+use super::error::{ParseError, ParseErrorKind, ParseResult};
 use super::location::SourceLocation;
 
 #[allow(dead_code)]
@@ -6,6 +6,8 @@ use super::location::SourceLocation;
 pub enum TokenKind {
 	LineComment { following_content: bool },
 	DelimitedComment { following_content: bool },
+
+	Newline,
 
 	Word,
 	String,
@@ -39,7 +41,6 @@ pub enum TokenKind {
 	CompLessEqual,
 
 	Colon,
-	Semicolon,
 	Period,
 	Comma,
 
@@ -49,46 +50,47 @@ pub enum TokenKind {
 impl std::fmt::Display for TokenKind {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let text = match self {
-			TokenKind::LineComment { .. } => "TokenKind::LineComment",
-			TokenKind::DelimitedComment { .. } => "TokenKind::DelimitedComment",
+			TokenKind::LineComment { .. } => "line comment",
+			TokenKind::DelimitedComment { .. } => "delimited comment",
 
-			TokenKind::Word => "TokenKind::Word",
-			TokenKind::String => "TokenKind::String",
-			TokenKind::Char => "TokenKind::Char",
+			TokenKind::Newline => "newline",
 
-			TokenKind::OpenParen => "(",
-			TokenKind::CloseParen => ")",
+			TokenKind::Word => "word",
+			TokenKind::String => "string literal",
+			TokenKind::Char => "character literal",
 
-			TokenKind::OpenBrace => "{",
-			TokenKind::CloseBrace => "}",
+			TokenKind::OpenParen => "'('",
+			TokenKind::CloseParen => "')'",
 
-			TokenKind::OpenBracket => "[",
-			TokenKind::CloseBracket => "]",
+			TokenKind::OpenBrace => "'{'",
+			TokenKind::CloseBrace => "'}'",
 
-			TokenKind::Add => "+",
-			TokenKind::AddEqual => "+=",
-			TokenKind::Sub => "-",
-			TokenKind::SubEqual => "-=",
-			TokenKind::Mul => "*",
-			TokenKind::MulEqual => "*=",
-			TokenKind::Div => "/",
-			TokenKind::DivEqual => "/=",
+			TokenKind::OpenBracket => "'['",
+			TokenKind::CloseBracket => "']'",
 
-			TokenKind::Equal => "=",
-			TokenKind::CompEqual => "==",
-			TokenKind::CompNotEqual => "!=",
+			TokenKind::Add => "'+'",
+			TokenKind::AddEqual => "'+='",
+			TokenKind::Sub => "'-'",
+			TokenKind::SubEqual => "'-='",
+			TokenKind::Mul => "'*'",
+			TokenKind::MulEqual => "'*='",
+			TokenKind::Div => "'/'",
+			TokenKind::DivEqual => "'/='",
 
-			TokenKind::CompGreater => ">",
-			TokenKind::CompGreaterEqual => ">=",
-			TokenKind::CompLess => "<",
-			TokenKind::CompLessEqual => "<=",
+			TokenKind::Equal => "'='",
+			TokenKind::CompEqual => "'=='",
+			TokenKind::CompNotEqual => "'!='",
 
-			TokenKind::Colon => ":",
-			TokenKind::Semicolon => ";",
-			TokenKind::Period => ".",
-			TokenKind::Comma => ",",
+			TokenKind::CompGreater => "'>'",
+			TokenKind::CompGreaterEqual => "'>='",
+			TokenKind::CompLess => "'<'",
+			TokenKind::CompLessEqual => "'<='",
 
-			TokenKind::Exclamation => "!",
+			TokenKind::Colon => "':'",
+			TokenKind::Period => "'.'",
+			TokenKind::Comma => "','",
+
+			TokenKind::Exclamation => "'!'",
 		};
 
 		write!(f, "{}", text)
@@ -102,14 +104,8 @@ pub struct Token<'a> {
 	pub location: SourceLocation,
 }
 
-impl<'a> std::fmt::Display for Token<'a> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.text)
-	}
-}
-
 impl<'a> Token<'a> {
-	pub fn expect(self, expected: TokenKind) -> ParserResult<Token<'a>> {
+	pub fn expect(self, expected: TokenKind) -> ParseResult<Token<'a>> {
 		if self.kind == expected {
 			Ok(self)
 		} else {
@@ -117,31 +113,38 @@ impl<'a> Token<'a> {
 				location: self.location,
 				kind: ParseErrorKind::Expected {
 					expected: format!("{}", expected),
-					found: format!("{}", self),
+					found: format!("{:?}", self.text),
 				},
 			})
 		}
 	}
 
-	pub fn expect_word(self, expected: &str) -> ParserResult<Token<'a>> {
+	pub fn expect_word(self, expected: &str) -> ParseResult<Token<'a>> {
 		if self.kind == TokenKind::Word && self.text == expected {
 			Ok(self)
 		} else {
 			Err(ParseError {
 				location: self.location,
 				kind: ParseErrorKind::Expected {
-					expected: expected.to_string(),
-					found: format!("{}", self),
+					expected: format!("{:?}", expected),
+					found: format!("{:?}", self.text),
 				},
 			})
 		}
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
+struct PeekedInfo<'a> {
+	token: Token<'a>,
+	byte_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct Tokenizer<'a> {
 	source: &'a str,
 	byte_index: usize,
+	peeked: Option<PeekedInfo<'a>>,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -149,41 +152,54 @@ impl<'a> Tokenizer<'a> {
 		Tokenizer {
 			source,
 			byte_index: 0,
+			peeked: None,
 		}
 	}
 
-	pub fn has_next(&self, source: &str) -> bool {
-		let mut index = self.byte_index;
-
-		while index < source.len() {
-			if !matches!(source.as_bytes()[index], b' ' | b'\t' | b'\n' | b'\r') {
-				return true;
-			}
-
-			index += 1;
-		}
-
-		false
+	pub fn source(&self) -> &str {
+		self.source
 	}
 
-	pub fn peek(&mut self) -> ParserResult<Token<'a>> {
-		let byte_index = self.byte_index;
-		let peeked = self.next();
-		self.byte_index = byte_index;
+	pub fn has_next(&mut self) -> bool {
+		self.peek().is_ok()
+	}
+
+	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
+		if let Some(peeked) = self.peeked {
+			return Ok(peeked.token);
+		}
+
+		let mut local = *self;
+		let peeked = local.next();
+
+		if let Ok(peeked) = peeked {
+			self.peeked = Some(PeekedInfo {
+				token: peeked,
+				byte_index: local.byte_index,
+			});
+		}
 
 		peeked
 	}
 
-	pub fn next(&mut self) -> ParserResult<Token<'a>> {
-		while self.byte_index < self.source.len() {
-			if matches!(
-				self.source.as_bytes()[self.byte_index],
-				b' ' | b'\t' | b'\n'
-			) {
-				self.byte_index += 1;
-			} else {
-				break;
+	pub fn next(&mut self) -> ParseResult<Token<'a>> {
+		if let Some(peeked) = self.peeked.take() {
+			self.byte_index = peeked.byte_index;
+			return Ok(peeked.token);
+		}
+
+		loop {
+			let token = self.next_with_comments()?;
+			match token.kind {
+				TokenKind::LineComment { .. } | TokenKind::DelimitedComment { .. } => continue,
+				_ => return Ok(token),
 			}
+		}
+	}
+
+	pub fn next_with_comments(&mut self) -> ParseResult<Token<'a>> {
+		if let Some(newline_token) = self.consume_leading_whitespace()? {
+			return Ok(newline_token);
 		}
 
 		self.verify_not_eof()?;
@@ -400,13 +416,6 @@ impl<'a> Tokenizer<'a> {
 				Ok(self.create_token(":", TokenKind::Colon, self.byte_index, self.byte_index + 1))
 			}
 
-			[b';', ..] => Ok(self.create_token(
-				";",
-				TokenKind::Semicolon,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
-
 			[b'.', ..] => {
 				Ok(self.create_token(".", TokenKind::Period, self.byte_index, self.byte_index + 1))
 			}
@@ -421,10 +430,10 @@ impl<'a> Tokenizer<'a> {
 				self.expect_byte(b'\'')?;
 
 				Ok(self.create_token(
-					&self.source[start_index..self.byte_index],
+					&self.source[start_index + 1..self.byte_index],
 					TokenKind::Char,
 					start_index,
-					self.byte_index,
+					self.byte_index + 1,
 				))
 			}
 
@@ -436,16 +445,15 @@ impl<'a> Tokenizer<'a> {
 
 					//TODO: Handle escaped double-quote
 					if self.source.as_bytes()[self.byte_index] == b'\"' {
-						self.byte_index += 1;
 						break;
 					}
 				}
 
 				Ok(self.create_token(
-					&self.source[start_index..self.byte_index],
+					&self.source[start_index + 1..self.byte_index],
 					TokenKind::String,
 					start_index,
-					self.byte_index,
+					self.byte_index + 1,
 				))
 			}
 
@@ -484,7 +492,7 @@ impl<'a> Tokenizer<'a> {
 		token
 	}
 
-	fn advance_by_codepoint(&mut self) -> ParserResult<()> {
+	fn advance_by_codepoint(&mut self) -> ParseResult<()> {
 		self.verify_not_eof()?;
 
 		let mut chars = self.source[self.byte_index..].chars();
@@ -494,7 +502,7 @@ impl<'a> Tokenizer<'a> {
 		Ok(())
 	}
 
-	fn expect_byte(&mut self, expected: u8) -> ParserResult<()> {
+	fn expect_byte(&mut self, expected: u8) -> ParseResult<()> {
 		self.verify_not_eof()?;
 
 		self.byte_index += 1;
@@ -516,7 +524,40 @@ impl<'a> Tokenizer<'a> {
 		Ok(())
 	}
 
-	fn verify_not_eof(&self) -> ParserResult<()> {
+	fn consume_leading_whitespace(&mut self) -> ParseResult<Option<Token<'a>>> {
+		let at_very_beginning = self.byte_index == 0;
+		let mut newline_index = None;
+
+		while self.byte_index < self.source.len() {
+			let byte = self.source.as_bytes()[self.byte_index];
+			if matches!(byte, b' ' | b'\t' | b'\r') {
+				self.byte_index += 1;
+			} else if byte == b'\n' {
+				if newline_index.is_none() {
+					newline_index = Some(self.byte_index);
+				}
+
+				self.byte_index += 1;
+			} else {
+				break;
+			}
+		}
+
+		if let Some(newline_index) = newline_index {
+			if !at_very_beginning {
+				return Ok(Some(self.create_token(
+					"\n",
+					TokenKind::Newline,
+					newline_index,
+					newline_index + 1,
+				)));
+			}
+		}
+
+		Ok(None)
+	}
+
+	fn verify_not_eof(&self) -> ParseResult<()> {
 		if self.byte_index >= self.source.len() {
 			Err(ParseError {
 				location: SourceLocation {
@@ -560,11 +601,11 @@ impl<'a> Tokenizer<'a> {
 		false
 	}
 
-	pub fn expect(&mut self, expected: TokenKind) -> ParserResult<Token<'a>> {
+	pub fn expect(&mut self, expected: TokenKind) -> ParseResult<Token<'a>> {
 		self.next()?.expect(expected)
 	}
 
-	pub fn expect_word(&mut self, expected: &str) -> ParserResult<Token<'a>> {
+	pub fn expect_word(&mut self, expected: &str) -> ParseResult<Token<'a>> {
 		self.next()?.expect_word(expected)
 	}
 }

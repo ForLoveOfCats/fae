@@ -4,11 +4,13 @@ use std::sync::{Arc, Mutex};
 mod error;
 mod file_walker;
 mod location;
+mod parser;
 mod tokenizer;
+mod tree;
 
 use file_walker::FileWalker;
 
-pub const THREAD_COUNT: u64 = 4;
+pub const THREAD_COUNT: u64 = 1;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let file_walker = FileWalker::new("./example")?;
@@ -50,9 +52,19 @@ fn thread_main(thread_index: u64, file_walker: Arc<Mutex<FileWalker>>) {
 			return;
 		}
 
-		let mut tokenizer = tokenizer::Tokenizer::new(&source);
-		while let Ok(_token) = tokenizer.next() {
-			println!("Thread {} read token", thread_index);
-		}
+		let tree = {
+			let mut tokenizer = tokenizer::Tokenizer::new(&source);
+			let mut tree = tree::Tree::new();
+
+			if let Err(err) = parser::parse_block(&mut tokenizer, &mut tree, true) {
+				//TODO: Block other threads from reporting errors during/after first error print
+				err.print(&source);
+				return;
+			}
+
+			tree
+		};
+
+		println!("{:#?}", tree);
 	}
 }

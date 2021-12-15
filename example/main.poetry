@@ -1,7 +1,14 @@
 use module::a
 use module::b
 
+const A = 5 + (8 - 4) + 4 * 7 - 3
+
 fn main() {
+	function_name()
+
+	let b = function_name(6, 74 + 9)
+	const C = 'c'
+
 	println(a::THING)
 	println(b::THING)
 	println("Hello")
