@@ -3,8 +3,8 @@ use module::b
 
 const A = 5 + (8 - 4) + 4 * 7 - 3
 
-fn main() {
-	function_name()
+fn main(): void {
+	function_name(5)
 
 	let b = function_name(6, 74 + 9)
 	const C = 'c'
@@ -13,3 +13,5 @@ fn main() {
 	println(b::THING)
 	println("Hello")
 }
+
+fn function_name(arg: i32): i32 {}

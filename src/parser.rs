@@ -363,6 +363,9 @@ fn parse_function_declaration<'a>(
 
 	parse_parameters(tokenizer, tree)?;
 
+	tokenizer.expect(TokenKind::Colon)?;
+	parse_path_segments(tokenizer, tree)?;
+
 	parse_block(tokenizer, tree, false)?;
 
 	Ok(())
