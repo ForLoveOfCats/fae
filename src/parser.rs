@@ -449,28 +449,34 @@ fn parse_struct_declaration<'a>(
 	));
 
 	tokenizer.expect(TokenKind::OpenBrace)?;
-	tokenizer.expect(TokenKind::Newline)?;
 
-	while !reached_close_brace(tokenizer) {
-		let field_name_token = tokenizer.expect(TokenKind::Word)?;
-		check_not_reserved(field_name_token)?;
-		tree.push(Node::from_token(
-			NodeKind::Field {
-				name: field_name_token.text,
-			},
-			field_name_token,
-		));
-
-		tokenizer.expect(TokenKind::Colon)?;
-
-		parse_path_segments(tokenizer, tree)?;
-
+	if tokenizer.peek()?.kind == TokenKind::CloseBrace {
+		//Allow `struct Name {}` syntax without error-ing on lack of newline
+		Ok(())
+	} else {
 		tokenizer.expect(TokenKind::Newline)?;
+
+		while !reached_close_brace(tokenizer) {
+			let field_name_token = tokenizer.expect(TokenKind::Word)?;
+			check_not_reserved(field_name_token)?;
+			tree.push(Node::from_token(
+				NodeKind::Field {
+					name: field_name_token.text,
+				},
+				field_name_token,
+			));
+
+			tokenizer.expect(TokenKind::Colon)?;
+
+			parse_path_segments(tokenizer, tree)?;
+
+			tokenizer.expect(TokenKind::Newline)?;
+		}
+
+		tokenizer.expect(TokenKind::CloseBrace)?;
+
+		Ok(())
 	}
-
-	tokenizer.expect(TokenKind::CloseBrace)?;
-
-	Ok(())
 }
 
 fn parse_const_statement<'a>(

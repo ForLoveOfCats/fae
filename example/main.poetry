@@ -7,6 +7,8 @@ struct MyType {
 	field_name: a::Z
 }
 
+struct EmptyType {}
+
 fn main(): void {
 	function_name(5)
 
