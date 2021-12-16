@@ -23,6 +23,8 @@ pub enum ParseErrorKind {
 	InvalidIntegerLiteral,
 
 	InvalidFloatLiteral,
+
+	ReservedWord { word: String },
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +92,8 @@ impl ParseError {
 			ParseErrorKind::InvalidIntegerLiteral => print!("Invalid integer literal"),
 
 			ParseErrorKind::InvalidFloatLiteral => print!("Invalid float literal"),
+
+			ParseErrorKind::ReservedWord { word } => print!("Reserved word {:?}", word),
 		}
 
 		if start != end {

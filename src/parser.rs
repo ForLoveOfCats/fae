@@ -347,6 +347,7 @@ fn parse_use_statement<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -
 fn parse_path_segments<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
 	loop {
 		let segment_token = tokenizer.expect(TokenKind::Word)?;
+		check_not_reserved(segment_token)?;
 		tree.push(Node::from_token(
 			NodeKind::PathSegment {
 				text: segment_token.text,
@@ -370,6 +371,7 @@ fn parse_function_declaration<'a>(
 	tokenizer.expect_word("fn")?;
 
 	let name_token = tokenizer.expect(TokenKind::Word)?;
+	check_not_reserved(name_token)?;
 	tree.push(Node::from_token(
 		NodeKind::Function {
 			name: name_token.text,
@@ -392,6 +394,7 @@ fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> P
 
 	while !reached_close_paren(tokenizer) {
 		let name_token = tokenizer.expect(TokenKind::Word)?;
+		check_not_reserved(name_token)?;
 		tree.push(Node::from_token(
 			NodeKind::Parameter {
 				name: name_token.text,
@@ -421,6 +424,7 @@ fn parse_struct_declaration<'a>(
 	tokenizer.expect_word("struct")?;
 
 	let struct_name_token = tokenizer.expect(TokenKind::Word)?;
+	check_not_reserved(struct_name_token)?;
 	tree.push(Node::from_token(
 		NodeKind::Struct {
 			name: struct_name_token.text,
@@ -433,6 +437,7 @@ fn parse_struct_declaration<'a>(
 
 	while !reached_close_brace(tokenizer) {
 		let field_name_token = tokenizer.expect(TokenKind::Word)?;
+		check_not_reserved(field_name_token)?;
 		tree.push(Node::from_token(
 			NodeKind::Field {
 				name: field_name_token.text,
@@ -509,6 +514,24 @@ fn parse_return_statement<'a>(
 	parse_expression(tokenizer, tree)?;
 
 	Ok(())
+}
+
+fn check_not_reserved(token: Token) -> ParseResult<()> {
+	let is_reserved = matches!(
+		token.text,
+		"const" | "fn" | "let" | "return" | "struct" | "use"
+	);
+
+	if is_reserved {
+		Err(ParseError {
+			location: token.location,
+			kind: ParseErrorKind::ReservedWord {
+				word: token.text.to_owned(),
+			},
+		})
+	} else {
+		Ok(())
+	}
 }
 
 fn reached_close_paren(tokenizer: &mut Tokenizer) -> bool {
