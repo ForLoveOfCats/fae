@@ -51,6 +51,14 @@ pub fn parse_block<'a>(
 				text: "fn",
 				..
 			} => {
+				if !is_root {
+					let token = tokenizer.next()?;
+					return Err(ParseError {
+						location: token.location,
+						kind: ParseErrorKind::SubLevelFunction,
+					});
+				}
+
 				parse_function_declaration(tokenizer, tree)?;
 			}
 
@@ -59,6 +67,14 @@ pub fn parse_block<'a>(
 				text: "struct",
 				..
 			} => {
+				if !is_root {
+					let token = tokenizer.next()?;
+					return Err(ParseError {
+						location: token.location,
+						kind: ParseErrorKind::SubLevelStruct,
+					});
+				}
+
 				parse_struct_declaration(tokenizer, tree)?;
 			}
 
