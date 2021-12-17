@@ -8,7 +8,9 @@ pub fn parse_block<'a>(
 	tree: &mut Tree<'a>,
 	is_root: bool,
 ) -> ParseResult<()> {
-	if !is_root {
+	if is_root {
+		parse_module_declaration(tokenizer, tree)?;
+	} else {
 		tokenizer.expect(TokenKind::OpenBrace)?;
 	}
 	tree.push(Node::without_location(NodeKind::StartExpression));
@@ -349,6 +351,18 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> Parse
 	Ok(())
 }
 
+fn parse_module_declaration<'a>(
+	tokenizer: &mut Tokenizer<'a>,
+	tree: &mut Tree<'a>,
+) -> ParseResult<()> {
+	let module_token = tokenizer.expect_word("module")?;
+	tree.push(Node::from_token(NodeKind::Module, module_token));
+
+	parse_path_segments(tokenizer, tree)?;
+
+	Ok(())
+}
+
 fn parse_use_statement<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
 	let use_token = tokenizer.expect_word("use")?;
 	tree.push(Node::from_token(NodeKind::Use, use_token));
@@ -541,7 +555,7 @@ fn parse_return_statement<'a>(
 fn check_not_reserved(token: Token) -> ParseResult<()> {
 	let is_reserved = matches!(
 		token.text,
-		"const" | "fn" | "let" | "return" | "struct" | "use"
+		"const" | "fn" | "let" | "module" | "return" | "struct" | "use"
 	);
 
 	if is_reserved {

@@ -4,6 +4,9 @@ use crate::tokenizer::Token;
 #[derive(Debug)]
 pub enum NodeKind<'a> {
 	//Followed by one or more PathSegment
+	Module,
+
+	//Followed by one or more PathSegment
 	Use,
 
 	PathSegment { text: &'a str },

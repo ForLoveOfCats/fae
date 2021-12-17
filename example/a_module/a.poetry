@@ -1,0 +1,3 @@
+module a_module
+
+const THING: a_module::b::Thing = "A"

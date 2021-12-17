@@ -1,5 +1,7 @@
-use module::a
-use module::b
+module main
+
+use a_module::a
+use a_module::b
 
 const A = 5 + (8 - 4) + 4 * 7 - 3
 
