@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs::{read_dir, File, ReadDir};
 use std::path::{Path, PathBuf};
 
@@ -23,12 +24,13 @@ impl FileWalker {
 
 			if let Some(entry) = reader.next() {
 				let entry = entry?;
+
 				let file_type = entry.file_type()?;
+				let path = entry.path();
 
 				if file_type.is_dir() {
-					self.stack.push(read_dir(entry.path())?);
-				} else if file_type.is_file() {
-					let path = entry.path();
+					self.stack.push(read_dir(path)?);
+				} else if file_type.is_file() && path.extension() == Some(OsStr::new("poetry")) {
 					return Ok(Some((File::open(&path)?, path)));
 				}
 			} else {
