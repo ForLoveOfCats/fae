@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicU64;
+use crate::tree::Tree;
 
-use crate::tree::{Node, NodeKind, Tree};
-
-pub fn pre_validate(tree: &Tree, next_symbol_index: &AtomicU64) {}
+pub fn pre_validate(_tree: &Tree, _next_symbol_index: &mut u64) {}

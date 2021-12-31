@@ -1,40 +1,55 @@
-use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, Mutex};
+use std::io::Read;
 
 mod error;
 mod file_walker;
 mod location;
 mod parser;
-mod thread;
 mod tokenizer;
 mod tree;
 mod validator;
 
 use file_walker::FileWalker;
-use thread::ThreadContext;
-
-pub const THREAD_COUNT: u64 = 4;
+use parser::parse_block;
+use tokenizer::Tokenizer;
+use tree::Tree;
+use validator::pre_validate;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let file_walker = Arc::new(Mutex::new(FileWalker::new("./example")?));
-	let pre_validated_thread_count = Arc::new(AtomicU64::new(0));
-	let next_symbol_index = Arc::new(AtomicU64::new(0));
+	let mut file_walker = FileWalker::new("./example")?;
+	let mut next_symbol_id = 0;
 
-	let threads = (0..THREAD_COUNT)
-		.into_iter()
-		.map(|index| {
-			let ctx = ThreadContext {
-				index,
-				file_walker: file_walker.clone(),
-				pre_validated_thread_count: pre_validated_thread_count.clone(),
-				next_symbol_index: next_symbol_index.clone(),
-			};
-			std::thread::spawn(move || thread::thread_main(ctx))
-		})
-		.collect::<Vec<_>>();
+	loop {
+		let (mut file, path) = match file_walker.next_file() {
+			Ok(Some((file, path))) => (file, path),
+			Ok(None) => break,
+			Err(_) => break, //TODO: Report this error
+		};
 
-	for thread in threads {
-		let _ = thread.join();
+		let capacity = file.metadata().map(|m| m.len()).unwrap_or(0);
+		let mut source = String::with_capacity(capacity as usize);
+		if file.read_to_string(&mut source).is_err() {
+			break;
+		}
+
+		let (tree, token_count) = {
+			let mut tokenizer = Tokenizer::new(&source);
+			let mut tree = Tree::new();
+
+			if let Err(err) = parse_block(&mut tokenizer, &mut tree, true) {
+				err.print(&path, &source);
+				return Ok(());
+			}
+
+			(tree, tokenizer.token_count())
+		};
+
+		println!(
+			"Finished parsing file with {} tokens and {} tree children",
+			token_count,
+			tree.len()
+		);
+
+		pre_validate(&tree, &mut next_symbol_id);
 	}
 
 	Ok(())
