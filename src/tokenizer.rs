@@ -162,6 +162,11 @@ impl<'a> Tokenizer<'a> {
 		self.source
 	}
 
+	//HACK: This exists just so `parse_block` can get an end location when not brace-ed
+	pub fn byte_index(&self) -> usize {
+		self.byte_index
+	}
+
 	pub fn token_count(&self) -> usize {
 		self.token_count
 	}
