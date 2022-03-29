@@ -1,19 +1,22 @@
 use crate::error::{ParseError, ParseErrorKind, ParseResult};
+use crate::ice::ice;
 use crate::location::SourceLocation;
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
-use crate::tree::{Node, NodeKind, Tree};
+use crate::tree::*;
 
 pub fn parse_block<'a>(
 	tokenizer: &mut Tokenizer<'a>,
-	tree: &mut Tree<'a>,
 	is_root: bool,
-) -> ParseResult<()> {
-	if is_root {
-		parse_module_declaration(tokenizer, tree)?;
+) -> ParseResult<Node<Expression<'a>>> {
+	let mut items = Vec::new();
+
+	let start = if is_root {
+		let location = tokenizer.peek()?.location;
+		items.push(Expression::Module(parse_module_declaration(tokenizer)?));
+		location.start
 	} else {
-		tokenizer.expect(TokenKind::OpenBrace)?;
-	}
-	tree.push(Node::without_location(NodeKind::StartExpression));
+		tokenizer.expect(TokenKind::OpenBrace)?.location.start
+	};
 
 	while tokenizer.has_next() {
 		match tokenizer.peek()? {
@@ -26,10 +29,10 @@ pub fn parse_block<'a>(
 
 			Token {
 				kind: TokenKind::Word,
-				text: "use",
+				text: "using",
 				..
 			} => {
-				parse_use_statement(tokenizer, tree)?;
+				items.push(Expression::Using(parse_using_statement(tokenizer)?));
 			}
 
 			Token {
@@ -37,7 +40,9 @@ pub fn parse_block<'a>(
 				text: "const",
 				..
 			} => {
-				parse_const_statement(tokenizer, tree)?;
+				items.push(Expression::Const(Box::new(parse_const_statement(
+					tokenizer,
+				)?)));
 			}
 
 			Token {
@@ -45,7 +50,7 @@ pub fn parse_block<'a>(
 				text: "let",
 				..
 			} => {
-				parse_let_statement(tokenizer, tree)?;
+				items.push(Expression::Let(Box::new(parse_let_statement(tokenizer)?)));
 			}
 
 			Token {
@@ -61,7 +66,9 @@ pub fn parse_block<'a>(
 					});
 				}
 
-				parse_function_declaration(tokenizer, tree)?;
+				items.push(Expression::Function(Box::new(parse_function_declaration(
+					tokenizer,
+				)?)));
 			}
 
 			Token {
@@ -77,7 +84,7 @@ pub fn parse_block<'a>(
 					});
 				}
 
-				parse_struct_declaration(tokenizer, tree)?;
+				items.push(Expression::Struct(parse_struct_declaration(tokenizer)?));
 			}
 
 			Token {
@@ -85,7 +92,9 @@ pub fn parse_block<'a>(
 				text: "return",
 				..
 			} => {
-				parse_return_statement(tokenizer, tree)?;
+				items.push(Expression::Return(Box::new(parse_return_statement(
+					tokenizer,
+				)?)));
 			}
 
 			Token {
@@ -94,31 +103,33 @@ pub fn parse_block<'a>(
 			} => break,
 
 			_ => {
-				parse_expression(tokenizer, tree)?;
+				//HACK: What?
+				items.push(parse_expression(tokenizer)?.node);
 			}
 		}
 	}
 
-	if !is_root {
-		tokenizer.expect(TokenKind::CloseBrace)?;
-	}
-	tree.push(Node::without_location(NodeKind::EndExpression));
+	let end = if !is_root {
+		tokenizer.expect(TokenKind::CloseBrace)?.location.end
+	} else {
+		tokenizer.byte_index()
+	};
 
-	Ok(())
+	let location = SourceLocation { start, end };
+	Ok(Node::new(Expression::Block(items), location))
 }
 
-fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
+//NOTE: This function is a bit gross but not horrible, it is by far the worst part of the parser
+fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let peeked = tokenizer.peek()?;
 	let is_block = peeked.kind == TokenKind::OpenBrace;
 	let is_paren_enclosed = peeked.kind == TokenKind::OpenParen;
 
 	if is_block {
-		return parse_block(tokenizer, tree, false);
+		return parse_block(tokenizer, false);
 	} else if is_paren_enclosed {
 		tokenizer.expect(TokenKind::OpenParen)?;
 	}
-
-	tree.push(Node::without_location(NodeKind::StartExpression));
 
 	#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 	enum ItemKind {
@@ -126,6 +137,13 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> P
 		Operator,
 	}
 
+	enum InRpn<'a> {
+		Expression(Node<Expression<'a>>),
+		Operator(Node<Operator>),
+	}
+
+	let mut rpn = Vec::new();
+	let mut operators: Vec<Node<Operator>> = Vec::new();
 	let mut expected_next = ItemKind::Expression;
 
 	fn check_expected_next(
@@ -166,69 +184,102 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> P
 			TokenKind::Add | TokenKind::Sub | TokenKind::Mul | TokenKind::Div => {
 				if peeked.kind == TokenKind::Sub && expected_next == ItemKind::Expression {
 					check_expected_next(peeked, &mut expected_next, ItemKind::Expression)?;
-					parse_number(tokenizer, tree)?;
+					rpn.push(InRpn::Expression(parse_number(tokenizer)?));
 					continue;
 				}
 
 				let operator_token = tokenizer.next()?;
 				check_expected_next(operator_token, &mut expected_next, ItemKind::Operator)?;
 
-				let kind = match operator_token.kind {
-					TokenKind::Add => NodeKind::Add,
-					TokenKind::Sub => NodeKind::Sub,
-					TokenKind::Mul => NodeKind::Mul,
-					TokenKind::Div => NodeKind::Div,
-					_ => unreachable!(),
+				let operator_kind = match operator_token.kind {
+					TokenKind::Add => Operator::Add,
+					TokenKind::Sub => Operator::Sub,
+					TokenKind::Mul => Operator::Mul,
+					TokenKind::Div => Operator::Div,
+					_ => ice(),
 				};
+				let precedence = operator_kind.precedence();
+				let operator = Node::from_token(operator_kind, operator_token);
 
-				tree.push(Node::from_token(kind, operator_token));
+				while let Some(in_queue) = operators.pop() {
+					let in_queue_precedence = in_queue.node.precedence();
+					if precedence <= in_queue_precedence {
+						rpn.push(InRpn::Operator(in_queue));
+					} else {
+						operators.push(in_queue);
+						break;
+					}
+				}
+
+				operators.push(operator);
 			}
 
 			TokenKind::String => {
 				let string_token = tokenizer.expect(TokenKind::String)?;
 				check_expected_next(string_token, &mut expected_next, ItemKind::Expression)?;
+				let value = Node::from_token(string_token.text, string_token);
 
-				tree.push(Node::from_token(
-					NodeKind::StringLiteral {
-						value: string_token.text,
-					},
+				//This double nested `Node` feels yucky
+				rpn.push(InRpn::Expression(Node::from_token(
+					Expression::StringLiteral(StringLiteral { value }),
 					string_token,
-				));
+				)));
 			}
 
 			TokenKind::Char => {
 				let char_token = tokenizer.expect(TokenKind::Char)?;
 				check_expected_next(char_token, &mut expected_next, ItemKind::Expression)?;
+				let value = Node::from_token(char_token.text.chars().next().unwrap(), char_token);
 
-				tree.push(Node::from_token(
-					NodeKind::CharLiteral {
-						value: char_token.text.chars().next().unwrap(),
-					},
+				//This double nested `Node` feels yucky
+				rpn.push(InRpn::Expression(Node::from_token(
+					Expression::CharLiteral(CharLiteral { value }),
 					char_token,
-				));
+				)));
 			}
 
 			TokenKind::Word => {
 				check_expected_next(peeked, &mut expected_next, ItemKind::Expression)?;
 
 				if peeked.text.as_bytes()[0].is_ascii_digit() {
-					parse_number(tokenizer, tree)?;
+					rpn.push(InRpn::Expression(parse_number(tokenizer)?));
 				} else {
-					parse_path_segments(tokenizer, tree)?;
+					let path_segments = parse_path_segments(tokenizer)?;
 
 					let is_call = tokenizer
 						.peek()
 						.map(|peeked| peeked.kind == TokenKind::OpenParen)
 						.unwrap_or(false);
+
 					if is_call {
-						parse_arguments(tokenizer, tree)?;
+						let arguments = parse_arguments(tokenizer)?;
+						let location = path_segments.location + arguments.location;
+						let call = Call {
+							path_segments,
+							arguments,
+						};
+
+						//This double nested `Node` feels yucky
+						rpn.push(InRpn::Expression(Node::new(
+							Expression::Call(call),
+							location,
+						)));
+					} else {
+						let location = path_segments.location;
+						let read = Read { path_segments };
+
+						//This double nested `Node` feels yucky
+						rpn.push(InRpn::Expression(Node::new(
+							Expression::Read(read),
+							location,
+						)));
 					}
 				}
 			}
 
 			TokenKind::OpenParen => {
 				check_expected_next(peeked, &mut expected_next, ItemKind::Expression)?;
-				parse_expression(tokenizer, tree)?;
+				rpn.push(InRpn::Expression(parse_expression(tokenizer)?));
 			}
 
 			TokenKind::CloseParen | TokenKind::Comma | TokenKind::Newline => break,
@@ -245,21 +296,55 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> P
 		}
 	}
 
-	tree.push(Node::without_location(NodeKind::EndExpression));
-
 	if is_paren_enclosed {
 		tokenizer.expect(TokenKind::CloseParen)?;
 	}
 
-	Ok(())
+	if expected_next == ItemKind::Expression {
+		let token = tokenizer.next()?;
+		return Err(ParseError {
+			location: token.location,
+			kind: ParseErrorKind::ExpectedExpression {
+				found: format!("{:?}", token.text),
+			},
+		});
+	}
+
+	while let Some(in_queue) = operators.pop() {
+		rpn.push(InRpn::Operator(in_queue));
+	}
+
+	let mut stack = Vec::new();
+	for in_rpn in rpn {
+		match in_rpn {
+			InRpn::Expression(expression) => stack.push(expression),
+
+			InRpn::Operator(op) => {
+				let right = stack.pop().unwrap();
+				let left = stack.pop().unwrap();
+
+				let left_location = left.location;
+				let right_location = right.location;
+
+				let binary_operation = Box::new(BinaryOperation { op, right, left });
+				let expression = Expression::BinaryOperation(binary_operation);
+				stack.push(Node::new(expression, left_location + right_location));
+			}
+		}
+	}
+
+	assert!(stack.len() == 1);
+	Ok(stack.pop().unwrap())
 }
 
-fn parse_arguments<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
-	tokenizer.expect(TokenKind::OpenParen)?;
-	tree.push(Node::without_location(NodeKind::Call));
+fn parse_arguments<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Vec<Expression<'a>>>> {
+	let open_paren_token = tokenizer.expect(TokenKind::OpenParen)?;
+
+	let mut expressions = Vec::new();
 
 	while !reached_close_paren(tokenizer) {
-		parse_expression(tokenizer, tree)?;
+		let expression = parse_expression(tokenizer)?.node;
+		expressions.push(expression);
 
 		if reached_close_paren(tokenizer) {
 			break;
@@ -267,13 +352,13 @@ fn parse_arguments<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> Pa
 		tokenizer.expect(TokenKind::Comma)?;
 	}
 
-	tokenizer.expect(TokenKind::CloseParen)?;
-	tree.push(Node::without_location(NodeKind::EndCallArgs));
+	let close_paren_token = tokenizer.expect(TokenKind::CloseParen)?;
 
-	Ok(())
+	let location = open_paren_token.location + close_paren_token.location;
+	Ok(Node::new(expressions, location))
 }
 
-fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
+fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let is_negative = tokenizer
 		.peek()
 		.map(|peeked| peeked.kind == TokenKind::Sub)
@@ -312,9 +397,12 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> Parse
 
 		let value = if is_negative { -value } else { value };
 
-		tree.push(Node::new(
-			NodeKind::FloatLiteral { value },
-			first_number_token.location + second_number_token.location,
+		let location = first_number_token.location + second_number_token.location;
+		return Ok(Node::new(
+			Expression::FloatLiteral(FloatLiteral {
+				value: Node::new(value, location),
+			}),
+			location,
 		));
 	} else if is_negative {
 		let value = match first_number_token.text.parse::<i64>() {
@@ -327,8 +415,10 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> Parse
 			}
 		};
 
-		tree.push(Node::from_token(
-			NodeKind::SignedIntegerLiteral { value: -value },
+		return Ok(Node::from_token(
+			Expression::SignedIntegerLiteral(SignedIntegerLiteral {
+				value: Node::from_token(-value, first_number_token),
+			}),
 			first_number_token,
 		));
 	} else {
@@ -342,99 +432,100 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> Parse
 			}
 		};
 
-		tree.push(Node::from_token(
-			NodeKind::UnsignedIntegerLiteral { value },
+		return Ok(Node::from_token(
+			Expression::UnsignedIntegerLiteral(UnsignedIntegerLiteral {
+				value: Node::from_token(value, first_number_token),
+			}),
 			first_number_token,
 		));
 	}
-
-	Ok(())
 }
 
-fn parse_module_declaration<'a>(
-	tokenizer: &mut Tokenizer<'a>,
-	tree: &mut Tree<'a>,
-) -> ParseResult<()> {
+fn parse_module_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Module<'a>> {
 	let module_token = tokenizer.expect_word("module")?;
-	tree.push(Node::from_token(NodeKind::Module, module_token));
 
-	parse_path_segments(tokenizer, tree)?;
+	let path_segments = parse_path_segments(tokenizer)?;
 
-	Ok(())
+	Ok(Module {
+		path_segments: Node::from_token(path_segments.node, module_token),
+	})
 }
 
-fn parse_use_statement<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
-	let use_token = tokenizer.expect_word("use")?;
-	tree.push(Node::from_token(NodeKind::Use, use_token));
+fn parse_using_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Using<'a>> {
+	tokenizer.expect_word("using")?;
 
-	parse_path_segments(tokenizer, tree)?;
+	let path_segments = parse_path_segments(tokenizer)?;
 
 	tokenizer.expect(TokenKind::Newline)?;
 
-	Ok(())
+	Ok(Using { path_segments })
 }
 
-fn parse_path_segments<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
+fn parse_path_segments<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<PathSegments<'a>>> {
+	let mut segments = Vec::new();
+
 	loop {
 		let segment_token = tokenizer.expect(TokenKind::Word)?;
 		check_not_reserved(segment_token)?;
-		tree.push(Node::from_token(
-			NodeKind::PathSegment {
-				text: segment_token.text,
-			},
-			segment_token,
-		));
+
+		segments.push(Node::from_token(segment_token.text, segment_token));
 
 		if tokenizer.peek()?.kind == TokenKind::Colon {
 			tokenizer.expect(TokenKind::Colon)?;
 			tokenizer.expect(TokenKind::Colon)?;
 		} else {
-			return Ok(());
+			break;
 		}
 	}
+
+	let location = segments.first().unwrap().location + segments.last().unwrap().location;
+	Ok(Node::new(PathSegments { segments }, location))
 }
 
-fn parse_function_declaration<'a>(
-	tokenizer: &mut Tokenizer<'a>,
-	tree: &mut Tree<'a>,
-) -> ParseResult<()> {
+fn parse_function_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Function<'a>> {
 	tokenizer.expect_word("fn")?;
 
 	let name_token = tokenizer.expect(TokenKind::Word)?;
 	check_not_reserved(name_token)?;
-	tree.push(Node::from_token(
-		NodeKind::Function {
-			name: name_token.text,
-		},
-		name_token,
-	));
+	let name = Node::from_token(name_token.text, name_token);
 
-	parse_parameters(tokenizer, tree)?;
+	let parameters = parse_parameters(tokenizer)?;
 
 	tokenizer.expect(TokenKind::Colon)?;
-	parse_path_segments(tokenizer, tree)?;
+	let type_path_segments = parse_path_segments(tokenizer)?;
 
-	parse_block(tokenizer, tree, false)?;
+	let block = parse_block(tokenizer, false)?;
 
-	Ok(())
+	Ok(Function {
+		name,
+		parameters,
+		type_path_segments,
+		block,
+	})
 }
 
-fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
+fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<Parameter<'a>>>> {
 	tokenizer.expect(TokenKind::OpenParen)?;
+
+	let mut parameters = Vec::new();
 
 	while !reached_close_paren(tokenizer) {
 		let name_token = tokenizer.expect(TokenKind::Word)?;
 		check_not_reserved(name_token)?;
-		tree.push(Node::from_token(
-			NodeKind::Parameter {
-				name: name_token.text,
-			},
-			name_token,
-		));
+		let name = Node::from_token(name_token.text, name_token);
 
 		tokenizer.expect(TokenKind::Colon)?;
 
-		parse_path_segments(tokenizer, tree)?;
+		let type_path_segments = parse_path_segments(tokenizer)?;
+
+		let location = name_token.location + type_path_segments.location;
+		parameters.push(Node::new(
+			Parameter {
+				name,
+				type_path_segments,
+			},
+			location,
+		));
 
 		if reached_close_paren(tokenizer) {
 			break;
@@ -444,112 +535,99 @@ fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> P
 
 	tokenizer.expect(TokenKind::CloseParen)?;
 
-	Ok(())
+	Ok(parameters)
 }
 
-fn parse_struct_declaration<'a>(
-	tokenizer: &mut Tokenizer<'a>,
-	tree: &mut Tree<'a>,
-) -> ParseResult<()> {
+fn parse_struct_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Struct<'a>> {
 	tokenizer.expect_word("struct")?;
 
 	let struct_name_token = tokenizer.expect(TokenKind::Word)?;
 	check_not_reserved(struct_name_token)?;
-	tree.push(Node::from_token(
-		NodeKind::Struct {
-			name: struct_name_token.text,
-		},
-		struct_name_token,
-	));
+	let name = Node::from_token(struct_name_token.text, struct_name_token);
 
 	tokenizer.expect(TokenKind::OpenBrace)?;
+	tokenizer.expect(TokenKind::Newline)?;
 
-	if tokenizer.peek()?.kind == TokenKind::CloseBrace {
-		//Allow `struct Name {}` syntax without error-ing on lack of newline
-		Ok(())
-	} else {
+	let mut fields = Vec::new();
+
+	while !reached_close_brace(tokenizer) {
+		let field_name_token = tokenizer.expect(TokenKind::Word)?;
+		check_not_reserved(field_name_token)?;
+		let name = Node::from_token(field_name_token.text, field_name_token);
+
+		tokenizer.expect(TokenKind::Colon)?;
+
+		let type_path_segments = parse_path_segments(tokenizer)?;
+
+		fields.push(Field {
+			name,
+			type_path_segments,
+		});
+
 		tokenizer.expect(TokenKind::Newline)?;
-
-		while !reached_close_brace(tokenizer) {
-			let field_name_token = tokenizer.expect(TokenKind::Word)?;
-			check_not_reserved(field_name_token)?;
-			tree.push(Node::from_token(
-				NodeKind::Field {
-					name: field_name_token.text,
-				},
-				field_name_token,
-			));
-
-			tokenizer.expect(TokenKind::Colon)?;
-
-			parse_path_segments(tokenizer, tree)?;
-
-			tokenizer.expect(TokenKind::Newline)?;
-		}
-
-		tokenizer.expect(TokenKind::CloseBrace)?;
-
-		Ok(())
 	}
+
+	tokenizer.expect(TokenKind::CloseBrace)?;
+
+	Ok(Struct { name, fields })
 }
 
-fn parse_const_statement<'a>(
-	tokenizer: &mut Tokenizer<'a>,
-	tree: &mut Tree<'a>,
-) -> ParseResult<()> {
+fn parse_const_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Const<'a>> {
 	tokenizer.expect_word("const")?;
 
 	let name_token = tokenizer.expect(TokenKind::Word)?;
-	tree.push(Node::from_token(
-		NodeKind::Const {
-			name: name_token.text,
-		},
-		name_token,
-	));
+	check_not_reserved(name_token)?;
+	let name = Node::from_token(name_token.text, name_token);
 
-	if tokenizer.peek()?.kind == TokenKind::Colon {
+	let type_path_segments = if tokenizer.peek()?.kind == TokenKind::Colon {
 		//Parse explicit type
 		tokenizer.expect(TokenKind::Colon)?;
-		parse_path_segments(tokenizer, tree)?;
-	}
+		Some(parse_path_segments(tokenizer)?)
+	} else {
+		None
+	};
 
 	tokenizer.expect(TokenKind::Equal)?;
+	let expression = parse_expression(tokenizer)?;
 
-	parse_expression(tokenizer, tree)
+	Ok(Const {
+		name,
+		type_path_segments,
+		expression,
+	})
 }
 
-fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>, tree: &mut Tree<'a>) -> ParseResult<()> {
+fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Let<'a>> {
 	tokenizer.expect_word("let")?;
 
 	let name_token = tokenizer.expect(TokenKind::Word)?;
-	tree.push(Node::from_token(
-		NodeKind::Let {
-			name: name_token.text,
-		},
-		name_token,
-	));
+	check_not_reserved(name_token)?;
+	let name = Node::from_token(name_token.text, name_token);
 
-	if tokenizer.peek()?.kind == TokenKind::Colon {
+	let type_path_segments = if tokenizer.peek()?.kind == TokenKind::Colon {
 		//Parse explicit type
 		tokenizer.expect(TokenKind::Colon)?;
-		parse_path_segments(tokenizer, tree)?;
-	}
+		Some(parse_path_segments(tokenizer)?)
+	} else {
+		None
+	};
 
 	tokenizer.expect(TokenKind::Equal)?;
+	let expression = parse_expression(tokenizer)?;
 
-	parse_expression(tokenizer, tree)
+	Ok(Let {
+		name,
+		type_path_segments,
+		expression,
+	})
 }
 
-fn parse_return_statement<'a>(
-	tokenizer: &mut Tokenizer<'a>,
-	tree: &mut Tree<'a>,
-) -> ParseResult<()> {
-	let return_token = tokenizer.expect_word("return")?;
-	tree.push(Node::from_token(NodeKind::Return, return_token));
+fn parse_return_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Return<'a>> {
+	tokenizer.expect_word("return")?;
 
-	parse_expression(tokenizer, tree)?;
+	let expression = parse_expression(tokenizer)?;
 
-	Ok(())
+	Ok(Return { expression })
 }
 
 fn check_not_reserved(token: Token) -> ParseResult<()> {

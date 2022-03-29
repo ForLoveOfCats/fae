@@ -1,27 +1,16 @@
 module main
 
-use a_module::a
-use a_module::b
+using another_module
 
-const A = 5 + (8 - 4) + 4 * 7 - 3
+const THING = "Hello there!"
 
-struct MyType {
-	field_name: a::Z
+struct MyStruct {
+	field: f64
 }
 
-struct EmptyType {}
-
-fn main(): void {
-	function_name(5)
-
-	let b = function_name(6, 74 + 9)
-	const C = 'c'
-
-	println(a::THING)
-	println(b::THING)
-	println("Hello")
-}
-
-fn function_name(arg: i32): i32 {
-	return 5
+fn function(): void {
+	let abc = 5 * 2 + -42 / 8
+	let character: char = 'A'
+	const SOMETHING: i64 = some::path::HERE
+	return 5.0 * something_else()
 }

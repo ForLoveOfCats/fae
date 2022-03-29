@@ -1,124 +1,200 @@
 use crate::location::SourceLocation;
 use crate::tokenizer::Token;
 
+#[must_use]
 #[derive(Debug)]
-pub enum NodeKind<'a> {
-	//Followed by one or more PathSegment
-	Module,
+pub struct File<'a> {
+	pub module: Node<Module<'a>>,
+	pub root_expression: Node<Expression<'a>>,
+}
 
-	//Followed by one or more PathSegment
-	Use,
+#[must_use]
+#[derive(Debug)]
+pub struct PathSegments<'a> {
+	//TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
+	pub segments: Vec<Node<&'a str>>,
+}
 
-	PathSegment { text: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Module<'a> {
+	pub path_segments: Node<PathSegments<'a>>,
+}
 
-	//Followed by zero or more Parameters then one or more PathSegment then a StartExpression
-	Function { name: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Using<'a> {
+	pub path_segments: Node<PathSegments<'a>>,
+}
 
-	//Followed by one or more PathSegment
-	Parameter { name: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Struct<'a> {
+	pub name: Node<&'a str>,
+	pub fields: Vec<Field<'a>>,
+}
 
-	//Followed by zero ore more Field
-	Struct { name: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Field<'a> {
+	pub name: Node<&'a str>,
+	pub type_path_segments: Node<PathSegments<'a>>,
+}
 
-	//Followed by one or more PathSegment
-	Field { name: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Function<'a> {
+	pub name: Node<&'a str>,
+	pub parameters: Vec<Node<Parameter<'a>>>,
+	pub type_path_segments: Node<PathSegments<'a>>,
+	pub block: Node<Expression<'a>>,
+}
 
-	//Followed by zero or more PathSegment then a StartExpression
-	Const { name: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Parameter<'a> {
+	pub name: Node<&'a str>,
+	pub type_path_segments: Node<PathSegments<'a>>,
+}
 
-	//Followed by zero or more PathSegment then a StartExpression
-	Let { name: &'a str },
+#[must_use]
+#[derive(Debug)]
+pub struct Const<'a> {
+	pub name: Node<&'a str>,
+	pub type_path_segments: Option<Node<PathSegments<'a>>>,
+	pub expression: Node<Expression<'a>>,
+}
 
-	//Followed by a StartExpression
-	Return,
+#[must_use]
+#[derive(Debug)]
+pub struct Let<'a> {
+	pub name: Node<&'a str>,
+	pub type_path_segments: Option<Node<PathSegments<'a>>>,
+	pub expression: Node<Expression<'a>>,
+}
 
-	//Expressed in "normal" infix notation, precedence handled in semantic pass
-	StartExpression,
-	EndExpression,
+#[must_use]
+#[derive(Debug)]
+pub struct UnsignedIntegerLiteral {
+	pub value: Node<u64>,
+}
 
-	//Follows one or more PathSegment, followed by zero or more StartExpression then an EndCallArgs
-	Call,
-	EndCallArgs,
+#[must_use]
+#[derive(Debug)]
+pub struct SignedIntegerLiteral {
+	pub value: Node<i64>,
+}
 
-	UnsignedIntegerLiteral { value: u64 },
-	SignedIntegerLiteral { value: i64 },
-	FloatLiteral { value: f64 },
+#[must_use]
+#[derive(Debug)]
+pub struct FloatLiteral {
+	pub value: Node<f64>,
+}
 
-	StringLiteral { value: &'a str },
-	CharLiteral { value: char },
+#[must_use]
+#[derive(Debug)]
+pub struct CharLiteral {
+	pub value: Node<char>,
+}
 
+#[must_use]
+#[derive(Debug)]
+pub struct StringLiteral<'a> {
+	pub value: Node<&'a str>,
+}
+
+#[must_use]
+#[derive(Debug, Clone, Copy)]
+pub enum Operator {
 	Add,
 	Sub,
 	Mul,
 	Div,
 }
 
+impl Operator {
+	pub fn precedence(self) -> u32 {
+		use Operator::*;
+		match self {
+			Add | Sub => 0,
+			Mul | Div => 1,
+		}
+	}
+}
+
+#[must_use]
 #[derive(Debug)]
-pub struct Node<'a> {
-	pub kind: NodeKind<'a>,
-	pub location: Option<SourceLocation>,
+pub struct BinaryOperation<'a> {
+	pub op: Node<Operator>,
+	pub left: Node<Expression<'a>>,
+	pub right: Node<Expression<'a>>,
 }
 
-impl<'a> Node<'a> {
-	pub fn new(kind: NodeKind<'a>, location: SourceLocation) -> Node<'a> {
-		Node {
-			kind,
-			location: Some(location),
-		}
-	}
-
-	pub fn from_token(kind: NodeKind<'a>, token: Token) -> Node<'a> {
-		Node {
-			kind,
-			location: Some(token.location),
-		}
-	}
-
-	pub fn without_location(kind: NodeKind<'a>) -> Node<'a> {
-		Node {
-			kind,
-			location: None,
-		}
-	}
-}
-
+#[must_use]
 #[derive(Debug)]
-pub enum UnorderedItem {
-	Function { index: usize },
-	Struct { index: usize },
+pub struct Call<'a> {
+	pub path_segments: Node<PathSegments<'a>>,
+	pub arguments: Node<Vec<Expression<'a>>>,
 }
 
+#[must_use]
 #[derive(Debug)]
-pub struct Tree<'a> {
-	nodes: Vec<Node<'a>>,
-	unordered_items: Vec<UnorderedItem>,
+pub struct Read<'a> {
+	pub path_segments: Node<PathSegments<'a>>,
 }
 
-impl<'a> Tree<'a> {
-	pub fn new() -> Tree<'a> {
-		Tree {
-			nodes: Vec::new(),
-			unordered_items: Vec::new(),
-		}
+#[must_use]
+#[derive(Debug)]
+pub struct Return<'a> {
+	pub expression: Node<Expression<'a>>,
+}
+
+#[must_use]
+#[derive(Debug)]
+pub enum Expression<'a> {
+	Block(Vec<Expression<'a>>),
+
+	Module(Module<'a>),
+	Using(Using<'a>),
+
+	Struct(Struct<'a>),
+	Function(Box<Function<'a>>),
+
+	Const(Box<Const<'a>>),
+	Let(Box<Let<'a>>),
+
+	UnsignedIntegerLiteral(UnsignedIntegerLiteral),
+	SignedIntegerLiteral(SignedIntegerLiteral),
+
+	FloatLiteral(FloatLiteral),
+
+	CharLiteral(CharLiteral),
+	StringLiteral(StringLiteral<'a>),
+
+	Call(Call<'a>),
+	Read(Read<'a>),
+
+	BinaryOperation(Box<BinaryOperation<'a>>),
+
+	Return(Box<Return<'a>>),
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct Node<T> {
+	pub node: T,
+	pub location: SourceLocation,
+}
+
+impl<T> Node<T> {
+	pub fn new(node: T, location: SourceLocation) -> Node<T> {
+		Node { node, location }
 	}
 
-	pub fn push(&mut self, node: Node<'a>) {
-		match node.kind {
-			NodeKind::Function { .. } => self.unordered_items.push(UnorderedItem::Function {
-				index: self.nodes.len(),
-			}),
-
-			NodeKind::Struct { .. } => self.unordered_items.push(UnorderedItem::Struct {
-				index: self.nodes.len(),
-			}),
-
-			_ => {}
+	pub fn from_token(node: T, token: Token) -> Node<T> {
+		Node {
+			node,
+			location: token.location,
 		}
-
-		self.nodes.push(node);
-	}
-
-	pub fn len(&self) -> usize {
-		self.nodes.len()
 	}
 }
