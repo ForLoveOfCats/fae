@@ -104,6 +104,26 @@ pub struct StringLiteral<'a> {
 }
 
 #[must_use]
+#[derive(Debug)]
+pub struct StructLiteral<'a> {
+	pub path_segments: Node<PathSegments<'a>>,
+	pub initializer: Node<StructInitializer<'a>>,
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct StructInitializer<'a> {
+	pub field_initializers: Vec<FieldInitializer<'a>>,
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct FieldInitializer<'a> {
+	pub name: Node<&'a str>,
+	pub expression: Node<Expression<'a>>,
+}
+
+#[must_use]
 #[derive(Debug, Clone, Copy)]
 pub enum Operator {
 	Add,
@@ -170,6 +190,8 @@ pub enum Expression<'a> {
 
 	CharLiteral(CharLiteral),
 	StringLiteral(StringLiteral<'a>),
+
+	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),
 	Read(Read<'a>),

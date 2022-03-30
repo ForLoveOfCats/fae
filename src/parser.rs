@@ -219,7 +219,6 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 				check_expected_next(string_token, &mut expected_next, ItemKind::Expression)?;
 				let value = Node::from_token(string_token.text, string_token);
 
-				//This double nested `Node` feels yucky
 				rpn.push(InRpn::Expression(Node::from_token(
 					Expression::StringLiteral(StringLiteral { value }),
 					string_token,
@@ -231,7 +230,6 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 				check_expected_next(char_token, &mut expected_next, ItemKind::Expression)?;
 				let value = Node::from_token(char_token.text.chars().next().unwrap(), char_token);
 
-				//This double nested `Node` feels yucky
 				rpn.push(InRpn::Expression(Node::from_token(
 					Expression::CharLiteral(CharLiteral { value }),
 					char_token,
@@ -243,38 +241,63 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 
 				if peeked.text.as_bytes()[0].is_ascii_digit() {
 					rpn.push(InRpn::Expression(parse_number(tokenizer)?));
-				} else {
-					let path_segments = parse_path_segments(tokenizer)?;
-
-					let is_call = tokenizer
-						.peek()
-						.map(|peeked| peeked.kind == TokenKind::OpenParen)
-						.unwrap_or(false);
-
-					if is_call {
-						let arguments = parse_arguments(tokenizer)?;
-						let location = path_segments.location + arguments.location;
-						let call = Call {
-							path_segments,
-							arguments,
-						};
-
-						//This double nested `Node` feels yucky
-						rpn.push(InRpn::Expression(Node::new(
-							Expression::Call(call),
-							location,
-						)));
-					} else {
-						let location = path_segments.location;
-						let read = Read { path_segments };
-
-						//This double nested `Node` feels yucky
-						rpn.push(InRpn::Expression(Node::new(
-							Expression::Read(read),
-							location,
-						)));
-					}
+					continue;
 				}
+
+				let path_segments = parse_path_segments(tokenizer)?;
+
+				let (is_call, is_struct_literal) = match tokenizer.peek() {
+					Ok(Token {
+						kind: TokenKind::OpenParen,
+						..
+					}) => (true, false),
+
+					Ok(Token {
+						kind: TokenKind::OpenBrace,
+						..
+					}) => (false, true),
+
+					_ => (false, false),
+				};
+
+				if is_call {
+					let arguments = parse_arguments(tokenizer)?;
+					let location = path_segments.location + arguments.location;
+					let call = Call {
+						path_segments,
+						arguments,
+					};
+
+					rpn.push(InRpn::Expression(Node::new(
+						Expression::Call(call),
+						location,
+					)));
+					continue;
+				}
+
+				if is_struct_literal {
+					let initializer = parse_struct_initializer(tokenizer)?;
+
+					let location = path_segments.location + initializer.location;
+					let struct_literal = StructLiteral {
+						path_segments,
+						initializer,
+					};
+
+					rpn.push(InRpn::Expression(Node::new(
+						Expression::StructLiteral(struct_literal),
+						location,
+					)));
+					continue;
+				}
+
+				let location = path_segments.location;
+				let read = Read { path_segments };
+
+				rpn.push(InRpn::Expression(Node::new(
+					Expression::Read(read),
+					location,
+				)));
 			}
 
 			TokenKind::OpenParen => {
@@ -282,17 +305,8 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 				rpn.push(InRpn::Expression(parse_expression(tokenizer)?));
 			}
 
-			TokenKind::CloseParen | TokenKind::Comma | TokenKind::Newline => break,
-
-			_ => {
-				let token = tokenizer.next()?;
-				return Err(ParseError {
-					location: token.location,
-					kind: ParseErrorKind::Unexpected {
-						unexpected: token.text.to_owned(),
-					},
-				});
-			}
+			//NOTE: This is a catch-all to allow callers to handle following tokens
+			_ => break,
 		}
 	}
 
@@ -356,6 +370,37 @@ fn parse_arguments<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Vec<Ex
 
 	let location = open_paren_token.location + close_paren_token.location;
 	Ok(Node::new(expressions, location))
+}
+
+fn parse_struct_initializer<'a>(
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Node<StructInitializer<'a>>> {
+	let open_brace_token = tokenizer.expect(TokenKind::OpenBrace)?;
+	tokenizer.expect(TokenKind::Newline)?;
+
+	let mut field_initializers = Vec::new();
+
+	while tokenizer.peek()?.kind != TokenKind::CloseBrace {
+		let name_token = tokenizer.expect(TokenKind::Word)?;
+		check_not_reserved(name_token)?;
+		let name = Node::from_token(name_token.text, name_token);
+
+		tokenizer.expect(TokenKind::Colon)?;
+
+		let expression = parse_expression(tokenizer)?;
+
+		tokenizer.expect(TokenKind::Comma)?;
+		tokenizer.expect(TokenKind::Newline)?;
+
+		field_initializers.push(FieldInitializer { name, expression });
+	}
+
+	let close_brace_token = tokenizer.expect(TokenKind::CloseBrace)?;
+
+	Ok(Node::new(
+		StructInitializer { field_initializers },
+		open_brace_token.location + close_brace_token.location,
+	))
 }
 
 fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
@@ -633,7 +678,7 @@ fn parse_return_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Retu
 fn check_not_reserved(token: Token) -> ParseResult<()> {
 	let is_reserved = matches!(
 		token.text,
-		"const" | "fn" | "let" | "module" | "return" | "struct" | "use"
+		"const" | "fn" | "let" | "module" | "return" | "struct" | "using"
 	);
 
 	if is_reserved {

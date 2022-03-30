@@ -12,8 +12,6 @@ pub type ParseResult<T> = std::result::Result<T, ParseError>;
 pub enum ParseErrorKind {
 	UnexpectedEof,
 
-	Unexpected { unexpected: String },
-
 	Expected { expected: String, found: String },
 
 	ExpectedExpression { found: String },
@@ -78,8 +76,6 @@ impl ParseError {
 
 		match &self.kind {
 			ParseErrorKind::UnexpectedEof => print!("Unexpected EOF"),
-
-			ParseErrorKind::Unexpected { unexpected } => print!("Unexpected '{}'", unexpected),
 
 			ParseErrorKind::Expected { expected, found } => {
 				print!("Expected {} but found {}", expected, found);
