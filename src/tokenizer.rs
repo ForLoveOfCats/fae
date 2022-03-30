@@ -4,9 +4,6 @@ use super::location::SourceLocation;
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TokenKind {
-	LineComment { following_content: bool },
-	DelimitedComment { following_content: bool },
-
 	Word,
 	String,
 	Char,
@@ -49,9 +46,6 @@ pub enum TokenKind {
 impl std::fmt::Display for TokenKind {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let text = match self {
-			TokenKind::LineComment { .. } => "line comment",
-			TokenKind::DelimitedComment { .. } => "delimited comment",
-
 			TokenKind::Word => "word",
 			TokenKind::String => "string literal",
 			TokenKind::Char => "character literal",
@@ -198,23 +192,7 @@ impl<'a> Tokenizer<'a> {
 			return Ok(peeked.token);
 		}
 
-		loop {
-			let token = self.next_with_comments()?;
-			match token.kind {
-				TokenKind::LineComment { .. } | TokenKind::DelimitedComment { .. } => continue,
-				_ => {
-					self.token_count += 1;
-					return Ok(token);
-				}
-			}
-		}
-	}
-
-	pub fn next_with_comments(&mut self) -> ParseResult<Token<'a>> {
-		if let Some(newline_token) = self.consume_leading_whitespace()? {
-			return Ok(newline_token);
-		}
-
+		self.consume_leading_whitespace()?;
 		self.verify_not_eof()?;
 
 		let token = match self.source.as_bytes()[self.byte_index..] {
@@ -303,9 +281,6 @@ impl<'a> Tokenizer<'a> {
 			}
 
 			[b'/', b'/', ..] => {
-				let following_content = self.is_following_content();
-
-				let start_index = self.byte_index;
 				loop {
 					self.byte_index += 1;
 
@@ -316,18 +291,10 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				Ok(self.create_token(
-					&self.source[start_index..self.byte_index],
-					TokenKind::LineComment { following_content },
-					start_index,
-					self.byte_index,
-				))
+				self.next()
 			}
 
 			[b'/', b'*', ..] => {
-				let following_content = self.is_following_content();
-
-				let start_index = self.byte_index;
 				loop {
 					self.byte_index += 1;
 					self.verify_not_eof()?;
@@ -338,12 +305,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				Ok(self.create_token(
-					&self.source[start_index..self.byte_index],
-					TokenKind::DelimitedComment { following_content },
-					start_index,
-					self.byte_index,
-				))
+				self.next()
 			}
 
 			[b'/', b'=', ..] => {
@@ -544,25 +506,17 @@ impl<'a> Tokenizer<'a> {
 		Ok(())
 	}
 
-	fn consume_leading_whitespace(&mut self) -> ParseResult<Option<Token<'a>>> {
-		let mut newline_index = None;
-
+	fn consume_leading_whitespace(&mut self) -> ParseResult<()> {
 		while self.byte_index < self.source.len() {
 			let byte = self.source.as_bytes()[self.byte_index];
-			if matches!(byte, b' ' | b'\t' | b'\r') {
-				self.byte_index += 1;
-			} else if byte == b'\n' {
-				if newline_index.is_none() {
-					newline_index = Some(self.byte_index);
-				}
-
+			if matches!(byte, b' ' | b'\t' | b'\n' | b'\r') {
 				self.byte_index += 1;
 			} else {
 				break;
 			}
 		}
 
-		Ok(None)
+		Ok(())
 	}
 
 	fn verify_not_eof(&self) -> ParseResult<()> {
@@ -591,22 +545,6 @@ impl<'a> Tokenizer<'a> {
 			kind,
 			location: SourceLocation { start, end },
 		}
-	}
-
-	fn is_following_content(&self) -> bool {
-		let mut index = self.byte_index;
-		while index > 0 {
-			index -= 1;
-			let byte = self.source.as_bytes()[index];
-
-			if matches!(byte, b'\n') {
-				return false;
-			} else if !matches!(byte, b' ' | b'\t' | b'\r') {
-				return true;
-			}
-		}
-
-		false
 	}
 
 	pub fn expect(&mut self, expected: TokenKind) -> ParseResult<Token<'a>> {
