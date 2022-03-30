@@ -21,13 +21,6 @@ pub fn parse_block<'a>(
 	while tokenizer.has_next() {
 		match tokenizer.peek()? {
 			Token {
-				kind: TokenKind::Newline,
-				..
-			} => {
-				tokenizer.next()?;
-			}
-
-			Token {
 				kind: TokenKind::Word,
 				text: "using",
 				..
@@ -376,7 +369,6 @@ fn parse_struct_initializer<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Node<StructInitializer<'a>>> {
 	let open_brace_token = tokenizer.expect(TokenKind::OpenBrace)?;
-	tokenizer.expect(TokenKind::Newline)?;
 
 	let mut field_initializers = Vec::new();
 
@@ -390,7 +382,6 @@ fn parse_struct_initializer<'a>(
 		let expression = parse_expression(tokenizer)?;
 
 		tokenizer.expect(TokenKind::Comma)?;
-		tokenizer.expect(TokenKind::Newline)?;
 
 		field_initializers.push(FieldInitializer { name, expression });
 	}
@@ -491,6 +482,8 @@ fn parse_module_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Mo
 
 	let path_segments = parse_path_segments(tokenizer)?;
 
+	tokenizer.expect(TokenKind::Semicolon)?;
+
 	Ok(Module {
 		path_segments: Node::from_token(path_segments.node, module_token),
 	})
@@ -501,7 +494,7 @@ fn parse_using_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Using
 
 	let path_segments = parse_path_segments(tokenizer)?;
 
-	tokenizer.expect(TokenKind::Newline)?;
+	tokenizer.expect(TokenKind::Semicolon)?;
 
 	Ok(Using { path_segments })
 }
@@ -591,7 +584,6 @@ fn parse_struct_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<St
 	let name = Node::from_token(struct_name_token.text, struct_name_token);
 
 	tokenizer.expect(TokenKind::OpenBrace)?;
-	tokenizer.expect(TokenKind::Newline)?;
 
 	let mut fields = Vec::new();
 
@@ -604,12 +596,12 @@ fn parse_struct_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<St
 
 		let type_path_segments = parse_path_segments(tokenizer)?;
 
+		tokenizer.expect(TokenKind::Comma)?;
+
 		fields.push(Field {
 			name,
 			type_path_segments,
 		});
-
-		tokenizer.expect(TokenKind::Newline)?;
 	}
 
 	tokenizer.expect(TokenKind::CloseBrace)?;
@@ -634,6 +626,8 @@ fn parse_const_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Const
 
 	tokenizer.expect(TokenKind::Equal)?;
 	let expression = parse_expression(tokenizer)?;
+
+	tokenizer.expect(TokenKind::Semicolon)?;
 
 	Ok(Const {
 		name,
@@ -660,6 +654,8 @@ fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Let<'a>
 	tokenizer.expect(TokenKind::Equal)?;
 	let expression = parse_expression(tokenizer)?;
 
+	tokenizer.expect(TokenKind::Semicolon)?;
+
 	Ok(Let {
 		name,
 		type_path_segments,
@@ -671,6 +667,8 @@ fn parse_return_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Retu
 	tokenizer.expect_word("return")?;
 
 	let expression = parse_expression(tokenizer)?;
+
+	tokenizer.expect(TokenKind::Semicolon)?;
 
 	Ok(Return { expression })
 }

@@ -7,8 +7,6 @@ pub enum TokenKind {
 	LineComment { following_content: bool },
 	DelimitedComment { following_content: bool },
 
-	Newline,
-
 	Word,
 	String,
 	Char,
@@ -41,6 +39,7 @@ pub enum TokenKind {
 	CompLessEqual,
 
 	Colon,
+	Semicolon,
 	Period,
 	Comma,
 
@@ -52,8 +51,6 @@ impl std::fmt::Display for TokenKind {
 		let text = match self {
 			TokenKind::LineComment { .. } => "line comment",
 			TokenKind::DelimitedComment { .. } => "delimited comment",
-
-			TokenKind::Newline => "newline",
 
 			TokenKind::Word => "word",
 			TokenKind::String => "string literal",
@@ -87,6 +84,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::CompLessEqual => "'<='",
 
 			TokenKind::Colon => "':'",
+			TokenKind::Semicolon => "';'",
 			TokenKind::Period => "'.'",
 			TokenKind::Comma => "','",
 
@@ -431,6 +429,13 @@ impl<'a> Tokenizer<'a> {
 				Ok(self.create_token(":", TokenKind::Colon, self.byte_index, self.byte_index + 1))
 			}
 
+			[b';', ..] => Ok(self.create_token(
+				";",
+				TokenKind::Semicolon,
+				self.byte_index,
+				self.byte_index + 1,
+			)),
+
 			[b'.', ..] => {
 				Ok(self.create_token(".", TokenKind::Period, self.byte_index, self.byte_index + 1))
 			}
@@ -540,7 +545,6 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	fn consume_leading_whitespace(&mut self) -> ParseResult<Option<Token<'a>>> {
-		let at_very_beginning = self.byte_index == 0;
 		let mut newline_index = None;
 
 		while self.byte_index < self.source.len() {
@@ -555,17 +559,6 @@ impl<'a> Tokenizer<'a> {
 				self.byte_index += 1;
 			} else {
 				break;
-			}
-		}
-
-		if let Some(newline_index) = newline_index {
-			if !at_very_beginning {
-				return Ok(Some(self.create_token(
-					"\n",
-					TokenKind::Newline,
-					newline_index,
-					newline_index + 1,
-				)));
 			}
 		}
 
