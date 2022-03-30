@@ -1,16 +1,24 @@
-module main
+module main;
 
-using another_module
+using another_module;
 
-const THING = "Hello there!"
+const THING = "Hello there!";
 
 struct MyStruct {
-	field: f64
+	field: f64,
+	other_field: bool,
 }
 
 fn function(): void {
-	let abc = 5 * 2 + -42 / 8
-	let character: char = 'A'
-	const SOMETHING: i64 = some::path::HERE
-	return 5.0 * something_else()
+	let abc = 5 * 2 + -42 / 8;
+	let character: char = 'A';
+
+	const SOMETHING: i64 = some::path::HERE;
+
+	let instance = MyStruct {
+		field: 89,
+		other_field: true,
+	};
+
+	return 5.0 * something_else();
 }
