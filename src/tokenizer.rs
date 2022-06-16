@@ -1,5 +1,5 @@
 use super::error::{ParseError, ParseErrorKind, ParseResult};
-use super::location::SourceLocation;
+use super::span::Span;
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -95,7 +95,7 @@ impl std::fmt::Display for TokenKind {
 pub struct Token<'a> {
 	pub text: &'a str,
 	pub kind: TokenKind,
-	pub location: SourceLocation,
+	pub span: Span,
 }
 
 impl<'a> Token<'a> {
@@ -104,7 +104,7 @@ impl<'a> Token<'a> {
 			Ok(self)
 		} else {
 			Err(ParseError {
-				location: self.location,
+				span: self.span,
 				kind: ParseErrorKind::Expected {
 					expected: format!("{}", expected),
 					found: format!("{:?}", self.text),
@@ -118,7 +118,7 @@ impl<'a> Token<'a> {
 			Ok(self)
 		} else {
 			Err(ParseError {
-				location: self.location,
+				span: self.span,
 				kind: ParseErrorKind::Expected {
 					expected: format!("{:?}", expected),
 					found: format!("{:?}", self.text),
@@ -490,7 +490,7 @@ impl<'a> Tokenizer<'a> {
 		let found = self.source.as_bytes()[self.byte_index];
 		if found != expected {
 			return Err(ParseError {
-				location: SourceLocation {
+				span: Span {
 					start: self.byte_index,
 					end: self.byte_index + 1,
 				},
@@ -540,7 +540,7 @@ impl<'a> Tokenizer<'a> {
 	fn verify_not_eof(&self) -> ParseResult<()> {
 		if self.byte_index >= self.source.len() {
 			Err(ParseError {
-				location: SourceLocation {
+				span: Span {
 					start: self.source.len().saturating_sub(1),
 					end: self.source.len().saturating_sub(1),
 				},
@@ -561,7 +561,7 @@ impl<'a> Tokenizer<'a> {
 		Token {
 			text,
 			kind,
-			location: SourceLocation { start, end },
+			span: Span { start, end },
 		}
 	}
 

@@ -1,4 +1,4 @@
-use crate::location::SourceLocation;
+use crate::span::Span;
 use crate::tokenizer::Token;
 
 #[must_use]
@@ -205,18 +205,18 @@ pub enum Expression<'a> {
 #[derive(Debug)]
 pub struct Node<T> {
 	pub node: T,
-	pub location: SourceLocation,
+	pub span: Span,
 }
 
 impl<T> Node<T> {
-	pub fn new(node: T, location: SourceLocation) -> Node<T> {
-		Node { node, location }
+	pub fn new(node: T, span: Span) -> Node<T> {
+		Node { node, span }
 	}
 
 	pub fn from_token(node: T, token: Token) -> Node<T> {
 		Node {
 			node,
-			location: token.location,
+			span: token.span,
 		}
 	}
 }

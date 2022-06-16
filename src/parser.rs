@@ -1,6 +1,6 @@
 use crate::error::{ParseError, ParseErrorKind, ParseResult};
 use crate::ice::ice;
-use crate::location::SourceLocation;
+use crate::span::Span;
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::tree::*;
 
@@ -11,11 +11,11 @@ pub fn parse_block<'a>(
 	let mut items = Vec::new();
 
 	let start = if is_root {
-		let location = tokenizer.peek()?.location;
+		let span = tokenizer.peek()?.span;
 		items.push(Expression::Module(parse_module_declaration(tokenizer)?));
-		location.start
+		span.start
 	} else {
-		tokenizer.expect(TokenKind::OpenBrace)?.location.start
+		tokenizer.expect(TokenKind::OpenBrace)?.span.start
 	};
 
 	while tokenizer.has_next() {
@@ -61,7 +61,7 @@ pub fn parse_block<'a>(
 				if !is_root {
 					let token = tokenizer.next()?;
 					return Err(ParseError {
-						location: token.location,
+						span: token.span,
 						kind: ParseErrorKind::SubLevelFunction,
 					});
 				}
@@ -79,7 +79,7 @@ pub fn parse_block<'a>(
 				if !is_root {
 					let token = tokenizer.next()?;
 					return Err(ParseError {
-						location: token.location,
+						span: token.span,
 						kind: ParseErrorKind::SubLevelStruct,
 					});
 				}
@@ -110,13 +110,13 @@ pub fn parse_block<'a>(
 	}
 
 	let end = if !is_root {
-		tokenizer.expect(TokenKind::CloseBrace)?.location.end
+		tokenizer.expect(TokenKind::CloseBrace)?.span.end
 	} else {
 		tokenizer.byte_index()
 	};
 
-	let location = SourceLocation { start, end };
-	Ok(Node::new(Expression::Block(items), location))
+	let span = Span { start, end };
+	Ok(Node::new(Expression::Block(items), span))
 }
 
 //NOTE: This function is a bit gross but not horrible, it is by far the worst part of the parser
@@ -154,14 +154,14 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 		if *expected != actual {
 			return match *expected {
 				ItemKind::Expression => Err(ParseError {
-					location: token.location,
+					span: token.span,
 					kind: ParseErrorKind::ExpectedExpression {
 						found: format!("{:?}", token.text),
 					},
 				}),
 
 				ItemKind::Operator => Err(ParseError {
-					location: token.location,
+					span: token.span,
 					kind: ParseErrorKind::ExpectedOperator {
 						found: format!("{:?}", token.text),
 					},
@@ -262,23 +262,20 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 
 				if is_call {
 					let arguments = parse_arguments(tokenizer)?;
-					let location = path_segments.location + arguments.location;
+					let span = path_segments.span + arguments.span;
 					let call = Call {
 						path_segments,
 						arguments,
 					};
 
-					rpn.push(InRpn::Expression(Node::new(
-						Expression::Call(call),
-						location,
-					)));
+					rpn.push(InRpn::Expression(Node::new(Expression::Call(call), span)));
 					continue;
 				}
 
 				if is_struct_literal {
 					let initializer = parse_struct_initializer(tokenizer)?;
 
-					let location = path_segments.location + initializer.location;
+					let span = path_segments.span + initializer.span;
 					let struct_literal = StructLiteral {
 						path_segments,
 						initializer,
@@ -286,18 +283,15 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 
 					rpn.push(InRpn::Expression(Node::new(
 						Expression::StructLiteral(struct_literal),
-						location,
+						span,
 					)));
 					continue;
 				}
 
-				let location = path_segments.location;
+				let span = path_segments.span;
 				let read = Read { path_segments };
 
-				rpn.push(InRpn::Expression(Node::new(
-					Expression::Read(read),
-					location,
-				)));
+				rpn.push(InRpn::Expression(Node::new(Expression::Read(read), span)));
 			}
 
 			TokenKind::OpenParen => {
@@ -317,7 +311,7 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 	if expected_next == ItemKind::Expression {
 		let token = tokenizer.next()?;
 		return Err(ParseError {
-			location: token.location,
+			span: token.span,
 			kind: ParseErrorKind::ExpectedExpression {
 				found: format!("{:?}", token.text),
 			},
@@ -337,12 +331,12 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 				let right = stack.pop().unwrap();
 				let left = stack.pop().unwrap();
 
-				let left_location = left.location;
-				let right_location = right.location;
+				let left_span = left.span;
+				let right_span = right.span;
 
 				let binary_operation = Box::new(BinaryOperation { op, right, left });
 				let expression = Expression::BinaryOperation(binary_operation);
-				stack.push(Node::new(expression, left_location + right_location));
+				stack.push(Node::new(expression, left_span + right_span));
 			}
 		}
 	}
@@ -368,8 +362,8 @@ fn parse_arguments<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Vec<Ex
 
 	let close_paren_token = tokenizer.expect(TokenKind::CloseParen)?;
 
-	let location = open_paren_token.location + close_paren_token.location;
-	Ok(Node::new(expressions, location))
+	let span = open_paren_token.span + close_paren_token.span;
+	Ok(Node::new(expressions, span))
 }
 
 fn parse_struct_initializer<'a>(
@@ -399,7 +393,7 @@ fn parse_struct_initializer<'a>(
 
 	Ok(Node::new(
 		StructInitializer { field_initializers },
-		open_brace_token.location + close_brace_token.location,
+		open_brace_token.span + close_brace_token.span,
 	))
 }
 
@@ -424,16 +418,16 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expressio
 		tokenizer.expect(TokenKind::Period)?;
 		let second_number_token = tokenizer.expect(TokenKind::Word)?;
 
-		let combined_text = &tokenizer.source()
-			[first_number_token.location.start..second_number_token.location.end];
+		let combined_text =
+			&tokenizer.source()[first_number_token.span.start..second_number_token.span.end];
 
 		let value = match combined_text.parse::<f64>() {
 			Ok(value) => value,
 			Err(_) => {
 				return Err(ParseError {
-					location: SourceLocation {
-						start: first_number_token.location.start,
-						end: second_number_token.location.end,
+					span: Span {
+						start: first_number_token.span.start,
+						end: second_number_token.span.end,
 					},
 					kind: ParseErrorKind::InvalidFloatLiteral,
 				});
@@ -442,19 +436,19 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expressio
 
 		let value = if is_negative { -value } else { value };
 
-		let location = first_number_token.location + second_number_token.location;
+		let span = first_number_token.span + second_number_token.span;
 		return Ok(Node::new(
 			Expression::FloatLiteral(FloatLiteral {
-				value: Node::new(value, location),
+				value: Node::new(value, span),
 			}),
-			location,
+			span,
 		));
 	} else if is_negative {
 		let value = match first_number_token.text.parse::<i64>() {
 			Ok(value) => value,
 			Err(_) => {
 				return Err(ParseError {
-					location: first_number_token.location,
+					span: first_number_token.span,
 					kind: ParseErrorKind::InvalidIntegerLiteral,
 				});
 			}
@@ -471,7 +465,7 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expressio
 			Ok(value) => value,
 			Err(_) => {
 				return Err(ParseError {
-					location: first_number_token.location,
+					span: first_number_token.span,
 					kind: ParseErrorKind::InvalidIntegerLiteral,
 				});
 			}
@@ -523,8 +517,8 @@ fn parse_path_segments<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Pa
 		}
 	}
 
-	let location = segments.first().unwrap().location + segments.last().unwrap().location;
-	Ok(Node::new(PathSegments { segments }, location))
+	let span = segments.first().unwrap().span + segments.last().unwrap().span;
+	Ok(Node::new(PathSegments { segments }, span))
 }
 
 fn parse_function_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Function<'a>> {
@@ -563,13 +557,13 @@ fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<P
 
 		let type_path_segments = parse_path_segments(tokenizer)?;
 
-		let location = name_token.location + type_path_segments.location;
+		let span = name_token.span + type_path_segments.span;
 		parameters.push(Node::new(
 			Parameter {
 				name,
 				type_path_segments,
 			},
-			location,
+			span,
 		));
 
 		if reached_close_paren(tokenizer) {
@@ -683,7 +677,7 @@ fn check_not_reserved(token: Token) -> ParseResult<()> {
 
 	if is_reserved {
 		Err(ParseError {
-			location: token.location,
+			span: token.span,
 			kind: ParseErrorKind::ReservedWord {
 				word: token.text.to_owned(),
 			},

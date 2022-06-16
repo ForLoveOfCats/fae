@@ -1,8 +1,8 @@
 mod error;
 mod file;
 mod ice;
-mod location;
 mod parser;
+mod span;
 mod tokenizer;
 mod tree;
 

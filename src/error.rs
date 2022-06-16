@@ -2,7 +2,7 @@ use std::path::Path;
 
 use unicode_width::UnicodeWidthChar;
 
-use crate::location::SourceLocation;
+use crate::span::Span;
 
 pub const TABULATOR_SIZE: usize = 4;
 
@@ -31,38 +31,38 @@ pub enum ParseErrorKind {
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
-	pub location: SourceLocation,
+	pub span: Span,
 	pub kind: ParseErrorKind,
 }
 
 impl ParseError {
 	pub fn print(&self, path: &Path, source: &str) {
 		let (line, start, end) = {
-			let mut line_start = self.location.start;
+			let mut line_start = self.span.start;
 			while line_start > 0 {
 				if matches!(source.as_bytes()[line_start], b'\r' | b'\n')
-					&& line_start != self.location.start
+					&& line_start != self.span.start
 				{
 					break;
 				}
 				line_start -= 1;
 			}
 
-			if line_start < self.location.start
+			if line_start < self.span.start
 				&& matches!(source.as_bytes()[line_start], b'\r' | b'\n')
 			{
 				line_start += 1;
 			}
 
-			let mut line_end = self.location.start;
+			let mut line_end = self.span.start;
 			while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
 				line_end += 1;
 			}
 
 			(
 				&source[line_start..line_end],
-				self.location.start - line_start,
-				self.location.end - line_start,
+				self.span.start - line_start,
+				self.span.end - line_start,
 			)
 		};
 
@@ -130,7 +130,7 @@ impl ParseError {
 		let mut current_line_num = 1;
 
 		for (index, byte) in source.as_bytes().iter().enumerate() {
-			if index >= self.location.start {
+			if index >= self.span.start {
 				break;
 			} else if matches!(byte, b'\n') {
 				current_line_num += 1;
