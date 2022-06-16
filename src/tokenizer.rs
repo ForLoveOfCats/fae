@@ -4,6 +4,8 @@ use super::location::SourceLocation;
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TokenKind {
+	Newline,
+
 	Word,
 	String,
 	Char,
@@ -36,7 +38,6 @@ pub enum TokenKind {
 	CompLessEqual,
 
 	Colon,
-	Semicolon,
 	Period,
 	Comma,
 
@@ -46,6 +47,8 @@ pub enum TokenKind {
 impl std::fmt::Display for TokenKind {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let text = match self {
+			TokenKind::Newline => "newline",
+
 			TokenKind::Word => "word",
 			TokenKind::String => "string literal",
 			TokenKind::Char => "character literal",
@@ -78,7 +81,6 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::CompLessEqual => "'<='",
 
 			TokenKind::Colon => "':'",
-			TokenKind::Semicolon => "';'",
 			TokenKind::Period => "'.'",
 			TokenKind::Comma => "','",
 
@@ -192,7 +194,10 @@ impl<'a> Tokenizer<'a> {
 			return Ok(peeked.token);
 		}
 
-		self.consume_leading_whitespace()?;
+		if let Some(newline_token) = self.consume_leading_whitespace()? {
+			return Ok(newline_token);
+		}
+
 		self.verify_not_eof()?;
 
 		let token = match self.source.as_bytes()[self.byte_index..] {
@@ -391,13 +396,6 @@ impl<'a> Tokenizer<'a> {
 				Ok(self.create_token(":", TokenKind::Colon, self.byte_index, self.byte_index + 1))
 			}
 
-			[b';', ..] => Ok(self.create_token(
-				";",
-				TokenKind::Semicolon,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
-
 			[b'.', ..] => {
 				Ok(self.create_token(".", TokenKind::Period, self.byte_index, self.byte_index + 1))
 			}
@@ -506,17 +504,37 @@ impl<'a> Tokenizer<'a> {
 		Ok(())
 	}
 
-	fn consume_leading_whitespace(&mut self) -> ParseResult<()> {
+	fn consume_leading_whitespace(&mut self) -> ParseResult<Option<Token<'a>>> {
+		let at_very_beginning = self.byte_index == 0;
+		let mut newline_index = None;
+
 		while self.byte_index < self.source.len() {
 			let byte = self.source.as_bytes()[self.byte_index];
-			if matches!(byte, b' ' | b'\t' | b'\n' | b'\r') {
+			if matches!(byte, b' ' | b'\t' | b'\r') {
+				self.byte_index += 1;
+			} else if byte == b'\n' {
+				if newline_index.is_none() {
+					newline_index = Some(self.byte_index);
+				}
+
 				self.byte_index += 1;
 			} else {
 				break;
 			}
 		}
 
-		Ok(())
+		if let Some(newline_index) = newline_index {
+			if !at_very_beginning {
+				return Ok(Some(self.create_token(
+					"\n",
+					TokenKind::Newline,
+					newline_index,
+					newline_index + 1,
+				)));
+			}
+		}
+
+		Ok(None)
 	}
 
 	fn verify_not_eof(&self) -> ParseResult<()> {
