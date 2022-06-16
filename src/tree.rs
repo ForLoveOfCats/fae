@@ -174,7 +174,6 @@ pub struct Return<'a> {
 pub enum Expression<'a> {
 	Block(Vec<Expression<'a>>),
 
-	Module(Module<'a>),
 	Using(Using<'a>),
 
 	Struct(Struct<'a>),

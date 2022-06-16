@@ -7,7 +7,7 @@ mod tokenizer;
 mod tree;
 
 use file::load_all_files;
-use parser::parse_block;
+use parser::parse_file_root;
 use tokenizer::Tokenizer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,23 +16,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut roots = Vec::new();
 
 	for file in &files {
-		let (root_expression, token_count) = {
+		let (root, token_count) = {
 			let mut tokenizer = Tokenizer::new(&file.source);
 
-			let root_expression = match parse_block(&mut tokenizer, true) {
-				Ok(root_expression) => root_expression,
+			let root = match parse_file_root(&mut tokenizer) {
+				Ok(root) => root,
 				Err(err) => {
 					err.print(&file.path, &file.source);
 					return Ok(());
 				}
 			};
 
-			(root_expression, tokenizer.token_count())
+			(root, tokenizer.token_count())
 		};
 
-		println!("Finished parsing file with {} tokens", token_count,);
+		println!("Finished parsing file with {} tokens", token_count);
 
-		roots.push(root_expression);
+		roots.push(root);
 	}
 
 	Ok(())

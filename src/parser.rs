@@ -4,6 +4,16 @@ use crate::span::Span;
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::tree::*;
 
+pub fn parse_file_root<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<File<'a>> {
+	let module = parse_module_declaration(tokenizer)?;
+	let root_expression = parse_block(tokenizer, true)?;
+
+	Ok(File {
+		module,
+		root_expression,
+	})
+}
+
 pub fn parse_block<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 	is_root: bool,
@@ -11,9 +21,11 @@ pub fn parse_block<'a>(
 	let mut items = Vec::new();
 
 	let start = if is_root {
-		let span = tokenizer.peek()?.span;
-		items.push(Expression::Module(parse_module_declaration(tokenizer)?));
-		span.start
+		if let Ok(peeked) = tokenizer.peek() {
+			peeked.span.start
+		} else {
+			tokenizer.byte_index()
+		}
 	} else {
 		tokenizer.expect(TokenKind::OpenBrace)?.span.start
 	};
@@ -480,14 +492,17 @@ fn parse_number<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expressio
 	}
 }
 
-fn parse_module_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Module<'a>> {
+fn parse_module_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Module<'a>>> {
 	let module_token = tokenizer.expect_word("module")?;
 
 	let path_segments = parse_path_segments(tokenizer)?;
 
-	Ok(Module {
+	let module = Module {
 		path_segments: Node::from_token(path_segments.node, module_token),
-	})
+	};
+	let span = module_token.span + path_segments.span;
+
+	Ok(Node::new(module, span))
 }
 
 fn parse_using_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Using<'a>> {
