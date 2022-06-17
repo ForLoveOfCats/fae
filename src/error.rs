@@ -23,10 +23,6 @@ pub enum ParseErrorKind {
 	InvalidFloatLiteral,
 
 	ReservedWord { word: String },
-
-	SubLevelFunction,
-
-	SubLevelStruct,
 }
 
 #[derive(Debug, Clone)]
@@ -94,14 +90,6 @@ impl ParseError {
 			ParseErrorKind::InvalidFloatLiteral => print!("Invalid float literal"),
 
 			ParseErrorKind::ReservedWord { word } => print!("Reserved word {:?}", word),
-
-			ParseErrorKind::SubLevelFunction => {
-				print!("Function declaration is only allowed in file root scope");
-			}
-
-			ParseErrorKind::SubLevelStruct => {
-				print!("Struct declaration is only allowed in file root scope");
-			}
 		}
 
 		if start != end {

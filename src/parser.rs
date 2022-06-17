@@ -6,29 +6,25 @@ use crate::tree::*;
 
 pub fn parse_file_root<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<File<'a>> {
 	let module = parse_module_declaration(tokenizer)?;
-	let root_expression = parse_block(tokenizer, true)?;
+	let contents = parse_block_contents(tokenizer)?;
 
-	Ok(File {
-		module,
-		root_expression,
-	})
+	Ok(File { module, contents })
 }
 
-pub fn parse_block<'a>(
-	tokenizer: &mut Tokenizer<'a>,
-	is_root: bool,
-) -> ParseResult<Node<Expression<'a>>> {
-	let mut items = Vec::new();
+pub fn parse_block<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
+	let open = tokenizer.expect(TokenKind::OpenBrace)?;
 
-	let start = if is_root {
-		if let Ok(peeked) = tokenizer.peek() {
-			peeked.span.start
-		} else {
-			tokenizer.byte_index()
-		}
-	} else {
-		tokenizer.expect(TokenKind::OpenBrace)?.span.start
-	};
+	let block = parse_block_contents(tokenizer)?;
+	let expression = Expression::Block(block);
+
+	let close = tokenizer.expect(TokenKind::CloseBrace)?;
+
+	let span = open.span + close.span;
+	Ok(Node::new(expression, span))
+}
+
+pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Expression<'a>>> {
+	let mut items = Vec::new();
 
 	while tokenizer.has_next() {
 		match tokenizer.peek()? {
@@ -70,14 +66,6 @@ pub fn parse_block<'a>(
 				text: "fn",
 				..
 			} => {
-				if !is_root {
-					let token = tokenizer.next()?;
-					return Err(ParseError {
-						span: token.span,
-						kind: ParseErrorKind::SubLevelFunction,
-					});
-				}
-
 				items.push(Expression::Function(Box::new(parse_function_declaration(
 					tokenizer,
 				)?)));
@@ -88,14 +76,6 @@ pub fn parse_block<'a>(
 				text: "struct",
 				..
 			} => {
-				if !is_root {
-					let token = tokenizer.next()?;
-					return Err(ParseError {
-						span: token.span,
-						kind: ParseErrorKind::SubLevelStruct,
-					});
-				}
-
 				items.push(Expression::Struct(parse_struct_declaration(tokenizer)?));
 			}
 
@@ -121,14 +101,7 @@ pub fn parse_block<'a>(
 		}
 	}
 
-	let end = if !is_root {
-		tokenizer.expect(TokenKind::CloseBrace)?.span.end
-	} else {
-		tokenizer.byte_index()
-	};
-
-	let span = Span { start, end };
-	Ok(Node::new(Expression::Block(items), span))
+	Ok(items)
 }
 
 //NOTE: This function is a bit gross but not horrible, it is by far the worst part of the parser
@@ -138,7 +111,7 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 	let is_paren_enclosed = peeked.kind == TokenKind::OpenParen;
 
 	if is_block {
-		return parse_block(tokenizer, false);
+		return parse_block(tokenizer);
 	} else if is_paren_enclosed {
 		tokenizer.expect(TokenKind::OpenParen)?;
 	}
@@ -548,7 +521,7 @@ fn parse_function_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<
 	tokenizer.expect(TokenKind::Colon)?;
 	let type_path_segments = parse_path_segments(tokenizer)?;
 
-	let block = parse_block(tokenizer, false)?;
+	let block = parse_block(tokenizer)?;
 
 	Ok(Function {
 		name,

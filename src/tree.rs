@@ -5,7 +5,7 @@ use crate::tokenizer::Token;
 #[derive(Debug)]
 pub struct File<'a> {
 	pub module: Node<Module<'a>>,
-	pub root_expression: Node<Expression<'a>>,
+	pub contents: Vec<Expression<'a>>,
 }
 
 #[must_use]
