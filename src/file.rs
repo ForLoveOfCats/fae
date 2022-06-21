@@ -59,7 +59,7 @@ impl FileWalker {
 
 				if file_type.is_dir() {
 					self.stack.push(read_dir(path)?);
-				} else if file_type.is_file() && path.extension() == Some(OsStr::new("poetry")) {
+				} else if file_type.is_file() && path.extension() == Some(OsStr::new("fae")) {
 					return Ok(Some((File::open(&path)?, path)));
 				}
 			} else {
