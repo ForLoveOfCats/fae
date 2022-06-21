@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 				}
 			};
 
+			println!("{:#?}\n", root);
 			(root, tokenizer.token_count())
 		};
 

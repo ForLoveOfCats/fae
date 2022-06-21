@@ -5,7 +5,7 @@ use crate::tokenizer::Token;
 #[derive(Debug)]
 pub struct File<'a> {
 	pub module: Node<Module<'a>>,
-	pub contents: Vec<Expression<'a>>,
+	pub items: Vec<Item<'a>>,
 }
 
 #[must_use]
@@ -47,7 +47,7 @@ pub struct Function<'a> {
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
 	pub type_path_segments: Node<PathSegments<'a>>,
-	pub block: Node<Expression<'a>>,
+	pub block: Node<Vec<Statement<'a>>>,
 }
 
 #[must_use]
@@ -171,8 +171,21 @@ pub struct Return<'a> {
 
 #[must_use]
 #[derive(Debug)]
-pub enum Expression<'a> {
-	Block(Vec<Expression<'a>>),
+pub enum Item<'a> {
+	Using(Using<'a>),
+
+	Struct(Struct<'a>),
+	Function(Box<Function<'a>>),
+
+	Const(Box<Const<'a>>),
+}
+
+#[must_use]
+#[derive(Debug)]
+pub enum Statement<'a> {
+	Expression(Expression<'a>),
+
+	Block(Vec<Statement<'a>>),
 
 	Using(Using<'a>),
 
@@ -181,6 +194,14 @@ pub enum Expression<'a> {
 
 	Const(Box<Const<'a>>),
 	Let(Box<Let<'a>>),
+
+	Return(Box<Return<'a>>),
+}
+
+#[must_use]
+#[derive(Debug)]
+pub enum Expression<'a> {
+	Block(Vec<Statement<'a>>),
 
 	UnsignedIntegerLiteral(UnsignedIntegerLiteral),
 	SignedIntegerLiteral(SignedIntegerLiteral),
@@ -196,8 +217,6 @@ pub enum Expression<'a> {
 	Read(Read<'a>),
 
 	BinaryOperation(Box<BinaryOperation<'a>>),
-
-	Return(Box<Return<'a>>),
 }
 
 #[must_use]

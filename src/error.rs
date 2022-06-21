@@ -14,6 +14,8 @@ pub enum ParseErrorKind {
 
 	Expected { expected: String, found: String },
 
+	ExpectedItem { found: String },
+
 	ExpectedExpression { found: String },
 
 	ExpectedOperator { found: String },
@@ -75,6 +77,10 @@ impl ParseError {
 
 			ParseErrorKind::Expected { expected, found } => {
 				print!("Expected {} but found {}", expected, found);
+			}
+
+			ParseErrorKind::ExpectedItem { found } => {
+				print!("Expected item but found {}", found);
 			}
 
 			ParseErrorKind::ExpectedExpression { found } => {

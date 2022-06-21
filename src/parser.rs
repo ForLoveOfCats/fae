@@ -6,24 +6,12 @@ use crate::tree::*;
 
 pub fn parse_file_root<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<File<'a>> {
 	let module = parse_module_declaration(tokenizer)?;
-	let contents = parse_block_contents(tokenizer)?;
+	let items = parse_items(tokenizer)?;
 
-	Ok(File { module, contents })
+	Ok(File { module, items })
 }
 
-pub fn parse_block<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
-	let open = tokenizer.expect(TokenKind::OpenBrace)?;
-
-	let block = parse_block_contents(tokenizer)?;
-	let expression = Expression::Block(block);
-
-	let close = tokenizer.expect(TokenKind::CloseBrace)?;
-
-	let span = open.span + close.span;
-	Ok(Node::new(expression, span))
-}
-
-pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Expression<'a>>> {
+pub fn parse_items<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Item<'a>>> {
 	let mut items = Vec::new();
 
 	while tokenizer.has_next() {
@@ -40,7 +28,7 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 				text: "using",
 				..
 			} => {
-				items.push(Expression::Using(parse_using_statement(tokenizer)?));
+				items.push(Item::Using(parse_using_statement(tokenizer)?));
 			}
 
 			Token {
@@ -48,17 +36,7 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 				text: "const",
 				..
 			} => {
-				items.push(Expression::Const(Box::new(parse_const_statement(
-					tokenizer,
-				)?)));
-			}
-
-			Token {
-				kind: TokenKind::Word,
-				text: "let",
-				..
-			} => {
-				items.push(Expression::Let(Box::new(parse_let_statement(tokenizer)?)));
+				items.push(Item::Const(Box::new(parse_const_statement(tokenizer)?)));
 			}
 
 			Token {
@@ -66,7 +44,7 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 				text: "fn",
 				..
 			} => {
-				items.push(Expression::Function(Box::new(parse_function_declaration(
+				items.push(Item::Function(Box::new(parse_function_declaration(
 					tokenizer,
 				)?)));
 			}
@@ -76,7 +54,91 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 				text: "struct",
 				..
 			} => {
-				items.push(Expression::Struct(parse_struct_declaration(tokenizer)?));
+				items.push(Item::Struct(parse_struct_declaration(tokenizer)?));
+			}
+
+			Token {
+				kind: TokenKind::CloseBrace,
+				..
+			} => break,
+
+			token => {
+				return Err(ParseError {
+					span: token.span,
+					kind: ParseErrorKind::ExpectedItem {
+						found: format!("{:?}", token.text),
+					},
+				});
+			}
+		}
+	}
+
+	Ok(items)
+}
+
+pub fn parse_block<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Vec<Statement<'a>>>> {
+	let open = tokenizer.expect(TokenKind::OpenBrace)?;
+	let block = parse_statements(tokenizer)?;
+	let close = tokenizer.expect(TokenKind::CloseBrace)?;
+
+	let span = open.span + close.span;
+	Ok(Node::new(block, span))
+}
+
+pub fn parse_statements<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Statement<'a>>> {
+	let mut items = Vec::new();
+
+	while tokenizer.has_next() {
+		match tokenizer.peek()? {
+			Token {
+				kind: TokenKind::Newline,
+				..
+			} => {
+				tokenizer.next()?;
+			}
+
+			Token {
+				kind: TokenKind::Word,
+				text: "using",
+				..
+			} => {
+				items.push(Statement::Using(parse_using_statement(tokenizer)?));
+			}
+
+			Token {
+				kind: TokenKind::Word,
+				text: "const",
+				..
+			} => {
+				items.push(Statement::Const(Box::new(parse_const_statement(
+					tokenizer,
+				)?)));
+			}
+
+			Token {
+				kind: TokenKind::Word,
+				text: "let",
+				..
+			} => {
+				items.push(Statement::Let(Box::new(parse_let_statement(tokenizer)?)));
+			}
+
+			Token {
+				kind: TokenKind::Word,
+				text: "fn",
+				..
+			} => {
+				items.push(Statement::Function(Box::new(parse_function_declaration(
+					tokenizer,
+				)?)));
+			}
+
+			Token {
+				kind: TokenKind::Word,
+				text: "struct",
+				..
+			} => {
+				items.push(Statement::Struct(parse_struct_declaration(tokenizer)?));
 			}
 
 			Token {
@@ -84,9 +146,16 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 				text: "return",
 				..
 			} => {
-				items.push(Expression::Return(Box::new(parse_return_statement(
+				items.push(Statement::Return(Box::new(parse_return_statement(
 					tokenizer,
 				)?)));
+			}
+
+			Token {
+				kind: TokenKind::OpenBrace,
+				..
+			} => {
+				items.push(Statement::Block(parse_block(tokenizer)?.node));
 			}
 
 			Token {
@@ -95,8 +164,7 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 			} => break,
 
 			_ => {
-				//HACK: What?
-				items.push(parse_expression(tokenizer)?.node);
+				items.push(Statement::Expression(parse_expression(tokenizer)?.node));
 			}
 		}
 	}
@@ -107,12 +175,9 @@ pub fn parse_block_contents<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Ve
 //NOTE: This function is a bit gross but not horrible, it is by far the worst part of the parser
 fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let peeked = tokenizer.peek()?;
-	let is_block = peeked.kind == TokenKind::OpenBrace;
 	let is_paren_enclosed = peeked.kind == TokenKind::OpenParen;
 
-	if is_block {
-		return parse_block(tokenizer);
-	} else if is_paren_enclosed {
+	if is_paren_enclosed {
 		tokenizer.expect(TokenKind::OpenParen)?;
 	}
 
@@ -282,6 +347,18 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 			TokenKind::OpenParen => {
 				check_expected_next(peeked, &mut expected_next, ItemKind::Expression)?;
 				rpn.push(InRpn::Expression(parse_expression(tokenizer)?));
+			}
+
+			//Yuck, this is messy
+			TokenKind::OpenBrace => {
+				check_expected_next(peeked, &mut expected_next, ItemKind::Expression)?;
+
+				let parsed_block = parse_block(tokenizer)?;
+				let span = parsed_block.span;
+				let block = parsed_block.node;
+
+				let expression = Node::new(Expression::Block(block), span);
+				rpn.push(InRpn::Expression(expression));
 			}
 
 			//NOTE: This is a catch-all to allow callers to handle following tokens

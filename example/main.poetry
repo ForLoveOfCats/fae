@@ -11,6 +11,7 @@ struct MyStruct {
 
 fn function(): void {
 	let abc = 5 * 2 + -42 / 8
+	let def = 96 + { 22 }
 	let character: char = 'A'
 
 	const SOMETHING: i64 = some::path::HERE
