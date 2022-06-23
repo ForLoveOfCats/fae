@@ -16,6 +16,8 @@ fn function(): void {
 	let reference: &i32 = something
 	let slice: &[u8] = something
 
+	//comment
+
 	const SOMETHING: i64 = some::path::HERE
 
 	let instance = MyStruct {

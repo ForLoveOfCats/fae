@@ -509,32 +509,23 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	fn consume_leading_whitespace(&mut self) -> ParseResult<Option<Token<'a>>> {
-		let at_very_beginning = self.byte_index == 0;
-		let mut newline_index = None;
-
 		while self.byte_index < self.source.len() {
 			let byte = self.source.as_bytes()[self.byte_index];
-			if matches!(byte, b' ' | b'\t' | b'\r') {
-				self.byte_index += 1;
-			} else if byte == b'\n' {
-				if newline_index.is_none() {
-					newline_index = Some(self.byte_index);
-				}
 
+			if byte == b'\n' {
+				let index = self.byte_index;
 				self.byte_index += 1;
-			} else {
-				break;
-			}
-		}
 
-		if let Some(newline_index) = newline_index {
-			if !at_very_beginning {
 				return Ok(Some(self.create_token(
 					"\n",
 					TokenKind::Newline,
-					newline_index,
-					newline_index + 1,
+					index,
+					index + 1,
 				)));
+			} else if matches!(byte, b' ' | b'\t' | b'\r') {
+				self.byte_index += 1;
+			} else {
+				break;
 			}
 		}
 
