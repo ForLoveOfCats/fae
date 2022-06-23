@@ -144,6 +144,7 @@ pub struct FieldInitializer<'a> {
 #[must_use]
 #[derive(Debug, Clone, Copy)]
 pub enum Operator {
+	Assign,
 	Add,
 	Sub,
 	Mul,
@@ -154,8 +155,9 @@ impl Operator {
 	pub fn precedence(self) -> u32 {
 		use Operator::*;
 		match self {
-			Add | Sub => 0,
-			Mul | Div => 1,
+			Assign => 0,
+			Add | Sub => 1,
+			Mul | Div => 2,
 		}
 	}
 }

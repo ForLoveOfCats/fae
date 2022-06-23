@@ -239,7 +239,11 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 		let peeked = tokenizer.peek()?;
 
 		match peeked.kind {
-			TokenKind::Add | TokenKind::Sub | TokenKind::Mul | TokenKind::Div => {
+			TokenKind::Add
+			| TokenKind::Sub
+			| TokenKind::Mul
+			| TokenKind::Div
+			| TokenKind::Equal => {
 				if peeked.kind == TokenKind::Sub && expected_next == ItemKind::Expression {
 					check_expected_next(peeked, &mut expected_next, ItemKind::Expression)?;
 					rpn.push(InRpn::Expression(parse_number(tokenizer)?));
@@ -250,6 +254,7 @@ fn parse_expression<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expre
 				check_expected_next(operator_token, &mut expected_next, ItemKind::Operator)?;
 
 				let operator_kind = match operator_token.kind {
+					TokenKind::Equal => Operator::Assign,
 					TokenKind::Add => Operator::Add,
 					TokenKind::Sub => Operator::Sub,
 					TokenKind::Mul => Operator::Mul,

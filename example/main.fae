@@ -17,6 +17,8 @@ fn function(): void {
 	let pointer: *i32 = something
 	let slice: &[u8] = something
 
+	character = 'B'
+
 	//comment
 
 	const SOMETHING: i64 = some::path::HERE
