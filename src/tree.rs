@@ -32,6 +32,7 @@ pub struct Using<'a> {
 pub enum Type<'a> {
 	Void,
 	Reference(Box<Node<Type<'a>>>),
+	Pointer(Box<Node<Type<'a>>>),
 	Slice(Box<Node<Type<'a>>>),
 	Path(PathSegments<'a>),
 }

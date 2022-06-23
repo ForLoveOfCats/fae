@@ -615,6 +615,16 @@ fn parse_type<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Type<'a>>> 
 			}
 		}
 
+		Token {
+			kind: TokenKind::Mul,
+			..
+		} => {
+			let asterisk = tokenizer.expect(TokenKind::Mul)?;
+			let inner = Box::new(parse_type(tokenizer)?);
+			let span = asterisk.span + inner.span;
+			Node::new(Type::Pointer(inner), span)
+		}
+
 		_ => {
 			let parsed_path = parse_path_segments(tokenizer)?;
 			let span = parsed_path.span;
