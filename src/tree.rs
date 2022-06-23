@@ -29,6 +29,15 @@ pub struct Using<'a> {
 
 #[must_use]
 #[derive(Debug)]
+pub enum Type<'a> {
+	Void,
+	Reference(Box<Node<Type<'a>>>),
+	Slice(Box<Node<Type<'a>>>),
+	Path(PathSegments<'a>),
+}
+
+#[must_use]
+#[derive(Debug)]
 pub struct Struct<'a> {
 	pub name: Node<&'a str>,
 	pub fields: Vec<Field<'a>>,
@@ -38,7 +47,7 @@ pub struct Struct<'a> {
 #[derive(Debug)]
 pub struct Field<'a> {
 	pub name: Node<&'a str>,
-	pub type_path_segments: Node<PathSegments<'a>>,
+	pub parsed_type: Node<Type<'a>>,
 }
 
 #[must_use]
@@ -46,7 +55,7 @@ pub struct Field<'a> {
 pub struct Function<'a> {
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
-	pub type_path_segments: Node<PathSegments<'a>>,
+	pub parsed_type: Node<Type<'a>>,
 	pub block: Node<Vec<Statement<'a>>>,
 }
 
@@ -54,14 +63,14 @@ pub struct Function<'a> {
 #[derive(Debug)]
 pub struct Parameter<'a> {
 	pub name: Node<&'a str>,
-	pub type_path_segments: Node<PathSegments<'a>>,
+	pub parsed_type: Node<Type<'a>>,
 }
 
 #[must_use]
 #[derive(Debug)]
 pub struct Const<'a> {
 	pub name: Node<&'a str>,
-	pub type_path_segments: Option<Node<PathSegments<'a>>>,
+	pub parsed_type: Option<Node<Type<'a>>>,
 	pub expression: Node<Expression<'a>>,
 }
 
@@ -69,7 +78,7 @@ pub struct Const<'a> {
 #[derive(Debug)]
 pub struct Let<'a> {
 	pub name: Node<&'a str>,
-	pub type_path_segments: Option<Node<PathSegments<'a>>>,
+	pub parsed_type: Option<Node<Type<'a>>>,
 	pub expression: Node<Expression<'a>>,
 }
 

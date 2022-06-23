@@ -586,6 +586,46 @@ fn parse_path_segments<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Pa
 	Ok(Node::new(PathSegments { segments }, span))
 }
 
+fn parse_type<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Type<'a>>> {
+	let parsed_type = match tokenizer.peek()? {
+		Token { text: "Void", .. } => {
+			let token = tokenizer.expect_word("Void")?;
+			Node::from_token(Type::Void, token)
+		}
+
+		Token {
+			kind: TokenKind::Ampersand,
+			..
+		} => {
+			let ampersand = tokenizer.expect(TokenKind::Ampersand)?;
+
+			if tokenizer.peek()?.kind == TokenKind::OpenBracket {
+				tokenizer.expect(TokenKind::OpenBracket)?;
+
+				let inner = Box::new(parse_type(tokenizer)?);
+
+				let closing = tokenizer.expect(TokenKind::CloseBracket)?;
+
+				let span = ampersand.span + closing.span;
+				Node::new(Type::Slice(inner), span)
+			} else {
+				let inner = Box::new(parse_type(tokenizer)?);
+				let span = ampersand.span + inner.span;
+				Node::new(Type::Reference(inner), span)
+			}
+		}
+
+		_ => {
+			let parsed_path = parse_path_segments(tokenizer)?;
+			let span = parsed_path.span;
+			let path = parsed_path.node;
+			Node::new(Type::Path(path), span)
+		}
+	};
+
+	Ok(parsed_type)
+}
+
 fn parse_function_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Function<'a>> {
 	tokenizer.expect_word("fn")?;
 
@@ -596,14 +636,14 @@ fn parse_function_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<
 	let parameters = parse_parameters(tokenizer)?;
 
 	tokenizer.expect(TokenKind::Colon)?;
-	let type_path_segments = parse_path_segments(tokenizer)?;
+	let parsed_type = parse_type(tokenizer)?;
 
 	let block = parse_block(tokenizer)?;
 
 	Ok(Function {
 		name,
 		parameters,
-		type_path_segments,
+		parsed_type,
 		block,
 	})
 }
@@ -620,20 +660,15 @@ fn parse_parameters<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<P
 
 		tokenizer.expect(TokenKind::Colon)?;
 
-		let type_path_segments = parse_path_segments(tokenizer)?;
+		let parsed_type = parse_type(tokenizer)?;
 
-		let span = name_token.span + type_path_segments.span;
-		parameters.push(Node::new(
-			Parameter {
-				name,
-				type_path_segments,
-			},
-			span,
-		));
+		let span = name_token.span + parsed_type.span;
+		parameters.push(Node::new(Parameter { name, parsed_type }, span));
 
 		if reached_close_paren(tokenizer) {
 			break;
 		}
+
 		tokenizer.expect(TokenKind::Comma)?;
 	}
 
@@ -661,12 +696,9 @@ fn parse_struct_declaration<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<St
 
 		tokenizer.expect(TokenKind::Colon)?;
 
-		let type_path_segments = parse_path_segments(tokenizer)?;
+		let parsed_type = parse_type(tokenizer)?;
 
-		fields.push(Field {
-			name,
-			type_path_segments,
-		});
+		fields.push(Field { name, parsed_type });
 
 		tokenizer.expect(TokenKind::Newline)?;
 	}
@@ -683,10 +715,10 @@ fn parse_const_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Const
 	check_not_reserved(name_token)?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let type_path_segments = if tokenizer.peek()?.kind == TokenKind::Colon {
+	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
 		//Parse explicit type
 		tokenizer.expect(TokenKind::Colon)?;
-		Some(parse_path_segments(tokenizer)?)
+		Some(parse_type(tokenizer)?)
 	} else {
 		None
 	};
@@ -696,7 +728,7 @@ fn parse_const_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Const
 
 	Ok(Const {
 		name,
-		type_path_segments,
+		parsed_type,
 		expression,
 	})
 }
@@ -708,10 +740,10 @@ fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Let<'a>
 	check_not_reserved(name_token)?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let type_path_segments = if tokenizer.peek()?.kind == TokenKind::Colon {
+	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
 		//Parse explicit type
 		tokenizer.expect(TokenKind::Colon)?;
-		Some(parse_path_segments(tokenizer)?)
+		Some(parse_type(tokenizer)?)
 	} else {
 		None
 	};
@@ -721,7 +753,7 @@ fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Let<'a>
 
 	Ok(Let {
 		name,
-		type_path_segments,
+		parsed_type,
 		expression,
 	})
 }

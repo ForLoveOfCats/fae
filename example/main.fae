@@ -13,6 +13,8 @@ fn function(): void {
 	let abc = 5 * 2 + -42 / 8
 	let def = 96 + { 22 }
 	let character: char = 'A'
+	let reference: &i32 = something
+	let slice: &[u8] = something
 
 	const SOMETHING: i64 = some::path::HERE
 
