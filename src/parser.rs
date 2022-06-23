@@ -125,6 +125,14 @@ pub fn parse_statements<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<St
 
 			Token {
 				kind: TokenKind::Word,
+				text: "mut",
+				..
+			} => {
+				items.push(Statement::Mut(Box::new(parse_mut_statement(tokenizer)?)));
+			}
+
+			Token {
+				kind: TokenKind::Word,
 				text: "fn",
 				..
 			} => {
@@ -751,7 +759,6 @@ fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Let<'a>
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
-		//Parse explicit type
 		tokenizer.expect(TokenKind::Colon)?;
 		Some(parse_type(tokenizer)?)
 	} else {
@@ -762,6 +769,30 @@ fn parse_let_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Let<'a>
 	let expression = parse_expression(tokenizer)?;
 
 	Ok(Let {
+		name,
+		parsed_type,
+		expression,
+	})
+}
+
+fn parse_mut_statement<'a>(tokenizer: &mut Tokenizer<'a>) -> ParseResult<Mut<'a>> {
+	tokenizer.expect_word("mut")?;
+
+	let name_token = tokenizer.expect(TokenKind::Word)?;
+	check_not_reserved(name_token)?;
+	let name = Node::from_token(name_token.text, name_token);
+
+	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
+		tokenizer.expect(TokenKind::Colon)?;
+		Some(parse_type(tokenizer)?)
+	} else {
+		None
+	};
+
+	tokenizer.expect(TokenKind::Equal)?;
+	let expression = parse_expression(tokenizer)?;
+
+	Ok(Mut {
 		name,
 		parsed_type,
 		expression,

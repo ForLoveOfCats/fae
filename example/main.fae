@@ -12,7 +12,7 @@ struct MyStruct {
 fn function(): void {
 	let abc = 5 * 2 + -42 / 8
 	let def = 96 + { 22 }
-	let character: char = 'A'
+	mut character: char = 'A'
 	let reference: &i32 = something
 	let pointer: *i32 = something
 	let slice: &[u8] = something

@@ -85,6 +85,14 @@ pub struct Let<'a> {
 
 #[must_use]
 #[derive(Debug)]
+pub struct Mut<'a> {
+	pub name: Node<&'a str>,
+	pub parsed_type: Option<Node<Type<'a>>>,
+	pub expression: Node<Expression<'a>>,
+}
+
+#[must_use]
+#[derive(Debug)]
 pub struct UnsignedIntegerLiteral {
 	pub value: Node<u64>,
 }
@@ -204,6 +212,7 @@ pub enum Statement<'a> {
 
 	Const(Box<Const<'a>>),
 	Let(Box<Let<'a>>),
+	Mut(Box<Mut<'a>>),
 
 	Return(Box<Return<'a>>),
 }
