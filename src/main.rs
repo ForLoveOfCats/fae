@@ -16,21 +16,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let mut roots = Vec::new();
 
 	for file in &files {
-		let (root, token_count) = {
-			let mut tokenizer = Tokenizer::new(&file.source);
+		let mut tokenizer = Tokenizer::new(&file.source);
 
-			let root = match parse_file_root(&mut tokenizer) {
-				Ok(root) => root,
-				Err(err) => {
-					err.print(&file.path, &file.source);
-					return Ok(());
-				}
-			};
-
-			println!("{:#?}\n", root);
-			(root, tokenizer.token_count())
+		let root = match parse_file_root(&mut tokenizer) {
+			Ok(root) => root,
+			Err(err) => {
+				err.print(&file.path, &file.source);
+				return Ok(());
+			}
 		};
 
+		let token_count = tokenizer.token_count();
+
+		println!("{:#?}\n", root);
 		println!("Finished parsing file with {} tokens", token_count);
 
 		roots.push(root);
