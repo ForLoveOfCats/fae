@@ -67,57 +67,57 @@ impl ParseError {
 		let line_num = self.get_line_num(source);
 		let column_start = calc_spaces_from_byte_offset(line, start);
 		//TODO: Handle multi-line errors
-		print!(
+		eprint!(
 			"Parse error {:?}, line {}, column {}: ",
 			path, line_num, column_start
 		);
 
 		match &self.kind {
-			ParseErrorKind::UnexpectedEof => print!("Unexpected EOF"),
+			ParseErrorKind::UnexpectedEof => eprint!("Unexpected EOF"),
 
 			ParseErrorKind::Expected { expected, found } => {
-				print!("Expected {} but found {}", expected, found);
+				eprint!("Expected {} but found {}", expected, found);
 			}
 
 			ParseErrorKind::ExpectedItem { found } => {
-				print!("Expected item but found {}", found);
+				eprint!("Expected item but found {}", found);
 			}
 
 			ParseErrorKind::ExpectedExpression { found } => {
-				print!("Expected expression but found {}", found);
+				eprint!("Expected expression but found {}", found);
 			}
 
 			ParseErrorKind::ExpectedOperator { found } => {
-				print!("Expected operator but found {}", found);
+				eprint!("Expected operator but found {}", found);
 			}
 
-			ParseErrorKind::InvalidIntegerLiteral => print!("Invalid integer literal"),
+			ParseErrorKind::InvalidIntegerLiteral => eprint!("Invalid integer literal"),
 
-			ParseErrorKind::InvalidFloatLiteral => print!("Invalid float literal"),
+			ParseErrorKind::InvalidFloatLiteral => eprint!("Invalid float literal"),
 
-			ParseErrorKind::ReservedWord { word } => print!("Reserved word {:?}", word),
+			ParseErrorKind::ReservedWord { word } => eprint!("Reserved word {:?}", word),
 		}
 
 		if start != end {
-			println!();
+			eprintln!();
 
 			//TODO: Print line num & handle multi-line errors
 			let gutter = format!("  {}| ", line_num);
-			print!("{}", gutter);
+			eprint!("{}", gutter);
 			print_normalized_tabs(line);
-			println!();
+			eprintln!();
 
 			let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
 			let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
-			print!("{}{}", gutter_spacer, whitespace);
+			eprint!("{}{}", gutter_spacer, whitespace);
 
 			let column_end = calc_spaces_from_byte_offset(line, end - 1);
 			for _ in column_start..column_end + 1 {
-				print!("^");
+				eprint!("^");
 			}
 		}
 
-		println!();
+		eprintln!();
 	}
 
 	fn get_line_num(&self, source: &str) -> usize {
@@ -178,7 +178,7 @@ pub fn print_normalized_tabs(line: &str) {
 
 				let mut index = 0_usize;
 				while index < TABULATOR_SIZE - diff {
-					print!(" ");
+					eprint!(" ");
 					index += 1;
 				}
 
@@ -190,7 +190,7 @@ pub fn print_normalized_tabs(line: &str) {
 			}
 
 			_ => {
-				print!("{}", car);
+				eprint!("{}", car);
 				spaces += UnicodeWidthChar::width(car).unwrap_or(0);
 			}
 		}

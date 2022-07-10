@@ -10,8 +10,14 @@ use file::load_all_files;
 use parser::parse_file_root;
 use tokenizer::Tokenizer;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let files = load_all_files("./example")?;
+fn main() {
+	let files = match load_all_files("./example") {
+		Ok(files) => files,
+		Err(err) => {
+			eprintln!("Error loading source files: {}", err);
+			return;
+		}
+	};
 
 	let mut roots = Vec::new();
 
@@ -22,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			Ok(root) => root,
 			Err(err) => {
 				err.print(&file.path, &file.source);
-				return Ok(());
+				return;
 			}
 		};
 
@@ -33,6 +39,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 		roots.push(root);
 	}
-
-	Ok(())
 }
