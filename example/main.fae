@@ -1,5 +1,3 @@
-module main
-
 using another_module
 
 const THING = "Hello there!"
@@ -9,10 +7,6 @@ struct MyStruct {
 	other_field: bool
 }
 
-fn abc() -> () {
-	
-}
-
 fn function(): void {
 	let abc = 5 * 2 + -42 / 8
 	let def = 96 + { 22 }
@@ -20,6 +14,12 @@ fn function(): void {
 	let reference: &i32 = something
 	let pointer: *i32 = something
 	let slice: &[u8] = something
+
+	+ sdfsdfsd
+
+	fn sfsd
+
+	let = value
 
 	character = 'B'
 

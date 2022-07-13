@@ -202,9 +202,9 @@ pub enum Item<'a> {
 #[must_use]
 #[derive(Debug)]
 pub enum Statement<'a> {
-	Expression(Expression<'a>),
+	Expression(Node<Expression<'a>>),
 
-	Block(Vec<Statement<'a>>),
+	Block(Node<Vec<Statement<'a>>>),
 
 	Using(Using<'a>),
 

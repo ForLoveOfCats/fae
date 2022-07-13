@@ -6,7 +6,6 @@ use crate::tree::*;
 
 pub fn parse_file_root<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> File<'a> {
 	let items = parse_items(messages, tokenizer);
-
 	File { items }
 }
 
@@ -19,7 +18,9 @@ pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 				kind: TokenKind::Newline,
 				..
 			} => {
-				_ = tokenizer.next(messages);
+				if tokenizer.next(messages).is_err() {
+					return items;
+				}
 			}
 
 			Token {
@@ -87,7 +88,7 @@ pub fn parse_block<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Node<Vec<Statement<'a>>>> {
 	let open = tokenizer.expect(messages, TokenKind::OpenBrace)?;
-	let block = parse_statements(messages, tokenizer)?;
+	let block = parse_statements(messages, tokenizer);
 	let close = tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
 	let span = open.span + close.span;
@@ -97,16 +98,18 @@ pub fn parse_block<'a>(
 pub fn parse_statements<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Vec<Statement<'a>>> {
+) -> Vec<Statement<'a>> {
 	let mut items = Vec::new();
 
-	while tokenizer.has_next() {
-		match tokenizer.peek()? {
+	while let Ok(token) = tokenizer.peek() {
+		match token {
 			Token {
 				kind: TokenKind::Newline,
 				..
 			} => {
-				tokenizer.next(messages)?;
+				if tokenizer.next(messages).is_err() {
+					return items;
+				}
 			}
 
 			Token {
@@ -114,9 +117,11 @@ pub fn parse_statements<'a>(
 				text: "using",
 				..
 			} => {
-				items.push(Statement::Using(parse_using_statement(
-					messages, tokenizer,
-				)?));
+				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
+					items.push(Statement::Using(statement));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -124,9 +129,11 @@ pub fn parse_statements<'a>(
 				text: "const",
 				..
 			} => {
-				items.push(Statement::Const(Box::new(parse_const_statement(
-					messages, tokenizer,
-				)?)));
+				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
+					items.push(Statement::Const(Box::new(statement)));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -134,9 +141,11 @@ pub fn parse_statements<'a>(
 				text: "let",
 				..
 			} => {
-				items.push(Statement::Let(Box::new(parse_let_statement(
-					messages, tokenizer,
-				)?)));
+				if let Ok(statement) = parse_let_statement(messages, tokenizer) {
+					items.push(Statement::Let(Box::new(statement)));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -144,9 +153,11 @@ pub fn parse_statements<'a>(
 				text: "mut",
 				..
 			} => {
-				items.push(Statement::Mut(Box::new(parse_mut_statement(
-					messages, tokenizer,
-				)?)));
+				if let Ok(statement) = parse_mut_statement(messages, tokenizer) {
+					items.push(Statement::Mut(Box::new(statement)));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -154,9 +165,11 @@ pub fn parse_statements<'a>(
 				text: "fn",
 				..
 			} => {
-				items.push(Statement::Function(Box::new(parse_function_declaration(
-					messages, tokenizer,
-				)?)));
+				if let Ok(statement) = parse_function_declaration(messages, tokenizer) {
+					items.push(Statement::Function(Box::new(statement)));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -164,9 +177,11 @@ pub fn parse_statements<'a>(
 				text: "struct",
 				..
 			} => {
-				items.push(Statement::Struct(parse_struct_declaration(
-					messages, tokenizer,
-				)?));
+				if let Ok(statement) = parse_struct_declaration(messages, tokenizer) {
+					items.push(Statement::Struct(statement));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -174,16 +189,22 @@ pub fn parse_statements<'a>(
 				text: "return",
 				..
 			} => {
-				items.push(Statement::Return(Box::new(parse_return_statement(
-					messages, tokenizer,
-				)?)));
+				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
+					items.push(Statement::Return(Box::new(statement)));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
 				kind: TokenKind::OpenBrace,
 				..
 			} => {
-				items.push(Statement::Block(parse_block(messages, tokenizer)?.node));
+				if let Ok(statement) = parse_block(messages, tokenizer) {
+					items.push(Statement::Block(statement));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 
 			Token {
@@ -192,14 +213,16 @@ pub fn parse_statements<'a>(
 			} => break,
 
 			_ => {
-				items.push(Statement::Expression(
-					parse_expression(messages, tokenizer)?.node,
-				));
+				if let Ok(statement) = parse_expression(messages, tokenizer) {
+					items.push(Statement::Expression(statement));
+				} else {
+					consume_rest_of_line(tokenizer);
+				}
 			}
 		}
 	}
 
-	Ok(items)
+	items
 }
 
 //NOTE: This function is a bit gross but not horrible, it is by far the worst part of the parser
