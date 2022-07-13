@@ -29,6 +29,8 @@ pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 			} => {
 				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
 					items.push(Item::Using(statement));
+				} else {
+					consume_rest_of_line(tokenizer);
 				}
 			}
 
@@ -39,6 +41,8 @@ pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 			} => {
 				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
 					items.push(Item::Const(Box::new(statement)));
+				} else {
+					consume_rest_of_line(tokenizer);
 				}
 			}
 
@@ -49,6 +53,8 @@ pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 			} => {
 				if let Ok(declaration) = parse_function_declaration(messages, tokenizer) {
 					items.push(Item::Function(Box::new(declaration)));
+				} else {
+					consume_rest_of_line(tokenizer);
 				}
 			}
 
@@ -59,27 +65,16 @@ pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 			} => {
 				if let Ok(declaration) = parse_struct_declaration(messages, tokenizer) {
 					items.push(Item::Struct(declaration));
+				} else {
+					consume_rest_of_line(tokenizer);
 				}
 			}
-
-			Token {
-				kind: TokenKind::CloseBrace,
-				..
-			} => break,
 
 			token => {
 				messages.error(
 					message!("Expected start of item but found {:?}", token.text).span(token.span),
 				);
-
-				//Consume to end of line and try again
-				//TODO: This is almost certainly wrong
-				while let Ok(token) = tokenizer.peek() {
-					if token.kind == TokenKind::Newline {
-						break;
-					}
-					tokenizer.next(messages).expect("This should never fail");
-				}
+				consume_rest_of_line(tokenizer);
 			}
 		}
 	}
@@ -909,4 +904,16 @@ fn reached_close_brace(tokenizer: &mut Tokenizer) -> bool {
 		.peek()
 		.map(|peeked| peeked.kind == TokenKind::CloseBrace)
 		.unwrap_or(false)
+}
+
+fn consume_rest_of_line(tokenizer: &mut Tokenizer) {
+	while let Ok(token) = tokenizer.peek() {
+		if token.kind == TokenKind::Newline {
+			break;
+		}
+
+		tokenizer
+			.next_optional_messages(&mut None)
+			.expect("This should never fail");
+	}
 }

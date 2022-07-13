@@ -167,7 +167,7 @@ impl<'a> Tokenizer<'a> {
 		}
 
 		let mut local = *self;
-		let peeked = local.next_internal(&mut None);
+		let peeked = local.next_optional_messages(&mut None);
 
 		if let Ok(peeked) = peeked {
 			self.peeked = Some(PeekedInfo {
@@ -180,10 +180,13 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
-		self.next_internal(&mut Some(messages))
+		self.next_optional_messages(&mut Some(messages))
 	}
 
-	fn next_internal(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<Token<'a>> {
+	pub fn next_optional_messages(
+		&mut self,
+		messages: &mut Option<&mut Messages>,
+	) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked.take() {
 			self.byte_index = peeked.byte_index;
 			self.token_count += 1;
@@ -292,7 +295,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.next_internal(messages)
+				self.next_optional_messages(messages)
 			}
 
 			[b'/', b'*', ..] => {
@@ -306,7 +309,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.next_internal(messages)
+				self.next_optional_messages(messages)
 			}
 
 			[b'/', b'=', ..] => {
