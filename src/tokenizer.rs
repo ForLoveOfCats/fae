@@ -1,4 +1,4 @@
-use super::error::{ParseError, ParseErrorKind, ParseResult};
+use super::error::{Messages, ParseResult};
 use super::span::Span;
 
 #[allow(dead_code)]
@@ -101,31 +101,26 @@ pub struct Token<'a> {
 }
 
 impl<'a> Token<'a> {
-	pub fn expect(self, expected: TokenKind) -> ParseResult<Token<'a>> {
+	pub fn expect(self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
 		if self.kind == expected {
 			Ok(self)
 		} else {
-			Err(ParseError {
-				span: self.span,
-				kind: ParseErrorKind::Expected {
-					expected: format!("{}", expected),
-					found: format!("{:?}", self.text),
-				},
-			})
+			messages
+				.error(message!("Expected {expected} but found {:?}", self.text).span(self.span));
+			Err(())
 		}
 	}
 
-	pub fn expect_word(self, expected: &str) -> ParseResult<Token<'a>> {
-		if self.kind == TokenKind::Word && self.text == expected {
+	pub fn expect_word(self, messages: &mut Messages, expected: &str) -> ParseResult<Token<'a>> {
+		self.expect(messages, TokenKind::Word)?;
+		if self.text == expected {
 			Ok(self)
 		} else {
-			Err(ParseError {
-				span: self.span,
-				kind: ParseErrorKind::Expected {
-					expected: format!("{:?}", expected),
-					found: format!("{:?}", self.text),
-				},
-			})
+			messages.error(
+				message!("Expected word {expected:?} but found word {:?}", self.text)
+					.span(self.span),
+			);
+			Err(())
 		}
 	}
 }
@@ -172,7 +167,7 @@ impl<'a> Tokenizer<'a> {
 		}
 
 		let mut local = *self;
-		let peeked = local.next();
+		let peeked = local.next_internal(&mut None);
 
 		if let Ok(peeked) = peeked {
 			self.peeked = Some(PeekedInfo {
@@ -184,7 +179,11 @@ impl<'a> Tokenizer<'a> {
 		peeked
 	}
 
-	pub fn next(&mut self) -> ParseResult<Token<'a>> {
+	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
+		self.next_internal(&mut Some(messages))
+	}
+
+	fn next_internal(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked.take() {
 			self.byte_index = peeked.byte_index;
 			self.token_count += 1;
@@ -195,7 +194,7 @@ impl<'a> Tokenizer<'a> {
 			return Ok(newline_token);
 		}
 
-		self.verify_not_eof()?;
+		self.verify_not_eof(messages)?;
 
 		let token = match self.source.as_bytes()[self.byte_index..] {
 			[b'(', ..] => Ok(self.create_token(
@@ -293,13 +292,13 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.next()
+				self.next_internal(messages)
 			}
 
 			[b'/', b'*', ..] => {
 				loop {
 					self.byte_index += 1;
-					self.verify_not_eof()?;
+					self.verify_not_eof(messages)?;
 
 					if matches!(self.source.as_bytes()[self.byte_index..], [b'*', b'/', ..]) {
 						self.byte_index += 2;
@@ -307,7 +306,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.next()
+				self.next_internal(messages)
 			}
 
 			[b'/', b'=', ..] => {
@@ -410,8 +409,8 @@ impl<'a> Tokenizer<'a> {
 
 			[b'\'', ..] => {
 				let start_index = self.byte_index;
-				self.advance_by_codepoint()?;
-				self.expect_byte(b'\'')?;
+				self.advance_by_codepoint(messages)?;
+				self.expect_byte(messages, b'\'')?;
 
 				Ok(self.create_token(
 					&self.source[start_index + 1..self.byte_index],
@@ -425,7 +424,7 @@ impl<'a> Tokenizer<'a> {
 				let start_index = self.byte_index;
 				loop {
 					self.byte_index += 1;
-					self.verify_not_eof()?;
+					self.verify_not_eof(messages)?;
 
 					//TODO: Handle escaped double-quote
 					if self.source.as_bytes()[self.byte_index] == b'\"' {
@@ -476,8 +475,9 @@ impl<'a> Tokenizer<'a> {
 		token
 	}
 
-	fn advance_by_codepoint(&mut self) -> ParseResult<()> {
-		self.verify_not_eof()?;
+	//TODO: Remove this
+	fn advance_by_codepoint(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
+		self.verify_not_eof(messages)?;
 
 		let mut chars = self.source[self.byte_index..].chars();
 		chars.next();
@@ -486,23 +486,33 @@ impl<'a> Tokenizer<'a> {
 		Ok(())
 	}
 
-	fn expect_byte(&mut self, expected: u8) -> ParseResult<()> {
-		self.verify_not_eof()?;
+	//TODO: Remove this
+	fn expect_byte(
+		&mut self,
+		messages: &mut Option<&mut Messages>,
+		expected: u8,
+	) -> ParseResult<()> {
+		self.verify_not_eof(messages)?;
 
 		self.byte_index += 1;
 
 		let found = self.source.as_bytes()[self.byte_index];
 		if found != expected {
-			return Err(ParseError {
-				span: Span {
-					start: self.byte_index,
-					end: self.byte_index + 1,
-				},
-				kind: ParseErrorKind::Expected {
-					expected: format!("{}", expected),
-					found: format!("{}", found),
-				},
-			});
+			if let Some(messages) = messages {
+				messages.error(
+					message!(
+						"Expected {:?} but found {:?}",
+						expected as char,
+						found as char
+					)
+					.span(Span {
+						start: self.byte_index,
+						end: self.byte_index + 1,
+					}),
+				);
+			}
+
+			return Err(());
 		}
 
 		Ok(())
@@ -532,15 +542,15 @@ impl<'a> Tokenizer<'a> {
 		Ok(None)
 	}
 
-	fn verify_not_eof(&self) -> ParseResult<()> {
+	fn verify_not_eof(&self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
 		if self.byte_index >= self.source.len() {
-			Err(ParseError {
-				span: Span {
+			if let Some(messages) = messages {
+				messages.error(message!("Unexpected end of file").span(Span {
 					start: self.source.len().saturating_sub(1),
 					end: self.source.len().saturating_sub(1),
-				},
-				kind: ParseErrorKind::UnexpectedEof,
-			})
+				}));
+			}
+			Err(())
 		} else {
 			Ok(())
 		}
@@ -560,11 +570,19 @@ impl<'a> Tokenizer<'a> {
 		}
 	}
 
-	pub fn expect(&mut self, expected: TokenKind) -> ParseResult<Token<'a>> {
-		self.next()?.expect(expected)
+	pub fn expect(
+		&mut self,
+		messages: &mut Messages,
+		expected: TokenKind,
+	) -> ParseResult<Token<'a>> {
+		self.next(messages)?.expect(messages, expected)
 	}
 
-	pub fn expect_word(&mut self, expected: &str) -> ParseResult<Token<'a>> {
-		self.next()?.expect_word(expected)
+	pub fn expect_word(
+		&mut self,
+		messages: &mut Messages,
+		expected: &str,
+	) -> ParseResult<Token<'a>> {
+		self.next(messages)?.expect_word(messages, expected)
 	}
 }

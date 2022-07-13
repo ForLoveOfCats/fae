@@ -4,7 +4,6 @@ use crate::tokenizer::Token;
 #[must_use]
 #[derive(Debug)]
 pub struct File<'a> {
-	pub module: Node<Module<'a>>,
 	pub items: Vec<Item<'a>>,
 }
 

@@ -1,4 +1,6 @@
+#[macro_use]
 mod error;
+
 mod file;
 mod ice;
 mod parser;
@@ -6,6 +8,7 @@ mod span;
 mod tokenizer;
 mod tree;
 
+use error::Messages;
 use file::load_all_files;
 use parser::parse_file_root;
 use tokenizer::Tokenizer;
@@ -19,24 +22,20 @@ fn main() {
 		}
 	};
 
+	let mut messages = Messages::new();
 	let mut roots = Vec::new();
 
 	for file in &files {
+		messages.clear();
 		let mut tokenizer = Tokenizer::new(&file.source);
 
-		let root = match parse_file_root(&mut tokenizer) {
-			Ok(root) => root,
-			Err(err) => {
-				err.print(&file.path, &file.source);
-				return;
-			}
-		};
+		let root = parse_file_root(&mut messages, &mut tokenizer);
 
-		let token_count = tokenizer.token_count();
+		for message in messages.errors() {
+			message.print(&file.path, &file.source, "Parse error");
+		}
 
-		println!("{:#?}\n", root);
-		println!("Finished parsing file with {} tokens", token_count);
-
+		// println!("{:#?}\n", root);
 		roots.push(root);
 	}
 }

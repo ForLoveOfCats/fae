@@ -6,132 +6,159 @@ use crate::span::Span;
 
 pub const TABULATOR_SIZE: usize = 4;
 
-pub type ParseResult<T> = std::result::Result<T, ParseError>;
+pub type ParseResult<T> = std::result::Result<T, ()>;
 
-#[derive(Debug, Clone)]
-pub enum ParseErrorKind {
-	UnexpectedEof,
-
-	Expected { expected: String, found: String },
-
-	ExpectedItem { found: String },
-
-	ExpectedExpression { found: String },
-
-	ExpectedOperator { found: String },
-
-	InvalidIntegerLiteral,
-
-	InvalidFloatLiteral,
-
-	ReservedWord { word: String },
+pub struct Messages {
+	errors: Vec<Message>,
+	warnings: Vec<Message>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ParseError {
-	pub span: Span,
-	pub kind: ParseErrorKind,
-}
-
-impl ParseError {
-	pub fn print(&self, path: &Path, source: &str) {
-		let (line, start, end) = {
-			let mut line_start = self.span.start;
-			while line_start > 0 {
-				if matches!(source.as_bytes()[line_start], b'\r' | b'\n')
-					&& line_start != self.span.start
-				{
-					break;
-				}
-				line_start -= 1;
-			}
-
-			if line_start < self.span.start
-				&& matches!(source.as_bytes()[line_start], b'\r' | b'\n')
-			{
-				line_start += 1;
-			}
-
-			let mut line_end = self.span.start;
-			while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
-				line_end += 1;
-			}
-
-			(
-				&source[line_start..line_end],
-				self.span.start - line_start,
-				self.span.end - line_start,
-			)
-		};
-
-		let line_num = self.get_line_num(source);
-		let column_start = calc_spaces_from_byte_offset(line, start);
-		//TODO: Handle multi-line errors
-		eprint!(
-			"Parse error {:?}, line {}, column {}: ",
-			path, line_num, column_start
-		);
-
-		match &self.kind {
-			ParseErrorKind::UnexpectedEof => eprint!("Unexpected EOF"),
-
-			ParseErrorKind::Expected { expected, found } => {
-				eprint!("Expected {} but found {}", expected, found);
-			}
-
-			ParseErrorKind::ExpectedItem { found } => {
-				eprint!("Expected item but found {}", found);
-			}
-
-			ParseErrorKind::ExpectedExpression { found } => {
-				eprint!("Expected expression but found {}", found);
-			}
-
-			ParseErrorKind::ExpectedOperator { found } => {
-				eprint!("Expected operator but found {}", found);
-			}
-
-			ParseErrorKind::InvalidIntegerLiteral => eprint!("Invalid integer literal"),
-
-			ParseErrorKind::InvalidFloatLiteral => eprint!("Invalid float literal"),
-
-			ParseErrorKind::ReservedWord { word } => eprint!("Reserved word {:?}", word),
+impl Messages {
+	pub fn new() -> Messages {
+		Messages {
+			errors: Vec::new(),
+			warnings: Vec::new(),
 		}
-
-		if start != end {
-			eprintln!();
-
-			//TODO: Print line num & handle multi-line errors
-			let gutter = format!("  {}| ", line_num);
-			eprint!("{}", gutter);
-			print_normalized_tabs(line);
-			eprintln!();
-
-			let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
-			let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
-			eprint!("{}{}", gutter_spacer, whitespace);
-
-			let column_end = calc_spaces_from_byte_offset(line, end - 1);
-			for _ in column_start..column_end + 1 {
-				eprint!("^");
-			}
-		}
-
-		eprintln!();
 	}
 
-	fn get_line_num(&self, source: &str) -> usize {
-		let mut current_line_num = 1;
+	pub fn clear(&mut self) {
+		self.errors.clear();
+		self.warnings.clear();
+	}
 
-		for (index, byte) in source.as_bytes().iter().enumerate() {
-			if index >= self.span.start {
-				break;
-			} else if matches!(byte, b'\n') {
-				current_line_num += 1;
-			}
+	pub fn error(&mut self, message: Message) {
+		self.errors.push(message);
+	}
+
+	pub fn warning(&mut self, message: Message) {
+		self.warnings.push(message);
+	}
+
+	pub fn errors(&self) -> &[Message] {
+		&self.errors
+	}
+
+	pub fn warnings(&self) -> &[Message] {
+		&self.warnings
+	}
+}
+
+pub struct Message {
+	text: String,
+	span: Option<Span>,
+	notes: Vec<Annotation>,
+}
+
+impl Message {
+	pub fn new(text: String) -> Message {
+		Message {
+			text,
+			span: None,
+			notes: Vec::new(),
 		}
+	}
 
-		current_line_num
+	pub fn span(mut self, span: Span) -> Message {
+		self.span = Some(span);
+		self
+	}
+
+	pub fn note(mut self, note: Annotation) -> Message {
+		self.notes.push(note);
+		self
+	}
+
+	pub fn print(&self, path: &Path, source: &str, message_kind: &str) {
+		if let Some(span) = self.span {
+			let (line, start, end) = {
+				let mut line_start = span.start;
+				while line_start > 0 {
+					if matches!(source.as_bytes()[line_start], b'\r' | b'\n')
+						&& line_start != span.start
+					{
+						break;
+					}
+					line_start -= 1;
+				}
+
+				if line_start < span.start && matches!(source.as_bytes()[line_start], b'\r' | b'\n')
+				{
+					line_start += 1;
+				}
+
+				let mut line_end = span.start;
+				while line_end < source.len()
+					&& !matches!(source.as_bytes()[line_end], b'\r' | b'\n')
+				{
+					line_end += 1;
+				}
+
+				(
+					&source[line_start..line_end],
+					span.start - line_start,
+					span.end - line_start,
+				)
+			};
+
+			let line_num = span.get_line_num(source);
+			let column_start = calc_spaces_from_byte_offset(line, start);
+
+			//TODO: Handle multi-line spans
+			eprint!(
+				"{message_kind} {:?}, line {}, column {}: ",
+				path, line_num, column_start
+			);
+			eprint!("{}", self.text);
+
+			if start != end {
+				eprintln!();
+
+				//TODO: Handle multi-line spans
+				let gutter = format!("  {}| ", line_num);
+				eprint!("{}", gutter);
+				print_normalized_tabs(line);
+				eprintln!();
+
+				let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
+				let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
+				eprint!("{}{}", gutter_spacer, whitespace);
+
+				let column_end = calc_spaces_from_byte_offset(line, end - 1);
+				for _ in column_start..column_end + 1 {
+					eprint!("^");
+				}
+			}
+
+			eprintln!();
+		} else {
+			eprint!("{message_kind} {:?}: ", path);
+			eprintln!("{}", self.text);
+		}
+	}
+}
+
+#[macro_export]
+macro_rules! message {
+	($($arg:tt)*) => {
+		$crate::error::Message::new(format!( $($arg)* ))
+	}
+}
+
+pub struct Annotation {
+	span: Span,
+	text: String,
+}
+
+impl Annotation {
+	pub fn new(span: Span, text: String) -> Annotation {
+		Annotation { span, text }
+	}
+}
+
+#[macro_export]
+macro_rules! note {
+	($span:expr, $($arg:tt)*) => {
+		$crate::error::Annotation::new($span, format!( $($arg)* ))
 	}
 }
 

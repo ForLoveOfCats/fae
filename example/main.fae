@@ -2,6 +2,8 @@ module main
 
 using another_module
 
+sdfsdf sfsdf sdfsd
+
 const THING = "Hello there!"
 
 struct MyStruct {

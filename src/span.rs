@@ -16,3 +16,19 @@ impl Add for Span {
 		}
 	}
 }
+
+impl Span {
+	pub fn get_line_num(&self, source: &str) -> usize {
+		let mut current_line_num = 1;
+
+		for (index, byte) in source.as_bytes().iter().enumerate() {
+			if index >= self.start {
+				break;
+			} else if matches!(byte, b'\n') {
+				current_line_num += 1;
+			}
+		}
+
+		current_line_num
+	}
+}
