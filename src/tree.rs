@@ -92,7 +92,7 @@ pub struct Mut<'a> {
 
 #[must_use]
 #[derive(Debug)]
-pub struct UnsignedIntegerLiteral {
+pub struct IntegerLiteral {
 	pub value: Node<u64>,
 }
 
@@ -141,8 +141,28 @@ pub struct FieldInitializer<'a> {
 }
 
 #[must_use]
-#[derive(Debug, Clone, Copy)]
-pub enum Operator {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOperator {
+	Negate,
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct UnaryOperation<'a> {
+	pub op: Node<UnaryOperator>,
+	pub expression: Node<Expression<'a>>,
+}
+
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Associativity {
+	Left,
+	Right,
+}
+
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOperator {
 	Assign,
 	Add,
 	Sub,
@@ -150,13 +170,21 @@ pub enum Operator {
 	Div,
 }
 
-impl Operator {
+impl BinaryOperator {
 	pub fn precedence(self) -> u32 {
-		use Operator::*;
+		use BinaryOperator::*;
 		match self {
 			Assign => 0,
 			Add | Sub => 1,
 			Mul | Div => 2,
+		}
+	}
+
+	pub fn associativity(self) -> Associativity {
+		use BinaryOperator::*;
+		match self {
+			Assign => Associativity::Right,
+			Add | Sub | Mul | Div => Associativity::Left,
 		}
 	}
 }
@@ -164,7 +192,7 @@ impl Operator {
 #[must_use]
 #[derive(Debug)]
 pub struct BinaryOperation<'a> {
-	pub op: Node<Operator>,
+	pub op: Node<BinaryOperator>,
 	pub left: Node<Expression<'a>>,
 	pub right: Node<Expression<'a>>,
 }
@@ -223,9 +251,7 @@ pub enum Statement<'a> {
 pub enum Expression<'a> {
 	Block(Vec<Statement<'a>>),
 
-	UnsignedIntegerLiteral(UnsignedIntegerLiteral),
-	SignedIntegerLiteral(SignedIntegerLiteral),
-
+	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
 
 	CharLiteral(CharLiteral),
@@ -236,6 +262,7 @@ pub enum Expression<'a> {
 	Call(Call<'a>),
 	Read(Read<'a>),
 
+	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
 }
 
@@ -252,9 +279,6 @@ impl<T> Node<T> {
 	}
 
 	pub fn from_token(node: T, token: Token) -> Node<T> {
-		Node {
-			node,
-			span: token.span,
-		}
+		Node { node, span: token.span }
 	}
 }

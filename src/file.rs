@@ -39,9 +39,7 @@ struct FileWalker {
 
 impl FileWalker {
 	fn new<P: AsRef<Path>>(path: P) -> Result<FileWalker> {
-		Ok(FileWalker {
-			stack: vec![read_dir(path)?],
-		})
+		Ok(FileWalker { stack: vec![read_dir(path)?] })
 	}
 
 	fn next_file(&mut self) -> Result<Option<(File, PathBuf)>> {

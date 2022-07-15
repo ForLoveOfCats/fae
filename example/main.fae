@@ -15,12 +15,6 @@ fn function(): void {
 	let pointer: *i32 = something
 	let slice: &[u8] = something
 
-	+ sdfsdfsd
-
-	fn sfsd
-
-	let = value
-
 	character = 'B'
 
 	//comment

@@ -1,5 +1,4 @@
 use crate::error::{Messages, ParseResult};
-use crate::ice::ice;
 use crate::span::Span;
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::tree::*;
@@ -14,10 +13,7 @@ pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 
 	while let Ok(token) = tokenizer.peek() {
 		match token {
-			Token {
-				kind: TokenKind::Newline,
-				..
-			} => {
+			Token { kind: TokenKind::Newline, .. } => {
 				if tokenizer.next(messages).is_err() {
 					return items;
 				}
@@ -103,10 +99,7 @@ pub fn parse_statements<'a>(
 
 	while let Ok(token) = tokenizer.peek() {
 		match token {
-			Token {
-				kind: TokenKind::Newline,
-				..
-			} => {
+			Token { kind: TokenKind::Newline, .. } => {
 				if tokenizer.next(messages).is_err() {
 					return items;
 				}
@@ -197,8 +190,7 @@ pub fn parse_statements<'a>(
 			}
 
 			Token {
-				kind: TokenKind::OpenBrace,
-				..
+				kind: TokenKind::OpenBrace, ..
 			} => {
 				if let Ok(statement) = parse_block(messages, tokenizer) {
 					items.push(Statement::Block(statement));
@@ -208,8 +200,7 @@ pub fn parse_statements<'a>(
 			}
 
 			Token {
-				kind: TokenKind::CloseBrace,
-				..
+				kind: TokenKind::CloseBrace, ..
 			} => break,
 
 			_ => {
@@ -225,265 +216,164 @@ pub fn parse_statements<'a>(
 	items
 }
 
-//NOTE: This function is a bit gross but not horrible, it is by far the worst part of the parser
 fn parse_expression<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Node<Expression<'a>>> {
-	let peeked = tokenizer.peek()?;
-	let is_paren_enclosed = peeked.kind == TokenKind::OpenParen;
+	parse_expression_climb(messages, tokenizer, 0)
+}
 
-	if is_paren_enclosed {
-		tokenizer.expect(messages, TokenKind::OpenParen)?;
-	}
+fn parse_expression_climb<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	min_precedence: u32,
+) -> ParseResult<Node<Expression<'a>>> {
+	let mut result = parse_expression_atom(messages, tokenizer)?;
 
-	#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-	enum ItemKind {
-		Expression,
-		Operator,
-	}
-
-	enum InRpn<'a> {
-		Expression(Node<Expression<'a>>),
-		Operator(Node<Operator>),
-	}
-
-	let mut rpn = Vec::new();
-	let mut operators: Vec<Node<Operator>> = Vec::new();
-	let mut expected_next = ItemKind::Expression;
-
-	fn check_expected_next(
-		messages: &mut Messages,
-		token: Token,
-		expected: &mut ItemKind,
-		actual: ItemKind,
-	) -> ParseResult<()> {
-		if *expected != actual {
-			return match *expected {
-				ItemKind::Expression => {
-					messages.error(
-						message!("Expected expression but found {:?}", token.text).span(token.span),
-					);
-					Err(())
-				}
-
-				ItemKind::Operator => {
-					messages.error(
-						message!("Expected operator but found {:?}", token.text).span(token.span),
-					);
-					Err(())
-				}
-			};
+	while let Some(op) = token_to_operator(tokenizer.peek()?) {
+		let precedence = op.node.precedence();
+		if precedence < min_precedence {
+			break;
 		}
 
-		*expected = match actual {
-			ItemKind::Expression => ItemKind::Operator,
-			ItemKind::Operator => ItemKind::Expression,
+		tokenizer.next(messages).expect("Known peeked token");
+
+		let associativity = op.node.associativity();
+		let next_min_precedence = match associativity {
+			Associativity::Left => precedence + 1,
+			Associativity::Right => precedence,
 		};
 
-		Ok(())
+		let right = parse_expression_climb(messages, tokenizer, next_min_precedence)?;
+		let left_span = result.span;
+		let right_span = right.span;
+
+		let binary_operation = BinaryOperation { op, right, left: result };
+		let boxed = Box::new(binary_operation);
+		let expression = Expression::BinaryOperation(boxed);
+
+		result = Node::new(expression, left_span + right_span);
 	}
 
-	while tokenizer.has_next() {
-		let peeked = tokenizer.peek()?;
+	Ok(result)
+}
 
-		match peeked.kind {
-			TokenKind::Add
-			| TokenKind::Sub
-			| TokenKind::Mul
-			| TokenKind::Div
-			| TokenKind::Equal => {
-				if peeked.kind == TokenKind::Sub && expected_next == ItemKind::Expression {
-					check_expected_next(
-						messages,
-						peeked,
-						&mut expected_next,
-						ItemKind::Expression,
-					)?;
-					rpn.push(InRpn::Expression(parse_number(messages, tokenizer)?));
-					continue;
-				}
+fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
+	let operator = match token.kind {
+		TokenKind::Equal => BinaryOperator::Assign,
+		TokenKind::Add => BinaryOperator::Add,
+		TokenKind::Sub => BinaryOperator::Sub,
+		TokenKind::Mul => BinaryOperator::Mul,
+		TokenKind::Div => BinaryOperator::Div,
+		_ => return None,
+	};
 
-				let operator_token = tokenizer.next(messages)?;
-				check_expected_next(
-					messages,
-					operator_token,
-					&mut expected_next,
-					ItemKind::Operator,
-				)?;
+	Some(Node::new(operator, token.span))
+}
 
-				let operator_kind = match operator_token.kind {
-					TokenKind::Equal => Operator::Assign,
-					TokenKind::Add => Operator::Add,
-					TokenKind::Sub => Operator::Sub,
-					TokenKind::Mul => Operator::Mul,
-					TokenKind::Div => Operator::Div,
-					_ => ice(),
-				};
-				let precedence = operator_kind.precedence();
-				let operator = Node::from_token(operator_kind, operator_token);
+fn parse_expression_atom<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Node<Expression<'a>>> {
+	let peeked = tokenizer.peek()?;
 
-				while let Some(in_queue) = operators.pop() {
-					let in_queue_precedence = in_queue.node.precedence();
-					if precedence <= in_queue_precedence {
-						rpn.push(InRpn::Operator(in_queue));
-					} else {
-						operators.push(in_queue);
-						break;
-					}
-				}
+	match peeked.kind {
+		TokenKind::Sub => {
+			let token = tokenizer.expect(messages, TokenKind::Sub)?;
+			let op = Node::new(UnaryOperator::Negate, token.span);
 
-				operators.push(operator);
+			let expression = parse_expression(messages, tokenizer)?;
+
+			let span = token.span + expression.span;
+			let negate = Box::new(UnaryOperation { op, expression });
+
+			Ok(Node::new(Expression::UnaryOperation(negate), span))
+		}
+
+		TokenKind::String => {
+			let string_token = tokenizer.expect(messages, TokenKind::String)?;
+			let value = Node::from_token(string_token.text, string_token);
+
+			Ok(Node::from_token(
+				Expression::StringLiteral(StringLiteral { value }),
+				string_token,
+			))
+		}
+
+		TokenKind::Char => {
+			let char_token = tokenizer.expect(messages, TokenKind::Char)?;
+			let value = Node::from_token(char_token.text.chars().next().unwrap(), char_token);
+
+			Ok(Node::from_token(
+				Expression::CharLiteral(CharLiteral { value }),
+				char_token,
+			))
+		}
+
+		TokenKind::Word => {
+			if peeked.text.as_bytes()[0].is_ascii_digit() {
+				return parse_number(messages, tokenizer);
 			}
 
-			TokenKind::String => {
-				let string_token = tokenizer.expect(messages, TokenKind::String)?;
-				check_expected_next(
-					messages,
-					string_token,
-					&mut expected_next,
-					ItemKind::Expression,
-				)?;
-				let value = Node::from_token(string_token.text, string_token);
+			let path_segments = parse_path_segments(messages, tokenizer)?;
 
-				rpn.push(InRpn::Expression(Node::from_token(
-					Expression::StringLiteral(StringLiteral { value }),
-					string_token,
-				)));
+			let (is_call, is_struct_literal) = match tokenizer.peek() {
+				Ok(Token {
+					kind: TokenKind::OpenParen, ..
+				}) => (true, false),
+
+				Ok(Token {
+					kind: TokenKind::OpenBrace, ..
+				}) => (false, true),
+
+				_ => (false, false),
+			};
+
+			if is_call {
+				let arguments = parse_arguments(messages, tokenizer)?;
+				let span = path_segments.span + arguments.span;
+				let call = Call { path_segments, arguments };
+
+				return Ok(Node::new(Expression::Call(call), span));
 			}
 
-			TokenKind::Char => {
-				let char_token = tokenizer.expect(messages, TokenKind::Char)?;
-				check_expected_next(
-					messages,
-					char_token,
-					&mut expected_next,
-					ItemKind::Expression,
-				)?;
-				let value = Node::from_token(char_token.text.chars().next().unwrap(), char_token);
+			if is_struct_literal {
+				let initializer = parse_struct_initializer(messages, tokenizer)?;
 
-				rpn.push(InRpn::Expression(Node::from_token(
-					Expression::CharLiteral(CharLiteral { value }),
-					char_token,
-				)));
+				let span = path_segments.span + initializer.span;
+				let struct_literal = StructLiteral { path_segments, initializer };
+
+				return Ok(Node::new(Expression::StructLiteral(struct_literal), span));
 			}
 
-			TokenKind::Word => {
-				check_expected_next(messages, peeked, &mut expected_next, ItemKind::Expression)?;
+			let span = path_segments.span;
+			let read = Read { path_segments };
 
-				if peeked.text.as_bytes()[0].is_ascii_digit() {
-					rpn.push(InRpn::Expression(parse_number(messages, tokenizer)?));
-					continue;
-				}
+			Ok(Node::new(Expression::Read(read), span))
+		}
 
-				let path_segments = parse_path_segments(messages, tokenizer)?;
+		TokenKind::OpenParen => parse_expression(messages, tokenizer),
 
-				let (is_call, is_struct_literal) = match tokenizer.peek() {
-					Ok(Token {
-						kind: TokenKind::OpenParen,
-						..
-					}) => (true, false),
+		TokenKind::OpenBrace => {
+			let parsed_block = parse_block(messages, tokenizer)?;
 
-					Ok(Token {
-						kind: TokenKind::OpenBrace,
-						..
-					}) => (false, true),
+			let span = parsed_block.span;
+			let block = parsed_block.node;
 
-					_ => (false, false),
-				};
+			Ok(Node::new(Expression::Block(block), span))
+		}
 
-				if is_call {
-					let arguments = parse_arguments(messages, tokenizer)?;
-					let span = path_segments.span + arguments.span;
-					let call = Call {
-						path_segments,
-						arguments,
-					};
-
-					rpn.push(InRpn::Expression(Node::new(Expression::Call(call), span)));
-					continue;
-				}
-
-				if is_struct_literal {
-					let initializer = parse_struct_initializer(messages, tokenizer)?;
-
-					let span = path_segments.span + initializer.span;
-					let struct_literal = StructLiteral {
-						path_segments,
-						initializer,
-					};
-
-					rpn.push(InRpn::Expression(Node::new(
-						Expression::StructLiteral(struct_literal),
-						span,
-					)));
-					continue;
-				}
-
-				let span = path_segments.span;
-				let read = Read { path_segments };
-
-				rpn.push(InRpn::Expression(Node::new(Expression::Read(read), span)));
-			}
-
-			TokenKind::OpenParen => {
-				check_expected_next(messages, peeked, &mut expected_next, ItemKind::Expression)?;
-				rpn.push(InRpn::Expression(parse_expression(messages, tokenizer)?));
-			}
-
-			//Yuck, this is messy
-			TokenKind::OpenBrace => {
-				check_expected_next(messages, peeked, &mut expected_next, ItemKind::Expression)?;
-
-				let parsed_block = parse_block(messages, tokenizer)?;
-				let span = parsed_block.span;
-				let block = parsed_block.node;
-
-				let expression = Node::new(Expression::Block(block), span);
-				rpn.push(InRpn::Expression(expression));
-			}
-
-			//NOTE: This is a catch-all to allow callers to handle following tokens
-			_ => break,
+		_ => {
+			messages.error(
+				message!(
+					"Unexpected token {:?} while attempting to parse expression atom",
+					peeked.text
+				)
+				.span(peeked.span),
+			);
+			Err(())
 		}
 	}
-
-	if is_paren_enclosed {
-		tokenizer.expect(messages, TokenKind::CloseParen)?;
-	}
-
-	if expected_next == ItemKind::Expression {
-		let token = tokenizer.next(messages)?;
-		let error = message!("Missing final expression, found {:?}", token.text).span(token.span);
-		messages.error(error);
-		return Err(());
-	}
-
-	while let Some(in_queue) = operators.pop() {
-		rpn.push(InRpn::Operator(in_queue));
-	}
-
-	let mut stack = Vec::new();
-	for in_rpn in rpn {
-		match in_rpn {
-			InRpn::Expression(expression) => stack.push(expression),
-
-			InRpn::Operator(op) => {
-				let right = stack.pop().unwrap();
-				let left = stack.pop().unwrap();
-
-				let left_span = left.span;
-				let right_span = right.span;
-
-				let binary_operation = Box::new(BinaryOperation { op, right, left });
-				let expression = Expression::BinaryOperation(binary_operation);
-				stack.push(Node::new(expression, left_span + right_span));
-			}
-		}
-	}
-
-	assert!(stack.len() == 1);
-	Ok(stack.pop().unwrap())
 }
 
 fn parse_arguments<'a>(
@@ -546,15 +436,6 @@ fn parse_number<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Node<Expression<'a>>> {
-	let is_negative = tokenizer
-		.peek()
-		.map(|peeked| peeked.kind == TokenKind::Sub)
-		.unwrap_or(false);
-
-	if is_negative {
-		tokenizer.expect(messages, TokenKind::Sub)?;
-	}
-
 	let first_number_token = tokenizer.expect(messages, TokenKind::Word)?;
 
 	let followed_by_period = tokenizer
@@ -581,8 +462,6 @@ fn parse_number<'a>(
 			}
 		};
 
-		let value = if is_negative { -value } else { value };
-
 		let span = first_number_token.span + second_number_token.span;
 		return Ok(Node::new(
 			Expression::FloatLiteral(FloatLiteral {
@@ -590,36 +469,17 @@ fn parse_number<'a>(
 			}),
 			span,
 		));
-	} else if is_negative {
-		let value = match first_number_token.text.parse::<i64>() {
-			Ok(value) => value,
-			Err(_) => {
-				messages.error(
-					message!("Invalid signed integer literal").span(first_number_token.span),
-				);
-				return Err(());
-			}
-		};
-
-		return Ok(Node::from_token(
-			Expression::SignedIntegerLiteral(SignedIntegerLiteral {
-				value: Node::from_token(-value, first_number_token),
-			}),
-			first_number_token,
-		));
 	} else {
 		let value = match first_number_token.text.parse::<u64>() {
 			Ok(value) => value,
 			Err(_) => {
-				messages.error(
-					message!("Invalid unsigned integer literal").span(first_number_token.span),
-				);
+				messages.error(message!("Invalid integer literal").span(first_number_token.span));
 				return Err(());
 			}
 		};
 
 		return Ok(Node::from_token(
-			Expression::UnsignedIntegerLiteral(UnsignedIntegerLiteral {
+			Expression::IntegerLiteral(IntegerLiteral {
 				value: Node::from_token(value, first_number_token),
 			}),
 			first_number_token,
@@ -675,8 +535,7 @@ fn parse_type<'a>(
 		}
 
 		Token {
-			kind: TokenKind::Ampersand,
-			..
+			kind: TokenKind::Ampersand, ..
 		} => {
 			let ampersand = tokenizer.expect(messages, TokenKind::Ampersand)?;
 
@@ -696,10 +555,7 @@ fn parse_type<'a>(
 			}
 		}
 
-		Token {
-			kind: TokenKind::Mul,
-			..
-		} => {
+		Token { kind: TokenKind::Mul, .. } => {
 			let asterisk = tokenizer.expect(messages, TokenKind::Mul)?;
 			let inner = Box::new(parse_type(messages, tokenizer)?);
 			let span = asterisk.span + inner.span;
@@ -855,6 +711,8 @@ fn parse_let_statement<'a>(
 
 	tokenizer.expect(messages, TokenKind::Equal)?;
 	let expression = parse_expression(messages, tokenizer)?;
+
+	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	Ok(Let {
 		name,
