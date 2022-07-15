@@ -153,14 +153,6 @@ impl<'a> Tokenizer<'a> {
 		self.source
 	}
 
-	pub fn token_count(&self) -> usize {
-		self.token_count
-	}
-
-	pub fn has_next(&mut self) -> bool {
-		self.peek().is_ok()
-	}
-
 	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked {
 			return Ok(peeked.token);

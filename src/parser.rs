@@ -204,8 +204,8 @@ pub fn parse_statements<'a>(
 			} => break,
 
 			_ => {
-				if let Ok(statement) = parse_expression(messages, tokenizer) {
-					items.push(Statement::Expression(statement));
+				if let Ok(expression) = parse_expression(messages, tokenizer) {
+					items.push(Statement::Expression(expression));
 				} else {
 					consume_rest_of_line(tokenizer);
 				}
@@ -683,7 +683,10 @@ fn parse_const_statement<'a>(
 	};
 
 	tokenizer.expect(messages, TokenKind::Equal)?;
+
 	let expression = parse_expression(messages, tokenizer)?;
+
+	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	Ok(Const {
 		name,
@@ -710,6 +713,7 @@ fn parse_let_statement<'a>(
 	};
 
 	tokenizer.expect(messages, TokenKind::Equal)?;
+
 	let expression = parse_expression(messages, tokenizer)?;
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
@@ -739,7 +743,10 @@ fn parse_mut_statement<'a>(
 	};
 
 	tokenizer.expect(messages, TokenKind::Equal)?;
+
 	let expression = parse_expression(messages, tokenizer)?;
+
+	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	Ok(Mut {
 		name,
@@ -755,6 +762,8 @@ fn parse_return_statement<'a>(
 	tokenizer.expect_word(messages, "return")?;
 
 	let expression = parse_expression(messages, tokenizer)?;
+
+	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	Ok(Return { expression })
 }
