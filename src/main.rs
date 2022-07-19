@@ -2,7 +2,6 @@
 mod error;
 
 mod file;
-mod ice;
 mod parser;
 mod span;
 mod tokenizer;

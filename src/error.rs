@@ -30,16 +30,8 @@ impl Messages {
 		self.errors.push(message);
 	}
 
-	pub fn warning(&mut self, message: Message) {
-		self.warnings.push(message);
-	}
-
 	pub fn errors(&self) -> &[Message] {
 		&self.errors
-	}
-
-	pub fn warnings(&self) -> &[Message] {
-		&self.warnings
 	}
 }
 
