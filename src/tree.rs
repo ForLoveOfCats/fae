@@ -1,9 +1,12 @@
+use crate::file::SourceFile;
 use crate::span::Span;
 use crate::tokenizer::Token;
 
 #[must_use]
 #[derive(Debug)]
 pub struct File<'a> {
+	pub source_file: &'a SourceFile,
+	pub module_path: &'a [String],
 	pub items: Vec<Item<'a>>,
 }
 
@@ -30,10 +33,14 @@ pub struct Using<'a> {
 #[derive(Debug)]
 pub enum Type<'a> {
 	Void,
+
 	Reference(Box<Node<Type<'a>>>),
-	Pointer(Box<Node<Type<'a>>>),
 	Slice(Box<Node<Type<'a>>>),
-	Path(PathSegments<'a>),
+
+	Path {
+		segments: PathSegments<'a>,
+		arguments: Vec<Node<Type<'a>>>,
+	},
 }
 
 #[must_use]
@@ -280,5 +287,16 @@ impl<T> Node<T> {
 
 	pub fn from_token(node: T, token: Token) -> Node<T> {
 		Node { node, span: token.span }
+	}
+}
+
+impl<T: Copy> Copy for Node<T> {}
+
+impl<T: Clone> Clone for Node<T> {
+	fn clone(&self) -> Self {
+		Self {
+			node: self.node.clone(),
+			span: self.span,
+		}
 	}
 }

@@ -1,11 +1,19 @@
 use crate::error::{Messages, ParseResult};
+use crate::file::SourceFile;
 use crate::span::Span;
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::tree::*;
 
-pub fn parse_file_root<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> File<'a> {
-	let items = parse_items(messages, tokenizer);
-	File { items }
+pub fn parse_file<'a>(messages: &mut Messages, file: &'a SourceFile) -> File<'a> {
+	let mut tokenizer = Tokenizer::new(&file.source);
+	let items = parse_items(messages, &mut tokenizer);
+
+	let module_path = &file.module_path;
+	File {
+		source_file: file,
+		items,
+		module_path,
+	}
 }
 
 pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Vec<Item<'a>> {
@@ -555,18 +563,35 @@ fn parse_type<'a>(
 			}
 		}
 
-		Token { kind: TokenKind::Mul, .. } => {
-			let asterisk = tokenizer.expect(messages, TokenKind::Mul)?;
-			let inner = Box::new(parse_type(messages, tokenizer)?);
-			let span = asterisk.span + inner.span;
-			Node::new(Type::Pointer(inner), span)
-		}
-
 		_ => {
 			let parsed_path = parse_path_segments(messages, tokenizer)?;
-			let span = parsed_path.span;
-			let path = parsed_path.node;
-			Node::new(Type::Path(path), span)
+			let segments = parsed_path.node;
+
+			let mut arguments = Vec::new();
+			let span = match tokenizer.peek() {
+				Ok(Token {
+					kind: TokenKind::OpenBracket, ..
+				}) => {
+					tokenizer.expect(messages, TokenKind::OpenBracket)?;
+
+					if tokenizer.peek()?.kind != TokenKind::CloseBracket {
+						loop {
+							arguments.push(parse_type(messages, tokenizer)?);
+							if tokenizer.peek()?.kind != TokenKind::Comma {
+								break;
+							}
+							tokenizer.expect(messages, TokenKind::Comma)?;
+						}
+					}
+
+					let close_bracket = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+					parsed_path.span + close_bracket.span
+				}
+
+				_ => parsed_path.span,
+			};
+
+			Node::new(Type::Path { segments, arguments }, span)
 		}
 	};
 

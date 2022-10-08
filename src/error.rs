@@ -10,24 +10,35 @@ pub type ParseResult<T> = std::result::Result<T, ()>;
 
 pub struct Messages {
 	errors: Vec<Message>,
-	warnings: Vec<Message>,
+	//NOTE: `self.errors` will be renamed to contain errors and warnings
+	//where each message knows what kind it is
+	any_errors: bool,
 }
 
 impl Messages {
 	pub fn new() -> Messages {
 		Messages {
 			errors: Vec::new(),
-			warnings: Vec::new(),
+			any_errors: false,
 		}
 	}
 
-	pub fn clear(&mut self) {
+	pub fn remove_errors(&mut self) {
 		self.errors.clear();
-		self.warnings.clear();
+	}
+
+	pub fn reset(&mut self) {
+		self.remove_errors();
+		self.any_errors = false;
+	}
+
+	pub fn any_errors(&self) -> bool {
+		self.any_errors
 	}
 
 	pub fn error(&mut self, message: Message) {
 		self.errors.push(message);
+		self.any_errors = true;
 	}
 
 	pub fn errors(&self) -> &[Message] {
