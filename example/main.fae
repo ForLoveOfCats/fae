@@ -1,5 +1,4 @@
 using sub_folder
-using something_else
 
 const THING = "Hello there!"
 
