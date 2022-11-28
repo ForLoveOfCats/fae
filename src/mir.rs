@@ -29,13 +29,16 @@ impl<'a> Type<'a> {
 		assert!(arguments.len() > 0);
 
 		for (index, existing) in self.specialization.iter().enumerate() {
-			if existing
-				.arguments
-				.iter()
-				.zip(&arguments)
-				.all(|(a, b)| a == b)
-			{
-				return index;
+			if existing.arguments.len() == arguments.len() {
+				let all_match = existing
+					.arguments
+					.iter()
+					.zip(&arguments)
+					.all(|(a, b)| a == b);
+
+				if all_match {
+					return index;
+				}
 			}
 		}
 
