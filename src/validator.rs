@@ -1,7 +1,6 @@
 use crate::error::*;
 use crate::mir::*;
 use crate::tree;
-use crate::tree::PathSegments;
 
 struct Context<'a, 'b, 'p> {
 	file_layers: &'b FileLayers<'a>,
@@ -26,8 +25,14 @@ pub struct FileLayers<'a> {
 }
 
 impl<'a> FileLayers<'a> {
-	pub fn new() -> Self {
-		FileLayers { layers: Vec::new() }
+	pub fn new(type_store: &TypeStore<'a>, parsed_files: &[tree::File]) -> Self {
+		let mut file_layers = FileLayers { layers: Vec::new() };
+
+		for file in parsed_files {
+			file_layers.create_module_path(type_store, file.module_path);
+		}
+
+		file_layers
 	}
 
 	fn layer_for_module_path(
@@ -61,7 +66,11 @@ impl<'a> FileLayers<'a> {
 		unreachable!()
 	}
 
-	fn layer_or_create_for_module_path(&mut self, path: &[String]) -> &mut FileLayer<'a> {
+	fn create_module_path(
+		&mut self,
+		type_store: &TypeStore<'a>,
+		path: &[String],
+	) -> &mut FileLayer<'a> {
 		assert!(path.len() > 0);
 		let mut layers = &mut self.layers;
 
@@ -70,7 +79,7 @@ impl<'a> FileLayers<'a> {
 				Some(index) => &mut layers[index],
 
 				None => {
-					layers.push(FileLayer::new(piece));
+					layers.push(FileLayer::new(type_store, piece));
 					layers.last_mut().unwrap()
 				}
 			};
@@ -107,12 +116,11 @@ pub struct FileLayer<'a> {
 }
 
 impl<'a> FileLayer<'a> {
-	fn new(name: &str) -> Self {
+	fn new(type_store: &TypeStore<'a>, name: &str) -> Self {
 		FileLayer {
 			name: name.to_owned(),
 			children: Vec::new(),
-
-			scope_symbols: Vec::new(),
+			scope_symbols: type_store.builtin_type_symbols.clone(),
 			root_symbols: Vec::new(),
 		}
 	}
@@ -171,6 +179,8 @@ impl<'a, 'p> Scope<'a, 'p> {
 pub struct TypeStore<'a> {
 	concrete_types: Vec<Type<'a>>,
 
+	builtin_type_symbols: Vec<Symbol<'a>>,
+
 	void_type_id: TypeId,
 	reference_concrete_index: usize,
 	slice_concrete_index: usize,
@@ -181,6 +191,7 @@ impl<'a> TypeStore<'a> {
 		//This two-phase initialization is unfortunate
 		let mut store = TypeStore {
 			concrete_types: Vec::new(),
+			builtin_type_symbols: Vec::new(),
 			void_type_id: TypeId {
 				concrete_index: 0,
 				specialization_index: 0,
@@ -227,12 +238,13 @@ impl<'a> TypeStore<'a> {
 		});
 
 		let concrete_index = self.concrete_types.len() - 1;
-		let symbol_kind = SymbolKind::Type { concrete_index };
-		Symbol { name, kind: symbol_kind }
+		let kind = SymbolKind::Type { concrete_index };
+		Symbol { name, kind }
 	}
 
 	fn register_builtin_type(&mut self, name: &'a str, kind: TypeKind<'a>) {
 		let symbol = self.register_type(name, kind);
+		self.builtin_type_symbols.push(symbol);
 	}
 
 	fn lookup_type(

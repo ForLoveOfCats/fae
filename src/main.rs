@@ -43,15 +43,11 @@ fn main() {
 	}
 	messages.reset();
 
-	//Create file layers
+	//Not parallelizable
+	let mut type_store = TypeStore::new();
+	let mut file_layers = FileLayers::new(&type_store, &parsed_files);
 	//Fill root scopes
 	//Pull root symbols into file layers
-
-	//Not parallelizable
-	let mut file_layers = FileLayers::new();
-	let mut type_store = TypeStore::new();
-	// populate_files_types_and_imports(&mut file_layers, &mut type_store, parsed_files.as_slice());
-	// fill_file_symbols(&mut messages, &mut root, parsed_files.as_slice());
 
 	if messages.any_errors() {
 		return;
