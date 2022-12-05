@@ -45,14 +45,15 @@ fn main() {
 
 	//Not parallelizable
 	let mut type_store = TypeStore::new();
-	let mut file_layers = FileLayers::new(&type_store, &parsed_files);
-	//Fill root scopes
-	//Pull root symbols into file layers
+	let mut file_layers = match FileLayers::build(&mut messages, &parsed_files) {
+		Some(file_layers) => file_layers,
+		None => return,
+	};
+	validator::fill_root_scopes(&mut messages, &mut file_layers, &mut type_store);
 
-	if messages.any_errors() {
-		return;
-	}
-	messages.reset();
+	// for message in messages.errors() {
+	// 	message.print(&file.path, &file.source, "Parse error");
+	// }
 
 	//Parallelizable
 	// let mut base_scope = root.base_scope();

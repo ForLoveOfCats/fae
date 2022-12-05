@@ -2,20 +2,41 @@ use crate::error::*;
 use crate::mir::*;
 use crate::tree;
 
-struct Context<'a, 'b, 'p> {
+pub struct Context<'a, 'b, 'p> {
+	messages: &'b mut Messages,
 	file_layers: &'b FileLayers<'a>,
 	current_layer: &'b FileLayer<'a>,
-	type_store: &'b TypeStore<'a>,
+	type_store: &'b mut TypeStore<'a>,
 	scope: Scope<'a, 'p>,
 }
 
 impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
-	fn child_scope<'s>(&'s mut self) -> Context<'a, 'b, 's> {
+	fn child_scope<'s>(&'s mut self) -> Context<'a, 's, 's> {
 		Context {
+			messages: &mut *self.messages,
 			file_layers: &*self.file_layers,
 			current_layer: &*self.current_layer,
-			type_store: &*self.type_store,
+			type_store: &mut *self.type_store,
 			scope: self.scope.child(),
+		}
+	}
+
+	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
+		assert!(!segments.is_empty());
+
+		if segments.len() == 1 {
+			let segment = &segments[0];
+			let name = segment.node;
+			let found = self.scope.symbols.iter().find(|symbol| symbol.name == name);
+
+			if found.is_none() {
+				self.messages.error(
+					message!("No symbol named {name:?} in the current scope").span(segment.span),
+				);
+			}
+			found.copied()
+		} else {
+			self.file_layers.lookup_path_symbol(self.messages, segments)
 		}
 	}
 }
@@ -25,14 +46,26 @@ pub struct FileLayers<'a> {
 }
 
 impl<'a> FileLayers<'a> {
-	pub fn new(type_store: &TypeStore<'a>, parsed_files: &[tree::File]) -> Self {
+	pub fn build(messages: &mut Messages, parsed_files: &'a [tree::File<'a>]) -> Option<Self> {
 		let mut file_layers = FileLayers { layers: Vec::new() };
 
 		for file in parsed_files {
-			file_layers.create_module_path(type_store, file.module_path);
+			file_layers.create_module_path(messages, file);
+
+			if messages.any_errors() {
+				for message in messages.errors() {
+					message.print(
+						&file.source_file.path,
+						&file.source_file.source,
+						"File layers build error",
+					);
+				}
+
+				return None;
+			}
 		}
 
-		file_layers
+		Some(file_layers)
 	}
 
 	fn layer_for_module_path(
@@ -66,43 +99,44 @@ impl<'a> FileLayers<'a> {
 		unreachable!()
 	}
 
-	fn create_module_path(
-		&mut self,
-		type_store: &TypeStore<'a>,
-		path: &[String],
-	) -> &mut FileLayer<'a> {
-		assert!(path.len() > 0);
+	fn create_module_path(&mut self, messages: &mut Messages, file: &'a tree::File<'a>) {
+		assert!(file.module_path.len() > 0);
 		let mut layers = &mut self.layers;
 
-		for (piece_index, piece) in path.iter().enumerate() {
+		for (piece_index, piece) in file.module_path.iter().enumerate() {
 			let layer = match layers.iter().position(|x| x.name == *piece) {
 				Some(index) => &mut layers[index],
 
 				None => {
-					layers.push(FileLayer::new(type_store, piece));
+					layers.push(FileLayer::new(piece));
 					layers.last_mut().unwrap()
 				}
 			};
 
-			let last_piece = piece_index + 1 == path.len();
+			let last_piece = piece_index + 1 == file.module_path.len();
 			if last_piece {
-				return layer;
+				if layer.block.is_some() {
+					messages.error(message!(
+						"Duplicate module with path {:?}",
+						file.module_path
+					));
+				} else {
+					layer.block = Some(&file.block);
+				}
 			}
 
 			layers = &mut layer.children;
 		}
-
-		unreachable!()
 	}
 
 	fn lookup_path_symbol(
 		&self,
 		messages: &mut Messages,
 		segments: &[tree::Node<&'a str>],
-	) -> Option<&Symbol> {
+	) -> Option<Symbol<'a>> {
 		assert!(!segments.is_empty());
 		let layer = self.layer_for_module_path(messages, &segments)?;
-		layer.lookup_symbol(messages, self, &[*segments.last().unwrap()])
+		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
 	}
 }
 
@@ -110,42 +144,39 @@ impl<'a> FileLayers<'a> {
 pub struct FileLayer<'a> {
 	name: String,
 	children: Vec<FileLayer<'a>>,
+	block: Option<&'a tree::Block<'a>>,
 
-	scope_symbols: Vec<Symbol<'a>>,
 	root_symbols: Vec<Symbol<'a>>,
 }
 
 impl<'a> FileLayer<'a> {
-	fn new(type_store: &TypeStore<'a>, name: &str) -> Self {
+	fn new(name: &str) -> Self {
 		FileLayer {
 			name: name.to_owned(),
 			children: Vec::new(),
-			scope_symbols: type_store.builtin_type_symbols.clone(),
+			block: None,
 			root_symbols: Vec::new(),
 		}
 	}
 
-	fn lookup_symbol<'b>(
+	fn lookup_root_symbol<'b>(
 		&'b self,
 		messages: &mut Messages,
-		file_layers: &'b FileLayers<'a>,
 		segments: &[tree::Node<&'a str>],
-	) -> Option<&Symbol> {
-		assert!(!segments.is_empty());
+	) -> Option<Symbol<'a>> {
+		assert_eq!(segments.len(), 1);
 
-		if segments.len() == 1 {
-			let segment = &segments[0];
-			let name = segment.node;
-			let found = self.root_symbols.iter().find(|symbol| symbol.name == name);
+		let segment = &segments[0];
+		let name = segment.node;
+		let found = self.root_symbols.iter().find(|symbol| symbol.name == name);
 
-			if found.is_none() {
-				messages
-					.error(message!("No symbol in scope with name {name:?}").span(segment.span));
-			}
-			found
-		} else {
-			file_layers.lookup_path_symbol(messages, segments)
+		if found.is_none() {
+			messages.error(
+				message!("No symbol named {name:?} in root of module {:?}", self.name)
+					.span(segment.span),
+			);
 		}
+		found.copied()
 	}
 }
 
@@ -249,17 +280,14 @@ impl<'a> TypeStore<'a> {
 
 	fn lookup_type(
 		&mut self,
-		messages: &mut Messages,
-		file_layers: &FileLayers,
-		current_layer: &FileLayer,
-		parsed_type: &tree::Type,
+		parsed_type: &tree::Type<'a>,
+		cx: &mut Context<'a, '_, '_>,
 	) -> Option<TypeId> {
 		let (segments, arguments) = match parsed_type {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id =
-					self.lookup_type(messages, file_layers, current_layer, &inner.node)?;
+				let inner_id = self.lookup_type(&inner.node, cx)?;
 				let concrete_index = self.reference_concrete_index;
 				let concrete = &mut self.concrete_types[concrete_index];
 				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
@@ -270,8 +298,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id =
-					self.lookup_type(messages, file_layers, current_layer, &inner.node)?;
+				let inner_id = self.lookup_type(&inner.node, cx)?;
 				let concrete_index = self.slice_concrete_index;
 				let concrete = &mut self.concrete_types[concrete_index];
 				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
@@ -285,13 +312,13 @@ impl<'a> TypeStore<'a> {
 		};
 
 		assert!(!segments.segments.is_empty());
-		let symbol = current_layer.lookup_symbol(messages, file_layers, &segments.segments)?;
+		let symbol = cx.lookup_symbol(&segments.segments)?;
 
 		let concrete_index = match symbol.kind {
 			SymbolKind::Type { concrete_index } => concrete_index,
 
 			_ => {
-				messages.error(
+				cx.messages.error(
 					message!("Symbol {:?} is not a type", symbol.name)
 						.span(segments.segments.last().unwrap().span),
 				);
@@ -301,12 +328,7 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(arguments.len());
 		for argument in arguments {
-			type_args.push(self.lookup_type(
-				messages,
-				file_layers,
-				current_layer,
-				&argument.node,
-			)?);
+			type_args.push(self.lookup_type(&argument.node, cx)?);
 		}
 
 		let concrete = &mut self.concrete_types[concrete_index];
@@ -317,4 +339,44 @@ impl<'a> TypeStore<'a> {
 			specialization_index,
 		})
 	}
+}
+
+pub fn fill_root_scopes<'a>(
+	messages: &mut Messages,
+	file_layers: &mut FileLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+) {
+	//TODO: This need to be recursive
+	for index in 0..file_layers.layers.len() {
+		assert_eq!(file_layers.layers[index].root_symbols.len(), 0);
+
+		let block = match file_layers.layers[index].block {
+			Some(block) => block,
+			_ => continue,
+		};
+
+		let mut symbols = Vec::new();
+
+		let mut cx = Context {
+			messages,
+			file_layers,
+			current_layer: &file_layers.layers[index],
+			type_store,
+			scope: Scope {
+				//The initial state doesn't matter, we aren't going to drop this scope
+				initial_state: FrameState { symbols_len: 0 },
+				symbols: &mut symbols,
+			},
+		};
+
+		fill_block_scope(block, &mut cx);
+
+		std::mem::forget(cx);
+		symbols.extend_from_slice(&type_store.builtin_type_symbols);
+		file_layers.layers[index].root_symbols = symbols;
+	}
+}
+
+fn fill_block_scope<'a>(block: &tree::Block<'a>, cx: &mut Context<'a, '_, '_>) {
+	println!("fill block scope");
 }

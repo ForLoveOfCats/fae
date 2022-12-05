@@ -6,95 +6,30 @@ use crate::tree::*;
 
 pub fn parse_file<'a>(messages: &mut Messages, file: &'a SourceFile) -> File<'a> {
 	let mut tokenizer = Tokenizer::new(&file.source);
-	let items = parse_items(messages, &mut tokenizer);
+	let block = parse_root_block(messages, &mut tokenizer);
 
 	let module_path = &file.module_path;
 	File {
 		source_file: file,
-		items,
 		module_path,
+		block,
 	}
 }
 
-pub fn parse_items<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Vec<Item<'a>> {
-	let mut items = Vec::new();
-
-	while let Ok(token) = tokenizer.peek() {
-		match token {
-			Token { kind: TokenKind::Newline, .. } => {
-				if tokenizer.next(messages).is_err() {
-					return items;
-				}
-			}
-
-			Token {
-				kind: TokenKind::Word,
-				text: "using",
-				..
-			} => {
-				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
-					items.push(Item::Using(statement));
-				} else {
-					consume_rest_of_line(tokenizer);
-				}
-			}
-
-			Token {
-				kind: TokenKind::Word,
-				text: "const",
-				..
-			} => {
-				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
-					items.push(Item::Const(Box::new(statement)));
-				} else {
-					consume_rest_of_line(tokenizer);
-				}
-			}
-
-			Token {
-				kind: TokenKind::Word,
-				text: "fn",
-				..
-			} => {
-				if let Ok(declaration) = parse_function_declaration(messages, tokenizer) {
-					items.push(Item::Function(Box::new(declaration)));
-				} else {
-					consume_rest_of_line(tokenizer);
-				}
-			}
-
-			Token {
-				kind: TokenKind::Word,
-				text: "struct",
-				..
-			} => {
-				if let Ok(declaration) = parse_struct_declaration(messages, tokenizer) {
-					items.push(Item::Struct(declaration));
-				} else {
-					consume_rest_of_line(tokenizer);
-				}
-			}
-
-			token => {
-				messages.error(
-					message!("Expected start of item but found {:?}", token.text).span(token.span),
-				);
-				consume_rest_of_line(tokenizer);
-			}
-		}
-	}
-
-	items
+pub fn parse_root_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Block<'a> {
+	let statements = parse_statements(messages, tokenizer);
+	Block { statements }
 }
 
 pub fn parse_block<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Vec<Statement<'a>>>> {
+) -> ParseResult<Node<Block<'a>>> {
 	let open = tokenizer.expect(messages, TokenKind::OpenBrace)?;
-	let block = parse_statements(messages, tokenizer);
+	let statements = parse_statements(messages, tokenizer);
 	let close = tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
+	let block = Block { statements };
 	let span = open.span + close.span;
 	Ok(Node::new(block, span))
 }

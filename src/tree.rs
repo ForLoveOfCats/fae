@@ -7,7 +7,7 @@ use crate::tokenizer::Token;
 pub struct File<'a> {
 	pub source_file: &'a SourceFile,
 	pub module_path: &'a [String],
-	pub items: Vec<Item<'a>>,
+	pub block: Block<'a>,
 }
 
 #[must_use]
@@ -63,7 +63,7 @@ pub struct Function<'a> {
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
 	pub parsed_type: Node<Type<'a>>,
-	pub block: Node<Vec<Statement<'a>>>,
+	pub block: Node<Block<'a>>,
 }
 
 #[must_use]
@@ -225,21 +225,10 @@ pub struct Return<'a> {
 
 #[must_use]
 #[derive(Debug)]
-pub enum Item<'a> {
-	Using(Using<'a>),
-
-	Struct(Struct<'a>),
-	Function(Box<Function<'a>>),
-
-	Const(Box<Const<'a>>),
-}
-
-#[must_use]
-#[derive(Debug)]
 pub enum Statement<'a> {
 	Expression(Node<Expression<'a>>),
 
-	Block(Node<Vec<Statement<'a>>>),
+	Block(Node<Block<'a>>),
 
 	Using(Using<'a>),
 
@@ -255,8 +244,14 @@ pub enum Statement<'a> {
 
 #[must_use]
 #[derive(Debug)]
+pub struct Block<'a> {
+	pub statements: Vec<Statement<'a>>,
+}
+
+#[must_use]
+#[derive(Debug)]
 pub enum Expression<'a> {
-	Block(Vec<Statement<'a>>),
+	Block(Block<'a>),
 
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
