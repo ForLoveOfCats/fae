@@ -49,11 +49,13 @@ fn main() {
 		Some(file_layers) => file_layers,
 		None => return,
 	};
+	//Prints messages internally
 	validator::fill_root_scopes(&mut messages, &mut file_layers, &mut type_store);
 
-	// for message in messages.errors() {
-	// 	message.print(&file.path, &file.source, "Parse error");
-	// }
+	if messages.any_errors() {
+		return;
+	}
+	messages.reset();
 
 	//Parallelizable
 	// let mut base_scope = root.base_scope();

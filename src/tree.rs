@@ -230,16 +230,36 @@ pub enum Statement<'a> {
 
 	Block(Node<Block<'a>>),
 
-	Using(Using<'a>),
+	Using(Node<Using<'a>>),
 
 	Struct(Struct<'a>),
 	Function(Box<Function<'a>>),
 
-	Const(Box<Const<'a>>),
-	Let(Box<Let<'a>>),
-	Mut(Box<Mut<'a>>),
+	Const(Box<Node<Const<'a>>>),
+	Let(Box<Node<Let<'a>>>),
+	Mut(Box<Node<Mut<'a>>>),
 
-	Return(Box<Return<'a>>),
+	Return(Box<Node<Return<'a>>>),
+}
+
+impl<'a> Statement<'a> {
+	pub fn span(&self) -> Span {
+		use Statement::*;
+
+		//TODO: Struct and Function could be improved
+		match self {
+			Expression(statement) => statement.span,
+			Block(statement) => statement.span,
+			Using(statement) => statement.span,
+			Struct(statement) => statement.name.span,
+			Function(statement) => statement.name.span,
+			Const(statement) => statement.span,
+			Let(statement) => statement.span,
+			Mut(statement) => statement.span,
+			Return(statement) => statement.span,
+			_ => unimplemented!(),
+		}
+	}
 }
 
 #[must_use]

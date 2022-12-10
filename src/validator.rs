@@ -1,6 +1,10 @@
+use std::path::Path;
+
 use crate::error::*;
 use crate::mir::*;
 use crate::tree;
+
+const VALIDATION_ERROR: &str = "Validation error";
 
 pub struct Context<'a, 'b, 'p> {
 	messages: &'b mut Messages,
@@ -108,7 +112,7 @@ impl<'a> FileLayers<'a> {
 				Some(index) => &mut layers[index],
 
 				None => {
-					layers.push(FileLayer::new(piece));
+					layers.push(FileLayer::new(piece, file));
 					layers.last_mut().unwrap()
 				}
 			};
@@ -142,7 +146,9 @@ impl<'a> FileLayers<'a> {
 
 #[derive(Debug)]
 pub struct FileLayer<'a> {
-	name: String,
+	name: &'a str,
+	file: &'a tree::File<'a>,
+
 	children: Vec<FileLayer<'a>>,
 	block: Option<&'a tree::Block<'a>>,
 
@@ -150,9 +156,10 @@ pub struct FileLayer<'a> {
 }
 
 impl<'a> FileLayer<'a> {
-	fn new(name: &str) -> Self {
+	fn new(name: &'a str, file: &'a tree::File<'a>) -> Self {
 		FileLayer {
-			name: name.to_owned(),
+			name,
+			file,
 			children: Vec::new(),
 			block: None,
 			root_symbols: Vec::new(),
@@ -355,6 +362,9 @@ pub fn fill_root_scopes<'a>(
 			assert_eq!(layer.root_symbols.len(), 0);
 
 			handle_layers(messages, &mut layer.children, type_store);
+			if messages.any_errors() {
+				return;
+			}
 
 			let block = match layer.block {
 				Some(block) => block,
@@ -368,7 +378,17 @@ pub fn fill_root_scopes<'a>(
 				symbols: &mut symbols,
 			};
 
-			fill_block_scope(messages, block, type_store, &mut scope);
+			fill_block_scope(messages, block, true, type_store, &mut scope);
+			if messages.any_errors() {
+				for message in messages.errors() {
+					message.print(
+						&layer.file.source_file.path,
+						&layer.file.source_file.source,
+						VALIDATION_ERROR,
+					);
+				}
+				return;
+			}
 
 			std::mem::forget(scope); //Avoid cleaning up symbols
 			symbols.extend_from_slice(&type_store.builtin_type_symbols);
@@ -382,8 +402,26 @@ pub fn fill_root_scopes<'a>(
 fn fill_block_scope<'a>(
 	messages: &mut Messages,
 	block: &tree::Block<'a>,
+	is_root: bool,
 	type_store: &mut TypeStore<'a>,
 	scope: &mut Scope<'a, '_>,
 ) {
-	println!("fill block scope");
+	for statement in &block.statements {
+		if is_root {
+			match statement {
+				tree::Statement::Expression(..)
+				| tree::Statement::Block(..)
+				| tree::Statement::Let(..)
+				| tree::Statement::Mut(..)
+				| tree::Statement::Return(..) => messages.error(
+					message!("Disallowed statement kind in root scope").span(statement.span()),
+				),
+
+				tree::Statement::Using(..)
+				| tree::Statement::Struct(..)
+				| tree::Statement::Function(..)
+				| tree::Statement::Const(..) => {}
+			}
+		}
+	}
 }

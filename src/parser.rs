@@ -433,14 +433,16 @@ fn parse_number<'a>(
 fn parse_using_statement<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Using<'a>> {
-	tokenizer.expect_word(messages, "using")?;
+) -> ParseResult<Node<Using<'a>>> {
+	let using_token = tokenizer.expect_word(messages, "using")?;
 
 	let path_segments = parse_path_segments(messages, tokenizer)?;
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	Ok(Using { path_segments })
+	let span = using_token.span + path_segments.span;
+	let statement = Using { path_segments };
+	Ok(Node { node: statement, span })
 }
 
 fn parse_path_segments<'a>(
@@ -627,8 +629,8 @@ fn parse_struct_declaration<'a>(
 fn parse_const_statement<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Const<'a>> {
-	tokenizer.expect_word(messages, "const")?;
+) -> ParseResult<Node<Const<'a>>> {
+	let const_token = tokenizer.expect_word(messages, "const")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	check_not_reserved(messages, name_token)?;
@@ -648,18 +650,20 @@ fn parse_const_statement<'a>(
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	Ok(Const {
+	let span = const_token.span + expression.span;
+	let statement = Const {
 		name,
 		parsed_type,
 		expression,
-	})
+	};
+	Ok(Node { node: statement, span })
 }
 
 fn parse_let_statement<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Let<'a>> {
-	tokenizer.expect_word(messages, "let")?;
+) -> ParseResult<Node<Let<'a>>> {
+	let let_token = tokenizer.expect_word(messages, "let")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	check_not_reserved(messages, name_token)?;
@@ -678,18 +682,20 @@ fn parse_let_statement<'a>(
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	Ok(Let {
+	let span = let_token.span + expression.span;
+	let statement = Let {
 		name,
 		parsed_type,
 		expression,
-	})
+	};
+	Ok(Node { node: statement, span })
 }
 
 fn parse_mut_statement<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Mut<'a>> {
-	tokenizer.expect_word(messages, "mut")?;
+) -> ParseResult<Node<Mut<'a>>> {
+	let mut_token = tokenizer.expect_word(messages, "mut")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	check_not_reserved(messages, name_token)?;
@@ -708,30 +714,34 @@ fn parse_mut_statement<'a>(
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	Ok(Mut {
+	let span = mut_token.span + expression.span;
+	let statement = Mut {
 		name,
 		parsed_type,
 		expression,
-	})
+	};
+	Ok(Node { node: statement, span })
 }
 
 fn parse_return_statement<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Return<'a>> {
-	tokenizer.expect_word(messages, "return")?;
+) -> ParseResult<Node<Return<'a>>> {
+	let return_token = tokenizer.expect_word(messages, "return")?;
 
 	let expression = parse_expression(messages, tokenizer)?;
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	Ok(Return { expression })
+	let span = return_token.span + expression.span;
+	let statement = Return { expression };
+	Ok(Node { node: statement, span })
 }
 
 fn check_not_reserved(messages: &mut Messages, token: Token) -> ParseResult<()> {
 	let is_reserved = matches!(
 		token.text,
-		"const" | "fn" | "let" | "module" | "return" | "struct" | "using"
+		"const" | "fn" | "let" | "mut" | "return" | "struct" | "using"
 	);
 
 	if is_reserved {
