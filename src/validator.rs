@@ -346,37 +346,44 @@ pub fn fill_root_scopes<'a>(
 	file_layers: &mut FileLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 ) {
-	//TODO: This need to be recursive
-	for index in 0..file_layers.layers.len() {
-		assert_eq!(file_layers.layers[index].root_symbols.len(), 0);
+	fn handle_layers<'a>(
+		messages: &mut Messages,
+		file_layers: &mut [FileLayer<'a>],
+		type_store: &mut TypeStore<'a>,
+	) {
+		for layer in file_layers {
+			assert_eq!(layer.root_symbols.len(), 0);
 
-		let block = match file_layers.layers[index].block {
-			Some(block) => block,
-			_ => continue,
-		};
+			handle_layers(messages, &mut layer.children, type_store);
 
-		let mut symbols = Vec::new();
+			let block = match layer.block {
+				Some(block) => block,
+				_ => continue,
+			};
 
-		let mut cx = Context {
-			messages,
-			file_layers,
-			current_layer: &file_layers.layers[index],
-			type_store,
-			scope: Scope {
+			let mut symbols = Vec::new();
+			let mut scope = Scope {
 				//The initial state doesn't matter, we aren't going to drop this scope
 				initial_state: FrameState { symbols_len: 0 },
 				symbols: &mut symbols,
-			},
-		};
+			};
 
-		fill_block_scope(block, &mut cx);
+			fill_block_scope(messages, block, type_store, &mut scope);
 
-		std::mem::forget(cx);
-		symbols.extend_from_slice(&type_store.builtin_type_symbols);
-		file_layers.layers[index].root_symbols = symbols;
+			std::mem::forget(scope); //Avoid cleaning up symbols
+			symbols.extend_from_slice(&type_store.builtin_type_symbols);
+			layer.root_symbols = symbols;
+		}
 	}
+
+	handle_layers(messages, &mut file_layers.layers, type_store);
 }
 
-fn fill_block_scope<'a>(block: &tree::Block<'a>, cx: &mut Context<'a, '_, '_>) {
+fn fill_block_scope<'a>(
+	messages: &mut Messages,
+	block: &tree::Block<'a>,
+	type_store: &mut TypeStore<'a>,
+	scope: &mut Scope<'a, '_>,
+) {
 	println!("fill block scope");
 }
