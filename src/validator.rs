@@ -392,7 +392,7 @@ pub fn fill_root_scopes<'a>(
 				_ => continue,
 			};
 
-			let mut symbols = Vec::new();
+			let mut symbols = type_store.builtin_type_symbols.to_vec();
 			let mut scope = Scope {
 				//The initial state doesn't matter, we aren't going to drop this scope
 				initial_state: FrameState { symbols_len: 0 },
@@ -412,7 +412,6 @@ pub fn fill_root_scopes<'a>(
 			}
 
 			std::mem::forget(scope); //Avoid cleaning up symbols
-			symbols.extend_from_slice(&type_store.builtin_type_symbols);
 			layer.root_symbols = symbols;
 		}
 	}
