@@ -1,8 +1,8 @@
 using sub_folder
 
-const THING = "Hello there!"
+const Foo: &str = "Hello there!"
 
-struct MyStruct {
+struct Foo {
 	field: f64
 	other_field: bool
 }

@@ -23,19 +23,13 @@ fn main() {
 		}
 	};
 
-	let mut messages = Messages::new();
+	let mut messages = Messages::new(&files);
 
 	//Parallelizable
 	let mut parsed_files = Vec::new();
 	for file in &files {
-		let parsed_file = parse_file(&mut messages, file);
-
-		for message in messages.errors() {
-			message.print(&file.path, &file.source, "Parse error");
-		}
-		messages.remove_errors();
-
-		parsed_files.push(parsed_file);
+		parsed_files.push(parse_file(&mut messages, file));
+		messages.print_errors(&file.path, &file.source, "Parse error");
 	}
 
 	if messages.any_errors() {

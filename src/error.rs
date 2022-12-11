@@ -2,33 +2,39 @@ use std::path::Path;
 
 use unicode_width::UnicodeWidthChar;
 
-use crate::span::Span;
+use crate::{file::SourceFile, span::Span};
 
 pub const TABULATOR_SIZE: usize = 4;
 
 pub type ParseResult<T> = std::result::Result<T, ()>;
 
-pub struct Messages {
+#[derive(Debug)]
+pub struct Messages<'a> {
 	errors: Vec<Message>,
 	//NOTE: `self.errors` will be renamed to contain errors and warnings
 	//where each message knows what kind it is
 	any_errors: bool,
+	sources: &'a [SourceFile],
 }
 
-impl Messages {
-	pub fn new() -> Messages {
+impl<'a> Messages<'a> {
+	pub fn new(sources: &'a [SourceFile]) -> Self {
 		Messages {
 			errors: Vec::new(),
 			any_errors: false,
+			sources,
 		}
 	}
 
-	pub fn remove_errors(&mut self) {
+	pub fn print_errors(&mut self, path: &Path, source: &str, message_kind: &str) {
+		for error in &self.errors {
+			error.print(&self.sources, path, source, message_kind);
+		}
 		self.errors.clear();
 	}
 
 	pub fn reset(&mut self) {
-		self.remove_errors();
+		self.errors.clear();
 		self.any_errors = false;
 	}
 
@@ -46,10 +52,11 @@ impl Messages {
 	}
 }
 
+#[derive(Debug)]
 pub struct Message {
 	text: String,
 	span: Option<Span>,
-	notes: Vec<Annotation>,
+	notes: Vec<Note>,
 }
 
 impl Message {
@@ -66,13 +73,43 @@ impl Message {
 		self
 	}
 
-	pub fn note(mut self, note: Annotation) -> Message {
-		self.notes.push(note);
+	pub fn span_if_some(mut self, span: Option<Span>) -> Message {
+		self.span = self.span.or(span);
 		self
 	}
 
-	pub fn print(&self, path: &Path, source: &str, message_kind: &str) {
-		if let Some(span) = self.span {
+	pub fn note_if_some(
+		mut self,
+		text: &str,
+		span: Option<Span>,
+		file_index: Option<usize>,
+	) -> Message {
+		if let Some(note) = Note::new(text, span, file_index) {
+			self.notes.push(note);
+		}
+		self
+	}
+
+	fn print(&self, sources: &[SourceFile], path: &Path, source: &str, message_kind: &str) {
+		Self::print_message(self.span, &self.text, path, source, message_kind);
+
+		for note in &self.notes {
+			let source_file = &sources[note.file_index];
+			let path = &source_file.path;
+			let source = &source_file.source;
+			Self::print_message(Some(note.span), &note.text, path, source, "Note");
+		}
+	}
+
+	//This is a big ball of mess
+	fn print_message(
+		span: Option<Span>,
+		text: &str,
+		path: &Path,
+		source: &str,
+		message_kind: &str,
+	) {
+		if let Some(span) = span {
 			let (line, start, end) = {
 				let mut line_start = span.start;
 				while line_start > 0 {
@@ -111,7 +148,7 @@ impl Message {
 				"{message_kind} {:?}, line {}, column {}: ",
 				path, line_num, column_start
 			);
-			eprint!("{}", self.text);
+			eprint!("{}", text);
 
 			if start != end {
 				eprintln!();
@@ -135,7 +172,7 @@ impl Message {
 			eprintln!();
 		} else {
 			eprint!("{message_kind} {:?}: ", path);
-			eprintln!("{}", self.text);
+			eprintln!("{}", text);
 		}
 	}
 }
@@ -147,14 +184,20 @@ macro_rules! message {
 	}
 }
 
-pub struct Annotation {
-	span: Span,
+#[derive(Debug)]
+pub struct Note {
 	text: String,
+	span: Span,
+	file_index: usize,
 }
 
-impl Annotation {
-	pub fn new(span: Span, text: String) -> Annotation {
-		Annotation { span, text }
+impl Note {
+	pub fn new(text: &str, span: Option<Span>, file_index: Option<usize>) -> Option<Note> {
+		Some(Note {
+			text: text.to_owned(),
+			span: span?,
+			file_index: file_index?,
+		})
 	}
 }
 

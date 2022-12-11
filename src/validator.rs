@@ -1,13 +1,12 @@
-use std::path::Path;
-
 use crate::error::*;
 use crate::mir::*;
+use crate::span::Span;
 use crate::tree;
 
 const VALIDATION_ERROR: &str = "Validation error";
 
 pub struct Context<'a, 'b, 'p> {
-	messages: &'b mut Messages,
+	messages: &'b mut Messages<'a>,
 	file_layers: &'b FileLayers<'a>,
 	current_layer: &'b FileLayer<'a>,
 	type_store: &'b mut TypeStore<'a>,
@@ -25,7 +24,7 @@ impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
 		}
 	}
 
-	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
+	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<&Symbol<'a>> {
 		assert!(!segments.is_empty());
 
 		if segments.len() == 1 {
@@ -38,7 +37,7 @@ impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
 					message!("No symbol named {name:?} in the current scope").span(segment.span),
 				);
 			}
-			found.copied()
+			found
 		} else {
 			self.file_layers.lookup_path_symbol(self.messages, segments)
 		}
@@ -57,13 +56,11 @@ impl<'a> FileLayers<'a> {
 			file_layers.create_module_path(messages, file);
 
 			if messages.any_errors() {
-				for message in messages.errors() {
-					message.print(
-						&file.source_file.path,
-						&file.source_file.source,
-						"File layers build error",
-					);
-				}
+				messages.print_errors(
+					&file.source_file.path,
+					&file.source_file.source,
+					VALIDATION_ERROR,
+				);
 
 				return None;
 			}
@@ -137,7 +134,7 @@ impl<'a> FileLayers<'a> {
 		&self,
 		messages: &mut Messages,
 		segments: &[tree::Node<&'a str>],
-	) -> Option<Symbol<'a>> {
+	) -> Option<&Symbol<'a>> {
 		assert!(!segments.is_empty());
 		let layer = self.layer_for_module_path(messages, &segments)?;
 		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
@@ -170,7 +167,7 @@ impl<'a> FileLayer<'a> {
 		&'b self,
 		messages: &mut Messages,
 		segments: &[tree::Node<&'a str>],
-	) -> Option<Symbol<'a>> {
+	) -> Option<&Symbol<'a>> {
 		assert_eq!(segments.len(), 1);
 
 		let segment = &segments[0];
@@ -183,7 +180,7 @@ impl<'a> FileLayer<'a> {
 					.span(segment.span),
 			);
 		}
-		found.copied()
+		found
 	}
 }
 
@@ -213,7 +210,24 @@ impl<'a, 'p> Scope<'a, 'p> {
 			symbols: &mut *self.symbols,
 		}
 	}
+
+	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
+		let name = symbol.name;
+		if let Some(found) = self.symbols.iter().find(|s| s.name == name) {
+			//symbol.span should only be None for builtin types, the pushing of which should not trigger this error
+			//yes it's a hack, shush
+			messages.error(
+				message!("Duplicated symbol {name:?}")
+					.span_if_some(symbol.span)
+					.note_if_some("Original symbol here", found.span, found.file_index),
+			);
+			return;
+		}
+
+		self.symbols.push(symbol);
+	}
 }
+
 pub struct TypeStore<'a> {
 	concrete_types: Vec<Type<'a>>,
 
@@ -244,7 +258,7 @@ impl<'a> TypeStore<'a> {
 			specialization_index: 0,
 		};
 
-		//These are just to park the concrete index so we can generate valid TypeIds for them
+		//Garbage names to just park the concrete index so we can generate TypeIds for these two
 		store.register_builtin_type("&", TypeKind::Primative);
 		store.reference_concrete_index = store.concrete_types.len() - 1;
 		store.register_builtin_type("[]", TypeKind::Primative);
@@ -268,7 +282,13 @@ impl<'a> TypeStore<'a> {
 	}
 
 	#[must_use = "Logical error to call without handling resulting symbol"]
-	pub fn register_type(&mut self, name: &'a str, kind: TypeKind<'a>) -> Symbol<'a> {
+	pub fn register_type(
+		&mut self,
+		name: &'a str,
+		kind: TypeKind<'a>,
+		span: Option<Span>,
+		file_index: Option<usize>,
+	) -> Symbol<'a> {
 		self.concrete_types.push(Type {
 			name: name.to_string(),
 			kind,
@@ -277,11 +297,11 @@ impl<'a> TypeStore<'a> {
 
 		let concrete_index = self.concrete_types.len() - 1;
 		let kind = SymbolKind::Type { concrete_index };
-		Symbol { name, kind }
+		Symbol { name, kind, span, file_index }
 	}
 
 	fn register_builtin_type(&mut self, name: &'a str, kind: TypeKind<'a>) {
-		let symbol = self.register_type(name, kind);
+		let symbol = self.register_type(name, kind, None, None);
 		self.builtin_type_symbols.push(symbol);
 	}
 
@@ -325,8 +345,9 @@ impl<'a> TypeStore<'a> {
 			SymbolKind::Type { concrete_index } => concrete_index,
 
 			_ => {
+				let name = symbol.name;
 				cx.messages.error(
-					message!("Symbol {:?} is not a type", symbol.name)
+					message!("Symbol {name:?} is not a type")
 						.span(segments.segments.last().unwrap().span),
 				);
 				return None;
@@ -378,15 +399,15 @@ pub fn fill_root_scopes<'a>(
 				symbols: &mut symbols,
 			};
 
-			fill_block_scope(messages, block, true, type_store, &mut scope);
+			let index = layer.file.source_file.index;
+			fill_block_scope(messages, block, true, type_store, &mut scope, index);
 			if messages.any_errors() {
-				for message in messages.errors() {
-					message.print(
-						&layer.file.source_file.path,
-						&layer.file.source_file.source,
-						VALIDATION_ERROR,
-					);
-				}
+				messages.print_errors(
+					&layer.file.source_file.path,
+					&layer.file.source_file.source,
+					VALIDATION_ERROR,
+				);
+
 				return;
 			}
 
@@ -405,7 +426,10 @@ fn fill_block_scope<'a>(
 	is_root: bool,
 	type_store: &mut TypeStore<'a>,
 	scope: &mut Scope<'a, '_>,
+	file_index: usize,
 ) {
+	let file_index = Some(file_index);
+
 	for statement in &block.statements {
 		if is_root {
 			match statement {
@@ -422,6 +446,49 @@ fn fill_block_scope<'a>(
 				| tree::Statement::Function(..)
 				| tree::Statement::Const(..) => {}
 			}
+		}
+
+		match statement {
+			tree::Statement::Using(..) => {} //Skip
+
+			tree::Statement::Struct(statement) => {
+				let name = statement.name.node;
+				//Start off with no fields, they will be added during the next pre-pass
+				let kind = TypeKind::Struct { fields: Vec::new() };
+				let span = Some(statement.name.span);
+				let symbol = type_store.register_type(name, kind, span, file_index);
+				scope.push_symbol(messages, symbol);
+			}
+
+			tree::Statement::Function(statement) => {
+				//Start off with no parameters, they will be added during the next pre-pass
+				let kind = SymbolKind::Function { parameters: Vec::new() };
+				let symbol = Symbol {
+					name: statement.name.node,
+					kind,
+					span: Some(statement.name.span),
+					file_index,
+				};
+				scope.push_symbol(messages, symbol);
+			}
+
+			tree::Statement::Const(statement) => {
+				//Type id will get filled in during the next pre-pass
+				let kind = SymbolKind::Const { type_id: TypeId::invalid() };
+				let symbol = Symbol {
+					name: statement.node.name.node,
+					kind,
+					span: Some(statement.span),
+					file_index,
+				};
+				scope.push_symbol(messages, symbol);
+			}
+
+			_ => {}
+		}
+
+		if messages.any_errors() {
+			return;
 		}
 	}
 }

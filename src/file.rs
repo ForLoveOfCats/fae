@@ -9,6 +9,7 @@ pub struct SourceFile {
 	pub source: String,
 	pub path: PathBuf,
 	pub module_path: Vec<String>,
+	pub index: usize,
 }
 
 impl std::fmt::Debug for SourceFile {
@@ -40,7 +41,13 @@ pub fn load_all_files<P: AsRef<Path>>(path: P) -> Result<Vec<SourceFile>> {
 		let mut source = String::with_capacity(capacity as usize);
 		file.read_to_string(&mut source)?;
 
-		files.push(SourceFile { source, path, module_path });
+		let index = files.len();
+		files.push(SourceFile {
+			source,
+			path,
+			module_path,
+			index,
+		});
 	}
 
 	Ok(files)

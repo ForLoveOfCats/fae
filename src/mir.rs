@@ -1,20 +1,24 @@
-use crate::tree;
-use tree::Node;
+use crate::span::Span;
+use crate::tree::Node;
 
 #[derive(Debug, Clone)]
 pub struct Import<'a> {
 	pub segments: Vec<Node<&'a str>>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Symbol<'a> {
 	pub name: &'a str,
 	pub kind: SymbolKind,
+	pub span: Option<Span>,
+	pub file_index: Option<usize>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum SymbolKind {
 	Type { concrete_index: usize },
+	Function { parameters: Vec<TypeId> },
+	Const { type_id: TypeId },
 }
 
 #[derive(Debug)]
@@ -69,4 +73,13 @@ pub struct Field<'a> {
 pub struct TypeId {
 	pub concrete_index: usize,
 	pub specialization_index: usize,
+}
+
+impl TypeId {
+	pub fn invalid() -> TypeId {
+		TypeId {
+			concrete_index: usize::MAX,
+			specialization_index: usize::MAX,
+		}
+	}
 }
