@@ -46,6 +46,7 @@ fn main() {
 	};
 	//Prints messages internally
 	validator::fill_root_scopes(&mut messages, &mut file_layers, &mut type_store);
+	validator::resolve_root_scope_inports(&mut messages, &mut file_layers, &mut type_store);
 
 	if messages.any_errors() {
 		return;

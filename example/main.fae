@@ -1,8 +1,8 @@
-using sub_folder
+using sub_folder::sub_module
 
 const CONSTANT: &str = "Hello there!"
 
-struct i32 {sdsdf
+struct MyStruct {
 	field: f64
 	other_field: bool
 }

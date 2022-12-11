@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::mir::*;
 use crate::span::Span;
 use crate::tree;
+use crate::tree::Using;
 
 const VALIDATION_ERROR: &str = "Validation error";
 
@@ -44,6 +45,7 @@ impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
 	}
 }
 
+#[derive(Debug, Clone)]
 pub struct FileLayers<'a> {
 	layers: Vec<FileLayer<'a>>,
 }
@@ -57,7 +59,6 @@ impl<'a> FileLayers<'a> {
 
 			if messages.any_errors() {
 				messages.print_errors(VALIDATION_ERROR);
-
 				return None;
 			}
 		}
@@ -137,7 +138,7 @@ impl<'a> FileLayers<'a> {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileLayer<'a> {
 	name: &'a str,
 	file: &'a tree::File<'a>,
@@ -210,14 +211,12 @@ impl<'a, 'p> Scope<'a, 'p> {
 	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
 		let name = symbol.name;
 		if let Some(found) = self.symbols.iter().find(|s| s.name == name) {
-			//symbol.span should only be None for builtin types, the pushing of which should not trigger this error
-			//yes it's a hack, shush
+			//symbol.span should only be None for builtin types, yes it's a hack, shush
 			messages.error(
-				message!("Duplicated symbol {name:?}")
+				message!("Duplicate symbol {name:?}")
 					.span_if_some(symbol.span)
 					.note_if_some("Original symbol here", found.span, found.file_index),
 			);
-			return;
 		}
 
 		self.symbols.push(symbol);
@@ -370,7 +369,7 @@ pub fn fill_root_scopes<'a>(
 	file_layers: &mut FileLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 ) {
-	fn handle_layers<'a>(
+	fn handle_layers_fill<'a>(
 		messages: &mut Messages,
 		file_layers: &mut [FileLayer<'a>],
 		type_store: &mut TypeStore<'a>,
@@ -378,17 +377,13 @@ pub fn fill_root_scopes<'a>(
 		for layer in file_layers {
 			assert_eq!(layer.root_symbols.len(), 0);
 
-			handle_layers(messages, &mut layer.children, type_store);
-			if messages.any_errors() {
-				return;
-			}
-
-			messages.set_current_file_index(layer.file.source_file.index);
+			handle_layers_fill(messages, &mut layer.children, type_store);
 
 			let block = match layer.block {
 				Some(block) => block,
 				_ => continue,
 			};
+			messages.set_current_file_index(layer.file.source_file.index);
 
 			let mut symbols = type_store.builtin_type_symbols.to_vec();
 			let mut scope = Scope {
@@ -399,18 +394,78 @@ pub fn fill_root_scopes<'a>(
 
 			let index = layer.file.source_file.index;
 			fill_block_scope(messages, block, true, type_store, &mut scope, index);
-			if messages.any_errors() {
-				messages.print_errors(VALIDATION_ERROR);
-
-				return;
-			}
+			messages.print_errors(VALIDATION_ERROR);
 
 			std::mem::forget(scope); //Avoid cleaning up symbols
 			layer.root_symbols = symbols;
 		}
 	}
 
-	handle_layers(messages, &mut file_layers.layers, type_store);
+	handle_layers_fill(messages, &mut file_layers.layers, type_store);
+}
+
+pub fn resolve_root_scope_inports<'a>(
+	messages: &mut Messages,
+	file_layers: &mut FileLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+) {
+	let cloned_layers = file_layers.clone();
+
+	fn handle_layers_imports<'a>(
+		messages: &mut Messages,
+		file_layers: &mut [FileLayer<'a>],
+		type_store: &mut TypeStore<'a>,
+		cloned_layers: &FileLayers<'a>,
+	) {
+		for layer in file_layers {
+			handle_layers_imports(messages, &mut layer.children, type_store, cloned_layers);
+
+			let block = match layer.block {
+				Some(block) => block,
+				_ => continue,
+			};
+			messages.set_current_file_index(layer.file.source_file.index);
+
+			for statement in &block.statements {
+				let using_statement = match statement {
+					tree::Statement::Using(using_statement) => using_statement,
+					_ => continue,
+				};
+
+				let path = &using_statement.node.path_segments.node.segments;
+				let found = match cloned_layers.layer_for_module_path(messages, path) {
+					Some(found) => found,
+					_ => continue,
+				};
+
+				if found.root_symbols.is_empty() {
+					continue;
+				}
+
+				let symbols = &found.root_symbols[type_store.builtin_type_symbols.len()..];
+				for symbol in symbols {
+					let name = symbol.name;
+					if let Some(found) = layer.root_symbols.iter().find(|s| s.name == name) {
+						messages.error(
+							message!("Import of duplicate symbol {name:?}")
+								.span(using_statement.span)
+								.note_if_some("Original symbol here", found.span, found.file_index)
+								.note_if_some(
+									"Duplicate symbol here",
+									symbol.span,
+									symbol.file_index,
+								),
+						);
+					}
+					layer.root_symbols.push(symbol.clone());
+				}
+			}
+		}
+	}
+
+	let layers = &mut file_layers.layers;
+	handle_layers_imports(messages, layers, type_store, &cloned_layers);
+	messages.print_errors(VALIDATION_ERROR);
 }
 
 fn fill_block_scope<'a>(
@@ -478,10 +533,6 @@ fn fill_block_scope<'a>(
 			}
 
 			_ => {}
-		}
-
-		if messages.any_errors() {
-			return;
 		}
 	}
 }
