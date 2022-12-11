@@ -2,7 +2,7 @@ using sub_folder
 
 const CONSTANT: &str = "Hello there!"
 
-struct i32 {
+struct i32 {sdsdf
 	field: f64
 	other_field: bool
 }

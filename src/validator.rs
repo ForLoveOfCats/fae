@@ -56,11 +56,7 @@ impl<'a> FileLayers<'a> {
 			file_layers.create_module_path(messages, file);
 
 			if messages.any_errors() {
-				messages.print_errors(
-					&file.source_file.path,
-					&file.source_file.source,
-					VALIDATION_ERROR,
-				);
+				messages.print_errors(VALIDATION_ERROR);
 
 				return None;
 			}
@@ -387,6 +383,8 @@ pub fn fill_root_scopes<'a>(
 				return;
 			}
 
+			messages.set_current_file_index(layer.file.source_file.index);
+
 			let block = match layer.block {
 				Some(block) => block,
 				_ => continue,
@@ -402,11 +400,7 @@ pub fn fill_root_scopes<'a>(
 			let index = layer.file.source_file.index;
 			fill_block_scope(messages, block, true, type_store, &mut scope, index);
 			if messages.any_errors() {
-				messages.print_errors(
-					&layer.file.source_file.path,
-					&layer.file.source_file.source,
-					VALIDATION_ERROR,
-				);
+				messages.print_errors(VALIDATION_ERROR);
 
 				return;
 			}

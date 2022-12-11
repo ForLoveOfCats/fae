@@ -15,6 +15,7 @@ pub struct Messages<'a> {
 	//where each message knows what kind it is
 	any_errors: bool,
 	sources: &'a [SourceFile],
+	current_file_index: usize,
 }
 
 impl<'a> Messages<'a> {
@@ -23,37 +24,46 @@ impl<'a> Messages<'a> {
 			errors: Vec::new(),
 			any_errors: false,
 			sources,
+			current_file_index: usize::MAX,
 		}
 	}
 
-	pub fn print_errors(&mut self, path: &Path, source: &str, message_kind: &str) {
-		for error in &self.errors {
-			error.print(&self.sources, path, source, message_kind);
+	pub fn set_current_file_index(&mut self, file_index: usize) {
+		self.current_file_index = file_index;
+	}
+
+	pub fn print_errors(&mut self, message_prefix: &str) {
+		let len = self.errors.len();
+		for (index, error) in self.errors.iter().enumerate() {
+			error.print(&self.sources, message_prefix);
+			if index + 1 < len {
+				eprintln!();
+			}
 		}
+
 		self.errors.clear();
 	}
 
 	pub fn reset(&mut self) {
 		self.errors.clear();
 		self.any_errors = false;
+		self.current_file_index = usize::MAX;
 	}
 
 	pub fn any_errors(&self) -> bool {
 		self.any_errors
 	}
 
-	pub fn error(&mut self, message: Message) {
+	pub fn error(&mut self, mut message: Message) {
+		message.file_index = self.current_file_index;
 		self.errors.push(message);
 		self.any_errors = true;
-	}
-
-	pub fn errors(&self) -> &[Message] {
-		&self.errors
 	}
 }
 
 #[derive(Debug)]
 pub struct Message {
+	file_index: usize,
 	text: String,
 	span: Option<Span>,
 	notes: Vec<Note>,
@@ -62,6 +72,7 @@ pub struct Message {
 impl Message {
 	pub fn new(text: String) -> Message {
 		Message {
+			file_index: usize::MAX,
 			text,
 			span: None,
 			notes: Vec::new(),
@@ -90,8 +101,11 @@ impl Message {
 		self
 	}
 
-	fn print(&self, sources: &[SourceFile], path: &Path, source: &str, message_kind: &str) {
-		Self::print_message(self.span, &self.text, path, source, message_kind);
+	fn print(&self, sources: &[SourceFile], message_prefix: &str) {
+		let source_file = &sources[self.file_index];
+		let path = &source_file.path;
+		let source = &source_file.source;
+		Self::print_message(self.span, &self.text, path, source, message_prefix);
 
 		for note in &self.notes {
 			let source_file = &sources[note.file_index];
@@ -107,7 +121,7 @@ impl Message {
 		text: &str,
 		path: &Path,
 		source: &str,
-		message_kind: &str,
+		message_prefix: &str,
 	) {
 		if let Some(span) = span {
 			let (line, start, end) = {
@@ -145,7 +159,7 @@ impl Message {
 
 			//TODO: Handle multi-line spans
 			eprint!(
-				"{message_kind} {:?}, line {}, column {}: ",
+				"{message_prefix} {:?}, line {}, column {}: ",
 				path, line_num, column_start
 			);
 			eprint!("{}", text);
@@ -171,7 +185,7 @@ impl Message {
 
 			eprintln!();
 		} else {
-			eprint!("{message_kind} {:?}: ", path);
+			eprint!("{message_prefix} {:?}: ", path);
 			eprintln!("{}", text);
 		}
 	}
