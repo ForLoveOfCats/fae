@@ -33,12 +33,9 @@ impl<'a> Messages<'a> {
 	}
 
 	pub fn print_errors(&mut self, message_prefix: &str) {
-		let len = self.errors.len();
-		for (index, error) in self.errors.iter().enumerate() {
+		for error in &self.errors {
 			error.print(&self.sources, message_prefix);
-			if index + 1 < len {
-				eprintln!();
-			}
+			eprintln!();
 		}
 
 		self.errors.clear();

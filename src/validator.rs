@@ -2,9 +2,6 @@ use crate::error::*;
 use crate::mir::*;
 use crate::span::Span;
 use crate::tree;
-use crate::tree::Using;
-
-const VALIDATION_ERROR: &str = "Validation error";
 
 pub struct Context<'a, 'b, 'p> {
 	messages: &'b mut Messages<'a>,
@@ -56,11 +53,6 @@ impl<'a> FileLayers<'a> {
 
 		for file in parsed_files {
 			file_layers.create_module_path(messages, file);
-
-			if messages.any_errors() {
-				messages.print_errors(VALIDATION_ERROR);
-				return None;
-			}
 		}
 
 		Some(file_layers)
@@ -217,9 +209,9 @@ impl<'a, 'p> Scope<'a, 'p> {
 					.span_if_some(symbol.span)
 					.note_if_some("Original symbol here", found.span, found.file_index),
 			);
+		} else {
+			self.symbols.push(symbol);
 		}
-
-		self.symbols.push(symbol);
 	}
 }
 
@@ -364,7 +356,16 @@ impl<'a> TypeStore<'a> {
 	}
 }
 
-pub fn fill_root_scopes<'a>(
+pub fn validate_file_layers<'a>(
+	messages: &mut Messages,
+	file_layers: &mut FileLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+) {
+	fill_root_scopes(messages, file_layers, type_store);
+	resolve_root_scope_inports(messages, file_layers, type_store);
+}
+
+fn fill_root_scopes<'a>(
 	messages: &mut Messages,
 	file_layers: &mut FileLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -394,7 +395,6 @@ pub fn fill_root_scopes<'a>(
 
 			let index = layer.file.source_file.index;
 			fill_block_scope(messages, block, true, type_store, &mut scope, index);
-			messages.print_errors(VALIDATION_ERROR);
 
 			std::mem::forget(scope); //Avoid cleaning up symbols
 			layer.root_symbols = symbols;
@@ -404,7 +404,7 @@ pub fn fill_root_scopes<'a>(
 	handle_layers_fill(messages, &mut file_layers.layers, type_store);
 }
 
-pub fn resolve_root_scope_inports<'a>(
+fn resolve_root_scope_inports<'a>(
 	messages: &mut Messages,
 	file_layers: &mut FileLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -445,6 +445,7 @@ pub fn resolve_root_scope_inports<'a>(
 				let symbols = &found.root_symbols[type_store.builtin_type_symbols.len()..];
 				for symbol in symbols {
 					let name = symbol.name;
+
 					if let Some(found) = layer.root_symbols.iter().find(|s| s.name == name) {
 						messages.error(
 							message!("Import of duplicate symbol {name:?}")
@@ -456,8 +457,9 @@ pub fn resolve_root_scope_inports<'a>(
 									symbol.file_index,
 								),
 						);
+					} else {
+						layer.root_symbols.push(symbol.clone());
 					}
-					layer.root_symbols.push(symbol.clone());
 				}
 			}
 		}
@@ -465,7 +467,6 @@ pub fn resolve_root_scope_inports<'a>(
 
 	let layers = &mut file_layers.layers;
 	handle_layers_imports(messages, layers, type_store, &cloned_layers);
-	messages.print_errors(VALIDATION_ERROR);
 }
 
 fn fill_block_scope<'a>(

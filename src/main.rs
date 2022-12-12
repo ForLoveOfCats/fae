@@ -30,12 +30,9 @@ fn main() {
 	for file in &files {
 		messages.set_current_file_index(file.index);
 		parsed_files.push(parse_file(&mut messages, file));
-		messages.print_errors("Parse error");
 	}
 
-	if messages.any_errors() {
-		return;
-	}
+	messages.print_errors("Parse error");
 	messages.reset();
 
 	//Not parallelizable
@@ -44,10 +41,9 @@ fn main() {
 		Some(file_layers) => file_layers,
 		None => return,
 	};
-	//Prints messages internally
-	validator::fill_root_scopes(&mut messages, &mut file_layers, &mut type_store);
-	validator::resolve_root_scope_inports(&mut messages, &mut file_layers, &mut type_store);
+	validator::validate_file_layers(&mut messages, &mut file_layers, &mut type_store);
 
+	messages.print_errors("Validation error");
 	if messages.any_errors() {
 		return;
 	}
