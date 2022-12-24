@@ -38,6 +38,7 @@ pub enum TokenKind {
 	CompLessEqual,
 
 	Colon,
+	DoubleColon,
 	Period,
 	Comma,
 	Ampersand,
@@ -82,6 +83,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::CompLessEqual => "'<='",
 
 			TokenKind::Colon => "':'",
+			TokenKind::DoubleColon => "'::'",
 			TokenKind::Period => "'.'",
 			TokenKind::Comma => "','",
 			TokenKind::Ampersand => "'&'",
@@ -382,6 +384,16 @@ impl<'a> Tokenizer<'a> {
 				self.byte_index,
 				self.byte_index + 1,
 			)),
+
+			[b':', b':', ..] => {
+				self.byte_index += 1;
+				Ok(self.create_token(
+					"::",
+					TokenKind::DoubleColon,
+					self.byte_index - 1,
+					self.byte_index + 1,
+				))
+			}
 
 			[b':', ..] => {
 				Ok(self.create_token(":", TokenKind::Colon, self.byte_index, self.byte_index + 1))

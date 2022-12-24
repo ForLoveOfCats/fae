@@ -334,6 +334,7 @@ fn parse_arguments<'a>(
 		if reached_close_paren(tokenizer) {
 			break;
 		}
+
 		tokenizer.expect(messages, TokenKind::Comma)?;
 	}
 
@@ -457,9 +458,8 @@ fn parse_path_segments<'a>(
 
 		segments.push(Node::from_token(segment_token.text, segment_token));
 
-		if tokenizer.peek()?.kind == TokenKind::Colon {
-			tokenizer.expect(messages, TokenKind::Colon)?;
-			tokenizer.expect(messages, TokenKind::Colon)?;
+		if tokenizer.peek()?.kind == TokenKind::DoubleColon {
+			tokenizer.expect(messages, TokenKind::DoubleColon)?;
 		} else {
 			break;
 		}
