@@ -257,7 +257,22 @@ impl<'a> Statement<'a> {
 			Let(statement) => statement.span,
 			Mut(statement) => statement.span,
 			Return(statement) => statement.span,
-			_ => unimplemented!(),
+		}
+	}
+
+	pub fn name_and_article(&self) -> &'static str {
+		use Statement::*;
+
+		match self {
+			Expression(..) => "An expression",
+			Block(..) => "A block",
+			Using(..) => "A using statement",
+			Struct(..) => "A struct definition",
+			Function(..) => "A function definition",
+			Const(..) => "A const definition",
+			Let(..) => "A let statement",
+			Mut(..) => "A mut statement",
+			Return(..) => "A return statement",
 		}
 	}
 }

@@ -356,21 +356,37 @@ impl<'a> TypeStore<'a> {
 	}
 }
 
+pub struct FunctionStore<'a> {
+	shapes: Vec<FunctionShape<'a>>,
+}
+
+impl<'a> FunctionStore<'a> {
+	pub fn new() -> Self {
+		FunctionStore { shapes: Vec::new() }
+	}
+
+	fn register_shape(&mut self, shape: FunctionShape<'a>) -> usize {
+		let index = self.shapes.len();
+		self.shapes.push(shape);
+		index
+	}
+}
+
 pub fn validate_file_layers<'a>(
 	messages: &mut Messages,
 	file_layers: &mut FileLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 ) {
-	fill_root_scopes(messages, file_layers, type_store);
+	create_root_scope_types(messages, file_layers, type_store);
 	resolve_root_scope_inports(messages, file_layers, type_store);
 }
 
-fn fill_root_scopes<'a>(
+fn create_root_scope_types<'a>(
 	messages: &mut Messages,
 	file_layers: &mut FileLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 ) {
-	fn handle_layers_fill<'a>(
+	fn handle_layers_types<'a>(
 		messages: &mut Messages,
 		file_layers: &mut [FileLayer<'a>],
 		type_store: &mut TypeStore<'a>,
@@ -378,7 +394,7 @@ fn fill_root_scopes<'a>(
 		for layer in file_layers {
 			assert_eq!(layer.root_symbols.len(), 0);
 
-			handle_layers_fill(messages, &mut layer.children, type_store);
+			handle_layers_types(messages, &mut layer.children, type_store);
 
 			let block = match layer.block {
 				Some(block) => block,
@@ -394,14 +410,14 @@ fn fill_root_scopes<'a>(
 			};
 
 			let index = layer.file.source_file.index;
-			fill_block_scope(messages, block, true, type_store, &mut scope, index);
+			create_block_scope_types(messages, block, true, type_store, &mut scope, index);
 
 			std::mem::forget(scope); //Avoid cleaning up symbols
 			layer.root_symbols = symbols;
 		}
 	}
 
-	handle_layers_fill(messages, &mut file_layers.layers, type_store);
+	handle_layers_types(messages, &mut file_layers.layers, type_store);
 }
 
 fn resolve_root_scope_inports<'a>(
@@ -469,7 +485,7 @@ fn resolve_root_scope_inports<'a>(
 	handle_layers_imports(messages, layers, type_store, &cloned_layers);
 }
 
-fn fill_block_scope<'a>(
+fn create_block_scope_types<'a>(
 	messages: &mut Messages,
 	block: &tree::Block<'a>,
 	is_root: bool,
@@ -477,8 +493,6 @@ fn fill_block_scope<'a>(
 	scope: &mut Scope<'a, '_>,
 	file_index: usize,
 ) {
-	let file_index = Some(file_index);
-
 	for statement in &block.statements {
 		if is_root {
 			match statement {
@@ -487,7 +501,11 @@ fn fill_block_scope<'a>(
 				| tree::Statement::Let(..)
 				| tree::Statement::Mut(..)
 				| tree::Statement::Return(..) => messages.error(
-					message!("Disallowed statement kind in root scope").span(statement.span()),
+					message!(
+						"{} is not allowed in a root scope",
+						statement.name_and_article()
+					)
+					.span(statement.span()),
 				),
 
 				tree::Statement::Using(..)
@@ -497,43 +515,49 @@ fn fill_block_scope<'a>(
 			}
 		}
 
-		match statement {
-			tree::Statement::Using(..) => {} //Skip
-
-			tree::Statement::Struct(statement) => {
-				let name = statement.name.node;
-				//Start off with no fields, they will be added during the next pre-pass
-				let kind = TypeKind::Struct { fields: Vec::new() };
-				let span = Some(statement.name.span);
-				let symbol = type_store.register_type(name, kind, span, file_index);
-				scope.push_symbol(messages, symbol);
-			}
-
-			tree::Statement::Function(statement) => {
-				//Start off with no parameters, they will be added during the next pre-pass
-				let kind = SymbolKind::Function { parameters: Vec::new() };
-				let symbol = Symbol {
-					name: statement.name.node,
-					kind,
-					span: Some(statement.name.span),
-					file_index,
-				};
-				scope.push_symbol(messages, symbol);
-			}
-
-			tree::Statement::Const(statement) => {
-				//Type id will get filled in during the next pre-pass
-				let kind = SymbolKind::Const { type_id: TypeId::invalid() };
-				let symbol = Symbol {
-					name: statement.node.name.node,
-					kind,
-					span: Some(statement.span),
-					file_index,
-				};
-				scope.push_symbol(messages, symbol);
-			}
-
-			_ => {}
+		if let tree::Statement::Struct(statement) = statement {
+			let name = statement.name.node;
+			//Start off with no fields, they will be added during the next pre-pass
+			let kind = TypeKind::Struct { fields: Vec::new() };
+			let span = Some(statement.name.span);
+			let symbol = type_store.register_type(name, kind, span, Some(file_index));
+			scope.push_symbol(messages, symbol);
 		}
 	}
 }
+
+fn create_block_scope_functions<'a>(
+	messages: &mut Messages,
+	block: &tree::Block<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut TypeStore<'a>,
+	scope: &mut Scope<'a, '_>,
+	file_index: usize,
+) {
+	for statement in &block.statements {
+		if let tree::Statement::Function(statement) = statement {
+			let kind = SymbolKind::Function {
+				shape_index: unimplemented!(),
+			};
+			let symbol = Symbol {
+				name: statement.name.node,
+				kind,
+				span: Some(statement.name.span),
+				file_index: Some(file_index),
+			};
+			scope.push_symbol(messages, symbol);
+		}
+	}
+}
+
+// tree::Statement::Const(statement) => {
+// 	//Type id will get filled in during the next pre-pass
+// 	let kind = SymbolKind::Const { type_id: TypeId::invalid() };
+// 	let symbol = Symbol {
+// 		name: statement.node.name.node,
+// 		kind,
+// 		span: Some(statement.span),
+// 		file_index,
+// 	};
+// 	scope.push_symbol(messages, symbol);
+// }

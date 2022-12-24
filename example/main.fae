@@ -7,6 +7,11 @@ struct MyStruct {
 	other_field: bool
 }
 
+//generic T
+fn generic_function(value: T): T {
+	return value
+}
+
 fn function(): void {
 	let abc = 5 * 2 + -42 / 8
 	let def = 96 + { 22 }
@@ -16,6 +21,7 @@ fn function(): void {
 	let list: List[i32] = something
 
 	character = 'B'
+	let a = b c
 
 	//comment
 

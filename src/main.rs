@@ -12,7 +12,7 @@ mod validator;
 use error::Messages;
 use file::load_all_files;
 use parser::parse_file;
-use validator::{FileLayers, TypeStore};
+use validator::{FileLayers, FunctionStore, TypeStore};
 
 fn main() {
 	let files = match load_all_files("./example") {
@@ -37,6 +37,7 @@ fn main() {
 
 	//Not parallelizable
 	let mut type_store = TypeStore::new();
+	let mut function_store = FunctionStore::new();
 	let mut file_layers = match FileLayers::build(&mut messages, &parsed_files) {
 		Some(file_layers) => file_layers,
 		None => return,

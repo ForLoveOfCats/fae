@@ -14,10 +14,10 @@ pub struct Symbol<'a> {
 	pub file_index: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum SymbolKind {
 	Type { concrete_index: usize },
-	Function { parameters: Vec<TypeId> },
+	Function { shape_index: usize },
 	Const { type_id: TypeId },
 }
 
@@ -67,6 +67,55 @@ pub enum TypeKind<'a> {
 pub struct Field<'a> {
 	name: &'a str,
 	type_id: TypeId,
+}
+
+#[derive(Debug)]
+pub struct FunctionShape<'a> {
+	name: &'a str, //Purely for debugging purposes
+
+	parameters: Vec<ParameterShape<'a>>,
+	return_type: Option<TypeId>,
+
+	concrete: Vec<Function<'a>>,
+}
+
+impl<'a> FunctionShape<'a> {
+	pub fn new(
+		name: &'a str,
+		parameters: Vec<ParameterShape<'a>>,
+		return_type: Option<TypeId>,
+	) -> Self {
+		FunctionShape {
+			name,
+			parameters,
+			return_type,
+			concrete: Vec::new(),
+		}
+	}
+}
+
+#[derive(Debug)]
+pub struct ParameterShape<'a> {
+	name: &'a str,
+	type_id: Option<TypeId>,
+}
+
+#[derive(Debug)]
+pub struct Function<'a> {
+	paremeters: Vec<Parameter<'a>>,
+	return_type: TypeId,
+}
+
+#[derive(Debug)]
+pub struct Parameter<'a> {
+	name: &'a str,
+	type_id: TypeId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FunctionId {
+	pub shape_index: usize,
+	pub specialization_index: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

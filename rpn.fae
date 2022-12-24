@@ -1,6 +1,6 @@
 const MAX_LINE = 1024 * 4
 
-fn main() {
+fn main()
 throws {
     mut buffer = Buffer.new(capacity: MAX_LINE)
     defer buffer.destroy()?
