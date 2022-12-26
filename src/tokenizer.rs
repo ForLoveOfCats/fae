@@ -136,7 +136,8 @@ struct PeekedInfo<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct Tokenizer<'a> {
 	source: &'a str,
-	byte_index: usize,
+	bytes: &'a [u8],
+	offset: usize,
 	peeked: Option<PeekedInfo<'a>>,
 	token_count: usize,
 }
@@ -145,7 +146,8 @@ impl<'a> Tokenizer<'a> {
 	pub fn new(source: &'a str) -> Tokenizer<'a> {
 		Tokenizer {
 			source,
-			byte_index: 0,
+			bytes: source.as_bytes(),
+			offset: 0,
 			peeked: None,
 			token_count: 0,
 		}
@@ -166,7 +168,7 @@ impl<'a> Tokenizer<'a> {
 		if let Ok(peeked) = peeked {
 			self.peeked = Some(PeekedInfo {
 				token: peeked,
-				byte_index: local.byte_index,
+				byte_index: local.offset,
 			});
 		}
 
@@ -182,7 +184,7 @@ impl<'a> Tokenizer<'a> {
 		messages: &mut Option<&mut Messages>,
 	) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked.take() {
-			self.byte_index = peeked.byte_index;
+			self.offset = peeked.byte_index;
 			self.token_count += 1;
 			return Ok(peeked.token);
 		}
@@ -193,100 +195,60 @@ impl<'a> Tokenizer<'a> {
 
 		self.verify_not_eof(messages)?;
 
-		let token = match self.source.as_bytes()[self.byte_index..] {
-			[b'(', ..] => Ok(self.create_token(
-				"(",
-				TokenKind::OpenParen,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+		let token = match self.bytes[self.offset..] {
+			[b'(', ..] => {
+				Ok(self.create_token("(", TokenKind::OpenParen, self.offset, self.offset + 1))
+			}
 
-			[b')', ..] => Ok(self.create_token(
-				")",
-				TokenKind::CloseParen,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b')', ..] => {
+				Ok(self.create_token(")", TokenKind::CloseParen, self.offset, self.offset + 1))
+			}
 
-			[b'{', ..] => Ok(self.create_token(
-				"{",
-				TokenKind::OpenBrace,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'{', ..] => {
+				Ok(self.create_token("{", TokenKind::OpenBrace, self.offset, self.offset + 1))
+			}
 
-			[b'}', ..] => Ok(self.create_token(
-				"}",
-				TokenKind::CloseBrace,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'}', ..] => {
+				Ok(self.create_token("}", TokenKind::CloseBrace, self.offset, self.offset + 1))
+			}
 
-			[b'[', ..] => Ok(self.create_token(
-				"[",
-				TokenKind::OpenBracket,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'[', ..] => {
+				Ok(self.create_token("[", TokenKind::OpenBracket, self.offset, self.offset + 1))
+			}
 
-			[b']', ..] => Ok(self.create_token(
-				"]",
-				TokenKind::CloseBracket,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b']', ..] => {
+				Ok(self.create_token("]", TokenKind::CloseBracket, self.offset, self.offset + 1))
+			}
 
 			[b'+', b'=', ..] => {
-				self.byte_index += 1;
-				Ok(self.create_token(
-					"+=",
-					TokenKind::AddEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
-				))
+				self.offset += 1;
+				Ok(self.create_token("+=", TokenKind::AddEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'+', ..] => {
-				Ok(self.create_token("+", TokenKind::Add, self.byte_index, self.byte_index + 1))
-			}
+			[b'+', ..] => Ok(self.create_token("+", TokenKind::Add, self.offset, self.offset + 1)),
 
 			[b'-', b'=', ..] => {
-				self.byte_index += 1;
-				Ok(self.create_token(
-					"-=",
-					TokenKind::SubEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
-				))
+				self.offset += 1;
+				Ok(self.create_token("-=", TokenKind::SubEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'-', ..] => {
-				Ok(self.create_token("-", TokenKind::Sub, self.byte_index, self.byte_index + 1))
-			}
+			[b'-', ..] => Ok(self.create_token("-", TokenKind::Sub, self.offset, self.offset + 1)),
 
 			[b'*', b'=', ..] => {
-				self.byte_index += 1;
-				Ok(self.create_token(
-					"*=",
-					TokenKind::MulEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
-				))
+				self.offset += 1;
+				Ok(self.create_token("*=", TokenKind::MulEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'*', ..] => {
-				Ok(self.create_token("*", TokenKind::Mul, self.byte_index, self.byte_index + 1))
-			}
+			[b'*', ..] => Ok(self.create_token("*", TokenKind::Mul, self.offset, self.offset + 1)),
 
 			[b'/', b'/', ..] => {
-				loop {
-					self.byte_index += 1;
+				self.offset += 2;
 
-					if self.byte_index >= self.source.len()
-						|| matches!(self.source.as_bytes()[self.byte_index], b'\n')
-					{
+				loop {
+					if self.offset >= self.source.len() || self.bytes[self.offset] == b'\n' {
 						break;
 					}
+					self.offset += 1;
 				}
 
 				self.next_optional_messages(messages)
@@ -294,11 +256,11 @@ impl<'a> Tokenizer<'a> {
 
 			[b'/', b'*', ..] => {
 				loop {
-					self.byte_index += 1;
+					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
-					if matches!(self.source.as_bytes()[self.byte_index..], [b'*', b'/', ..]) {
-						self.byte_index += 2;
+					if matches!(self.bytes[self.offset..], [b'*', b'/', ..]) {
+						self.offset += 2;
 						break;
 					}
 				}
@@ -307,154 +269,130 @@ impl<'a> Tokenizer<'a> {
 			}
 
 			[b'/', b'=', ..] => {
-				self.byte_index += 1;
-				Ok(self.create_token(
-					"/=",
-					TokenKind::DivEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
-				))
+				self.offset += 1;
+				Ok(self.create_token("/=", TokenKind::DivEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'/', ..] => {
-				Ok(self.create_token("/", TokenKind::Div, self.byte_index, self.byte_index + 1))
-			}
+			[b'/', ..] => Ok(self.create_token("/", TokenKind::Div, self.offset, self.offset + 1)),
 
 			[b'=', b'=', ..] => {
-				self.byte_index += 1;
-				Ok(self.create_token(
-					"==",
-					TokenKind::CompEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
-				))
+				self.offset += 1;
+				Ok(self.create_token("==", TokenKind::CompEqual, self.offset - 1, self.offset + 1))
 			}
 
 			[b'=', ..] => {
-				Ok(self.create_token("=", TokenKind::Equal, self.byte_index, self.byte_index + 1))
+				Ok(self.create_token("=", TokenKind::Equal, self.offset, self.offset + 1))
 			}
 
 			[b'!', b'=', ..] => {
-				self.byte_index += 1;
+				self.offset += 1;
 				Ok(self.create_token(
 					"!=",
 					TokenKind::CompNotEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
+					self.offset - 1,
+					self.offset + 1,
 				))
 			}
 
-			[b'!', ..] => Ok(self.create_token(
-				"!",
-				TokenKind::Exclamation,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'!', ..] => {
+				Ok(self.create_token("!", TokenKind::Exclamation, self.offset, self.offset + 1))
+			}
 
 			[b'>', b'=', ..] => {
-				self.byte_index += 1;
+				self.offset += 1;
 				Ok(self.create_token(
 					">=",
 					TokenKind::CompGreaterEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
+					self.offset - 1,
+					self.offset + 1,
 				))
 			}
 
-			[b'>', ..] => Ok(self.create_token(
-				">",
-				TokenKind::CompGreater,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'>', ..] => {
+				Ok(self.create_token(">", TokenKind::CompGreater, self.offset, self.offset + 1))
+			}
 
 			[b'<', b'=', ..] => {
-				self.byte_index += 1;
+				self.offset += 1;
 				Ok(self.create_token(
 					"<=",
 					TokenKind::CompLessEqual,
-					self.byte_index - 1,
-					self.byte_index + 1,
+					self.offset - 1,
+					self.offset + 1,
 				))
 			}
 
-			[b'<', ..] => Ok(self.create_token(
-				"<",
-				TokenKind::CompLess,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'<', ..] => {
+				Ok(self.create_token("<", TokenKind::CompLess, self.offset, self.offset + 1))
+			}
 
 			[b':', b':', ..] => {
-				self.byte_index += 1;
+				self.offset += 1;
 				Ok(self.create_token(
 					"::",
 					TokenKind::DoubleColon,
-					self.byte_index - 1,
-					self.byte_index + 1,
+					self.offset - 1,
+					self.offset + 1,
 				))
 			}
 
 			[b':', ..] => {
-				Ok(self.create_token(":", TokenKind::Colon, self.byte_index, self.byte_index + 1))
+				Ok(self.create_token(":", TokenKind::Colon, self.offset, self.offset + 1))
 			}
 
 			[b'.', ..] => {
-				Ok(self.create_token(".", TokenKind::Period, self.byte_index, self.byte_index + 1))
+				Ok(self.create_token(".", TokenKind::Period, self.offset, self.offset + 1))
 			}
 
 			[b',', ..] => {
-				Ok(self.create_token(",", TokenKind::Comma, self.byte_index, self.byte_index + 1))
+				Ok(self.create_token(",", TokenKind::Comma, self.offset, self.offset + 1))
 			}
 
-			[b'&', ..] => Ok(self.create_token(
-				"&",
-				TokenKind::Ampersand,
-				self.byte_index,
-				self.byte_index + 1,
-			)),
+			[b'&', ..] => {
+				Ok(self.create_token("&", TokenKind::Ampersand, self.offset, self.offset + 1))
+			}
 
 			[b'\'', ..] => {
-				let start_index = self.byte_index;
+				let start_index = self.offset;
 				self.advance_by_codepoint(messages)?;
 				self.expect_byte(messages, b'\'')?;
 
 				Ok(self.create_token(
-					&self.source[start_index + 1..self.byte_index],
+					&self.source[start_index + 1..self.offset],
 					TokenKind::Char,
 					start_index,
-					self.byte_index + 1,
+					self.offset + 1,
 				))
 			}
 
 			[b'\"', ..] => {
-				let start_index = self.byte_index;
+				let start_index = self.offset;
 				loop {
-					self.byte_index += 1;
+					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
 					//TODO: Handle escaped double-quote
-					if self.source.as_bytes()[self.byte_index] == b'\"' {
+					if self.bytes[self.offset] == b'\"' {
 						break;
 					}
 				}
 
 				Ok(self.create_token(
-					&self.source[start_index + 1..self.byte_index],
+					&self.source[start_index + 1..self.offset],
 					TokenKind::String,
 					start_index,
-					self.byte_index + 1,
+					self.offset + 1,
 				))
 			}
 
 			_ => {
-				let start_index = self.byte_index;
+				let start_index = self.offset;
 				loop {
-					self.byte_index += 1;
+					self.offset += 1;
 
-					if self.byte_index >= self.source.len()
+					if self.offset >= self.source.len()
 						|| matches!(
-							self.source.as_bytes()[self.byte_index],
+							self.bytes[self.offset],
 							b' ' | b'\t'
 								| b'\n' | b'\r' | b'(' | b')' | b'{'
 								| b'}' | b'[' | b']' | b'+' | b'-'
@@ -466,18 +404,18 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.byte_index -= 1;
+				self.offset -= 1;
 
 				Ok(self.create_token(
-					&self.source[start_index..self.byte_index + 1],
+					&self.source[start_index..self.offset + 1],
 					TokenKind::Word,
 					start_index,
-					self.byte_index + 1,
+					self.offset + 1,
 				))
 			}
 		};
 
-		self.byte_index += 1;
+		self.offset += 1;
 
 		token
 	}
@@ -486,9 +424,9 @@ impl<'a> Tokenizer<'a> {
 	fn advance_by_codepoint(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
 		self.verify_not_eof(messages)?;
 
-		let mut chars = self.source[self.byte_index..].chars();
+		let mut chars = self.source[self.offset..].chars();
 		chars.next();
-		self.byte_index = chars.as_str().as_ptr() as usize - self.source.as_ptr() as usize;
+		self.offset = chars.as_str().as_ptr() as usize - self.source.as_ptr() as usize;
 
 		Ok(())
 	}
@@ -501,9 +439,9 @@ impl<'a> Tokenizer<'a> {
 	) -> ParseResult<()> {
 		self.verify_not_eof(messages)?;
 
-		self.byte_index += 1;
+		self.offset += 1;
 
-		let found = self.source.as_bytes()[self.byte_index];
+		let found = self.bytes[self.offset];
 		if found != expected {
 			if let Some(messages) = messages {
 				messages.error(
@@ -513,8 +451,8 @@ impl<'a> Tokenizer<'a> {
 						found as char
 					)
 					.span(Span {
-						start: self.byte_index,
-						end: self.byte_index + 1,
+						start: self.offset,
+						end: self.offset + 1,
 					}),
 				);
 			}
@@ -526,12 +464,12 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	fn consume_leading_whitespace(&mut self) -> ParseResult<Option<Token<'a>>> {
-		while self.byte_index < self.source.len() {
-			let byte = self.source.as_bytes()[self.byte_index];
+		while self.offset < self.source.len() {
+			let byte = self.bytes[self.offset];
 
 			if byte == b'\n' {
-				let index = self.byte_index;
-				self.byte_index += 1;
+				let index = self.offset;
+				self.offset += 1;
 
 				return Ok(Some(self.create_token(
 					"\n",
@@ -540,7 +478,7 @@ impl<'a> Tokenizer<'a> {
 					index + 1,
 				)));
 			} else if matches!(byte, b' ' | b'\t' | b'\r') {
-				self.byte_index += 1;
+				self.offset += 1;
 			} else {
 				break;
 			}
@@ -550,7 +488,7 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	fn verify_not_eof(&self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
-		if self.byte_index >= self.source.len() {
+		if self.offset >= self.source.len() {
 			if let Some(messages) = messages {
 				messages.error(message!("Unexpected end of file").span(Span {
 					start: self.source.len().saturating_sub(1),
