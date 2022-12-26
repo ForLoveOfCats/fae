@@ -102,31 +102,6 @@ pub struct Token<'a> {
 	pub span: Span,
 }
 
-impl<'a> Token<'a> {
-	pub fn expect(self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
-		if self.kind == expected {
-			Ok(self)
-		} else {
-			messages
-				.error(message!("Expected {expected} but found {:?}", self.text).span(self.span));
-			Err(())
-		}
-	}
-
-	pub fn expect_word(self, messages: &mut Messages, expected: &str) -> ParseResult<Token<'a>> {
-		self.expect(messages, TokenKind::Word)?;
-		if self.text == expected {
-			Ok(self)
-		} else {
-			messages.error(
-				message!("Expected word {expected:?} but found word {:?}", self.text)
-					.span(self.span),
-			);
-			Err(())
-		}
-	}
-}
-
 #[derive(Debug, Clone, Copy)]
 struct PeekedInfo<'a> {
 	token: Token<'a>,
@@ -519,7 +494,14 @@ impl<'a> Tokenizer<'a> {
 		messages: &mut Messages,
 		expected: TokenKind,
 	) -> ParseResult<Token<'a>> {
-		self.next(messages)?.expect(messages, expected)
+		let token = self.next(messages)?;
+		if token.kind == expected {
+			return Ok(token);
+		}
+
+		let message = message!("Expected {expected} but found {:?}", token.text);
+		messages.error(message.span(token.span));
+		Err(())
 	}
 
 	pub fn expect_word(
@@ -527,6 +509,13 @@ impl<'a> Tokenizer<'a> {
 		messages: &mut Messages,
 		expected: &str,
 	) -> ParseResult<Token<'a>> {
-		self.next(messages)?.expect_word(messages, expected)
+		let token = self.expect(messages, TokenKind::Word)?;
+		if token.text == expected {
+			return Ok(token);
+		}
+
+		let message = message!("Expected word {expected:?} but found word {:?}", token.text);
+		messages.error(message.span(token.span));
+		Err(())
 	}
 }
