@@ -102,6 +102,16 @@ pub struct Token<'a> {
 	pub span: Span,
 }
 
+impl<'a> Token<'a> {
+	fn new(text: &'a str, kind: TokenKind, start: usize, end: usize) -> Self {
+		Token {
+			text,
+			kind,
+			span: Span { start, end },
+		}
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
 struct PeekedInfo<'a> {
 	token: Token<'a>,
@@ -158,6 +168,8 @@ impl<'a> Tokenizer<'a> {
 		&mut self,
 		messages: &mut Option<&mut Messages>,
 	) -> ParseResult<Token<'a>> {
+		use TokenKind::*;
+
 		if let Some(peeked) = self.peeked.take() {
 			self.offset = peeked.byte_index;
 			self.token_count += 1;
@@ -171,50 +183,38 @@ impl<'a> Tokenizer<'a> {
 		self.verify_not_eof(messages)?;
 
 		let token = match self.bytes[self.offset..] {
-			[b'(', ..] => {
-				Ok(self.create_token("(", TokenKind::OpenParen, self.offset, self.offset + 1))
-			}
+			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1)),
 
-			[b')', ..] => {
-				Ok(self.create_token(")", TokenKind::CloseParen, self.offset, self.offset + 1))
-			}
+			[b')', ..] => Ok(Token::new(")", CloseParen, self.offset, self.offset + 1)),
 
-			[b'{', ..] => {
-				Ok(self.create_token("{", TokenKind::OpenBrace, self.offset, self.offset + 1))
-			}
+			[b'{', ..] => Ok(Token::new("{", OpenBrace, self.offset, self.offset + 1)),
 
-			[b'}', ..] => {
-				Ok(self.create_token("}", TokenKind::CloseBrace, self.offset, self.offset + 1))
-			}
+			[b'}', ..] => Ok(Token::new("}", CloseBrace, self.offset, self.offset + 1)),
 
-			[b'[', ..] => {
-				Ok(self.create_token("[", TokenKind::OpenBracket, self.offset, self.offset + 1))
-			}
+			[b'[', ..] => Ok(Token::new("[", OpenBracket, self.offset, self.offset + 1)),
 
-			[b']', ..] => {
-				Ok(self.create_token("]", TokenKind::CloseBracket, self.offset, self.offset + 1))
-			}
+			[b']', ..] => Ok(Token::new("]", CloseBracket, self.offset, self.offset + 1)),
 
 			[b'+', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token("+=", TokenKind::AddEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("+=", AddEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'+', ..] => Ok(self.create_token("+", TokenKind::Add, self.offset, self.offset + 1)),
+			[b'+', ..] => Ok(Token::new("+", Add, self.offset, self.offset + 1)),
 
 			[b'-', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token("-=", TokenKind::SubEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("-=", SubEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'-', ..] => Ok(self.create_token("-", TokenKind::Sub, self.offset, self.offset + 1)),
+			[b'-', ..] => Ok(Token::new("-", Sub, self.offset, self.offset + 1)),
 
 			[b'*', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token("*=", TokenKind::MulEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("*=", MulEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'*', ..] => Ok(self.create_token("*", TokenKind::Mul, self.offset, self.offset + 1)),
+			[b'*', ..] => Ok(Token::new("*", Mul, self.offset, self.offset + 1)),
 
 			[b'/', b'/', ..] => {
 				self.offset += 2;
@@ -245,96 +245,85 @@ impl<'a> Tokenizer<'a> {
 
 			[b'/', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token("/=", TokenKind::DivEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("/=", DivEqual, self.offset - 1, self.offset + 1))
 			}
 
-			[b'/', ..] => Ok(self.create_token("/", TokenKind::Div, self.offset, self.offset + 1)),
+			[b'/', ..] => Ok(Token::new("/", Div, self.offset, self.offset + 1)),
 
 			[b'=', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token("==", TokenKind::CompEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new(
+					"==",
+					CompEqual,
+					self.offset - 1,
+					self.offset + 1,
+				))
 			}
 
-			[b'=', ..] => {
-				Ok(self.create_token("=", TokenKind::Equal, self.offset, self.offset + 1))
-			}
+			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1)),
 
 			[b'!', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token(
+				Ok(Token::new(
 					"!=",
-					TokenKind::CompNotEqual,
+					CompNotEqual,
 					self.offset - 1,
 					self.offset + 1,
 				))
 			}
 
-			[b'!', ..] => {
-				Ok(self.create_token("!", TokenKind::Exclamation, self.offset, self.offset + 1))
-			}
+			[b'!', ..] => Ok(Token::new("!", Exclamation, self.offset, self.offset + 1)),
 
 			[b'>', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token(
+				Ok(Token::new(
 					">=",
-					TokenKind::CompGreaterEqual,
+					CompGreaterEqual,
 					self.offset - 1,
 					self.offset + 1,
 				))
 			}
 
-			[b'>', ..] => {
-				Ok(self.create_token(">", TokenKind::CompGreater, self.offset, self.offset + 1))
-			}
+			[b'>', ..] => Ok(Token::new(">", CompGreater, self.offset, self.offset + 1)),
 
 			[b'<', b'=', ..] => {
 				self.offset += 1;
-				Ok(self.create_token(
+				Ok(Token::new(
 					"<=",
-					TokenKind::CompLessEqual,
+					CompLessEqual,
 					self.offset - 1,
 					self.offset + 1,
 				))
 			}
 
-			[b'<', ..] => {
-				Ok(self.create_token("<", TokenKind::CompLess, self.offset, self.offset + 1))
-			}
+			[b'<', ..] => Ok(Token::new("<", CompLess, self.offset, self.offset + 1)),
 
 			[b':', b':', ..] => {
 				self.offset += 1;
-				Ok(self.create_token(
+				Ok(Token::new(
 					"::",
-					TokenKind::DoubleColon,
+					DoubleColon,
 					self.offset - 1,
 					self.offset + 1,
 				))
 			}
 
-			[b':', ..] => {
-				Ok(self.create_token(":", TokenKind::Colon, self.offset, self.offset + 1))
-			}
+			[b':', ..] => Ok(Token::new(":", Colon, self.offset, self.offset + 1)),
 
-			[b'.', ..] => {
-				Ok(self.create_token(".", TokenKind::Period, self.offset, self.offset + 1))
-			}
+			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1)),
 
-			[b',', ..] => {
-				Ok(self.create_token(",", TokenKind::Comma, self.offset, self.offset + 1))
-			}
+			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1)),
 
-			[b'&', ..] => {
-				Ok(self.create_token("&", TokenKind::Ampersand, self.offset, self.offset + 1))
-			}
+			[b'&', ..] => Ok(Token::new("&", Ampersand, self.offset, self.offset + 1)),
 
 			[b'\'', ..] => {
 				let start_index = self.offset;
 				self.advance_by_codepoint(messages)?;
 				self.expect_byte(messages, b'\'')?;
 
-				Ok(self.create_token(
+				Ok(Token::new(
 					&self.source[start_index + 1..self.offset],
-					TokenKind::Char,
+					Char,
 					start_index,
 					self.offset + 1,
 				))
@@ -352,9 +341,9 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				Ok(self.create_token(
+				Ok(Token::new(
 					&self.source[start_index + 1..self.offset],
-					TokenKind::String,
+					String,
 					start_index,
 					self.offset + 1,
 				))
@@ -381,9 +370,9 @@ impl<'a> Tokenizer<'a> {
 
 				self.offset -= 1;
 
-				Ok(self.create_token(
+				Ok(Token::new(
 					&self.source[start_index..self.offset + 1],
-					TokenKind::Word,
+					Word,
 					start_index,
 					self.offset + 1,
 				))
@@ -445,12 +434,7 @@ impl<'a> Tokenizer<'a> {
 				let index = self.offset;
 				self.offset += 1;
 
-				return Ok(Some(self.create_token(
-					"\n",
-					TokenKind::Newline,
-					index,
-					index + 1,
-				)));
+				return Ok(Some(Token::new("\n", TokenKind::Newline, index, index + 1)));
 			} else if matches!(byte, b' ' | b'\t' | b'\r') {
 				self.offset += 1;
 			} else {
@@ -472,20 +456,6 @@ impl<'a> Tokenizer<'a> {
 			Err(())
 		} else {
 			Ok(())
-		}
-	}
-
-	fn create_token(
-		&mut self,
-		text: &'a str,
-		kind: TokenKind,
-		start: usize,
-		end: usize,
-	) -> Token<'a> {
-		Token {
-			text,
-			kind,
-			span: Span { start, end },
 		}
 	}
 
