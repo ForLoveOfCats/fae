@@ -251,7 +251,7 @@ impl<'a> Tokenizer<'a> {
 					self.offset += 1;
 				}
 
-				self.next_optional_messages(messages)
+				return self.next_optional_messages(messages);
 			}
 
 			[b'/', b'*', ..] => {
@@ -265,7 +265,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.next_optional_messages(messages)
+				return self.next_optional_messages(messages);
 			}
 
 			[b'/', b'=', ..] => {
@@ -416,7 +416,6 @@ impl<'a> Tokenizer<'a> {
 		};
 
 		self.offset += 1;
-
 		token
 	}
 
