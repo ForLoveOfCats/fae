@@ -2,7 +2,7 @@ using sub_folder::sub_module
 
 const CONSTANT: &str = "Hello there!"
 
-struct MyStruct {
+struct MyStruct sdfsd {
 	field: f64
 	other_field: bool
 }

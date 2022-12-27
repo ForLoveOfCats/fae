@@ -56,7 +56,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
 					items.push(Statement::Using(statement));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -68,7 +68,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
 					items.push(Statement::Const(Box::new(statement)));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -80,7 +80,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_let_statement(messages, tokenizer) {
 					items.push(Statement::Let(Box::new(statement)));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -92,7 +92,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_mut_statement(messages, tokenizer) {
 					items.push(Statement::Mut(Box::new(statement)));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -104,7 +104,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_function_declaration(messages, tokenizer) {
 					items.push(Statement::Function(Box::new(statement)));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -116,7 +116,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_struct_declaration(messages, tokenizer) {
 					items.push(Statement::Struct(statement));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -128,7 +128,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
 					items.push(Statement::Return(Box::new(statement)));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -138,7 +138,7 @@ pub fn parse_statements<'a>(
 				if let Ok(statement) = parse_block(messages, tokenizer) {
 					items.push(Statement::Block(statement));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 
@@ -150,7 +150,7 @@ pub fn parse_statements<'a>(
 				if let Ok(expression) = parse_expression(messages, tokenizer) {
 					items.push(Statement::Expression(expression));
 				} else {
-					consume_rest_of_line(tokenizer);
+					consume_error_syntax(messages, tokenizer);
 				}
 			}
 		}
@@ -766,14 +766,41 @@ fn reached_close_brace(tokenizer: &mut Tokenizer) -> bool {
 		.unwrap_or(false)
 }
 
-fn consume_rest_of_line(tokenizer: &mut Tokenizer) {
+fn consume_error_syntax(messages: &mut Messages, tokenizer: &mut Tokenizer) {
+	let mut brackets = 0;
+	let mut parens = 0;
+	let mut braces = 0;
+
 	while let Ok(token) = tokenizer.peek() {
-		if token.kind == TokenKind::Newline {
-			break;
+		let all_zero = brackets == 0 && parens == 0 && braces == 0;
+		match token.kind {
+			TokenKind::Newline if all_zero => break,
+
+			TokenKind::OpenBracket => brackets += 1,
+			TokenKind::CloseBracket => brackets -= 1,
+
+			TokenKind::OpenParen => parens += 1,
+			TokenKind::CloseParen => parens -= 1,
+
+			TokenKind::OpenBrace => braces += 1,
+			TokenKind::CloseBrace => braces -= 1,
+
+			_ => {}
 		}
 
 		tokenizer
 			.next_optional_messages(&mut None)
 			.expect("This should never fail");
+	}
+
+	//Reached end of file while unbalanced
+	if brackets != 0 {
+		messages.error(message!("Unbalanced brackets"));
+	}
+	if parens != 0 {
+		messages.error(message!("Unbalanced parentheses"));
+	}
+	if braces != 0 {
+		messages.error(message!("Unbalanced braces"));
 	}
 }
