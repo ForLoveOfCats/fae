@@ -516,9 +516,13 @@ fn create_block_types<'a>(
 				| tree::Statement::Block(..)
 				| tree::Statement::Let(..)
 				| tree::Statement::Mut(..)
-				| tree::Statement::Return(..) => messages.error(
-					message!("{} is not allowed in a root scope", statement.name_and_article()).span(statement.span()),
-				),
+				| tree::Statement::Return(..) => {
+					messages.error(
+						message!("{} is not allowed in a root scope", statement.name_and_article())
+							.span(statement.span()),
+					);
+					continue;
+				}
 
 				tree::Statement::Using(..)
 				| tree::Statement::Struct(..)
