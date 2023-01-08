@@ -164,10 +164,7 @@ impl<'a> Tokenizer<'a> {
 		self.next_optional_messages(&mut Some(messages))
 	}
 
-	pub fn next_optional_messages(
-		&mut self,
-		messages: &mut Option<&mut Messages>,
-	) -> ParseResult<Token<'a>> {
+	pub fn next_optional_messages(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<Token<'a>> {
 		use TokenKind::*;
 
 		if let Some(peeked) = self.peeked.take() {
@@ -252,60 +249,35 @@ impl<'a> Tokenizer<'a> {
 
 			[b'=', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new(
-					"==",
-					CompEqual,
-					self.offset - 1,
-					self.offset + 1,
-				))
+				Ok(Token::new("==", CompEqual, self.offset - 1, self.offset + 1))
 			}
 
 			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1)),
 
 			[b'!', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new(
-					"!=",
-					CompNotEqual,
-					self.offset - 1,
-					self.offset + 1,
-				))
+				Ok(Token::new("!=", CompNotEqual, self.offset - 1, self.offset + 1))
 			}
 
 			[b'!', ..] => Ok(Token::new("!", Exclamation, self.offset, self.offset + 1)),
 
 			[b'>', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new(
-					">=",
-					CompGreaterEqual,
-					self.offset - 1,
-					self.offset + 1,
-				))
+				Ok(Token::new(">=", CompGreaterEqual, self.offset - 1, self.offset + 1))
 			}
 
 			[b'>', ..] => Ok(Token::new(">", CompGreater, self.offset, self.offset + 1)),
 
 			[b'<', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new(
-					"<=",
-					CompLessEqual,
-					self.offset - 1,
-					self.offset + 1,
-				))
+				Ok(Token::new("<=", CompLessEqual, self.offset - 1, self.offset + 1))
 			}
 
 			[b'<', ..] => Ok(Token::new("<", CompLess, self.offset, self.offset + 1)),
 
 			[b':', b':', ..] => {
 				self.offset += 1;
-				Ok(Token::new(
-					"::",
-					DoubleColon,
-					self.offset - 1,
-					self.offset + 1,
-				))
+				Ok(Token::new("::", DoubleColon, self.offset - 1, self.offset + 1))
 			}
 
 			[b':', ..] => Ok(Token::new(":", Colon, self.offset, self.offset + 1)),
@@ -395,11 +367,7 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	//TODO: Remove this
-	fn expect_byte(
-		&mut self,
-		messages: &mut Option<&mut Messages>,
-		expected: u8,
-	) -> ParseResult<()> {
+	fn expect_byte(&mut self, messages: &mut Option<&mut Messages>, expected: u8) -> ParseResult<()> {
 		self.verify_not_eof(messages)?;
 
 		self.offset += 1;
@@ -408,12 +376,7 @@ impl<'a> Tokenizer<'a> {
 		if found != expected {
 			if let Some(messages) = messages {
 				messages.error(
-					message!(
-						"Expected {:?} but found {:?}",
-						expected as char,
-						found as char
-					)
-					.span(Span {
+					message!("Expected {:?} but found {:?}", expected as char, found as char).span(Span {
 						start: self.offset,
 						end: self.offset + 1,
 					}),
@@ -459,11 +422,7 @@ impl<'a> Tokenizer<'a> {
 		}
 	}
 
-	pub fn expect(
-		&mut self,
-		messages: &mut Messages,
-		expected: TokenKind,
-	) -> ParseResult<Token<'a>> {
+	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
 		let token = self.next(messages)?;
 		if token.kind == expected {
 			return Ok(token);
@@ -474,11 +433,7 @@ impl<'a> Tokenizer<'a> {
 		Err(())
 	}
 
-	pub fn expect_word(
-		&mut self,
-		messages: &mut Messages,
-		expected: &str,
-	) -> ParseResult<Token<'a>> {
+	pub fn expect_word(&mut self, messages: &mut Messages, expected: &str) -> ParseResult<Token<'a>> {
 		let token = self.expect(messages, TokenKind::Word)?;
 		if token.text == expected {
 			return Ok(token);

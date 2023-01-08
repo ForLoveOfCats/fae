@@ -1,2 +1,3 @@
 hard_tabs = true
 struct_lit_width = 28
+max_width = 120

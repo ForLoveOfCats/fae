@@ -86,12 +86,7 @@ impl Message {
 		self
 	}
 
-	pub fn note_if_some(
-		mut self,
-		text: &str,
-		span: Option<Span>,
-		file_index: Option<usize>,
-	) -> Message {
+	pub fn note_if_some(mut self, text: &str, span: Option<Span>, file_index: Option<usize>) -> Message {
 		if let Some(note) = Note::new(text, span, file_index) {
 			self.notes.push(note);
 		}
@@ -113,34 +108,23 @@ impl Message {
 	}
 
 	//This is a big ball of mess
-	fn print_message(
-		span: Option<Span>,
-		text: &str,
-		path: &Path,
-		source: &str,
-		message_prefix: &str,
-	) {
+	fn print_message(span: Option<Span>, text: &str, path: &Path, source: &str, message_prefix: &str) {
 		if let Some(span) = span {
 			let (line, start, end) = {
 				let mut line_start = span.start;
 				while line_start > 0 {
-					if matches!(source.as_bytes()[line_start], b'\r' | b'\n')
-						&& line_start != span.start
-					{
+					if matches!(source.as_bytes()[line_start], b'\r' | b'\n') && line_start != span.start {
 						break;
 					}
 					line_start -= 1;
 				}
 
-				if line_start < span.start && matches!(source.as_bytes()[line_start], b'\r' | b'\n')
-				{
+				if line_start < span.start && matches!(source.as_bytes()[line_start], b'\r' | b'\n') {
 					line_start += 1;
 				}
 
 				let mut line_end = span.start;
-				while line_end < source.len()
-					&& !matches!(source.as_bytes()[line_end], b'\r' | b'\n')
-				{
+				while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
 					line_end += 1;
 				}
 

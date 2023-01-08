@@ -5,8 +5,7 @@ use crate::tree;
 
 pub struct Context<'a, 'b, 'p> {
 	messages: &'b mut Messages<'a>,
-	file_layers: &'b FileLayers<'a>,
-	current_layer: &'b FileLayer<'a>,
+	root_layers: &'b RootLayers<'a>,
 	type_store: &'b mut TypeStore<'a>,
 	scope: Scope<'a, 'p>,
 }
@@ -15,54 +14,27 @@ impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
 	fn child_scope<'s>(&'s mut self) -> Context<'a, 's, 's> {
 		Context {
 			messages: &mut *self.messages,
-			file_layers: &*self.file_layers,
-			current_layer: &*self.current_layer,
+			root_layers: &*self.root_layers,
 			type_store: &mut *self.type_store,
 			scope: self.scope.child(),
 		}
 	}
 
 	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<&Symbol<'a>> {
-		assert!(!segments.is_empty());
-
-		if segments.len() == 1 {
-			let segment = &segments[0];
-			let name = segment.node;
-			let found = self.scope.symbols.iter().find(|symbol| symbol.name == name);
-
-			if found.is_none() {
-				self.messages.error(
-					message!("No symbol named {name:?} in the current scope").span(segment.span),
-				);
-			}
-			found
-		} else {
-			self.file_layers.lookup_path_symbol(self.messages, segments)
-		}
+		self.scope.lookup_symbol(self.messages, self.root_layers, segments)
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct FileLayers<'a> {
-	layers: Vec<FileLayer<'a>>,
+pub struct RootLayers<'a> {
+	layers: Vec<RootLayer<'a>>,
 }
 
-impl<'a> FileLayers<'a> {
-	pub fn build(messages: &mut Messages, parsed_files: &'a [tree::File<'a>]) -> Option<Self> {
-		let mut file_layers = FileLayers { layers: Vec::new() };
-
-		for file in parsed_files {
-			file_layers.create_module_path(messages, file);
-		}
-
-		Some(file_layers)
+impl<'a> RootLayers<'a> {
+	pub fn new() -> Self {
+		RootLayers { layers: Vec::new() }
 	}
 
-	fn layer_for_module_path(
-		&self,
-		messages: &mut Messages,
-		path: &[tree::Node<&'a str>],
-	) -> Option<&FileLayer<'a>> {
+	fn layer_for_module_path(&self, messages: &mut Messages, path: &[tree::Node<&'a str>]) -> Option<&RootLayer<'a>> {
 		assert!(path.len() > 0);
 		let mut layers = &self.layers;
 
@@ -71,84 +43,68 @@ impl<'a> FileLayers<'a> {
 				Some(index) => &layers[index],
 
 				None => {
-					messages.error(
-						message!("Cannot find module layer for path segment").span(piece.span),
-					);
+					messages.error(message!("Cannot find module layer for path segment").span(piece.span));
 					return None;
 				}
 			};
 
-			let last_piece = piece_index + 1 == path.len();
-			if last_piece {
+			if piece_index + 1 == path.len() {
 				return Some(layer);
 			}
-
 			layers = &layer.children;
 		}
 
 		unreachable!()
 	}
 
-	fn create_module_path(&mut self, messages: &mut Messages, file: &'a tree::File<'a>) {
-		assert!(file.module_path.len() > 0);
+	fn create_module_path(&mut self, path: &'a [String]) -> &mut RootLayer<'a> {
+		assert!(path.len() > 0);
 		let mut layers = &mut self.layers;
 
-		for (piece_index, piece) in file.module_path.iter().enumerate() {
+		for (piece_index, piece) in path.iter().enumerate() {
 			let layer = match layers.iter().position(|x| x.name == *piece) {
 				Some(index) => &mut layers[index],
 
 				None => {
-					layers.push(FileLayer::new(piece, file));
+					layers.push(RootLayer::new(piece));
 					layers.last_mut().unwrap()
 				}
 			};
 
-			let last_piece = piece_index + 1 == file.module_path.len();
-			if last_piece {
-				if layer.block.is_some() {
-					messages.error(message!(
-						"Duplicate module with path {:?}",
-						file.module_path
-					));
-				} else {
-					layer.block = Some(&file.block);
-				}
+			if piece_index + 1 == path.len() {
+				return layer;
 			}
-
 			layers = &mut layer.children;
 		}
+
+		unreachable!();
 	}
 
-	fn lookup_path_symbol(
-		&self,
-		messages: &mut Messages,
-		segments: &[tree::Node<&'a str>],
-	) -> Option<&Symbol<'a>> {
+	fn lookup_path_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<&Symbol<'a>> {
 		assert!(!segments.is_empty());
 		let layer = self.layer_for_module_path(messages, &segments)?;
 		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct FileLayer<'a> {
+pub struct RootLayer<'a> {
 	name: &'a str,
-	file: &'a tree::File<'a>,
-
-	children: Vec<FileLayer<'a>>,
-	block: Option<&'a tree::Block<'a>>,
-
-	root_symbols: Vec<Symbol<'a>>,
+	children: Vec<RootLayer<'a>>,
+	symbols: Vec<Symbol<'a>>,
+	importable_types_len: usize,
+	imported_types_len: usize,
+	importable_functions_len: usize,
 }
 
-impl<'a> FileLayer<'a> {
-	fn new(name: &'a str, file: &'a tree::File<'a>) -> Self {
-		FileLayer {
+impl<'a> RootLayer<'a> {
+	fn new(name: &'a str) -> Self {
+		RootLayer {
 			name,
-			file,
 			children: Vec::new(),
-			block: None,
-			root_symbols: Vec::new(),
+			symbols: Vec::new(),
+			importable_types_len: 0,
+			imported_types_len: 0,
+			importable_functions_len: 0,
 		}
 	}
 
@@ -161,15 +117,23 @@ impl<'a> FileLayer<'a> {
 
 		let segment = &segments[0];
 		let name = segment.node;
-		let found = self.root_symbols.iter().find(|symbol| symbol.name == name);
+		let found = self.symbols.iter().find(|symbol| symbol.name == name);
 
 		if found.is_none() {
-			messages.error(
-				message!("No symbol named {name:?} in root of module {:?}", self.name)
-					.span(segment.span),
-			);
+			messages.error(message!("No symbol named {name:?} in root of module {:?}", self.name).span(segment.span));
 		}
 		found
+	}
+
+	fn importable_types(&self, type_store: &TypeStore<'a>) -> &[Symbol<'a>] {
+		let builtin_len = type_store.builtin_type_symbols.len();
+		&self.symbols[builtin_len..builtin_len + self.importable_types_len]
+	}
+
+	fn importable_functions(&self, type_store: &TypeStore<'a>) -> &[Symbol<'a>] {
+		let builtin_len = type_store.builtin_type_symbols.len();
+		let types_len = builtin_len + self.importable_types_len + self.imported_types_len;
+		&self.symbols[types_len..types_len + self.importable_functions_len]
 	}
 }
 
@@ -211,6 +175,28 @@ impl<'a, 'p> Scope<'a, 'p> {
 			);
 		} else {
 			self.symbols.push(symbol);
+		}
+	}
+
+	fn lookup_symbol<'b>(
+		&'b self,
+		messages: &mut Messages,
+		root_layers: &'b RootLayers<'a>,
+		segments: &[tree::Node<&'a str>],
+	) -> Option<&'b Symbol<'a>> {
+		assert!(!segments.is_empty());
+
+		if segments.len() == 1 {
+			let segment = &segments[0];
+			let name = segment.node;
+			let found = self.symbols.iter().find(|symbol| symbol.name == name);
+
+			if found.is_none() {
+				messages.error(message!("No symbol named {name:?} in the current scope").span(segment.span));
+			}
+			found
+		} else {
+			root_layers.lookup_path_symbol(messages, segments)
 		}
 	}
 }
@@ -294,14 +280,16 @@ impl<'a> TypeStore<'a> {
 
 	fn lookup_type(
 		&mut self,
+		messages: &mut Messages,
+		root_layers: &mut RootLayers<'a>,
+		scope: &Scope<'a, '_>,
 		parsed_type: &tree::Type<'a>,
-		cx: &mut Context<'a, '_, '_>,
 	) -> Option<TypeId> {
 		let (segments, arguments) = match parsed_type {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(&inner.node, cx)?;
+				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.node)?;
 				let concrete_index = self.reference_concrete_index;
 				let concrete = &mut self.concrete_types[concrete_index];
 				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
@@ -312,7 +300,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(&inner.node, cx)?;
+				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.node)?;
 				let concrete_index = self.slice_concrete_index;
 				let concrete = &mut self.concrete_types[concrete_index];
 				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
@@ -326,24 +314,21 @@ impl<'a> TypeStore<'a> {
 		};
 
 		assert!(!segments.segments.is_empty());
-		let symbol = cx.lookup_symbol(&segments.segments)?;
+		let symbol = scope.lookup_symbol(messages, root_layers, &segments.segments)?;
 
 		let concrete_index = match symbol.kind {
 			SymbolKind::Type { concrete_index } => concrete_index,
 
 			_ => {
 				let name = symbol.name;
-				cx.messages.error(
-					message!("Symbol {name:?} is not a type")
-						.span(segments.segments.last().unwrap().span),
-				);
+				messages.error(message!("Symbol {name:?} is not a type").span(segments.segments.last().unwrap().span));
 				return None;
 			}
 		};
 
 		let mut type_args = Vec::with_capacity(arguments.len());
 		for argument in arguments {
-			type_args.push(self.lookup_type(&argument.node, cx)?);
+			type_args.push(self.lookup_type(messages, root_layers, scope, &argument.node)?);
 		}
 
 		let concrete = &mut self.concrete_types[concrete_index];
@@ -372,125 +357,156 @@ impl<'a> FunctionStore<'a> {
 	}
 }
 
-pub fn validate_file_layers<'a>(
+pub fn validate_roots<'a>(
 	messages: &mut Messages,
-	file_layers: &mut FileLayers<'a>,
+	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	parsed_files: &[tree::File<'a>],
 ) {
-	create_root_scope_types(messages, file_layers, type_store);
-	resolve_root_scope_inports(messages, file_layers, type_store);
+	create_root_types(messages, root_layers, type_store, parsed_files);
+	resolve_root_type_inports(messages, root_layers, type_store, parsed_files);
+	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
 }
 
-fn create_root_scope_types<'a>(
+fn create_root_types<'a>(
 	messages: &mut Messages,
-	file_layers: &mut FileLayers<'a>,
+	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	parsed_files: &[tree::File<'a>],
 ) {
-	fn handle_layers_types<'a>(
-		messages: &mut Messages,
-		file_layers: &mut [FileLayer<'a>],
-		type_store: &mut TypeStore<'a>,
-	) {
-		for layer in file_layers {
-			assert_eq!(layer.root_symbols.len(), 0);
+	for parsed_file in parsed_files {
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		assert_eq!(layer.symbols.len(), 0);
 
-			handle_layers_types(messages, &mut layer.children, type_store);
+		let block = &parsed_file.block;
+		let index = parsed_file.source_file.index;
+		messages.set_current_file_index(index);
 
-			let block = match layer.block {
-				Some(block) => block,
-				_ => continue,
-			};
-			messages.set_current_file_index(layer.file.source_file.index);
+		let old_symbols_len = type_store.builtin_type_symbols.len();
+		let mut symbols = type_store.builtin_type_symbols.to_vec();
+		let mut scope = Scope {
+			//The initial state doesn't matter, we aren't going to drop this scope
+			initial_state: FrameState { symbols_len: 0 },
+			symbols: &mut symbols,
+		};
 
-			let mut symbols = type_store.builtin_type_symbols.to_vec();
-			let mut scope = Scope {
-				//The initial state doesn't matter, we aren't going to drop this scope
-				initial_state: FrameState { symbols_len: 0 },
-				symbols: &mut symbols,
-			};
+		create_block_types(messages, type_store, &mut scope, block, true, index);
+		let new_symbols_len = scope.symbols.len() - old_symbols_len;
 
-			let index = layer.file.source_file.index;
-			create_block_scope_types(messages, block, true, type_store, &mut scope, index);
-
-			std::mem::forget(scope); //Avoid cleaning up symbols
-			layer.root_symbols = symbols;
-		}
+		std::mem::forget(scope); //Avoid cleaning up symbols
+		layer.importable_types_len = new_symbols_len;
+		layer.symbols = symbols;
 	}
-
-	handle_layers_types(messages, &mut file_layers.layers, type_store);
 }
 
-fn resolve_root_scope_inports<'a>(
+fn resolve_root_type_inports<'a>(
 	messages: &mut Messages,
-	file_layers: &mut FileLayers<'a>,
+	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	parsed_files: &[tree::File<'a>],
 ) {
-	let cloned_layers = file_layers.clone();
+	for parsed_file in parsed_files {
+		let block = &parsed_file.block;
+		let index = parsed_file.source_file.index;
+		messages.set_current_file_index(index);
 
-	fn handle_layers_imports<'a>(
-		messages: &mut Messages,
-		file_layers: &mut [FileLayer<'a>],
-		type_store: &mut TypeStore<'a>,
-		cloned_layers: &FileLayers<'a>,
-	) {
-		for layer in file_layers {
-			handle_layers_imports(messages, &mut layer.children, type_store, cloned_layers);
+		let count = resolve_block_type_imports(messages, root_layers, type_store, block, &parsed_file.module_path);
 
-			let block = match layer.block {
-				Some(block) => block,
-				_ => continue,
-			};
-			messages.set_current_file_index(layer.file.source_file.index);
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		layer.imported_types_len = count;
+	}
+}
 
-			for statement in &block.statements {
-				let using_statement = match statement {
-					tree::Statement::Using(using_statement) => using_statement,
-					_ => continue,
-				};
+fn create_root_functions<'a>(
+	messages: &mut Messages,
+	root_layers: &mut RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	parsed_files: &[tree::File<'a>],
+) {
+	for parsed_file in parsed_files {
+		let block = &parsed_file.block;
+		let index = parsed_file.source_file.index;
+		messages.set_current_file_index(index);
 
-				let path = &using_statement.node.path_segments.node.segments;
-				let found = match cloned_layers.layer_for_module_path(messages, path) {
-					Some(found) => found,
-					_ => continue,
-				};
+		//Yuck
+		let mut symbols = root_layers.create_module_path(&parsed_file.module_path).symbols.clone();
+		let old_symbols_len = symbols.len();
+		let mut scope = Scope {
+			initial_state: FrameState { symbols_len: 0 },
+			symbols: &mut symbols,
+		};
 
-				if found.root_symbols.is_empty() {
-					continue;
-				}
+		create_block_functions(
+			messages,
+			root_layers,
+			type_store,
+			function_store,
+			&mut scope,
+			block,
+			index,
+		);
 
-				let symbols = &found.root_symbols[type_store.builtin_type_symbols.len()..];
-				for symbol in symbols {
-					let name = symbol.name;
+		std::mem::forget(scope);
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		layer.importable_functions_len = symbols.len() - old_symbols_len;
+		layer.symbols = symbols;
+	}
+}
 
-					if let Some(found) = layer.root_symbols.iter().find(|s| s.name == name) {
-						messages.error(
-							message!("Import of duplicate symbol {name:?}")
-								.span(using_statement.span)
-								.note_if_some("Original symbol here", found.span, found.file_index)
-								.note_if_some(
-									"Duplicate symbol here",
-									symbol.span,
-									symbol.file_index,
-								),
-						);
-					} else {
-						layer.root_symbols.push(symbol.clone());
-					}
-				}
+//Returns imported count, TODO use named return in Fae
+fn resolve_block_type_imports<'a>(
+	messages: &mut Messages,
+	root_layers: &mut RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	block: &tree::Block<'a>,
+	module_path: &'a [String],
+) -> usize {
+	let mut imported_count = 0;
+
+	for statement in &block.statements {
+		let using_statement = match statement {
+			tree::Statement::Using(using_statement) => using_statement,
+			_ => continue,
+		};
+
+		let path = &using_statement.node.path_segments.node.segments;
+		let found = match root_layers.layer_for_module_path(messages, path) {
+			Some(found) if found.symbols.is_empty() => continue,
+			Some(found) => found,
+			_ => continue,
+		};
+
+		let symbols = found.importable_types(type_store).to_vec(); //Yuck
+		let layer = root_layers.create_module_path(module_path);
+
+		for symbol in symbols {
+			let name = symbol.name;
+
+			if let Some(found) = layer.symbols.iter().find(|s| s.name == name) {
+				messages.error(
+					message!("Import of duplicate symbol {name:?}")
+						.span(using_statement.span)
+						.note_if_some("Original symbol here", found.span, found.file_index)
+						.note_if_some("Duplicate symbol here", symbol.span, symbol.file_index),
+				);
+			} else {
+				layer.symbols.push(symbol.clone());
+				imported_count += 1;
 			}
 		}
 	}
 
-	let layers = &mut file_layers.layers;
-	handle_layers_imports(messages, layers, type_store, &cloned_layers);
+	imported_count
 }
 
-fn create_block_scope_types<'a>(
+fn create_block_types<'a>(
 	messages: &mut Messages,
-	block: &tree::Block<'a>,
-	is_root: bool,
 	type_store: &mut TypeStore<'a>,
 	scope: &mut Scope<'a, '_>,
+	block: &tree::Block<'a>,
+	is_root: bool,
 	file_index: usize,
 ) {
 	for statement in &block.statements {
@@ -501,11 +517,7 @@ fn create_block_scope_types<'a>(
 				| tree::Statement::Let(..)
 				| tree::Statement::Mut(..)
 				| tree::Statement::Return(..) => messages.error(
-					message!(
-						"{} is not allowed in a root scope",
-						statement.name_and_article()
-					)
-					.span(statement.span()),
+					message!("{} is not allowed in a root scope", statement.name_and_article()).span(statement.span()),
 				),
 
 				tree::Statement::Using(..)
@@ -526,19 +538,30 @@ fn create_block_scope_types<'a>(
 	}
 }
 
-fn create_block_scope_functions<'a>(
+fn create_block_functions<'a>(
 	messages: &mut Messages,
-	block: &tree::Block<'a>,
+	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
-	function_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
 	scope: &mut Scope<'a, '_>,
+	block: &tree::Block<'a>,
 	file_index: usize,
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
-			let kind = SymbolKind::Function {
-				shape_index: unimplemented!(),
+			//TODO Handle generic return type
+			let parsed_type = &statement.parsed_type.node;
+			let return_type = match type_store.lookup_type(messages, root_layers, scope, &parsed_type) {
+				Some(found) => Some(found),
+				None => continue,
 			};
+
+			let parameters = Vec::new();
+			let name = statement.name.node;
+			let shape = FunctionShape::new(name, parameters, return_type);
+			let shape_index = function_store.register_shape(shape);
+
+			let kind = SymbolKind::Function { shape_index };
 			let symbol = Symbol {
 				name: statement.name.node,
 				kind,

@@ -21,10 +21,7 @@ pub fn parse_root_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 	Block { statements }
 }
 
-pub fn parse_block<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Block<'a>>> {
+pub fn parse_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Block<'a>>> {
 	let open = tokenizer.expect(messages, TokenKind::OpenBrace)?;
 	let statements = parse_statements(messages, tokenizer);
 	let close = tokenizer.expect(messages, TokenKind::CloseBrace)?;
@@ -34,10 +31,7 @@ pub fn parse_block<'a>(
 	Ok(Node::new(block, span))
 }
 
-pub fn parse_statements<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> Vec<Statement<'a>> {
+pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Vec<Statement<'a>> {
 	let mut items = Vec::new();
 
 	while let Ok(token) = tokenizer.peek() {
@@ -159,10 +153,7 @@ pub fn parse_statements<'a>(
 	items
 }
 
-fn parse_expression<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Expression<'a>>> {
+fn parse_expression<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
 	parse_expression_climb(messages, tokenizer, 0)
 }
 
@@ -376,10 +367,7 @@ fn parse_struct_initializer<'a>(
 	))
 }
 
-fn parse_number<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Expression<'a>>> {
+fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let first_number_token = tokenizer.expect(messages, TokenKind::Word)?;
 
 	let followed_by_period = tokenizer
@@ -391,8 +379,7 @@ fn parse_number<'a>(
 		tokenizer.expect(messages, TokenKind::Period)?;
 		let second_number_token = tokenizer.expect(messages, TokenKind::Word)?;
 
-		let combined_text =
-			&tokenizer.source()[first_number_token.span.start..second_number_token.span.end];
+		let combined_text = &tokenizer.source()[first_number_token.span.start..second_number_token.span.end];
 
 		let value = match combined_text.parse::<f64>() {
 			Ok(value) => value,
@@ -431,10 +418,7 @@ fn parse_number<'a>(
 	}
 }
 
-fn parse_using_statement<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Using<'a>>> {
+fn parse_using_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Using<'a>>> {
 	let using_token = tokenizer.expect_word(messages, "using")?;
 
 	let path_segments = parse_path_segments(messages, tokenizer)?;
@@ -469,10 +453,7 @@ fn parse_path_segments<'a>(
 	Ok(Node::new(PathSegments { segments }, span))
 }
 
-fn parse_type<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Type<'a>>> {
+fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Type<'a>>> {
 	let parsed_type = match tokenizer.peek()? {
 		Token { text: "Void", .. } => {
 			let token = tokenizer.expect_word(messages, "Void")?;
@@ -535,10 +516,7 @@ fn parse_type<'a>(
 	Ok(parsed_type)
 }
 
-fn parse_function_declaration<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Function<'a>> {
+fn parse_function_declaration<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Function<'a>> {
 	tokenizer.expect_word(messages, "fn")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -592,10 +570,7 @@ fn parse_parameters<'a>(
 	Ok(parameters)
 }
 
-fn parse_struct_declaration<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Struct<'a>> {
+fn parse_struct_declaration<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Struct<'a>> {
 	tokenizer.expect_word(messages, "struct")?;
 
 	let struct_name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -626,10 +601,7 @@ fn parse_struct_declaration<'a>(
 	Ok(Struct { name, fields })
 }
 
-fn parse_const_statement<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Const<'a>>> {
+fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Const<'a>>> {
 	let const_token = tokenizer.expect_word(messages, "const")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -659,10 +631,7 @@ fn parse_const_statement<'a>(
 	Ok(Node { node: statement, span })
 }
 
-fn parse_let_statement<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Let<'a>>> {
+fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Let<'a>>> {
 	let let_token = tokenizer.expect_word(messages, "let")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -691,10 +660,7 @@ fn parse_let_statement<'a>(
 	Ok(Node { node: statement, span })
 }
 
-fn parse_mut_statement<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Mut<'a>>> {
+fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Mut<'a>>> {
 	let mut_token = tokenizer.expect_word(messages, "mut")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -723,10 +689,7 @@ fn parse_mut_statement<'a>(
 	Ok(Node { node: statement, span })
 }
 
-fn parse_return_statement<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Return<'a>>> {
+fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Return<'a>>> {
 	let return_token = tokenizer.expect_word(messages, "return")?;
 
 	let expression = parse_expression(messages, tokenizer)?;

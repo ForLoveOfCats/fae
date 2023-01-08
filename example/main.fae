@@ -2,7 +2,7 @@ using sub_folder::sub_module
 
 const CONSTANT: &str = "Hello there!"
 
-struct MyStruct sdfsd {
+struct MyStruct {
 	field: f64
 	other_field: bool
 }
@@ -21,7 +21,7 @@ fn function(): void {
 	let list: List[i32] = something
 
 	character = 'B'
-	let a = b c
+	let a = b
 
 	//comment
 

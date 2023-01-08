@@ -12,7 +12,7 @@ mod validator;
 use error::Messages;
 use file::load_all_files;
 use parser::parse_file;
-use validator::{FileLayers, FunctionStore, TypeStore};
+use validator::{FunctionStore, RootLayers, TypeStore};
 
 fn main() {
 	let files = match load_all_files("./example") {
@@ -38,16 +38,16 @@ fn main() {
 	//Not parallelizable
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
-	let mut file_layers = match FileLayers::build(&mut messages, &parsed_files) {
-		Some(file_layers) => file_layers,
-		None => return,
-	};
-	validator::validate_file_layers(&mut messages, &mut file_layers, &mut type_store);
+	let mut root_layers = RootLayers::new();
+	validator::validate_roots(
+		&mut messages,
+		&mut root_layers,
+		&mut type_store,
+		&mut function_store,
+		&parsed_files,
+	);
 
 	messages.print_errors("Validation error");
-	if messages.any_errors() {
-		return;
-	}
 	messages.reset();
 
 	//Parallelizable
@@ -55,4 +55,12 @@ fn main() {
 	// for parsed_file in &parsed_files {
 	// 	validate_parsed_file(&mut base_scope, parsed_file);
 	// }
+
+	messages.print_errors("Validation error");
+	if messages.any_errors() {
+		return;
+	}
+	messages.reset();
+
+	//Codegen
 }

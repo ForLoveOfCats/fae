@@ -30,15 +30,9 @@ pub struct Type<'a> {
 
 impl<'a> Type<'a> {
 	pub fn get_or_add_specialization(&mut self, arguments: Vec<TypeId>) -> usize {
-		assert!(arguments.len() > 0);
-
 		for (index, existing) in self.specialization.iter().enumerate() {
 			if existing.arguments.len() == arguments.len() {
-				let all_match = existing
-					.arguments
-					.iter()
-					.zip(&arguments)
-					.all(|(a, b)| a == b);
+				let all_match = existing.arguments.iter().zip(&arguments).all(|(a, b)| a == b);
 
 				if all_match {
 					return index;
@@ -80,11 +74,7 @@ pub struct FunctionShape<'a> {
 }
 
 impl<'a> FunctionShape<'a> {
-	pub fn new(
-		name: &'a str,
-		parameters: Vec<ParameterShape<'a>>,
-		return_type: Option<TypeId>,
-	) -> Self {
+	pub fn new(name: &'a str, parameters: Vec<ParameterShape<'a>>, return_type: Option<TypeId>) -> Self {
 		FunctionShape {
 			name,
 			parameters,
