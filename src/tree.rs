@@ -31,6 +31,40 @@ pub struct Using<'a> {
 
 #[must_use]
 #[derive(Debug)]
+pub struct GenericAttribute<'a> {
+	pub names: Vec<Node<&'a str>>,
+}
+
+#[must_use]
+#[derive(Debug)]
+pub struct Attributes<'a> {
+	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
+}
+
+impl<'a> Attributes<'a> {
+	pub const FIELD_COUNT: usize = 1;
+
+	pub fn blank() -> Self {
+		Attributes { generic_attribute: None }
+	}
+
+	pub fn attribute_spans<'b>(&self, buffer: &'b mut [Span]) -> &'b [Span] {
+		fn push_potential_span<T>(attribute: &Option<Node<T>>, buffer: &mut [Span], index: &mut usize) {
+			if let Some(attribute) = attribute {
+				buffer[*index] = attribute.span;
+				*index += 1;
+			}
+		}
+
+		let mut index = 0;
+		push_potential_span(&self.generic_attribute, buffer, &mut index);
+
+		&buffer[0..index]
+	}
+}
+
+#[must_use]
+#[derive(Debug)]
 pub enum Type<'a> {
 	Void,
 
@@ -46,6 +80,7 @@ pub enum Type<'a> {
 #[must_use]
 #[derive(Debug)]
 pub struct Struct<'a> {
+	pub generics: Vec<Node<&'a str>>,
 	pub name: Node<&'a str>,
 	pub fields: Vec<Field<'a>>,
 }
@@ -60,6 +95,7 @@ pub struct Field<'a> {
 #[must_use]
 #[derive(Debug)]
 pub struct Function<'a> {
+	pub generics: Vec<Node<&'a str>>,
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
 	pub parsed_type: Node<Type<'a>>,

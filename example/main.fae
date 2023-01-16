@@ -2,12 +2,14 @@ using sub_folder::sub_module
 
 const CONSTANT: &str = "Hello there!"
 
+generic T
 struct MyStruct {
 	field: f64
 	other_field: bool
+	generic_struct: T
 }
 
-//generic T
+generic T
 fn generic_function(value: T): T {
 	return value
 }

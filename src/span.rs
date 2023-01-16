@@ -18,6 +18,10 @@ impl Add for Span {
 }
 
 impl Span {
+	pub fn zero() -> Span {
+		Span { start: 0, end: 0 }
+	}
+
 	pub fn get_line_num(&self, source: &str) -> usize {
 		let mut current_line_num = 1;
 

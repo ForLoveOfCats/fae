@@ -34,19 +34,38 @@ pub fn parse_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Vec<Statement<'a>> {
 	let mut items = Vec::new();
 
-	while let Ok(token) = tokenizer.peek() {
-		match token {
-			Token { kind: TokenKind::Newline, .. } => {
-				if tokenizer.next(messages).is_err() {
-					return items;
-				}
+	loop {
+		while let Ok(token) = tokenizer.peek() {
+			if token.kind != TokenKind::Newline {
+				break;
 			}
 
+			if tokenizer.next(messages).is_err() {
+				return items;
+			}
+		}
+
+		let attributes = match parse_attributes(messages, tokenizer) {
+			Ok(attributes) => attributes,
+
+			Err(_) => {
+				consume_error_syntax(messages, tokenizer);
+				continue;
+			}
+		};
+
+		let token = match tokenizer.peek() {
+			Ok(token) => token,
+			Err(_) => return items,
+		};
+
+		match token {
 			Token {
 				kind: TokenKind::Word,
 				text: "using",
 				..
 			} => {
+				disallow_attributes(messages, attributes, token.span, "A using statement");
 				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
 					items.push(Statement::Using(statement));
 				} else {
@@ -59,6 +78,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				text: "const",
 				..
 			} => {
+				disallow_attributes(messages, attributes, token.span, "A const definition");
 				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
 					items.push(Statement::Const(Box::new(statement)));
 				} else {
@@ -71,6 +91,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				text: "let",
 				..
 			} => {
+				disallow_attributes(messages, attributes, token.span, "A let statement");
 				if let Ok(statement) = parse_let_statement(messages, tokenizer) {
 					items.push(Statement::Let(Box::new(statement)));
 				} else {
@@ -83,6 +104,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				text: "mut",
 				..
 			} => {
+				disallow_attributes(messages, attributes, token.span, "A mut statement");
 				if let Ok(statement) = parse_mut_statement(messages, tokenizer) {
 					items.push(Statement::Mut(Box::new(statement)));
 				} else {
@@ -95,7 +117,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				text: "fn",
 				..
 			} => {
-				if let Ok(statement) = parse_function_declaration(messages, tokenizer) {
+				if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes) {
 					items.push(Statement::Function(Box::new(statement)));
 				} else {
 					consume_error_syntax(messages, tokenizer);
@@ -107,7 +129,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				text: "struct",
 				..
 			} => {
-				if let Ok(statement) = parse_struct_declaration(messages, tokenizer) {
+				if let Ok(statement) = parse_struct_declaration(messages, tokenizer, attributes) {
 					items.push(Statement::Struct(statement));
 				} else {
 					consume_error_syntax(messages, tokenizer);
@@ -119,6 +141,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				text: "return",
 				..
 			} => {
+				disallow_attributes(messages, attributes, token.span, "A return statement");
 				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
 					items.push(Statement::Return(Box::new(statement)));
 				} else {
@@ -129,6 +152,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			Token {
 				kind: TokenKind::OpenBrace, ..
 			} => {
+				disallow_attributes(messages, attributes, token.span, "A block");
 				if let Ok(statement) = parse_block(messages, tokenizer) {
 					items.push(Statement::Block(statement));
 				} else {
@@ -141,6 +165,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			} => break,
 
 			_ => {
+				disallow_attributes(messages, attributes, token.span, "An expression");
 				if let Ok(expression) = parse_expression(messages, tokenizer) {
 					items.push(Statement::Expression(expression));
 				} else {
@@ -151,6 +176,21 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 	}
 
 	items
+}
+
+//TODO: Add function to only disallow specific attribute kinds
+fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Span, label: &str) {
+	let mut buffer = [Span::zero(); Attributes::FIELD_COUNT];
+	let spans = attributes.attribute_spans(&mut buffer);
+
+	if !spans.is_empty() {
+		let mut message = message!("{label} does not allow attributes").span(span);
+		for &span in spans {
+			message = message.note("Attribute here", span, messages.current_file_index());
+		}
+
+		messages.error(message);
+	}
 }
 
 fn parse_expression<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
@@ -418,6 +458,64 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 	}
 }
 
+fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Attributes<'a>> {
+	fn check_duplicate_attribute<T>(
+		messages: &mut Messages,
+		attribute: &Option<Node<T>>,
+		name: &str,
+		duplicate_span: Span,
+	) -> ParseResult<()> {
+		if let Some(attribute) = attribute {
+			messages.error(message!("Duplicate attribute {name:?}").span(duplicate_span).note(
+				"Original here",
+				attribute.span,
+				messages.current_file_index(),
+			));
+			return Err(());
+		}
+
+		Ok(())
+	}
+
+	let mut attributes = Attributes::blank();
+
+	while let Ok(peeked) = tokenizer.peek() {
+		match peeked.text {
+			"generic" => {
+				check_duplicate_attribute(messages, &attributes.generic_attribute, "generic", peeked.span)?;
+				attributes.generic_attribute = Some(parse_generic_attribute(messages, tokenizer)?);
+			}
+
+			_ => break,
+		}
+	}
+
+	Ok(attributes)
+}
+
+fn parse_generic_attribute<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Node<GenericAttribute<'a>>> {
+	let generic_token = tokenizer.expect_word(messages, "generic")?;
+
+	let mut names = Vec::new();
+	loop {
+		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
+		names.push(Node::new(name_token.text, name_token.span));
+
+		if tokenizer.peek()?.kind == TokenKind::Newline {
+			tokenizer.expect(messages, TokenKind::Newline)?;
+			break;
+		}
+		tokenizer.expect(messages, TokenKind::Comma)?;
+	}
+
+	let span = generic_token.span + names.last().as_ref().unwrap().span;
+	let generic_atttribute = GenericAttribute { names };
+	Ok(Node::new(generic_atttribute, span))
+}
+
 fn parse_using_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Using<'a>>> {
 	let using_token = tokenizer.expect_word(messages, "using")?;
 
@@ -516,7 +614,16 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 	Ok(parsed_type)
 }
 
-fn parse_function_declaration<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Function<'a>> {
+fn parse_function_declaration<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	attributes: Attributes<'a>,
+) -> ParseResult<Function<'a>> {
+	let generics = match attributes.generic_attribute {
+		Some(attribute) => attribute.node.names,
+		None => Vec::new(),
+	};
+
 	tokenizer.expect_word(messages, "fn")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -531,6 +638,7 @@ fn parse_function_declaration<'a>(messages: &mut Messages, tokenizer: &mut Token
 	let block = parse_block(messages, tokenizer)?;
 
 	Ok(Function {
+		generics,
 		name,
 		parameters,
 		parsed_type,
@@ -570,7 +678,16 @@ fn parse_parameters<'a>(
 	Ok(parameters)
 }
 
-fn parse_struct_declaration<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Struct<'a>> {
+fn parse_struct_declaration<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	attributes: Attributes<'a>,
+) -> ParseResult<Struct<'a>> {
+	let generics = match attributes.generic_attribute {
+		Some(attribute) => attribute.node.names,
+		None => Vec::new(),
+	};
+
 	tokenizer.expect_word(messages, "struct")?;
 
 	let struct_name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -598,7 +715,7 @@ fn parse_struct_declaration<'a>(messages: &mut Messages, tokenizer: &mut Tokeniz
 
 	tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
-	Ok(Struct { name, fields })
+	Ok(Struct { generics, name, fields })
 }
 
 fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Const<'a>>> {
@@ -704,7 +821,7 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 fn check_not_reserved(messages: &mut Messages, token: Token) -> ParseResult<()> {
 	let is_reserved = matches!(
 		token.text,
-		"const" | "fn" | "let" | "mut" | "return" | "struct" | "using"
+		"const" | "fn" | "let" | "mut" | "return" | "struct" | "using" | "generic"
 	);
 
 	if is_reserved {

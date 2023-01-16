@@ -28,6 +28,10 @@ impl<'a> Messages<'a> {
 		}
 	}
 
+	pub fn current_file_index(&self) -> usize {
+		self.current_file_index
+	}
+
 	pub fn set_current_file_index(&mut self, file_index: usize) {
 		self.current_file_index = file_index;
 	}
@@ -86,8 +90,13 @@ impl Message {
 		self
 	}
 
+	pub fn note(mut self, text: &str, span: Span, file_index: usize) -> Message {
+		self.notes.push(Note::new(text, span, file_index));
+		self
+	}
+
 	pub fn note_if_some(mut self, text: &str, span: Option<Span>, file_index: Option<usize>) -> Message {
-		if let Some(note) = Note::new(text, span, file_index) {
+		if let Some(note) = Note::maybe_new(text, span, file_index) {
 			self.notes.push(note);
 		}
 		self
@@ -187,7 +196,12 @@ pub struct Note {
 }
 
 impl Note {
-	pub fn new(text: &str, span: Option<Span>, file_index: Option<usize>) -> Option<Note> {
+	pub fn new(text: &str, span: Span, file_index: usize) -> Note {
+		let text = text.to_owned();
+		Note { text, span, file_index }
+	}
+
+	pub fn maybe_new(text: &str, span: Option<Span>, file_index: Option<usize>) -> Option<Note> {
 		Some(Note {
 			text: text.to_owned(),
 			span: span?,
