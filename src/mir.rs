@@ -22,6 +22,12 @@ pub enum SymbolKind {
 }
 
 #[derive(Debug)]
+pub enum GenericOrTypeId {
+	Generic { index: usize },
+	TypeId { id: TypeId },
+}
+
+#[derive(Debug)]
 pub struct Type<'a> {
 	pub name: String,
 	pub kind: TypeKind<'a>,
@@ -66,17 +72,24 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct FunctionShape<'a> {
 	name: &'a str, //Purely for debugging purposes
+	generics: Vec<Node<&'a str>>,
 
 	parameters: Vec<ParameterShape<'a>>,
-	return_type: Option<TypeId>,
+	return_type: GenericOrTypeId,
 
 	concrete: Vec<Function<'a>>,
 }
 
 impl<'a> FunctionShape<'a> {
-	pub fn new(name: &'a str, parameters: Vec<ParameterShape<'a>>, return_type: Option<TypeId>) -> Self {
+	pub fn new(
+		name: &'a str,
+		generics: Vec<Node<&'a str>>,
+		parameters: Vec<ParameterShape<'a>>,
+		return_type: GenericOrTypeId,
+	) -> Self {
 		FunctionShape {
 			name,
+			generics,
 			parameters,
 			return_type,
 			concrete: Vec::new(),
@@ -87,7 +100,7 @@ impl<'a> FunctionShape<'a> {
 #[derive(Debug)]
 pub struct ParameterShape<'a> {
 	name: &'a str,
-	type_id: Option<TypeId>,
+	type_id: GenericOrTypeId,
 }
 
 #[derive(Debug)]

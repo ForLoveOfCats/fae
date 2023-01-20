@@ -553,16 +553,24 @@ fn create_block_functions<'a>(
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
-			//TODO Handle generic return type
 			let parsed_type = &statement.parsed_type.node;
-			let return_type = match type_store.lookup_type(messages, root_layers, scope, &parsed_type) {
-				Some(found) => Some(found),
-				None => continue,
+			let single_sement = parsed_type.as_single_segment();
+
+			let mut generics = statement.generics.iter().enumerate();
+			let generic = generics.find(|(_, g)| single_sement == Some(g.node));
+			let return_type = if let Some(generic) = generic {
+				GenericOrTypeId::Generic { index: generic.0 }
+			} else {
+				match type_store.lookup_type(messages, root_layers, scope, &parsed_type) {
+					Some(id) => GenericOrTypeId::TypeId { id },
+					None => continue,
+				}
 			};
 
-			let parameters = Vec::new();
 			let name = statement.name.node;
-			let shape = FunctionShape::new(name, parameters, return_type);
+			let generics = statement.generics.clone();
+			let parameters = Vec::new();
+			let shape = FunctionShape::new(name, generics, parameters, return_type);
 			let shape_index = function_store.register_shape(shape);
 
 			let kind = SymbolKind::Function { shape_index };

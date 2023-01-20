@@ -77,6 +77,18 @@ pub enum Type<'a> {
 	},
 }
 
+impl<'a> Type<'a> {
+	pub fn as_single_segment(&self) -> Option<&'a str> {
+		match self {
+			Type::Path { segments, arguments } if segments.segments.len() == 1 && arguments.is_empty() => {
+				Some(segments.segments[0].node)
+			}
+
+			_ => None,
+		}
+	}
+}
+
 #[must_use]
 #[derive(Debug)]
 pub struct Struct<'a> {
