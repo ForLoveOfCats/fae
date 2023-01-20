@@ -567,9 +567,28 @@ fn create_block_functions<'a>(
 				}
 			};
 
+			let mut parameters = Vec::new();
+			for parameter in &statement.parameters {
+				let parsed_type = &parameter.node.parsed_type.node;
+				let single_sement = parsed_type.as_single_segment();
+
+				let mut generics = statement.generics.iter().enumerate();
+				let generic = generics.find(|(_, g)| single_sement == Some(g.node));
+				let param_type = if let Some(generic) = generic {
+					GenericOrTypeId::Generic { index: generic.0 }
+				} else {
+					match type_store.lookup_type(messages, root_layers, scope, &parsed_type) {
+						Some(id) => GenericOrTypeId::TypeId { id },
+						None => continue,
+					}
+				};
+
+				let name = parameter.node.name.node;
+				parameters.push(ParameterShape { name, param_type });
+			}
+
 			let name = statement.name.node;
 			let generics = statement.generics.clone();
-			let parameters = Vec::new();
 			let shape = FunctionShape::new(name, generics, parameters, return_type);
 			let shape_index = function_store.register_shape(shape);
 

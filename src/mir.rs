@@ -65,19 +65,19 @@ pub enum TypeKind<'a> {
 
 #[derive(Debug)]
 pub struct Field<'a> {
-	name: &'a str,
-	type_id: TypeId,
+	pub name: &'a str,
+	pub type_id: TypeId,
 }
 
 #[derive(Debug)]
 pub struct FunctionShape<'a> {
-	name: &'a str, //Purely for debugging purposes
-	generics: Vec<Node<&'a str>>,
+	pub name: &'a str, //Purely for debugging purposes
+	pub generics: Vec<Node<&'a str>>,
 
-	parameters: Vec<ParameterShape<'a>>,
-	return_type: GenericOrTypeId,
+	pub parameters: Vec<ParameterShape<'a>>,
+	pub return_type: GenericOrTypeId,
 
-	concrete: Vec<Function<'a>>,
+	pub concrete: Vec<Function<'a>>,
 }
 
 impl<'a> FunctionShape<'a> {
@@ -99,20 +99,20 @@ impl<'a> FunctionShape<'a> {
 
 #[derive(Debug)]
 pub struct ParameterShape<'a> {
-	name: &'a str,
-	type_id: GenericOrTypeId,
+	pub name: &'a str,
+	pub param_type: GenericOrTypeId,
 }
 
 #[derive(Debug)]
 pub struct Function<'a> {
-	paremeters: Vec<Parameter<'a>>,
-	return_type: TypeId,
+	pub paremeters: Vec<Parameter<'a>>,
+	pub return_type: TypeId,
 }
 
 #[derive(Debug)]
 pub struct Parameter<'a> {
-	name: &'a str,
-	type_id: TypeId,
+	pub name: &'a str,
+	pub type_id: TypeId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,13 +125,4 @@ pub struct FunctionId {
 pub struct TypeId {
 	pub concrete_index: usize,
 	pub specialization_index: usize,
-}
-
-impl TypeId {
-	pub fn invalid() -> TypeId {
-		TypeId {
-			concrete_index: usize::MAX,
-			specialization_index: usize::MAX,
-		}
-	}
 }
