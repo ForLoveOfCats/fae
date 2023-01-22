@@ -81,7 +81,7 @@ impl<'a> Type<'a> {
 	pub fn as_single_segment(&self) -> Option<&'a str> {
 		match self {
 			Type::Path { segments, arguments } if segments.segments.len() == 1 && arguments.is_empty() => {
-				Some(segments.segments[0].node)
+				Some(segments.segments[0].item)
 			}
 
 			_ => None,
@@ -354,17 +354,17 @@ pub enum Expression<'a> {
 #[must_use]
 #[derive(Debug)]
 pub struct Node<T> {
-	pub node: T,
+	pub item: T,
 	pub span: Span,
 }
 
 impl<T> Node<T> {
 	pub fn new(node: T, span: Span) -> Node<T> {
-		Node { node, span }
+		Node { item: node, span }
 	}
 
 	pub fn from_token(node: T, token: Token) -> Node<T> {
-		Node { node, span: token.span }
+		Node { item: node, span: token.span }
 	}
 }
 
@@ -373,7 +373,7 @@ impl<T: Copy> Copy for Node<T> {}
 impl<T: Clone> Clone for Node<T> {
 	fn clone(&self) -> Self {
 		Self {
-			node: self.node.clone(),
+			item: self.item.clone(),
 			span: self.span,
 		}
 	}

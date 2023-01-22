@@ -205,14 +205,14 @@ fn parse_expression_climb<'a>(
 	let mut result = parse_expression_atom(messages, tokenizer)?;
 
 	while let Some(op) = token_to_operator(tokenizer.peek()?) {
-		let precedence = op.node.precedence();
+		let precedence = op.item.precedence();
 		if precedence < min_precedence {
 			break;
 		}
 
 		tokenizer.next(messages).expect("Known peeked token");
 
-		let associativity = op.node.associativity();
+		let associativity = op.item.associativity();
 		let next_min_precedence = match associativity {
 			Associativity::Left => precedence + 1,
 			Associativity::Right => precedence,
@@ -332,7 +332,7 @@ fn parse_expression_atom<'a>(
 			let parsed_block = parse_block(messages, tokenizer)?;
 
 			let span = parsed_block.span;
-			let block = parsed_block.node;
+			let block = parsed_block.item;
 
 			Ok(Node::new(Expression::Block(block), span))
 		}
@@ -359,7 +359,7 @@ fn parse_arguments<'a>(
 	let mut expressions = Vec::new();
 
 	while !reached_close_paren(tokenizer) {
-		let expression = parse_expression(messages, tokenizer)?.node;
+		let expression = parse_expression(messages, tokenizer)?.item;
 		expressions.push(expression);
 
 		if reached_close_paren(tokenizer) {
@@ -524,8 +524,8 @@ fn parse_using_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = using_token.span + path_segments.span;
-	let statement = Using { path_segments };
-	Ok(Node { node: statement, span })
+	let item = Using { path_segments };
+	Ok(Node { item, span })
 }
 
 fn parse_path_segments<'a>(
@@ -581,7 +581,7 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 
 		_ => {
 			let parsed_path = parse_path_segments(messages, tokenizer)?;
-			let segments = parsed_path.node;
+			let segments = parsed_path.item;
 
 			let mut arguments = Vec::new();
 			let span = match tokenizer.peek() {
@@ -620,7 +620,7 @@ fn parse_function_declaration<'a>(
 	attributes: Attributes<'a>,
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.node.names,
+		Some(attribute) => attribute.item.names,
 		None => Vec::new(),
 	};
 
@@ -684,7 +684,7 @@ fn parse_struct_declaration<'a>(
 	attributes: Attributes<'a>,
 ) -> ParseResult<Struct<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.node.names,
+		Some(attribute) => attribute.item.names,
 		None => Vec::new(),
 	};
 
@@ -740,12 +740,12 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = const_token.span + expression.span;
-	let statement = Const {
+	let item = Const {
 		name,
 		parsed_type,
 		expression,
 	};
-	Ok(Node { node: statement, span })
+	Ok(Node { item, span })
 }
 
 fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Let<'a>>> {
@@ -769,12 +769,12 @@ fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = let_token.span + expression.span;
-	let statement = Let {
+	let item = Let {
 		name,
 		parsed_type,
 		expression,
 	};
-	Ok(Node { node: statement, span })
+	Ok(Node { item, span })
 }
 
 fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Mut<'a>>> {
@@ -798,12 +798,12 @@ fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = mut_token.span + expression.span;
-	let statement = Mut {
+	let item = Mut {
 		name,
 		parsed_type,
 		expression,
 	};
-	Ok(Node { node: statement, span })
+	Ok(Node { item, span })
 }
 
 fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Return<'a>>> {
@@ -814,8 +814,8 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = return_token.span + expression.span;
-	let statement = Return { expression };
-	Ok(Node { node: statement, span })
+	let item = Return { expression };
+	Ok(Node { item, span })
 }
 
 fn check_not_reserved(messages: &mut Messages, token: Token) -> ParseResult<()> {

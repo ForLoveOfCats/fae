@@ -39,7 +39,7 @@ impl<'a> RootLayers<'a> {
 		let mut layers = &self.layers;
 
 		for (piece_index, piece) in path.iter().enumerate() {
-			let layer = match layers.iter().position(|x| x.name == piece.node) {
+			let layer = match layers.iter().position(|x| x.name == piece.item) {
 				Some(index) => &layers[index],
 
 				None => {
@@ -116,7 +116,7 @@ impl<'a> RootLayer<'a> {
 		assert_eq!(segments.len(), 1);
 
 		let segment = &segments[0];
-		let name = segment.node;
+		let name = segment.item;
 		let found = self.symbols.iter().find(|symbol| symbol.name == name);
 
 		if found.is_none() {
@@ -188,7 +188,7 @@ impl<'a, 'p> Scope<'a, 'p> {
 
 		if segments.len() == 1 {
 			let segment = &segments[0];
-			let name = segment.node;
+			let name = segment.item;
 			let found = self.symbols.iter().find(|symbol| symbol.name == name);
 
 			if found.is_none() {
@@ -289,7 +289,7 @@ impl<'a> TypeStore<'a> {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.node)?;
+				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.item)?;
 				let concrete_index = self.reference_concrete_index;
 				let concrete = &mut self.concrete_types[concrete_index];
 				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
@@ -300,7 +300,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.node)?;
+				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.item)?;
 				let concrete_index = self.slice_concrete_index;
 				let concrete = &mut self.concrete_types[concrete_index];
 				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
@@ -328,7 +328,7 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(arguments.len());
 		for argument in arguments {
-			type_args.push(self.lookup_type(messages, root_layers, scope, &argument.node)?);
+			type_args.push(self.lookup_type(messages, root_layers, scope, &argument.item)?);
 		}
 
 		let concrete = &mut self.concrete_types[concrete_index];
@@ -471,7 +471,7 @@ fn resolve_block_type_imports<'a>(
 			_ => continue,
 		};
 
-		let path = &using_statement.node.path_segments.node.segments;
+		let path = &using_statement.item.path_segments.item.segments;
 		let found = match root_layers.layer_for_module_path(messages, path) {
 			Some(found) if found.symbols.is_empty() => continue,
 			Some(found) => found,
@@ -532,7 +532,7 @@ fn create_block_types<'a>(
 		}
 
 		if let tree::Statement::Struct(statement) = statement {
-			let name = statement.name.node;
+			let name = statement.name.item;
 			//Start off with no fields, they will be added during the next pre-pass
 			let kind = TypeKind::Struct { fields: Vec::new() };
 			let span = Some(statement.name.span);
@@ -553,11 +553,11 @@ fn create_block_functions<'a>(
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
-			let parsed_type = &statement.parsed_type.node;
+			let parsed_type = &statement.parsed_type.item;
 			let single_sement = parsed_type.as_single_segment();
 
 			let mut generics = statement.generics.iter().enumerate();
-			let generic = generics.find(|(_, g)| single_sement == Some(g.node));
+			let generic = generics.find(|(_, g)| single_sement == Some(g.item));
 			let return_type = if let Some(generic) = generic {
 				GenericOrTypeId::Generic { index: generic.0 }
 			} else {
@@ -569,11 +569,11 @@ fn create_block_functions<'a>(
 
 			let mut parameters = Vec::new();
 			for parameter in &statement.parameters {
-				let parsed_type = &parameter.node.parsed_type.node;
+				let parsed_type = &parameter.item.parsed_type.item;
 				let single_sement = parsed_type.as_single_segment();
 
 				let mut generics = statement.generics.iter().enumerate();
-				let generic = generics.find(|(_, g)| single_sement == Some(g.node));
+				let generic = generics.find(|(_, g)| single_sement == Some(g.item));
 				let param_type = if let Some(generic) = generic {
 					GenericOrTypeId::Generic { index: generic.0 }
 				} else {
@@ -583,18 +583,18 @@ fn create_block_functions<'a>(
 					}
 				};
 
-				let name = parameter.node.name.node;
+				let name = parameter.item.name.item;
 				parameters.push(ParameterShape { name, param_type });
 			}
 
-			let name = statement.name.node;
+			let name = statement.name.item;
 			let generics = statement.generics.clone();
 			let shape = FunctionShape::new(name, generics, parameters, return_type);
 			let shape_index = function_store.register_shape(shape);
 
 			let kind = SymbolKind::Function { shape_index };
 			let symbol = Symbol {
-				name: statement.name.node,
+				name: statement.name.item,
 				kind,
 				span: Some(statement.name.span),
 				file_index: Some(file_index),
