@@ -726,7 +726,6 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
-		//Parse explicit type
 		tokenizer.expect(messages, TokenKind::Colon)?;
 		Some(parse_type(messages, tokenizer)?)
 	} else {
