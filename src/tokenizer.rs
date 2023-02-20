@@ -104,11 +104,7 @@ pub struct Token<'a> {
 
 impl<'a> Token<'a> {
 	fn new(text: &'a str, kind: TokenKind, start: usize, end: usize) -> Self {
-		Token {
-			text,
-			kind,
-			span: Span { start, end },
-		}
+		Token { text, kind, span: Span { start, end } }
 	}
 }
 
@@ -151,10 +147,7 @@ impl<'a> Tokenizer<'a> {
 		let peeked = local.next_optional_messages(&mut None);
 
 		if let Ok(peeked) = peeked {
-			self.peeked = Some(PeekedInfo {
-				token: peeked,
-				byte_index: local.offset,
-			});
+			self.peeked = Some(PeekedInfo { token: peeked, byte_index: local.offset });
 		}
 
 		peeked
@@ -293,12 +286,7 @@ impl<'a> Tokenizer<'a> {
 				self.advance_by_codepoint(messages)?;
 				self.expect_byte(messages, b'\'')?;
 
-				Ok(Token::new(
-					&self.source[start_index + 1..self.offset],
-					Char,
-					start_index,
-					self.offset + 1,
-				))
+				Ok(Token::new(&self.source[start_index + 1..self.offset], Char, start_index, self.offset + 1))
 			}
 
 			[b'\"', ..] => {
@@ -342,12 +330,7 @@ impl<'a> Tokenizer<'a> {
 
 				self.offset -= 1;
 
-				Ok(Token::new(
-					&self.source[start_index..self.offset + 1],
-					Word,
-					start_index,
-					self.offset + 1,
-				))
+				Ok(Token::new(&self.source[start_index..self.offset + 1], Word, start_index, self.offset + 1))
 			}
 		};
 
@@ -376,10 +359,8 @@ impl<'a> Tokenizer<'a> {
 		if found != expected {
 			if let Some(messages) = messages {
 				messages.error(
-					message!("Expected {:?} but found {:?}", expected as char, found as char).span(Span {
-						start: self.offset,
-						end: self.offset + 1,
-					}),
+					message!("Expected {:?} but found {:?}", expected as char, found as char)
+						.span(Span { start: self.offset, end: self.offset + 1 }),
 				);
 			}
 

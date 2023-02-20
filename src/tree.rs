@@ -372,9 +372,6 @@ impl<T: Copy> Copy for Node<T> {}
 
 impl<T: Clone> Clone for Node<T> {
 	fn clone(&self) -> Self {
-		Self {
-			item: self.item.clone(),
-			span: self.span,
-		}
+		Self { item: self.item.clone(), span: self.span }
 	}
 }

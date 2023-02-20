@@ -72,12 +72,7 @@ pub struct Message {
 
 impl Message {
 	pub fn new(text: String) -> Message {
-		Message {
-			file_index: usize::MAX,
-			text,
-			span: None,
-			notes: Vec::new(),
-		}
+		Message { file_index: usize::MAX, text, span: None, notes: Vec::new() }
 	}
 
 	pub fn span(mut self, span: Span) -> Message {
@@ -137,21 +132,14 @@ impl Message {
 					line_end += 1;
 				}
 
-				(
-					&source[line_start..line_end],
-					span.start - line_start,
-					span.end - line_start,
-				)
+				(&source[line_start..line_end], span.start - line_start, span.end - line_start)
 			};
 
 			let line_num = span.get_line_num(source);
 			let column_start = calc_spaces_from_byte_offset(line, start);
 
 			//TODO: Handle multi-line spans
-			eprint!(
-				"{message_prefix} {:?}, line {}, column {}: ",
-				path, line_num, column_start
-			);
+			eprint!("{message_prefix} {:?}, line {}, column {}: ", path, line_num, column_start);
 			eprint!("{}", text);
 
 			if start != end {
@@ -202,11 +190,7 @@ impl Note {
 	}
 
 	pub fn maybe_new(text: &str, span: Option<Span>, file_index: Option<usize>) -> Option<Note> {
-		Some(Note {
-			text: text.to_owned(),
-			span: span?,
-			file_index: file_index?,
-		})
+		Some(Note { text: text.to_owned(), span: span?, file_index: file_index? })
 	}
 }
 

@@ -9,11 +9,7 @@ pub fn parse_file<'a>(messages: &mut Messages, file: &'a SourceFile) -> File<'a>
 	let block = parse_root_block(messages, &mut tokenizer);
 
 	let module_path = &file.module_path;
-	File {
-		source_file: file,
-		module_path,
-		block,
-	}
+	File { source_file: file, module_path, block }
 }
 
 pub fn parse_root_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Block<'a> {
@@ -60,11 +56,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 		};
 
 		match token {
-			Token {
-				kind: TokenKind::Word,
-				text: "using",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "using", .. } => {
 				disallow_attributes(messages, attributes, token.span, "A using statement");
 				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
 					items.push(Statement::Using(statement));
@@ -73,11 +65,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::Word,
-				text: "const",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "const", .. } => {
 				disallow_attributes(messages, attributes, token.span, "A const definition");
 				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
 					items.push(Statement::Const(Box::new(statement)));
@@ -86,11 +74,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::Word,
-				text: "let",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "let", .. } => {
 				disallow_attributes(messages, attributes, token.span, "A let statement");
 				if let Ok(statement) = parse_let_statement(messages, tokenizer) {
 					items.push(Statement::Let(Box::new(statement)));
@@ -99,11 +83,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::Word,
-				text: "mut",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "mut", .. } => {
 				disallow_attributes(messages, attributes, token.span, "A mut statement");
 				if let Ok(statement) = parse_mut_statement(messages, tokenizer) {
 					items.push(Statement::Mut(Box::new(statement)));
@@ -112,11 +92,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::Word,
-				text: "fn",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "fn", .. } => {
 				if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes) {
 					items.push(Statement::Function(Box::new(statement)));
 				} else {
@@ -124,11 +100,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::Word,
-				text: "struct",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "struct", .. } => {
 				if let Ok(statement) = parse_struct_declaration(messages, tokenizer, attributes) {
 					items.push(Statement::Struct(statement));
 				} else {
@@ -136,11 +108,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::Word,
-				text: "return",
-				..
-			} => {
+			Token { kind: TokenKind::Word, text: "return", .. } => {
 				disallow_attributes(messages, attributes, token.span, "A return statement");
 				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
 					items.push(Statement::Return(Box::new(statement)));
@@ -149,9 +117,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::OpenBrace, ..
-			} => {
+			Token { kind: TokenKind::OpenBrace, .. } => {
 				disallow_attributes(messages, attributes, token.span, "A block");
 				if let Ok(statement) = parse_block(messages, tokenizer) {
 					items.push(Statement::Block(statement));
@@ -160,9 +126,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token {
-				kind: TokenKind::CloseBrace, ..
-			} => break,
+			Token { kind: TokenKind::CloseBrace, .. } => break,
 
 			_ => {
 				disallow_attributes(messages, attributes, token.span, "An expression");
@@ -268,20 +232,14 @@ fn parse_expression_atom<'a>(
 			let string_token = tokenizer.expect(messages, TokenKind::String)?;
 			let value = Node::from_token(string_token.text, string_token);
 
-			Ok(Node::from_token(
-				Expression::StringLiteral(StringLiteral { value }),
-				string_token,
-			))
+			Ok(Node::from_token(Expression::StringLiteral(StringLiteral { value }), string_token))
 		}
 
 		TokenKind::Char => {
 			let char_token = tokenizer.expect(messages, TokenKind::Char)?;
 			let value = Node::from_token(char_token.text.chars().next().unwrap(), char_token);
 
-			Ok(Node::from_token(
-				Expression::CharLiteral(CharLiteral { value }),
-				char_token,
-			))
+			Ok(Node::from_token(Expression::CharLiteral(CharLiteral { value }), char_token))
 		}
 
 		TokenKind::Word => {
@@ -292,13 +250,9 @@ fn parse_expression_atom<'a>(
 			let path_segments = parse_path_segments(messages, tokenizer)?;
 
 			let (is_call, is_struct_literal) = match tokenizer.peek() {
-				Ok(Token {
-					kind: TokenKind::OpenParen, ..
-				}) => (true, false),
+				Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
 
-				Ok(Token {
-					kind: TokenKind::OpenBrace, ..
-				}) => (false, true),
+				Ok(Token { kind: TokenKind::OpenBrace, .. }) => (false, true),
 
 				_ => (false, false),
 			};
@@ -339,11 +293,8 @@ fn parse_expression_atom<'a>(
 
 		_ => {
 			messages.error(
-				message!(
-					"Unexpected token {:?} while attempting to parse expression atom",
-					peeked.text
-				)
-				.span(peeked.span),
+				message!("Unexpected token {:?} while attempting to parse expression atom", peeked.text)
+					.span(peeked.span),
 			);
 			Err(())
 		}
@@ -434,12 +385,7 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 		};
 
 		let span = first_number_token.span + second_number_token.span;
-		return Ok(Node::new(
-			Expression::FloatLiteral(FloatLiteral {
-				value: Node::new(value, span),
-			}),
-			span,
-		));
+		return Ok(Node::new(Expression::FloatLiteral(FloatLiteral { value: Node::new(value, span) }), span));
 	} else {
 		let value = match first_number_token.text.parse::<u64>() {
 			Ok(value) => value,
@@ -450,9 +396,7 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 		};
 
 		return Ok(Node::from_token(
-			Expression::IntegerLiteral(IntegerLiteral {
-				value: Node::from_token(value, first_number_token),
-			}),
+			Expression::IntegerLiteral(IntegerLiteral { value: Node::from_token(value, first_number_token) }),
 			first_number_token,
 		));
 	}
@@ -558,9 +502,7 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 			Node::from_token(Type::Void, token)
 		}
 
-		Token {
-			kind: TokenKind::Ampersand, ..
-		} => {
+		Token { kind: TokenKind::Ampersand, .. } => {
 			let ampersand = tokenizer.expect(messages, TokenKind::Ampersand)?;
 
 			if tokenizer.peek()?.kind == TokenKind::OpenBracket {
@@ -585,9 +527,7 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 
 			let mut arguments = Vec::new();
 			let span = match tokenizer.peek() {
-				Ok(Token {
-					kind: TokenKind::OpenBracket, ..
-				}) => {
+				Ok(Token { kind: TokenKind::OpenBracket, .. }) => {
 					tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
 					if tokenizer.peek()?.kind != TokenKind::CloseBracket {
@@ -637,13 +577,7 @@ fn parse_function_declaration<'a>(
 
 	let block = parse_block(messages, tokenizer)?;
 
-	Ok(Function {
-		generics,
-		name,
-		parameters,
-		parsed_type,
-		block,
-	})
+	Ok(Function { generics, name, parameters, parsed_type, block })
 }
 
 fn parse_parameters<'a>(
@@ -739,11 +673,7 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = const_token.span + expression.span;
-	let item = Const {
-		name,
-		parsed_type,
-		expression,
-	};
+	let item = Const { name, parsed_type, expression };
 	Ok(Node { item, span })
 }
 
@@ -768,11 +698,7 @@ fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = let_token.span + expression.span;
-	let item = Let {
-		name,
-		parsed_type,
-		expression,
-	};
+	let item = Let { name, parsed_type, expression };
 	Ok(Node { item, span })
 }
 
@@ -797,11 +723,7 @@ fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let span = mut_token.span + expression.span;
-	let item = Mut {
-		name,
-		parsed_type,
-		expression,
-	};
+	let item = Mut { name, parsed_type, expression };
 	Ok(Node { item, span })
 }
 
@@ -818,10 +740,7 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 }
 
 fn check_not_reserved(messages: &mut Messages, token: Token) -> ParseResult<()> {
-	let is_reserved = matches!(
-		token.text,
-		"const" | "fn" | "let" | "mut" | "return" | "struct" | "using" | "generic"
-	);
+	let is_reserved = matches!(token.text, "const" | "fn" | "let" | "mut" | "return" | "struct" | "using" | "generic");
 
 	if is_reserved {
 		messages.error(message!("Reserved word {:?}", token.text).span(token.span));

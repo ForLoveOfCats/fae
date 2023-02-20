@@ -5,8 +5,7 @@ const CONSTANT: &str = "Hello there!"
 generic T
 struct MyStruct {
 	field: f64
-	other_field: bool
-	generic_struct: T
+	other_field: T
 }
 
 generic T

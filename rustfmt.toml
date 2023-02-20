@@ -1,3 +1,4 @@
 hard_tabs = true
-struct_lit_width = 28
+struct_lit_width = 60
+fn_call_width = 90
 max_width = 120

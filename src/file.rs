@@ -42,12 +42,7 @@ pub fn load_all_files<P: AsRef<Path>>(path: P) -> Result<Vec<SourceFile>> {
 		file.read_to_string(&mut source)?;
 
 		let index = files.len();
-		files.push(SourceFile {
-			source,
-			path,
-			module_path,
-			index,
-		});
+		files.push(SourceFile { source, path, module_path, index });
 	}
 
 	Ok(files)

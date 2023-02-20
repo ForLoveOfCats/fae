@@ -1,3 +1,4 @@
+use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::Node;
 
@@ -6,7 +7,7 @@ pub struct Import<'a> {
 	pub segments: Vec<Node<&'a str>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Symbol<'a> {
 	pub name: &'a str,
 	pub kind: SymbolKind,
@@ -16,51 +17,115 @@ pub struct Symbol<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolKind {
-	Type { concrete_index: usize },
+	BuiltinType { type_index: usize }, //Not used for slice/reference as those are not symbols
+	Type { type_index: usize },
 	Function { shape_index: usize },
-	Const { type_id: TypeId },
 }
 
 #[derive(Debug)]
 pub enum GenericOrTypeId {
-	Generic { index: usize },
 	TypeId { id: TypeId },
+	Generic { index: usize },
 }
 
 #[derive(Debug)]
-pub struct Type<'a> {
-	pub name: String,
-	pub kind: TypeKind<'a>,
-	pub specialization: Vec<Specialization>,
+pub struct UserType<'a> {
+	pub span: Span,
+	pub kind: UserTypeKind<'a>,
 }
 
-impl<'a> Type<'a> {
-	pub fn get_or_add_specialization(&mut self, arguments: Vec<TypeId>) -> usize {
-		for (index, existing) in self.specialization.iter().enumerate() {
-			if existing.arguments.len() == arguments.len() {
-				let all_match = existing.arguments.iter().zip(&arguments).all(|(a, b)| a == b);
+#[derive(Debug)]
+pub enum UserTypeKind<'a> {
+	Struct { shape: StructShape<'a> },
+}
 
-				if all_match {
-					return index;
+#[derive(Debug)]
+pub struct PrimativeType {
+	pub name: &'static str,
+	pub kind: PrimativeKind,
+	pub type_id: TypeId,
+}
+
+#[derive(Debug)]
+pub enum PrimativeKind {
+	Void,
+
+	I8,
+	I16,
+	I32,
+	I64,
+
+	U8,
+	U16,
+	U32,
+	U64,
+
+	F16,
+	F32,
+	F64,
+}
+
+#[derive(Debug)]
+pub struct StructShape<'a> {
+	pub name: &'a str,
+	pub generics: Vec<Node<&'a str>>,
+
+	pub fields: Vec<Node<FieldShape<'a>>>,
+
+	pub concrete: Vec<Struct<'a>>,
+}
+
+impl<'a> StructShape<'a> {
+	pub fn get_or_add_specialization(
+		&mut self,
+		messages: &mut Messages,
+		invoke_span: Span,
+		arguments: Vec<TypeId>,
+	) -> Option<usize> {
+		for (index, existing) in self.concrete.iter().enumerate() {
+			if existing.type_arguments.len() == arguments.len() {
+				if existing.type_arguments.iter().zip(&arguments).all(|(a, b)| a == b) {
+					return Some(index);
 				}
 			}
 		}
 
-		self.specialization.push(Specialization { arguments });
-		self.specialization.len() - 1
+		if self.generics.len() != arguments.len() {
+			messages.error(
+				message!("Expected {} type arguments, got {}", self.generics.len(), arguments.len()).span(invoke_span),
+			);
+			return None;
+		}
+
+		let fields = self
+			.fields
+			.iter()
+			.map(|field| {
+				let type_id = match field.item.field_type {
+					GenericOrTypeId::TypeId { id } => id,
+					GenericOrTypeId::Generic { index } => arguments[index],
+				};
+
+				Field { name: field.item.name, type_id }
+			})
+			.collect::<Vec<_>>();
+
+		let concrete = Struct { type_arguments: arguments, fields };
+		self.concrete.push(concrete);
+		Some(self.concrete.len() - 1)
 	}
 }
 
 #[derive(Debug)]
-pub struct Specialization {
-	arguments: Vec<TypeId>,
+pub struct FieldShape<'a> {
+	pub name: &'a str,
+	pub field_type: GenericOrTypeId,
 }
 
 #[derive(Debug)]
-pub enum TypeKind<'a> {
-	Primative,
-	Reference,
-	Struct { fields: Vec<Field<'a>> },
+pub struct Struct<'a> {
+	pub type_arguments: Vec<TypeId>,
+	pub fields: Vec<Field<'a>>,
 }
 
 #[derive(Debug)]
@@ -71,7 +136,7 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct FunctionShape<'a> {
-	pub name: &'a str, //Purely for debugging purposes
+	pub name: &'a str,
 	pub generics: Vec<Node<&'a str>>,
 
 	pub parameters: Vec<ParameterShape<'a>>,
@@ -123,6 +188,6 @@ pub struct FunctionId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeId {
-	pub concrete_index: usize,
-	pub specialization_index: usize,
+	pub index: usize,
+	pub specialization: usize,
 }

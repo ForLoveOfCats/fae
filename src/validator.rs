@@ -20,8 +20,9 @@ impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
 		}
 	}
 
-	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<&Symbol<'a>> {
-		self.scope.lookup_symbol(self.messages, self.root_layers, segments)
+	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
+		self.scope
+			.lookup_symbol(self.messages, self.root_layers, self.type_store, segments)
 	}
 }
 
@@ -80,7 +81,7 @@ impl<'a> RootLayers<'a> {
 		unreachable!();
 	}
 
-	fn lookup_path_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<&Symbol<'a>> {
+	fn lookup_path_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
 		assert!(!segments.is_empty());
 		let layer = self.layer_for_module_path(messages, &segments)?;
 		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
@@ -108,11 +109,7 @@ impl<'a> RootLayer<'a> {
 		}
 	}
 
-	fn lookup_root_symbol<'b>(
-		&'b self,
-		messages: &mut Messages,
-		segments: &[tree::Node<&'a str>],
-	) -> Option<&Symbol<'a>> {
+	fn lookup_root_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
 		assert_eq!(segments.len(), 1);
 
 		let segment = &segments[0];
@@ -122,17 +119,15 @@ impl<'a> RootLayer<'a> {
 		if found.is_none() {
 			messages.error(message!("No symbol named {name:?} in root of module {:?}", self.name).span(segment.span));
 		}
-		found
+		found.copied()
 	}
 
 	fn importable_types(&self, type_store: &TypeStore<'a>) -> &[Symbol<'a>] {
-		let builtin_len = type_store.builtin_type_symbols.len();
-		&self.symbols[builtin_len..builtin_len + self.importable_types_len]
+		&self.symbols[0..self.importable_types_len]
 	}
 
 	fn importable_functions(&self, type_store: &TypeStore<'a>) -> &[Symbol<'a>] {
-		let builtin_len = type_store.builtin_type_symbols.len();
-		let types_len = builtin_len + self.importable_types_len + self.imported_types_len;
+		let types_len = self.importable_types_len + self.imported_types_len;
 		&self.symbols[types_len..types_len + self.importable_functions_len]
 	}
 }
@@ -157,9 +152,7 @@ impl<'a, 'p> Drop for Scope<'a, 'p> {
 impl<'a, 'p> Scope<'a, 'p> {
 	fn child<'s>(&'s mut self) -> Scope<'a, 's> {
 		Scope {
-			initial_state: FrameState {
-				symbols_len: self.symbols.len(),
-			},
+			initial_state: FrameState { symbols_len: self.symbols.len() },
 			symbols: &mut *self.symbols,
 		}
 	}
@@ -178,104 +171,118 @@ impl<'a, 'p> Scope<'a, 'p> {
 		}
 	}
 
-	fn lookup_symbol<'b>(
-		&'b self,
+	fn lookup_symbol(
+		&self,
 		messages: &mut Messages,
-		root_layers: &'b RootLayers<'a>,
+		root_layers: &RootLayers<'a>,
+		type_store: &TypeStore<'a>,
 		segments: &[tree::Node<&'a str>],
-	) -> Option<&'b Symbol<'a>> {
+	) -> Option<Symbol<'a>> {
 		assert!(!segments.is_empty());
 
-		if segments.len() == 1 {
-			let segment = &segments[0];
+		if let [segment] = segments {
 			let name = segment.item;
-			let found = self.symbols.iter().find(|symbol| symbol.name == name);
 
-			if found.is_none() {
-				messages.error(message!("No symbol named {name:?} in the current scope").span(segment.span));
+			let primatives = &type_store.primative_type_symbols;
+			if let Some(&found) = primatives.iter().find(|symbol| symbol.name == name) {
+				return Some(found);
 			}
-			found
+
+			if let Some(&found) = self.symbols.iter().find(|symbol| symbol.name == name) {
+				return Some(found);
+			}
+
+			messages.error(message!("No symbol {name:?} in the current scope").span(segment.span));
+			None
 		} else {
 			root_layers.lookup_path_symbol(messages, segments)
 		}
 	}
 }
 
-pub struct TypeStore<'a> {
-	concrete_types: Vec<Type<'a>>,
+struct Primatives {
+	next_index: usize,
+	primatives: Vec<PrimativeType>,
+}
 
-	builtin_type_symbols: Vec<Symbol<'a>>,
+impl Primatives {
+	fn new(initial_index: usize) -> Primatives {
+		Primatives { next_index: initial_index, primatives: Vec::new() }
+	}
+
+	fn push<'a>(&mut self, name: &'static str, kind: PrimativeKind) -> Symbol<'a> {
+		let type_id = TypeId { index: self.next_type_index(), specialization: 0 };
+		self.primatives.push(PrimativeType { name, kind, type_id });
+		let kind = SymbolKind::BuiltinType { type_index: type_id.index };
+		Symbol { name, kind, span: None, file_index: None }
+	}
+
+	fn next_type_index(&mut self) -> usize {
+		let index = self.next_index;
+		self.next_index += 1;
+		index
+	}
+}
+
+pub struct TypeStore<'a> {
+	primatives: Primatives,
+	primative_type_symbols: Vec<Symbol<'a>>,
+
+	user_types: Vec<UserType<'a>>,
 
 	void_type_id: TypeId,
-	reference_concrete_index: usize,
-	slice_concrete_index: usize,
+	reference_type_index: usize,
+	slice_type_index: usize,
 }
 
 impl<'a> TypeStore<'a> {
 	pub fn new() -> Self {
-		//This two-phase initialization is unfortunate
-		let mut store = TypeStore {
-			concrete_types: Vec::new(),
-			builtin_type_symbols: Vec::new(),
-			void_type_id: TypeId {
-				concrete_index: 0,
-				specialization_index: 0,
-			},
-			reference_concrete_index: 0,
-			slice_concrete_index: 0,
-		};
+		let mut primative_type_symbols = Vec::new();
+		let mut primatives = Primatives::new(u32::MAX as usize);
 
-		store.register_builtin_type("void", TypeKind::Primative);
-		store.void_type_id = TypeId {
-			concrete_index: store.concrete_types.len() - 1,
-			specialization_index: 0,
-		};
+		primative_type_symbols.push(primatives.push("void", PrimativeKind::Void));
+		let void_type_id = TypeId { index: u32::MAX as usize, specialization: 0 };
 
-		//Garbage names to just park the concrete index so we can generate TypeIds for these two
-		store.register_builtin_type("&", TypeKind::Primative);
-		store.reference_concrete_index = store.concrete_types.len() - 1;
-		store.register_builtin_type("[]", TypeKind::Primative);
-		store.slice_concrete_index = store.concrete_types.len() - 1;
+		primative_type_symbols.push(primatives.push("i8", PrimativeKind::I8));
+		primative_type_symbols.push(primatives.push("i16", PrimativeKind::I16));
+		primative_type_symbols.push(primatives.push("i32", PrimativeKind::I32));
+		primative_type_symbols.push(primatives.push("i64", PrimativeKind::I64));
 
-		store.register_builtin_type("i8", TypeKind::Primative);
-		store.register_builtin_type("i16", TypeKind::Primative);
-		store.register_builtin_type("i32", TypeKind::Primative);
-		store.register_builtin_type("i64", TypeKind::Primative);
+		primative_type_symbols.push(primatives.push("u8", PrimativeKind::U8));
+		primative_type_symbols.push(primatives.push("u16", PrimativeKind::U16));
+		primative_type_symbols.push(primatives.push("u32", PrimativeKind::U32));
+		primative_type_symbols.push(primatives.push("u64", PrimativeKind::U64));
 
-		store.register_builtin_type("u8", TypeKind::Primative);
-		store.register_builtin_type("u16", TypeKind::Primative);
-		store.register_builtin_type("u32", TypeKind::Primative);
-		store.register_builtin_type("u64", TypeKind::Primative);
+		primative_type_symbols.push(primatives.push("f16", PrimativeKind::F16));
+		primative_type_symbols.push(primatives.push("f32", PrimativeKind::F32));
+		primative_type_symbols.push(primatives.push("f64", PrimativeKind::F64));
 
-		store.register_builtin_type("f16", TypeKind::Primative);
-		store.register_builtin_type("f32", TypeKind::Primative);
-		store.register_builtin_type("f64", TypeKind::Primative);
+		let reference_type_index = primatives.next_type_index();
+		let slice_type_index = primatives.next_type_index();
 
-		store
+		TypeStore {
+			primatives,
+			primative_type_symbols,
+			user_types: Vec::new(),
+			void_type_id,
+			reference_type_index,
+			slice_type_index,
+		}
 	}
 
-	#[must_use = "Logical error to call without handling resulting symbol"]
-	pub fn register_type(
+	#[must_use]
+	fn register_type(
 		&mut self,
 		name: &'a str,
-		kind: TypeKind<'a>,
-		span: Option<Span>,
+		kind: UserTypeKind<'a>,
+		span: Span,
 		file_index: Option<usize>,
 	) -> Symbol<'a> {
-		self.concrete_types.push(Type {
-			name: name.to_string(),
-			kind,
-			specialization: Vec::new(),
-		});
+		self.user_types.push(UserType { span, kind });
 
-		let concrete_index = self.concrete_types.len() - 1;
-		let kind = SymbolKind::Type { concrete_index };
-		Symbol { name, kind, span, file_index }
-	}
-
-	fn register_builtin_type(&mut self, name: &'a str, kind: TypeKind<'a>) {
-		let symbol = self.register_type(name, kind, None, None);
-		self.builtin_type_symbols.push(symbol);
+		let type_index = self.user_types.len() - 1;
+		let kind = SymbolKind::Type { type_index };
+		Symbol { name, kind, span: Some(span), file_index }
 	}
 
 	fn lookup_type(
@@ -290,38 +297,47 @@ impl<'a> TypeStore<'a> {
 
 			tree::Type::Reference(inner) => {
 				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.item)?;
-				let concrete_index = self.reference_concrete_index;
-				let concrete = &mut self.concrete_types[concrete_index];
-				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
-				return Some(TypeId {
-					concrete_index,
-					specialization_index,
-				});
+				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
+				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
+
+				let type_index = self.reference_type_index;
+				let concrete_index = inner_id.index | inner_id.specialization << 4 * 8;
+				return Some(TypeId { index: type_index, specialization: concrete_index });
 			}
 
 			tree::Type::Slice(inner) => {
 				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.item)?;
-				let concrete_index = self.slice_concrete_index;
-				let concrete = &mut self.concrete_types[concrete_index];
-				let specialization_index = concrete.get_or_add_specialization(vec![inner_id]);
-				return Some(TypeId {
-					concrete_index,
-					specialization_index,
-				});
+				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
+				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
+
+				let type_index = self.slice_type_index;
+				let concrete_index = inner_id.index | inner_id.specialization << 4 * 8;
+				return Some(TypeId { index: type_index, specialization: concrete_index });
 			}
 
 			tree::Type::Path { segments, arguments } => (segments, arguments),
 		};
 
 		assert!(!segments.segments.is_empty());
-		let symbol = scope.lookup_symbol(messages, root_layers, &segments.segments)?;
+		let symbol = scope.lookup_symbol(messages, root_layers, self, &segments.segments)?;
 
-		let concrete_index = match symbol.kind {
-			SymbolKind::Type { concrete_index } => concrete_index,
+		let type_index = match symbol.kind {
+			SymbolKind::BuiltinType { type_index } => {
+				if !arguments.is_empty() {
+					let span = segments.segments.last().unwrap().span;
+					messages.error(message!("Builtin types do not accept type arguments").span(span));
+					return None;
+				}
+
+				let index = type_index - u32::MAX as usize;
+				return Some(self.primatives.primatives[index].type_id);
+			}
+
+			SymbolKind::Type { type_index } => type_index,
 
 			_ => {
-				let name = symbol.name;
-				messages.error(message!("Symbol {name:?} is not a type").span(segments.segments.last().unwrap().span));
+				let span = segments.segments.last().unwrap().span;
+				messages.error(message!("Symbol {:?} is not a type", symbol.name).span(span));
 				return None;
 			}
 		};
@@ -331,13 +347,12 @@ impl<'a> TypeStore<'a> {
 			type_args.push(self.lookup_type(messages, root_layers, scope, &argument.item)?);
 		}
 
-		let concrete = &mut self.concrete_types[concrete_index];
-		let specialization_index = concrete.get_or_add_specialization(type_args);
+		let user_type = &mut self.user_types[type_index];
+		let concrete_index = match &mut user_type.kind {
+			UserTypeKind::Struct { shape } => shape.get_or_add_specialization(messages, user_type.span, type_args)?,
+		};
 
-		Some(TypeId {
-			concrete_index,
-			specialization_index,
-		})
+		Some(TypeId { index: type_index, specialization: concrete_index })
 	}
 }
 
@@ -364,12 +379,12 @@ pub fn validate_roots<'a>(
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
-	create_root_types(messages, root_layers, type_store, parsed_files);
+	create_and_fill_root_types(messages, root_layers, type_store, parsed_files);
 	resolve_root_type_inports(messages, root_layers, type_store, parsed_files);
 	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
 }
 
-fn create_root_types<'a>(
+fn create_and_fill_root_types<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -383,8 +398,7 @@ fn create_root_types<'a>(
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		let old_symbols_len = type_store.builtin_type_symbols.len();
-		let mut symbols = type_store.builtin_type_symbols.to_vec();
+		let mut symbols = Vec::new();
 		let mut scope = Scope {
 			//The initial state doesn't matter, we aren't going to drop this scope
 			initial_state: FrameState { symbols_len: 0 },
@@ -392,10 +406,10 @@ fn create_root_types<'a>(
 		};
 
 		create_block_types(messages, type_store, &mut scope, block, true, index);
-		let new_symbols_len = scope.symbols.len() - old_symbols_len;
+		let symbols_len = scope.symbols.len();
 
 		std::mem::forget(scope); //Avoid cleaning up symbols
-		layer.importable_types_len = new_symbols_len;
+		layer.importable_types_len = symbols_len;
 		layer.symbols = symbols;
 	}
 }
@@ -438,15 +452,7 @@ fn create_root_functions<'a>(
 			symbols: &mut symbols,
 		};
 
-		create_block_functions(
-			messages,
-			root_layers,
-			type_store,
-			function_store,
-			&mut scope,
-			block,
-			index,
-		);
+		create_block_functions(messages, root_layers, type_store, function_store, &mut scope, block, index);
 
 		std::mem::forget(scope);
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
@@ -456,6 +462,7 @@ fn create_root_functions<'a>(
 }
 
 //Returns imported count, TODO use named return in Fae
+#[must_use]
 fn resolve_block_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
@@ -532,14 +539,25 @@ fn create_block_types<'a>(
 		}
 
 		if let tree::Statement::Struct(statement) = statement {
-			let name = statement.name.item;
+			// let name = statement.name.item;
 			//Start off with no fields, they will be added during the next pre-pass
-			let kind = TypeKind::Struct { fields: Vec::new() };
-			let span = Some(statement.name.span);
-			let symbol = type_store.register_type(name, kind, span, Some(file_index));
-			scope.push_symbol(messages, symbol);
+			//so that all types exist in order to populate field types
+			// let kind = TypeKind::Struct { fields: Vec::new() };
+			// let span = Some(statement.name.span);
+			// let symbol = type_store.register_type(name, kind, span, Some(file_index));
+			// scope.push_symbol(messages, symbol);
 		}
 	}
+}
+
+fn fill_block_types<'a>(
+	messages: &mut Messages,
+	type_store: &mut TypeStore<'a>,
+	scope: &mut Scope<'a, '_>,
+	block: &tree::Block<'a>,
+	is_root: bool,
+	file_index: usize,
+) {
 }
 
 fn create_block_functions<'a>(
@@ -603,15 +621,3 @@ fn create_block_functions<'a>(
 		}
 	}
 }
-
-// tree::Statement::Const(statement) => {
-// 	//Type id will get filled in during the next pre-pass
-// 	let kind = SymbolKind::Const { type_id: TypeId::invalid() };
-// 	let symbol = Symbol {
-// 		name: statement.node.name.node,
-// 		kind,
-// 		span: Some(statement.span),
-// 		file_index,
-// 	};
-// 	scope.push_symbol(messages, symbol);
-// }
