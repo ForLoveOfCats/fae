@@ -412,6 +412,7 @@ pub fn validate_roots<'a>(
 	create_and_fill_root_types(messages, root_layers, type_store, parsed_files);
 	resolve_root_type_inports(messages, root_layers, parsed_files);
 	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
+	resolve_root_function_inports(messages, root_layers, parsed_files);
 }
 
 fn create_and_fill_root_types<'a>(
@@ -457,9 +458,9 @@ fn resolve_root_type_inports<'a>(
 		messages.set_current_file_index(index);
 
 		let count = resolve_block_type_imports(messages, root_layers, block, &parsed_file.module_path);
-
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
-		layer.imported_types_len = count;
+		root_layers
+			.create_module_path(&parsed_file.module_path)
+			.imported_types_len = count;
 	}
 }
 
@@ -484,6 +485,20 @@ fn create_root_functions<'a>(
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
 		layer.importable_functions_len = symbols.len() - old_symbols_len;
 		layer.symbols = symbols;
+	}
+}
+
+fn resolve_root_function_inports<'a>(
+	messages: &mut Messages,
+	root_layers: &mut RootLayers<'a>,
+	parsed_files: &[tree::File<'a>],
+) {
+	for parsed_file in parsed_files {
+		let block = &parsed_file.block;
+		let index = parsed_file.source_file.index;
+		messages.set_current_file_index(index);
+
+		resolve_block_function_imports(messages, root_layers, block, &parsed_file.module_path);
 	}
 }
 
@@ -518,10 +533,10 @@ fn resolve_block_type_imports<'a>(
 
 			if let Some(found) = layer.symbols.symbols.iter().find(|s| s.name == name) {
 				messages.error(
-					message!("Import of duplicate symbol {name:?}")
+					message!("Import of duplicate type symbol {name:?}")
 						.span(using_statement.span)
-						.note_if_some("Original symbol here", found.span, found.file_index)
-						.note_if_some("Duplicate symbol here", symbol.span, symbol.file_index),
+						.note_if_some("Original type symbol here", found.span, found.file_index)
+						.note_if_some("Duplicate type symbol here", symbol.span, symbol.file_index),
 				);
 			} else {
 				layer.symbols.symbols.push(symbol.clone());
@@ -531,6 +546,45 @@ fn resolve_block_type_imports<'a>(
 	}
 
 	imported_count
+}
+
+fn resolve_block_function_imports<'a>(
+	messages: &mut Messages,
+	root_layers: &mut RootLayers<'a>,
+	block: &tree::Block<'a>,
+	module_path: &'a [String],
+) {
+	for statement in &block.statements {
+		let using_statement = match statement {
+			tree::Statement::Using(using_statement) => using_statement,
+			_ => continue,
+		};
+
+		let path = &using_statement.item.path_segments.item.segments;
+		let found = match root_layers.layer_for_module_path(messages, path) {
+			Some(found) if found.symbols.is_empty() => continue,
+			Some(found) => found,
+			_ => continue,
+		};
+
+		let symbols = found.importable_functions().to_vec(); //Yuck
+		let layer = root_layers.create_module_path(module_path);
+
+		for symbol in symbols {
+			let name = symbol.name;
+
+			if let Some(found) = layer.symbols.symbols.iter().find(|s| s.name == name) {
+				messages.error(
+					message!("Import of duplicate function symbol {name:?}")
+						.span(using_statement.span)
+						.note_if_some("Original function symbol here", found.span, found.file_index)
+						.note_if_some("Duplicate funciton symbol here", symbol.span, symbol.file_index),
+				);
+			} else {
+				layer.symbols.symbols.push(symbol.clone());
+			}
+		}
+	}
 }
 
 fn create_block_types<'a>(
