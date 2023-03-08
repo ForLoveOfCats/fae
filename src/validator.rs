@@ -5,7 +5,6 @@ use crate::tree;
 
 pub struct Context<'a, 'b, 'p> {
 	messages: &'b mut Messages<'a>,
-	root_layers: &'b RootLayers<'a>,
 	type_store: &'b mut TypeStore<'a>,
 	scope: Scope<'a, 'p>,
 }
@@ -14,18 +13,13 @@ impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
 	fn child_scope<'s>(&'s mut self) -> Context<'a, 's, 's> {
 		Context {
 			messages: &mut *self.messages,
-			root_layers: &*self.root_layers,
 			type_store: &mut *self.type_store,
 			scope: self.scope.child(),
 		}
 	}
-
-	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
-		self.scope
-			.lookup_symbol(self.messages, self.root_layers, self.type_store, segments)
-	}
 }
 
+#[derive(Debug)]
 pub struct RootLayers<'a> {
 	layers: Vec<RootLayer<'a>>,
 }
@@ -88,73 +82,22 @@ impl<'a> RootLayers<'a> {
 	}
 }
 
-pub struct RootLayer<'a> {
-	name: &'a str,
-	children: Vec<RootLayer<'a>>,
+#[derive(Debug, Clone)]
+pub struct Symbols<'a> {
 	symbols: Vec<Symbol<'a>>,
-	importable_types_len: usize,
-	imported_types_len: usize,
-	importable_functions_len: usize,
 }
 
-impl<'a> RootLayer<'a> {
-	fn new(name: &'a str) -> Self {
-		RootLayer {
-			name,
-			children: Vec::new(),
-			symbols: Vec::new(),
-			importable_types_len: 0,
-			imported_types_len: 0,
-			importable_functions_len: 0,
-		}
+impl<'a> Symbols<'a> {
+	fn new() -> Self {
+		Symbols { symbols: Vec::new() }
 	}
 
-	fn lookup_root_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
-		assert_eq!(segments.len(), 1);
-
-		let segment = &segments[0];
-		let name = segment.item;
-		let found = self.symbols.iter().find(|symbol| symbol.name == name);
-
-		if found.is_none() {
-			messages.error(message!("No symbol named {name:?} in root of module {:?}", self.name).span(segment.span));
-		}
-		found.copied()
+	fn len(&self) -> usize {
+		self.symbols.len()
 	}
 
-	fn importable_types(&self, type_store: &TypeStore<'a>) -> &[Symbol<'a>] {
-		&self.symbols[0..self.importable_types_len]
-	}
-
-	fn importable_functions(&self, type_store: &TypeStore<'a>) -> &[Symbol<'a>] {
-		let types_len = self.importable_types_len + self.imported_types_len;
-		&self.symbols[types_len..types_len + self.importable_functions_len]
-	}
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-struct FrameState {
-	symbols_len: usize,
-}
-
-#[derive(Debug)]
-struct Scope<'a, 'p> {
-	initial_state: FrameState,
-	symbols: &'p mut Vec<Symbol<'a>>,
-}
-
-impl<'a, 'p> Drop for Scope<'a, 'p> {
-	fn drop(&mut self) {
-		self.symbols.truncate(self.initial_state.symbols_len);
-	}
-}
-
-impl<'a, 'p> Scope<'a, 'p> {
-	fn child<'s>(&'s mut self) -> Scope<'a, 's> {
-		Scope {
-			initial_state: FrameState { symbols_len: self.symbols.len() },
-			symbols: &mut *self.symbols,
-		}
+	fn is_empty(&self) -> bool {
+		self.symbols.is_empty()
 	}
 
 	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
@@ -197,6 +140,93 @@ impl<'a, 'p> Scope<'a, 'p> {
 		} else {
 			root_layers.lookup_path_symbol(messages, segments)
 		}
+	}
+}
+
+#[derive(Debug)]
+pub struct RootLayer<'a> {
+	name: &'a str,
+	children: Vec<RootLayer<'a>>,
+	symbols: Symbols<'a>,
+	importable_types_len: usize,
+	imported_types_len: usize,
+	importable_functions_len: usize,
+}
+
+impl<'a> RootLayer<'a> {
+	fn new(name: &'a str) -> Self {
+		RootLayer {
+			name,
+			children: Vec::new(),
+			symbols: Symbols::new(),
+			importable_types_len: 0,
+			imported_types_len: 0,
+			importable_functions_len: 0,
+		}
+	}
+
+	fn lookup_root_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
+		assert_eq!(segments.len(), 1);
+
+		let segment = &segments[0];
+		let name = segment.item;
+		let found = self.symbols.symbols.iter().find(|symbol| symbol.name == name);
+
+		if found.is_none() {
+			messages.error(message!("No symbol named {name:?} in root of module {:?}", self.name).span(segment.span));
+		}
+		found.copied()
+	}
+
+	fn importable_types(&self) -> &[Symbol<'a>] {
+		&self.symbols.symbols[0..self.importable_types_len]
+	}
+
+	fn importable_functions(&self) -> &[Symbol<'a>] {
+		let types_len = self.importable_types_len + self.imported_types_len;
+		&self.symbols.symbols[types_len..types_len + self.importable_functions_len]
+	}
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct FrameState {
+	symbols_len: usize,
+}
+
+#[derive(Debug)]
+struct Scope<'a, 'p> {
+	initial_state: FrameState,
+	symbols: &'p mut Symbols<'a>,
+	root_layers: &'p mut RootLayers<'a>,
+}
+
+impl<'a, 'p> Drop for Scope<'a, 'p> {
+	fn drop(&mut self) {
+		self.symbols.symbols.truncate(self.initial_state.symbols_len);
+	}
+}
+
+impl<'a, 'p> Scope<'a, 'p> {
+	fn child<'s>(&'s mut self) -> Scope<'a, 's> {
+		Scope {
+			initial_state: FrameState { symbols_len: self.symbols.len() },
+			symbols: &mut *self.symbols,
+			root_layers: &mut *self.root_layers,
+		}
+	}
+
+	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
+		self.symbols.push_symbol(messages, symbol);
+	}
+
+	fn lookup_symbol(
+		&self,
+		messages: &mut Messages,
+		type_store: &TypeStore<'a>,
+		segments: &[tree::Node<&'a str>],
+	) -> Option<Symbol<'a>> {
+		self.symbols
+			.lookup_symbol(messages, &self.root_layers, type_store, segments)
 	}
 }
 
@@ -288,15 +318,15 @@ impl<'a> TypeStore<'a> {
 	fn lookup_type(
 		&mut self,
 		messages: &mut Messages,
-		root_layers: &mut RootLayers<'a>,
-		scope: &Scope<'a, '_>,
+		root_layers: &RootLayers<'a>,
+		symbols: &Symbols<'a>,
 		parsed_type: &tree::Type<'a>,
 	) -> Option<TypeId> {
 		let (segments, arguments) = match parsed_type {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.item)?;
+				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner.item)?;
 				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
 				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
 
@@ -306,7 +336,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, scope, &inner.item)?;
+				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner.item)?;
 				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
 				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
 
@@ -319,7 +349,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		assert!(!segments.segments.is_empty());
-		let symbol = scope.lookup_symbol(messages, root_layers, self, &segments.segments)?;
+		let symbol = symbols.lookup_symbol(messages, root_layers, self, &segments.segments)?;
 
 		let type_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_index } => {
@@ -344,7 +374,7 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(arguments.len());
 		for argument in arguments {
-			type_args.push(self.lookup_type(messages, root_layers, scope, &argument.item)?);
+			type_args.push(self.lookup_type(messages, root_layers, symbols, &argument.item)?);
 		}
 
 		let user_type = &mut self.user_types[type_index];
@@ -380,7 +410,7 @@ pub fn validate_roots<'a>(
 	parsed_files: &[tree::File<'a>],
 ) {
 	create_and_fill_root_types(messages, root_layers, type_store, parsed_files);
-	resolve_root_type_inports(messages, root_layers, type_store, parsed_files);
+	resolve_root_type_inports(messages, root_layers, parsed_files);
 	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
 }
 
@@ -398,26 +428,27 @@ fn create_and_fill_root_types<'a>(
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		let mut symbols = Vec::new();
-		let mut scope = Scope {
-			//The initial state doesn't matter, we aren't going to drop this scope
-			initial_state: FrameState { symbols_len: 0 },
-			symbols: &mut symbols,
-		};
+		create_block_types(messages, type_store, &mut layer.symbols, block, true, index);
+		layer.importable_types_len = layer.symbols.len();
+	}
 
-		create_block_types(messages, type_store, &mut scope, block, true, index);
-		let symbols_len = scope.symbols.len();
+	for parsed_file in parsed_files {
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
 
-		std::mem::forget(scope); //Avoid cleaning up symbols
-		layer.importable_types_len = symbols_len;
-		layer.symbols = symbols;
+		let block = &parsed_file.block;
+		let index = parsed_file.source_file.index;
+		messages.set_current_file_index(index);
+
+		// Yuck, I do not like this
+		let mut symbols = layer.symbols.clone();
+		fill_block_types(messages, type_store, root_layers, &mut symbols, block);
+		root_layers.create_module_path(&parsed_file.module_path).symbols = symbols;
 	}
 }
 
 fn resolve_root_type_inports<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
-	type_store: &mut TypeStore<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
@@ -425,7 +456,7 @@ fn resolve_root_type_inports<'a>(
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		let count = resolve_block_type_imports(messages, root_layers, type_store, block, &parsed_file.module_path);
+		let count = resolve_block_type_imports(messages, root_layers, block, &parsed_file.module_path);
 
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
 		layer.imported_types_len = count;
@@ -444,17 +475,12 @@ fn create_root_functions<'a>(
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		//Yuck
+		//Yuck, I do not like this
 		let mut symbols = root_layers.create_module_path(&parsed_file.module_path).symbols.clone();
 		let old_symbols_len = symbols.len();
-		let mut scope = Scope {
-			initial_state: FrameState { symbols_len: 0 },
-			symbols: &mut symbols,
-		};
 
-		create_block_functions(messages, root_layers, type_store, function_store, &mut scope, block, index);
+		create_block_functions(messages, type_store, function_store, root_layers, &mut symbols, block, index);
 
-		std::mem::forget(scope);
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
 		layer.importable_functions_len = symbols.len() - old_symbols_len;
 		layer.symbols = symbols;
@@ -466,7 +492,6 @@ fn create_root_functions<'a>(
 fn resolve_block_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
-	type_store: &mut TypeStore<'a>,
 	block: &tree::Block<'a>,
 	module_path: &'a [String],
 ) -> usize {
@@ -485,13 +510,13 @@ fn resolve_block_type_imports<'a>(
 			_ => continue,
 		};
 
-		let symbols = found.importable_types(type_store).to_vec(); //Yuck
+		let symbols = found.importable_types().to_vec(); //Yuck
 		let layer = root_layers.create_module_path(module_path);
 
 		for symbol in symbols {
 			let name = symbol.name;
 
-			if let Some(found) = layer.symbols.iter().find(|s| s.name == name) {
+			if let Some(found) = layer.symbols.symbols.iter().find(|s| s.name == name) {
 				messages.error(
 					message!("Import of duplicate symbol {name:?}")
 						.span(using_statement.span)
@@ -499,7 +524,7 @@ fn resolve_block_type_imports<'a>(
 						.note_if_some("Duplicate symbol here", symbol.span, symbol.file_index),
 				);
 			} else {
-				layer.symbols.push(symbol.clone());
+				layer.symbols.symbols.push(symbol.clone());
 				imported_count += 1;
 			}
 		}
@@ -511,7 +536,7 @@ fn resolve_block_type_imports<'a>(
 fn create_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
-	scope: &mut Scope<'a, '_>,
+	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
 	is_root: bool,
 	file_index: usize,
@@ -539,13 +564,20 @@ fn create_block_types<'a>(
 		}
 
 		if let tree::Statement::Struct(statement) = statement {
-			// let name = statement.name.item;
 			//Start off with no fields, they will be added during the next pre-pass
 			//so that all types exist in order to populate field types
-			// let kind = TypeKind::Struct { fields: Vec::new() };
-			// let span = Some(statement.name.span);
-			// let symbol = type_store.register_type(name, kind, span, Some(file_index));
-			// scope.push_symbol(messages, symbol);
+			let shape = StructShape {
+				name: statement.name.item,
+				generics: statement.generics.clone(),
+				fields: Vec::new(),
+				concrete: Vec::new(),
+			};
+
+			let name = statement.name.item;
+			let kind = UserTypeKind::Struct { shape };
+			let span = statement.name.span;
+			let symbol = type_store.register_type(name, kind, span, Some(file_index));
+			symbols.push_symbol(messages, symbol);
 		}
 	}
 }
@@ -553,19 +585,75 @@ fn create_block_types<'a>(
 fn fill_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
-	scope: &mut Scope<'a, '_>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
-	is_root: bool,
-	file_index: usize,
 ) {
+	for statement in &block.statements {
+		if let tree::Statement::Struct(statement) = statement {
+			let name = statement.name.item;
+			let symbol = symbols.symbols.iter().find(|symbol| symbol.name == name).unwrap();
+			let type_index = match symbol.kind {
+				SymbolKind::Type { type_index } => type_index,
+				_ => unreachable!("{:?}", symbol.kind),
+			};
+
+			for field in &statement.fields {
+				let generic_type = match &field.parsed_type.item {
+					tree::Type::Path { segments, arguments } if segments.len() == 1 && arguments.is_empty() => {
+						let segment = segments.segments[0];
+
+						let user_type = &type_store.user_types[type_index];
+						let struct_shape = match &user_type.kind {
+							UserTypeKind::Struct { shape } => shape,
+							_ => unreachable!("{:?}", user_type.kind),
+						};
+
+						let index = struct_shape
+							.generics
+							.iter()
+							.enumerate()
+							.find(|(_, &g)| g.item == segment.item)
+							.map(|(i, _)| i);
+
+						match index {
+							Some(index) => Some(GenericOrTypeId::Generic { index }),
+							None => None,
+						}
+					}
+
+					_ => None,
+				};
+
+				let field_type = match generic_type {
+					Some(field_type) => field_type,
+
+					None => match type_store.lookup_type(messages, root_layers, symbols, &field.parsed_type.item) {
+						Some(id) => GenericOrTypeId::TypeId { id },
+						None => return,
+					},
+				};
+
+				let field_shape = FieldShape { name: field.name.item, field_type };
+				let span = field.name.span + field.parsed_type.span;
+				let node = tree::Node::new(field_shape, span);
+
+				let user_type = &mut type_store.user_types[type_index];
+				match &mut user_type.kind {
+					UserTypeKind::Struct { shape } => shape.fields.push(node),
+					_ => unreachable!("{:?}", user_type.kind),
+				};
+			}
+		}
+	}
 }
 
 fn create_block_functions<'a>(
 	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	scope: &mut Scope<'a, '_>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
 	file_index: usize,
 ) {
@@ -579,7 +667,7 @@ fn create_block_functions<'a>(
 			let return_type = if let Some(generic) = generic {
 				GenericOrTypeId::Generic { index: generic.0 }
 			} else {
-				match type_store.lookup_type(messages, root_layers, scope, &parsed_type) {
+				match type_store.lookup_type(messages, root_layers, symbols, &parsed_type) {
 					Some(id) => GenericOrTypeId::TypeId { id },
 					None => continue,
 				}
@@ -595,7 +683,7 @@ fn create_block_functions<'a>(
 				let param_type = if let Some(generic) = generic {
 					GenericOrTypeId::Generic { index: generic.0 }
 				} else {
-					match type_store.lookup_type(messages, root_layers, scope, &parsed_type) {
+					match type_store.lookup_type(messages, root_layers, symbols, &parsed_type) {
 						Some(id) => GenericOrTypeId::TypeId { id },
 						None => continue,
 					}
@@ -617,7 +705,7 @@ fn create_block_functions<'a>(
 				span: Some(statement.name.span),
 				file_index: Some(file_index),
 			};
-			scope.push_symbol(messages, symbol);
+			symbols.push_symbol(messages, symbol);
 		}
 	}
 }

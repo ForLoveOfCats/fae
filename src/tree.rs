@@ -17,6 +17,12 @@ pub struct PathSegments<'a> {
 	pub segments: Vec<Node<&'a str>>,
 }
 
+impl<'a> PathSegments<'a> {
+	pub fn len(&self) -> usize {
+		self.segments.len()
+	}
+}
+
 #[must_use]
 #[derive(Debug)]
 pub struct Module<'a> {
@@ -80,7 +86,7 @@ pub enum Type<'a> {
 impl<'a> Type<'a> {
 	pub fn as_single_segment(&self) -> Option<&'a str> {
 		match self {
-			Type::Path { segments, arguments } if segments.segments.len() == 1 && arguments.is_empty() => {
+			Type::Path { segments, arguments } if segments.len() == 1 && arguments.is_empty() => {
 				Some(segments.segments[0].item)
 			}
 
