@@ -3,19 +3,52 @@ use crate::mir::*;
 use crate::span::Span;
 use crate::tree;
 
-pub struct Context<'a, 'b, 'p> {
+#[derive(Debug)]
+pub struct Context<'a, 'b> {
+	file_index: usize,
 	messages: &'b mut Messages<'a>,
+
 	type_store: &'b mut TypeStore<'a>,
-	scope: Scope<'a, 'p>,
+	function_store: &'b mut FunctionStore<'a>,
+	root_layers: &'b RootLayers<'a>,
+
+	initial_symbols_len: usize,
+	symbols: &'b mut Symbols<'a>,
 }
 
-impl<'a, 'b, 'p> Context<'a, 'b, 'p> {
-	fn child_scope<'s>(&'s mut self) -> Context<'a, 's, 's> {
+impl<'a, 'b> Drop for Context<'a, 'b> {
+	fn drop(&mut self) {
+		self.symbols.symbols.truncate(self.initial_symbols_len);
+	}
+}
+
+impl<'a, 'b> Context<'a, 'b> {
+	fn child_scope<'s>(&'s mut self) -> Context<'a, 's> {
 		Context {
+			file_index: self.file_index,
 			messages: &mut *self.messages,
+
 			type_store: &mut *self.type_store,
-			scope: self.scope.child(),
+			function_store: &mut *self.function_store,
+			root_layers: &*self.root_layers,
+
+			initial_symbols_len: self.symbols.len(),
+			symbols: &mut *self.symbols,
 		}
+	}
+
+	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
+		self.symbols.push_symbol(messages, symbol);
+	}
+
+	fn lookup_symbol(
+		&self,
+		messages: &mut Messages,
+		type_store: &TypeStore<'a>,
+		segments: &[tree::Node<&'a str>],
+	) -> Option<Symbol<'a>> {
+		self.symbols
+			.lookup_symbol(messages, &self.root_layers, type_store, segments)
 	}
 }
 
@@ -100,17 +133,24 @@ impl<'a> Symbols<'a> {
 		self.symbols.is_empty()
 	}
 
-	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
-		let name = symbol.name;
-		if let Some(found) = self.symbols.iter().find(|s| s.name == name) {
-			//symbol.span should only be None for builtin types, yes it's a hack, shush
+	fn duplicate(&mut self, other: &Symbols<'a>) {
+		self.symbols.clear();
+		self.symbols.extend_from_slice(&other.symbols);
+	}
+
+	// TODO: Use named return in Fae
+	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) -> bool {
+		if let Some(found) = self.symbols.iter().find(|s| s.name == symbol.name) {
+			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 			messages.error(
-				message!("Duplicate symbol {name:?}")
+				message!("Duplicate symbol {:?}", symbol.name)
 					.span_if_some(symbol.span)
 					.note_if_some("Original symbol here", found.span, found.file_index),
 			);
+			false
 		} else {
 			self.symbols.push(symbol);
+			true
 		}
 	}
 
@@ -188,48 +228,7 @@ impl<'a> RootLayer<'a> {
 	}
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-struct FrameState {
-	symbols_len: usize,
-}
-
 #[derive(Debug)]
-struct Scope<'a, 'p> {
-	initial_state: FrameState,
-	symbols: &'p mut Symbols<'a>,
-	root_layers: &'p mut RootLayers<'a>,
-}
-
-impl<'a, 'p> Drop for Scope<'a, 'p> {
-	fn drop(&mut self) {
-		self.symbols.symbols.truncate(self.initial_state.symbols_len);
-	}
-}
-
-impl<'a, 'p> Scope<'a, 'p> {
-	fn child<'s>(&'s mut self) -> Scope<'a, 's> {
-		Scope {
-			initial_state: FrameState { symbols_len: self.symbols.len() },
-			symbols: &mut *self.symbols,
-			root_layers: &mut *self.root_layers,
-		}
-	}
-
-	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
-		self.symbols.push_symbol(messages, symbol);
-	}
-
-	fn lookup_symbol(
-		&self,
-		messages: &mut Messages,
-		type_store: &TypeStore<'a>,
-		segments: &[tree::Node<&'a str>],
-	) -> Option<Symbol<'a>> {
-		self.symbols
-			.lookup_symbol(messages, &self.root_layers, type_store, segments)
-	}
-}
-
 struct Primatives {
 	next_index: usize,
 	primatives: Vec<PrimativeType>,
@@ -254,6 +253,7 @@ impl Primatives {
 	}
 }
 
+#[derive(Debug)]
 pub struct TypeStore<'a> {
 	primatives: Primatives,
 	primative_type_symbols: Vec<Symbol<'a>>,
@@ -386,6 +386,7 @@ impl<'a> TypeStore<'a> {
 	}
 }
 
+#[derive(Debug)]
 pub struct FunctionStore<'a> {
 	shapes: Vec<FunctionShape<'a>>,
 }
@@ -403,16 +404,82 @@ impl<'a> FunctionStore<'a> {
 }
 
 pub fn validate_roots<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	create_and_fill_root_types(messages, root_layers, type_store, parsed_files);
-	resolve_root_type_inports(messages, root_layers, parsed_files);
+	resolve_root_type_imports(messages, root_layers, parsed_files);
+
 	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
-	resolve_root_function_inports(messages, root_layers, parsed_files);
+	resolve_root_function_imports(messages, root_layers, parsed_files);
+
+	let mut symbols = Symbols::new();
+	for parsed_file in parsed_files {
+		let file_index = parsed_file.source_file.index;
+		messages.set_current_file_index(file_index);
+
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		symbols.duplicate(&layer.symbols);
+
+		let context = Context {
+			file_index,
+			messages,
+			type_store,
+			function_store,
+			root_layers,
+			initial_symbols_len: symbols.len(),
+			symbols: &mut symbols,
+		};
+
+		validate_block(context, &parsed_file.block, true);
+	}
+}
+
+fn validate_block<'a>(context: Context<'a, '_>, block: &tree::Block<'a>, is_root: bool) {
+	// Root blocks already have had this done so imports can resolve, don't do it again
+	if !is_root {
+		create_block_types(context.messages, context.type_store, context.symbols, block, false, context.file_index);
+		fill_block_types(context.messages, context.type_store, context.root_layers, context.symbols, block);
+		_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
+
+		create_block_functions(
+			context.messages,
+			context.type_store,
+			context.function_store,
+			context.root_layers,
+			context.symbols,
+			block,
+			context.file_index,
+		);
+		resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
+	}
+
+	for statement in &block.statements {
+		match statement {
+			tree::Statement::Expression(..) if !is_root => unimplemented!("tree::Statement::Expression"),
+			tree::Statement::Block(..) if !is_root => unimplemented!("tree::Statement::Block"),
+			tree::Statement::Let(..) if !is_root => unimplemented!("tree::Statement::Let"),
+			tree::Statement::Mut(..) if !is_root => unimplemented!("tree::Statement::Mut"),
+			tree::Statement::Return(..) if !is_root => unimplemented!("tree::Statement::Return"),
+
+			tree::Statement::Expression(..)
+			| tree::Statement::Block(..)
+			| tree::Statement::Let(..)
+			| tree::Statement::Mut(..)
+			| tree::Statement::Return(..) => {
+				// is_root is true, we've already emitted a message at the root pre-process layer, skip
+			}
+
+			tree::Statement::Using(..) => {}
+
+			tree::Statement::Struct(..) => unimplemented!("tree::Statement::Struct"),
+			tree::Statement::Function(..) => unimplemented!("tree::Statement::Function"),
+			tree::Statement::Const(..) => unimplemented!("tree::Statement::Const"),
+		}
+	}
 }
 
 fn create_and_fill_root_types<'a>(
@@ -447,20 +514,24 @@ fn create_and_fill_root_types<'a>(
 	}
 }
 
-fn resolve_root_type_inports<'a>(
+fn resolve_root_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+
 		let block = &parsed_file.block;
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		let count = resolve_block_type_imports(messages, root_layers, block, &parsed_file.module_path);
-		root_layers
-			.create_module_path(&parsed_file.module_path)
-			.imported_types_len = count;
+		// Yuck, I do not like this
+		let mut symbols = layer.symbols.clone();
+		let count = resolve_block_type_imports(messages, root_layers, &mut symbols, block);
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		layer.imported_types_len = count;
+		layer.symbols = symbols;
 	}
 }
 
@@ -488,17 +559,22 @@ fn create_root_functions<'a>(
 	}
 }
 
-fn resolve_root_function_inports<'a>(
+fn resolve_root_function_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+
 		let block = &parsed_file.block;
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		resolve_block_function_imports(messages, root_layers, block, &parsed_file.module_path);
+		// Yuck, I do not like this
+		let mut symbols = layer.symbols.clone();
+		resolve_block_function_imports(messages, root_layers, &mut symbols, block);
+		root_layers.create_module_path(&parsed_file.module_path).symbols = symbols;
 	}
 }
 
@@ -506,9 +582,9 @@ fn resolve_root_function_inports<'a>(
 #[must_use]
 fn resolve_block_type_imports<'a>(
 	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
-	module_path: &'a [String],
 ) -> usize {
 	let mut imported_count = 0;
 
@@ -525,21 +601,8 @@ fn resolve_block_type_imports<'a>(
 			_ => continue,
 		};
 
-		let symbols = found.importable_types().to_vec(); //Yuck
-		let layer = root_layers.create_module_path(module_path);
-
-		for symbol in symbols {
-			let name = symbol.name;
-
-			if let Some(found) = layer.symbols.symbols.iter().find(|s| s.name == name) {
-				messages.error(
-					message!("Import of duplicate type symbol {name:?}")
-						.span(using_statement.span)
-						.note_if_some("Original type symbol here", found.span, found.file_index)
-						.note_if_some("Duplicate type symbol here", symbol.span, symbol.file_index),
-				);
-			} else {
-				layer.symbols.symbols.push(symbol.clone());
+		for &symbol in found.importable_types() {
+			if symbols.push_symbol(messages, symbol) {
 				imported_count += 1;
 			}
 		}
@@ -550,9 +613,9 @@ fn resolve_block_type_imports<'a>(
 
 fn resolve_block_function_imports<'a>(
 	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
-	module_path: &'a [String],
 ) {
 	for statement in &block.statements {
 		let using_statement = match statement {
@@ -567,22 +630,8 @@ fn resolve_block_function_imports<'a>(
 			_ => continue,
 		};
 
-		let symbols = found.importable_functions().to_vec(); //Yuck
-		let layer = root_layers.create_module_path(module_path);
-
-		for symbol in symbols {
-			let name = symbol.name;
-
-			if let Some(found) = layer.symbols.symbols.iter().find(|s| s.name == name) {
-				messages.error(
-					message!("Import of duplicate function symbol {name:?}")
-						.span(using_statement.span)
-						.note_if_some("Original function symbol here", found.span, found.file_index)
-						.note_if_some("Duplicate funciton symbol here", symbol.span, symbol.file_index),
-				);
-			} else {
-				layer.symbols.symbols.push(symbol.clone());
-			}
+		for &symbol in found.importable_functions() {
+			symbols.push_symbol(messages, symbol);
 		}
 	}
 }
