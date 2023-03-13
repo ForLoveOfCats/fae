@@ -12,7 +12,7 @@ mod validator;
 use error::Messages;
 use file::load_all_files;
 use parser::parse_file;
-use validator::{FunctionStore, RootLayers, TypeStore};
+use validator::{validate, FunctionStore, RootLayers, TypeStore};
 
 fn main() {
 	let files = match load_all_files("./example") {
@@ -35,11 +35,11 @@ fn main() {
 	messages.print_errors("Parse error");
 	messages.reset();
 
-	//Not parallelizable
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
 	let mut root_layers = RootLayers::new();
-	validator::validate_roots(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
+	let blocks = validate(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
+	dbg!(blocks);
 
 	messages.print_errors("Validation error");
 	if messages.any_errors() {
