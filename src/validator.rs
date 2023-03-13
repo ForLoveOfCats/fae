@@ -1,5 +1,5 @@
 use crate::error::*;
-use crate::mir::*;
+use crate::ir::*;
 use crate::span::Span;
 use crate::tree;
 

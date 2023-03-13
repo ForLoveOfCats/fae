@@ -2,7 +2,7 @@
 mod error;
 
 mod file;
-mod mir;
+mod ir;
 mod parser;
 mod span;
 mod tokenizer;
