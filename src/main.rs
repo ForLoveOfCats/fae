@@ -42,15 +42,6 @@ fn main() {
 	validator::validate_roots(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
 
 	messages.print_errors("Validation error");
-	messages.reset();
-
-	//Parallelizable
-	// let mut base_scope = root.base_scope();
-	// for parsed_file in &parsed_files {
-	// 	validate_parsed_file(&mut base_scope, parsed_file);
-	// }
-
-	messages.print_errors("Validation error");
 	if messages.any_errors() {
 		return;
 	}

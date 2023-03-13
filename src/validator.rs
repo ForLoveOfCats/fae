@@ -6,6 +6,8 @@ use crate::tree;
 #[derive(Debug)]
 pub struct Context<'a, 'b> {
 	file_index: usize,
+	module_path: &'a [String],
+
 	messages: &'b mut Messages<'a>,
 
 	type_store: &'b mut TypeStore<'a>,
@@ -26,6 +28,8 @@ impl<'a, 'b> Context<'a, 'b> {
 	fn child_scope<'s>(&'s mut self) -> Context<'a, 's> {
 		Context {
 			file_index: self.file_index,
+			module_path: &*self.module_path,
+
 			messages: &mut *self.messages,
 
 			type_store: &mut *self.type_store,
@@ -41,14 +45,14 @@ impl<'a, 'b> Context<'a, 'b> {
 		self.symbols.push_symbol(messages, symbol);
 	}
 
-	fn lookup_symbol(
-		&self,
-		messages: &mut Messages,
-		type_store: &TypeStore<'a>,
-		segments: &[tree::Node<&'a str>],
-	) -> Option<Symbol<'a>> {
+	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
 		self.symbols
-			.lookup_symbol(messages, &self.root_layers, type_store, segments)
+			.lookup_symbol(self.messages, self.root_layers, self.type_store, segments)
+	}
+
+	fn lookup_type(&mut self, parsed_type: &tree::Type<'a>) -> Option<TypeId> {
+		self.type_store
+			.lookup_type(self.messages, self.root_layers, self.symbols, parsed_type)
 	}
 }
 
@@ -307,10 +311,11 @@ impl<'a> TypeStore<'a> {
 		kind: UserTypeKind<'a>,
 		span: Span,
 		file_index: Option<usize>,
+		module_path: &'a [String],
 	) -> Symbol<'a> {
-		self.user_types.push(UserType { span, kind });
-
-		let type_index = self.user_types.len() - 1;
+		let type_index = self.user_types.len();
+		assert!(type_index < u32::MAX as usize, "{type_index}");
+		self.user_types.push(UserType { span, module_path, kind });
 		let kind = SymbolKind::Type { type_index };
 		Symbol { name, kind, span: Some(span), file_index }
 	}
@@ -384,6 +389,60 @@ impl<'a> TypeStore<'a> {
 
 		Some(TypeId { index: type_index, specialization: concrete_index })
 	}
+
+	fn type_name(&self, module_path: &'a [String], type_id: TypeId) -> String {
+		if type_id.index == self.reference_type_index {
+			let index = 0xFFFFFFFF & type_id.specialization;
+			let specialization = type_id.specialization >> 4 * 8;
+			let type_id = TypeId { index, specialization };
+			return format!("&{}", self.type_name(module_path, type_id));
+		}
+
+		if type_id.index == self.slice_type_index {
+			let index = 0xFFFFFFFF & type_id.specialization;
+			let specialization = type_id.specialization >> 4 * 8;
+			let type_id = TypeId { index, specialization };
+			return format!("[{}]", self.type_name(module_path, type_id));
+		}
+
+		if type_id.index < u32::MAX as usize {
+			let user_type = &self.user_types[type_id.index];
+			match &user_type.kind {
+				UserTypeKind::Struct { shape } => {
+					let mut type_module_path = user_type.module_path;
+					for index in 0..module_path.len().min(module_path.len()) {
+						if user_type.module_path[index] == module_path[index] {
+							type_module_path = &type_module_path[1..];
+						}
+					}
+
+					let type_module_path = if user_type.module_path.is_empty() {
+						String::new()
+					} else {
+						format!("{}::", user_type.module_path.join("::"))
+					};
+
+					let specialization = &shape.concrete[type_id.specialization];
+					let generics = if specialization.type_arguments.is_empty() {
+						String::new()
+					} else {
+						let mut generics = String::from("[");
+						for &type_argument in &specialization.type_arguments {
+							generics.push_str(&self.type_name(module_path, type_argument));
+						}
+						generics.push(']');
+						generics
+					};
+
+					format!("{type_module_path}{}{generics}", shape.name)
+				}
+			}
+		} else {
+			assert!(type_id.specialization == 0, "{}", type_id.specialization);
+			let index = type_id.index - u32::MAX as usize;
+			self.primatives.primatives[index].name.to_string()
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -420,12 +479,14 @@ pub fn validate_roots<'a>(
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		messages.set_current_file_index(file_index);
+		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
 		symbols.duplicate(&layer.symbols);
 
 		let context = Context {
 			file_index,
+			module_path,
 			messages,
 			type_store,
 			function_store,
@@ -438,10 +499,18 @@ pub fn validate_roots<'a>(
 	}
 }
 
-fn validate_block<'a>(context: Context<'a, '_>, block: &tree::Block<'a>, is_root: bool) {
+fn validate_block<'a>(mut context: Context<'a, '_>, block: &tree::Block<'a>, is_root: bool) -> Block<'a> {
 	// Root blocks already have had this done so imports can resolve, don't do it again
 	if !is_root {
-		create_block_types(context.messages, context.type_store, context.symbols, block, false, context.file_index);
+		create_block_types(
+			context.messages,
+			context.type_store,
+			context.symbols,
+			context.module_path,
+			block,
+			false,
+			context.file_index,
+		);
 		fill_block_types(context.messages, context.type_store, context.root_layers, context.symbols, block);
 		_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
 
@@ -457,10 +526,28 @@ fn validate_block<'a>(context: Context<'a, '_>, block: &tree::Block<'a>, is_root
 		resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
 	}
 
+	let mut statements = Vec::with_capacity(block.statements.len());
+
 	for statement in &block.statements {
 		match statement {
 			tree::Statement::Expression(..) if !is_root => unimplemented!("tree::Statement::Expression"),
 			tree::Statement::Block(..) if !is_root => unimplemented!("tree::Statement::Block"),
+
+			tree::Statement::Using(..) => {
+				// Using already handled as a pre-pass
+			}
+
+			tree::Statement::Struct(..) => unimplemented!("tree::Statement::Struct"),
+			tree::Statement::Function(..) => unimplemented!("tree::Statement::Function"),
+
+			tree::Statement::Const(statement) => {
+				let validated = Box::new(validate_const(&mut context, statement));
+				statements.push(Statement {
+					type_id: validated.type_id,
+					kind: StatementKind::Const(validated),
+				});
+			}
+
 			tree::Statement::Let(..) if !is_root => unimplemented!("tree::Statement::Let"),
 			tree::Statement::Mut(..) if !is_root => unimplemented!("tree::Statement::Mut"),
 			tree::Statement::Return(..) if !is_root => unimplemented!("tree::Statement::Return"),
@@ -472,14 +559,12 @@ fn validate_block<'a>(context: Context<'a, '_>, block: &tree::Block<'a>, is_root
 			| tree::Statement::Return(..) => {
 				// is_root is true, we've already emitted a message at the root pre-process layer, skip
 			}
-
-			tree::Statement::Using(..) => {}
-
-			tree::Statement::Struct(..) => unimplemented!("tree::Statement::Struct"),
-			tree::Statement::Function(..) => unimplemented!("tree::Statement::Function"),
-			tree::Statement::Const(..) => unimplemented!("tree::Statement::Const"),
 		}
 	}
+
+	// TODO: Add `give` keywork and support block expressions
+	let type_id = context.type_store.void_type_id;
+	Block { type_id, statements }
 }
 
 fn create_and_fill_root_types<'a>(
@@ -496,7 +581,7 @@ fn create_and_fill_root_types<'a>(
 		let index = parsed_file.source_file.index;
 		messages.set_current_file_index(index);
 
-		create_block_types(messages, type_store, &mut layer.symbols, block, true, index);
+		create_block_types(messages, type_store, &mut layer.symbols, parsed_file.module_path, block, true, index);
 		layer.importable_types_len = layer.symbols.len();
 	}
 
@@ -640,6 +725,7 @@ fn create_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
 	block: &tree::Block<'a>,
 	is_root: bool,
 	file_index: usize,
@@ -679,7 +765,7 @@ fn create_block_types<'a>(
 			let name = statement.name.item;
 			let kind = UserTypeKind::Struct { shape };
 			let span = statement.name.span;
-			let symbol = type_store.register_type(name, kind, span, Some(file_index));
+			let symbol = type_store.register_type(name, kind, span, Some(file_index), module_path);
 			symbols.push_symbol(messages, symbol);
 		}
 	}
@@ -810,5 +896,51 @@ fn create_block_functions<'a>(
 			};
 			symbols.push_symbol(messages, symbol);
 		}
+	}
+}
+
+fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &tree::Node<tree::Const<'a>>) -> Const<'a> {
+	let explicit_type = match &statement.item.parsed_type {
+		Some(parsed_type) => context.lookup_type(&parsed_type.item),
+		None => None,
+	};
+	let expression = validate_expression(context, &statement.item.expression.item);
+	let type_id = explicit_type.unwrap_or(expression.type_id);
+
+	if let Some(explicit_type) = explicit_type {
+		if explicit_type != expression.type_id {
+			context.messages.error(
+				message!(
+					"Const type mismatch between explicit type {} and expression type {}",
+					context.type_store.type_name(context.module_path, explicit_type),
+					context.type_store.type_name(context.module_path, expression.type_id),
+				)
+				.span(statement.span),
+			);
+		}
+	}
+
+	unimplemented!()
+}
+
+fn validate_expression<'a>(context: &mut Context<'a, '_>, expression: &tree::Expression<'a>) -> Expression<'a> {
+	match expression {
+		tree::Expression::Block(block) => {
+			let validated_block = validate_block(context.child_scope(), &block, false);
+			Expression {
+				type_id: validated_block.type_id,
+				kind: ExpressionKind::Block(validated_block),
+			}
+		}
+
+		tree::Expression::IntegerLiteral(_) => unimplemented!("tree::Expression::IntegerLiteral"),
+		tree::Expression::FloatLiteral(_) => unimplemented!("tree::Expression::FloatLiteral"),
+		tree::Expression::CharLiteral(_) => unimplemented!("tree::Expression::CharLiteral"),
+		tree::Expression::StringLiteral(_) => unimplemented!("tree::Expression::StringLiteral"),
+		tree::Expression::StructLiteral(_) => unimplemented!("tree::Expression::StructLiteral"),
+		tree::Expression::Call(_) => unimplemented!("tree::Expression::Call"),
+		tree::Expression::Read(_) => unimplemented!("tree::Expression::Read"),
+		tree::Expression::UnaryOperation(_) => unimplemented!("tree::Expression::UnaryOperation"),
+		tree::Expression::BinaryOperation(_) => unimplemented!("tree::Expression::BinaryOperation"),
 	}
 }

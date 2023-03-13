@@ -2,7 +2,6 @@ use crate::file::SourceFile;
 use crate::span::Span;
 use crate::tokenizer::Token;
 
-#[must_use]
 #[derive(Debug)]
 pub struct File<'a> {
 	pub source_file: &'a SourceFile,
@@ -10,7 +9,6 @@ pub struct File<'a> {
 	pub block: Block<'a>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct PathSegments<'a> {
 	//TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
@@ -23,25 +21,21 @@ impl<'a> PathSegments<'a> {
 	}
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Module<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Using<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct GenericAttribute<'a> {
 	pub names: Vec<Node<&'a str>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Attributes<'a> {
 	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
@@ -69,7 +63,6 @@ impl<'a> Attributes<'a> {
 	}
 }
 
-#[must_use]
 #[derive(Debug)]
 pub enum Type<'a> {
 	Void,
@@ -95,7 +88,6 @@ impl<'a> Type<'a> {
 	}
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Struct<'a> {
 	pub generics: Vec<Node<&'a str>>,
@@ -103,14 +95,12 @@ pub struct Struct<'a> {
 	pub fields: Vec<Field<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Field<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
@@ -120,14 +110,12 @@ pub struct Function<'a> {
 	pub block: Node<Block<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Parameter<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Const<'a> {
 	pub name: Node<&'a str>,
@@ -135,7 +123,6 @@ pub struct Const<'a> {
 	pub expression: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Let<'a> {
 	pub name: Node<&'a str>,
@@ -143,7 +130,6 @@ pub struct Let<'a> {
 	pub expression: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Mut<'a> {
 	pub name: Node<&'a str>,
@@ -151,77 +137,60 @@ pub struct Mut<'a> {
 	pub expression: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct IntegerLiteral {
 	pub value: Node<u64>,
 }
 
-#[must_use]
-#[derive(Debug)]
-pub struct SignedIntegerLiteral {
-	pub value: Node<i64>,
-}
-
-#[must_use]
 #[derive(Debug)]
 pub struct FloatLiteral {
 	pub value: Node<f64>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct CharLiteral {
 	pub value: Node<char>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct StringLiteral<'a> {
 	pub value: Node<&'a str>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct StructLiteral<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 	pub initializer: Node<StructInitializer<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct StructInitializer<'a> {
 	pub field_initializers: Vec<FieldInitializer<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct FieldInitializer<'a> {
 	pub name: Node<&'a str>,
 	pub expression: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperator {
 	Negate,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct UnaryOperation<'a> {
 	pub op: Node<UnaryOperator>,
 	pub expression: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Associativity {
 	Left,
 	Right,
 }
 
-#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
 	Assign,
@@ -250,7 +219,6 @@ impl BinaryOperator {
 	}
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct BinaryOperation<'a> {
 	pub op: Node<BinaryOperator>,
@@ -258,26 +226,22 @@ pub struct BinaryOperation<'a> {
 	pub right: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 	pub arguments: Node<Vec<Expression<'a>>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Read<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Return<'a> {
 	pub expression: Node<Expression<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub enum Statement<'a> {
 	Expression(Node<Expression<'a>>),
@@ -331,13 +295,11 @@ impl<'a> Statement<'a> {
 	}
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Block<'a> {
 	pub statements: Vec<Statement<'a>>,
 }
 
-#[must_use]
 #[derive(Debug)]
 pub enum Expression<'a> {
 	Block(Block<'a>),
@@ -357,7 +319,6 @@ pub enum Expression<'a> {
 	BinaryOperation(Box<BinaryOperation<'a>>),
 }
 
-#[must_use]
 #[derive(Debug)]
 pub struct Node<T> {
 	pub item: T,
