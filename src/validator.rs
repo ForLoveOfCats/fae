@@ -499,74 +499,6 @@ pub fn validate_roots<'a>(
 	}
 }
 
-fn validate_block<'a>(mut context: Context<'a, '_>, block: &tree::Block<'a>, is_root: bool) -> Block<'a> {
-	// Root blocks already have had this done so imports can resolve, don't do it again
-	if !is_root {
-		create_block_types(
-			context.messages,
-			context.type_store,
-			context.symbols,
-			context.module_path,
-			block,
-			false,
-			context.file_index,
-		);
-		fill_block_types(context.messages, context.type_store, context.root_layers, context.symbols, block);
-		_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
-
-		create_block_functions(
-			context.messages,
-			context.type_store,
-			context.function_store,
-			context.root_layers,
-			context.symbols,
-			block,
-			context.file_index,
-		);
-		resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
-	}
-
-	let mut statements = Vec::with_capacity(block.statements.len());
-
-	for statement in &block.statements {
-		match statement {
-			tree::Statement::Expression(..) if !is_root => unimplemented!("tree::Statement::Expression"),
-			tree::Statement::Block(..) if !is_root => unimplemented!("tree::Statement::Block"),
-
-			tree::Statement::Using(..) => {
-				// Using already handled as a pre-pass
-			}
-
-			tree::Statement::Struct(..) => unimplemented!("tree::Statement::Struct"),
-			tree::Statement::Function(..) => unimplemented!("tree::Statement::Function"),
-
-			tree::Statement::Const(statement) => {
-				let validated = Box::new(validate_const(&mut context, statement));
-				statements.push(Statement {
-					type_id: validated.type_id,
-					kind: StatementKind::Const(validated),
-				});
-			}
-
-			tree::Statement::Let(..) if !is_root => unimplemented!("tree::Statement::Let"),
-			tree::Statement::Mut(..) if !is_root => unimplemented!("tree::Statement::Mut"),
-			tree::Statement::Return(..) if !is_root => unimplemented!("tree::Statement::Return"),
-
-			tree::Statement::Expression(..)
-			| tree::Statement::Block(..)
-			| tree::Statement::Let(..)
-			| tree::Statement::Mut(..)
-			| tree::Statement::Return(..) => {
-				// is_root is true, we've already emitted a message at the root pre-process layer, skip
-			}
-		}
-	}
-
-	// TODO: Add `give` keywork and support block expressions
-	let type_id = context.type_store.void_type_id;
-	Block { type_id, statements }
-}
-
 fn create_and_fill_root_types<'a>(
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
@@ -897,6 +829,74 @@ fn create_block_functions<'a>(
 			symbols.push_symbol(messages, symbol);
 		}
 	}
+}
+
+fn validate_block<'a>(mut context: Context<'a, '_>, block: &tree::Block<'a>, is_root: bool) -> Block<'a> {
+	// Root blocks already have had this done so imports can resolve, don't do it again
+	if !is_root {
+		create_block_types(
+			context.messages,
+			context.type_store,
+			context.symbols,
+			context.module_path,
+			block,
+			false,
+			context.file_index,
+		);
+		fill_block_types(context.messages, context.type_store, context.root_layers, context.symbols, block);
+		_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
+
+		create_block_functions(
+			context.messages,
+			context.type_store,
+			context.function_store,
+			context.root_layers,
+			context.symbols,
+			block,
+			context.file_index,
+		);
+		resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
+	}
+
+	let mut statements = Vec::with_capacity(block.statements.len());
+
+	for statement in &block.statements {
+		match statement {
+			tree::Statement::Expression(..) if !is_root => unimplemented!("tree::Statement::Expression"),
+			tree::Statement::Block(..) if !is_root => unimplemented!("tree::Statement::Block"),
+
+			tree::Statement::Using(..) => {
+				// Using already handled as a pre-pass
+			}
+
+			tree::Statement::Struct(..) => unimplemented!("tree::Statement::Struct"),
+			tree::Statement::Function(..) => unimplemented!("tree::Statement::Function"),
+
+			tree::Statement::Const(statement) => {
+				let validated = Box::new(validate_const(&mut context, statement));
+				statements.push(Statement {
+					type_id: validated.type_id,
+					kind: StatementKind::Const(validated),
+				});
+			}
+
+			tree::Statement::Let(..) if !is_root => unimplemented!("tree::Statement::Let"),
+			tree::Statement::Mut(..) if !is_root => unimplemented!("tree::Statement::Mut"),
+			tree::Statement::Return(..) if !is_root => unimplemented!("tree::Statement::Return"),
+
+			tree::Statement::Expression(..)
+			| tree::Statement::Block(..)
+			| tree::Statement::Let(..)
+			| tree::Statement::Mut(..)
+			| tree::Statement::Return(..) => {
+				// is_root is true, we've already emitted a message at the root pre-process layer, skip
+			}
+		}
+	}
+
+	// TODO: Add `give` keywork and support block expressions
+	let type_id = context.type_store.void_type_id;
+	Block { type_id, statements }
 }
 
 fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &tree::Node<tree::Const<'a>>) -> Const<'a> {
