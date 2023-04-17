@@ -250,17 +250,17 @@ fn parse_expression_atom<'a>(
 			let path_segments = parse_path_segments(messages, tokenizer)?;
 
 			let (is_call, is_struct_literal) = match tokenizer.peek() {
-				Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
-
+				Ok(Token { kind: TokenKind::OpenParen | TokenKind::OpenBracket, .. }) => (true, false),
 				Ok(Token { kind: TokenKind::OpenBrace, .. }) => (false, true),
-
 				_ => (false, false),
 			};
 
 			if is_call {
-				let arguments = parse_arguments(messages, tokenizer)?;
-				let span = path_segments.span + arguments.span;
-				let call = Call { path_segments, arguments };
+				let type_arguments = parse_type_arguments(messages, tokenizer)?;
+				let arguments_node = parse_arguments(messages, tokenizer)?;
+				let arguments = arguments_node.item;
+				let span = path_segments.span + arguments_node.span;
+				let call = Call { path_segments, type_arguments, arguments };
 
 				return Ok(Node::new(Expression::Call(call), span));
 			}
@@ -301,17 +301,37 @@ fn parse_expression_atom<'a>(
 	}
 }
 
+fn parse_type_arguments<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Vec<Node<Type<'a>>>> {
+	tokenizer.expect(messages, TokenKind::OpenBracket)?;
+
+	let mut types = Vec::new();
+	while !reached_close_bracket(tokenizer) {
+		types.push(parse_type(messages, tokenizer)?);
+
+		if reached_close_bracket(tokenizer) {
+			break;
+		}
+
+		tokenizer.expect(messages, TokenKind::Comma)?;
+	}
+
+	tokenizer.expect(messages, TokenKind::CloseBracket)?;
+
+	Ok(types)
+}
+
 fn parse_arguments<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Vec<Expression<'a>>>> {
+) -> ParseResult<Node<Vec<Node<Expression<'a>>>>> {
 	let open_paren_token = tokenizer.expect(messages, TokenKind::OpenParen)?;
 
 	let mut expressions = Vec::new();
-
 	while !reached_close_paren(tokenizer) {
-		let expression = parse_expression(messages, tokenizer)?.item;
-		expressions.push(expression);
+		expressions.push(parse_expression(messages, tokenizer)?);
 
 		if reached_close_paren(tokenizer) {
 			break;
@@ -589,6 +609,15 @@ fn parse_parameters<'a>(
 	let mut parameters = Vec::new();
 
 	while !reached_close_paren(tokenizer) {
+		let is_mutable = match tokenizer.peek() {
+			Ok(Token { text: "mut", .. }) => {
+				tokenizer.expect_word(messages, "mut")?;
+				true
+			}
+
+			_ => false,
+		};
+
 		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 		check_not_reserved(messages, name_token)?;
 		let name = Node::from_token(name_token.text, name_token);
@@ -598,7 +627,8 @@ fn parse_parameters<'a>(
 		let parsed_type = parse_type(messages, tokenizer)?;
 
 		let span = name_token.span + parsed_type.span;
-		parameters.push(Node::new(Parameter { name, parsed_type }, span));
+		let parameter = Parameter { name, parsed_type, is_mutable };
+		parameters.push(Node::new(parameter, span));
 
 		if reached_close_paren(tokenizer) {
 			break;
@@ -761,6 +791,13 @@ fn reached_close_brace(tokenizer: &mut Tokenizer) -> bool {
 	tokenizer
 		.peek()
 		.map(|peeked| peeked.kind == TokenKind::CloseBrace)
+		.unwrap_or(false)
+}
+
+fn reached_close_bracket(tokenizer: &mut Tokenizer) -> bool {
+	tokenizer
+		.peek()
+		.map(|peeked| peeked.kind == TokenKind::CloseBracket)
 		.unwrap_or(false)
 }
 

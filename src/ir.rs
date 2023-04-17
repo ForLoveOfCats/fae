@@ -1,6 +1,6 @@
 use crate::error::Messages;
 use crate::span::Span;
-use crate::tree::Node;
+use crate::tree::{self, Node};
 
 /*
  * The current structure of the IR utilizes nested `Box`-es and `Vec`-es which is rather inefficient
@@ -33,6 +33,22 @@ pub enum SymbolKind {
 	BuiltinType { type_index: usize }, //Not used for slice/reference as those are not symbols
 	Type { type_index: usize },
 	Function { shape_index: usize },
+	Const { readable_index: usize },
+	Let { readable_index: usize },
+	Mut { readable_index: usize },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Readable<'a> {
+	pub name: &'a str,
+	pub kind: ReadableKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReadableKind {
+	Const,
+	Let,
+	Mut,
 }
 
 #[derive(Debug)]
@@ -90,23 +106,26 @@ pub struct StructShape<'a> {
 }
 
 impl<'a> StructShape<'a> {
+	pub fn new(name: &'a str, generics: Vec<Node<&'a str>>) -> Self {
+		StructShape { name, generics, fields: Vec::new(), concrete: Vec::new() }
+	}
+
 	pub fn get_or_add_specialization(
 		&mut self,
 		messages: &mut Messages,
 		invoke_span: Span,
-		arguments: Vec<TypeId>,
+		type_arguments: Vec<TypeId>,
 	) -> Option<usize> {
 		for (index, existing) in self.concrete.iter().enumerate() {
-			if existing.type_arguments.len() == arguments.len() {
-				if existing.type_arguments.iter().zip(&arguments).all(|(a, b)| a == b) {
-					return Some(index);
-				}
+			if existing.type_arguments == type_arguments {
+				return Some(index);
 			}
 		}
 
-		if self.generics.len() != arguments.len() {
+		if self.generics.len() != type_arguments.len() {
 			messages.error(
-				message!("Expected {} type arguments, got {}", self.generics.len(), arguments.len()).span(invoke_span),
+				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
+					.span(invoke_span),
 			);
 			return None;
 		}
@@ -117,14 +136,14 @@ impl<'a> StructShape<'a> {
 			.map(|field| {
 				let type_id = match field.item.field_type {
 					GenericOrTypeId::TypeId { id } => id,
-					GenericOrTypeId::Generic { index } => arguments[index],
+					GenericOrTypeId::Generic { index } => type_arguments[index],
 				};
 
 				Field { name: field.item.name, type_id }
 			})
 			.collect::<Vec<_>>();
 
-		let concrete = Struct { type_arguments: arguments, fields };
+		let concrete = Struct { type_arguments, fields };
 		self.concrete.push(concrete);
 		Some(self.concrete.len() - 1)
 	}
@@ -151,47 +170,105 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct FunctionShape<'a> {
 	pub name: &'a str,
-	pub generics: Vec<Node<&'a str>>,
+	pub module_path: &'a [String],
+	pub file_index: usize,
 
+	pub generics: Vec<Node<&'a str>>,
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: GenericOrTypeId,
 
+	pub block: &'a tree::Block<'a>,
 	pub concrete: Vec<Function<'a>>,
 }
 
 impl<'a> FunctionShape<'a> {
 	pub fn new(
 		name: &'a str,
+		module_path: &'a [String],
+		file_index: usize,
 		generics: Vec<Node<&'a str>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: GenericOrTypeId,
+		block: &'a tree::Block<'a>,
 	) -> Self {
 		FunctionShape {
 			name,
+			module_path,
+			file_index,
 			generics,
 			parameters,
 			return_type,
+			block,
 			concrete: Vec::new(),
 		}
+	}
+
+	pub fn get_or_add_specialization(
+		&mut self,
+		messages: &mut Messages,
+		invoke_span: Option<Span>,
+		type_arguments: Vec<TypeId>,
+	) -> Option<usize> {
+		for (index, existing) in self.concrete.iter().enumerate() {
+			if existing.type_arguments == type_arguments {
+				return Some(index);
+			}
+		}
+
+		if self.generics.len() != type_arguments.len() {
+			messages.error(
+				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
+					.span(invoke_span.unwrap()),
+			);
+			return None;
+		}
+
+		let parameters = self
+			.parameters
+			.iter()
+			.map(|parameter| {
+				let type_id = match parameter.parameter_type {
+					GenericOrTypeId::TypeId { id } => id,
+					GenericOrTypeId::Generic { index } => type_arguments[index],
+				};
+
+				let is_mutable = parameter.is_mutable;
+				Parameter { name: parameter.name, type_id, is_mutable }
+			})
+			.collect::<Vec<_>>();
+
+		let return_type = match self.return_type {
+			GenericOrTypeId::TypeId { id } => id,
+			GenericOrTypeId::Generic { index } => type_arguments[index],
+		};
+
+		let index = self.concrete.len();
+		let concrete = Function { type_arguments, parameters, return_type, block: None };
+		self.concrete.push(concrete);
+		Some(index)
 	}
 }
 
 #[derive(Debug)]
 pub struct ParameterShape<'a> {
-	pub name: &'a str,
-	pub param_type: GenericOrTypeId,
+	pub name: Node<&'a str>,
+	pub parameter_type: GenericOrTypeId,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug)]
 pub struct Function<'a> {
-	pub paremeters: Vec<Parameter<'a>>,
+	pub type_arguments: Vec<TypeId>,
+	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
+	pub block: Option<Block<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Parameter<'a> {
-	pub name: &'a str,
+	pub name: Node<&'a str>,
 	pub type_id: TypeId,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

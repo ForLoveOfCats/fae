@@ -35,11 +35,11 @@ fn main() {
 	messages.print_errors("Parse error");
 	messages.reset();
 
+	//Partially parallelizable
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
 	let mut root_layers = RootLayers::new();
 	let blocks = validate(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
-	dbg!(blocks);
 
 	messages.print_errors("Validation error");
 	if messages.any_errors() {

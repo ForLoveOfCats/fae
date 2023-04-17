@@ -114,6 +114,7 @@ pub struct Function<'a> {
 pub struct Parameter<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug)]
@@ -229,7 +230,8 @@ pub struct BinaryOperation<'a> {
 #[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub arguments: Node<Vec<Expression<'a>>>,
+	pub type_arguments: Vec<Node<Type<'a>>>,
+	pub arguments: Vec<Node<Expression<'a>>>,
 }
 
 #[derive(Debug)]

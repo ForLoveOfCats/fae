@@ -18,6 +18,7 @@ impl std::fmt::Debug for SourceFile {
 			.field("source", &"...")
 			.field("path", &self.path)
 			.field("module_path", &self.module_path)
+			.field("index", &self.index)
 			.finish()
 	}
 }
