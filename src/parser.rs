@@ -301,15 +301,12 @@ fn parse_expression_atom<'a>(
 	}
 }
 
-fn parse_type_arguments<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Vec<Node<Type<'a>>>> {
+fn parse_type_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Type<'a>>> {
 	tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
 	let mut types = Vec::new();
 	while !reached_close_bracket(tokenizer) {
-		types.push(parse_type(messages, tokenizer)?);
+		types.push(parse_type(messages, tokenizer)?.item);
 
 		if reached_close_bracket(tokenizer) {
 			break;

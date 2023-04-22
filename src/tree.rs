@@ -19,6 +19,10 @@ impl<'a> PathSegments<'a> {
 	pub fn len(&self) -> usize {
 		self.segments.len()
 	}
+
+	pub fn is_empty(&self) -> bool {
+		self.segments.is_empty()
+	}
 }
 
 #[derive(Debug)]
@@ -230,7 +234,7 @@ pub struct BinaryOperation<'a> {
 #[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: Vec<Node<Type<'a>>>,
+	pub type_arguments: Vec<Type<'a>>,
 	pub arguments: Vec<Node<Expression<'a>>>,
 }
 

@@ -38,6 +38,21 @@ pub enum SymbolKind {
 	Mut { readable_index: usize },
 }
 
+impl std::fmt::Display for SymbolKind {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let name = match self {
+			SymbolKind::BuiltinType { .. } => "built in type",
+			SymbolKind::Type { .. } => "type",
+			SymbolKind::Function { .. } => "function",
+			SymbolKind::Const { .. } => "constant",
+			SymbolKind::Let { .. } => "immutable binding",
+			SymbolKind::Mut { .. } => "mutable binding",
+		};
+
+		f.write_str(name)
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Readable<'a> {
 	pub name: &'a str,
@@ -206,7 +221,7 @@ impl<'a> FunctionShape<'a> {
 	pub fn get_or_add_specialization(
 		&mut self,
 		messages: &mut Messages,
-		invoke_span: Option<Span>,
+		invoke_span: Span,
 		type_arguments: Vec<TypeId>,
 	) -> Option<usize> {
 		for (index, existing) in self.concrete.iter().enumerate() {
@@ -218,7 +233,7 @@ impl<'a> FunctionShape<'a> {
 		if self.generics.len() != type_arguments.len() {
 			messages.error(
 				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
-					.span(invoke_span.unwrap()),
+					.span(invoke_span),
 			);
 			return None;
 		}

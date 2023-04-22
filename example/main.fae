@@ -14,9 +14,9 @@ fn generic_function(value: T, mut other: i32): T {
 }
 
 fn function(): void {
-	/*
 	generic_function[i32](4, 15)
 
+	/*
 	let abc = 5 * 2 + -42 / 8
 	let def = 96 + { 22 }
 	mut character: char = 'A'

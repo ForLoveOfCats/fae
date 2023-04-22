@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
 use crate::tree;
+use crate::tree::PathSegments;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b> {
@@ -45,6 +46,10 @@ impl<'a, 'b> Context<'a, 'b> {
 		}
 	}
 
+	fn error(&mut self, message: Message) {
+		self.messages.error(message);
+	}
+
 	fn push_symbol(&mut self, symbol: Symbol<'a>) {
 		self.symbols.push_symbol(self.messages, symbol);
 	}
@@ -63,9 +68,9 @@ impl<'a, 'b> Context<'a, 'b> {
 		self.push_symbol(Symbol { name, kind, span, file_index: Some(self.file_index) })
 	}
 
-	fn lookup_symbol(&mut self, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
+	fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
 		self.symbols
-			.lookup_symbol(self.messages, self.root_layers, self.type_store, segments)
+			.lookup_symbol(self.messages, self.root_layers, self.type_store, path)
 	}
 
 	fn lookup_type(&mut self, parsed_type: &tree::Type<'a>) -> Option<TypeId> {
@@ -88,11 +93,11 @@ impl<'a> RootLayers<'a> {
 		RootLayers { layers: Vec::new() }
 	}
 
-	fn layer_for_module_path(&self, messages: &mut Messages, path: &[tree::Node<&'a str>]) -> Option<&RootLayer<'a>> {
+	fn layer_for_module_path(&self, messages: &mut Messages, path: &PathSegments) -> Option<&RootLayer<'a>> {
 		assert!(path.len() > 0);
 		let mut layers = &self.layers;
 
-		for (piece_index, piece) in path.iter().enumerate() {
+		for (piece_index, piece) in path.segments.iter().enumerate() {
 			let layer = match layers.iter().position(|x| x.name == piece.item) {
 				Some(index) => &layers[index],
 
@@ -134,10 +139,10 @@ impl<'a> RootLayers<'a> {
 		unreachable!();
 	}
 
-	fn lookup_path_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
-		assert!(!segments.is_empty());
-		let layer = self.layer_for_module_path(messages, &segments)?;
-		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
+	fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
+		assert!(!path.is_empty());
+		let layer = self.layer_for_module_path(messages, &path)?;
+		layer.lookup_root_symbol(messages, &[*path.segments.last().unwrap()])
 	}
 }
 
@@ -186,11 +191,11 @@ impl<'a> Symbols<'a> {
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
 		type_store: &TypeStore<'a>,
-		segments: &[tree::Node<&'a str>],
+		path: &PathSegments<'a>,
 	) -> Option<Symbol<'a>> {
-		assert!(!segments.is_empty());
+		assert!(!path.is_empty());
 
-		if let [segment] = segments {
+		if let [segment] = path.segments.as_slice() {
 			let name = segment.item;
 
 			let primatives = &type_store.primative_type_symbols;
@@ -205,7 +210,7 @@ impl<'a> Symbols<'a> {
 			messages.error(message!("No symbol {name:?} in the current scope").span(segment.span));
 			None
 		} else {
-			root_layers.lookup_path_symbol(messages, segments)
+			root_layers.lookup_path_symbol(messages, path)
 		}
 	}
 }
@@ -407,7 +412,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		assert!(!segments.segments.is_empty());
-		let symbol = symbols.lookup_symbol(messages, root_layers, self, &segments.segments)?;
+		let symbol = symbols.lookup_symbol(messages, root_layers, self, &segments)?;
 
 		let type_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_index } => {
@@ -677,7 +682,7 @@ fn resolve_block_type_imports<'a>(
 			_ => continue,
 		};
 
-		let path = &using_statement.item.path_segments.item.segments;
+		let path = &using_statement.item.path_segments.item;
 		let found = match root_layers.layer_for_module_path(messages, path) {
 			Some(found) if found.symbols.is_empty() => continue,
 			Some(found) => found,
@@ -706,7 +711,7 @@ fn resolve_block_function_imports<'a>(
 			_ => continue,
 		};
 
-		let path = &using_statement.item.path_segments.item.segments;
+		let path = &using_statement.item.path_segments.item;
 		let found = match root_layers.layer_for_module_path(messages, path) {
 			Some(found) if found.symbols.is_empty() => continue,
 			Some(found) => found,
@@ -928,33 +933,55 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 	for statement in &block.statements {
 		match statement {
-			tree::Statement::Expression(..) if !is_root => unimplemented!("tree::Statement::Expression"),
-			tree::Statement::Block(..) if !is_root => unimplemented!("tree::Statement::Block"),
-
-			tree::Statement::Using(..) | tree::Statement::Struct(..) => {
-				// Already handled as a pre-pass
-			}
-
-			tree::Statement::Function(statement) => validate_non_generic_function(&mut context, statement),
-
-			tree::Statement::Const(statement) => {
-				let validated = Box::new(validate_const(&mut context, statement));
-				statements.push(Statement {
-					type_id: validated.type_id,
-					kind: StatementKind::Const(validated),
-				});
-			}
-
-			tree::Statement::Let(..) if !is_root => unimplemented!("tree::Statement::Let"),
-			tree::Statement::Mut(..) if !is_root => unimplemented!("tree::Statement::Mut"),
-			tree::Statement::Return(..) if !is_root => unimplemented!("tree::Statement::Return"),
-
 			tree::Statement::Expression(..)
 			| tree::Statement::Block(..)
 			| tree::Statement::Let(..)
 			| tree::Statement::Mut(..)
-			| tree::Statement::Return(..) => {
-				// is_root is true, we've already emitted a message at the root pre-process layer, skip
+			| tree::Statement::Return(..)
+				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
+
+			tree::Statement::Expression(statement) => {
+				let expression = match validate_expression(&mut context, &statement) {
+					Some(expression) => expression,
+					None => continue,
+				};
+
+				let type_id = expression.type_id;
+				let kind = StatementKind::Expression(expression);
+				statements.push(Statement { type_id, kind });
+			}
+
+			tree::Statement::Block(..) => unimplemented!("tree::Statement::Block"),
+
+			tree::Statement::Using(..) | tree::Statement::Struct(..) => {} // Already handled in a pre-pass
+
+			tree::Statement::Function(statement) => validate_non_generic_function(&mut context, statement),
+
+			tree::Statement::Const(statement) => {
+				let validated = match validate_const(&mut context, statement) {
+					Some(validated) => validated,
+					None => continue,
+				};
+
+				let type_id = validated.type_id;
+				let kind = StatementKind::Const(Box::new(validated));
+				statements.push(Statement { type_id, kind });
+			}
+
+			tree::Statement::Let(..) => unimplemented!("tree::Statement::Let"),
+			tree::Statement::Mut(..) => unimplemented!("tree::Statement::Mut"),
+
+			tree::Statement::Return(statement) => {
+				let expression = &statement.item.expression;
+				let expression = match validate_expression(&mut context, expression) {
+					Some(expression) => expression,
+					None => continue,
+				};
+
+				let type_id = expression.type_id;
+				let boxed_return = Box::new(Return { expression });
+				let kind = StatementKind::Return(boxed_return);
+				statements.push(Statement { type_id, kind })
 			}
 		}
 	}
@@ -980,19 +1007,34 @@ fn validate_non_generic_function<'a>(context: &mut Context<'a, '_>, statement: &
 			})
 			.unwrap();
 
-		validate_function(context, shape_index, &statement.block.item);
+		validate_function(context, shape_index, statement.name.span, Vec::new());
 	}
 }
 
-fn validate_function<'a>(context: &mut Context<'a, '_>, shape_index: usize, tree_block: &'a tree::Block<'a>) -> TypeId {
-	let shape = &mut context.function_store.shapes[shape_index];
-	let concrete_index = shape
-		.get_or_add_specialization(context.messages, None, Vec::new())
-		.unwrap();
+struct ValidatedFunction {
+	type_id: TypeId,
+	function_id: FunctionId,
+}
 
-	let concrete = &shape.concrete[concrete_index];
-	let parameters = concrete.parameters.clone();
-	let return_type = concrete.return_type;
+fn validate_function<'a>(
+	context: &mut Context<'a, '_>,
+	shape_index: usize,
+	invoke_span: Span,
+	type_arguments: Vec<TypeId>,
+) -> Option<ValidatedFunction> {
+	let shape = &mut context.function_store.shapes[shape_index];
+	let tree_block = shape.block;
+	let specialization_index = shape.get_or_add_specialization(context.messages, invoke_span, type_arguments)?;
+
+	let specialized = &shape.concrete[specialization_index];
+	let type_id = specialized.return_type;
+	if specialized.block.is_some() {
+		// This specialization has already been validated
+		let function_id = FunctionId { shape_index, specialization_index };
+		return Some(ValidatedFunction { type_id, function_id });
+	}
+
+	let parameters = specialized.parameters.clone();
 
 	let mut child = context.child_scope();
 	for parameter in parameters {
@@ -1004,34 +1046,35 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, shape_index: usize, tree
 	}
 
 	let block = validate_block(child, tree_block, false);
-	if block.type_id != return_type {
-		context.messages.error(message!(
+	if block.type_id != type_id {
+		context.error(message!(
 			"Function expects return type of {} but block evalutes to type {}",
-			context.type_name(return_type),
+			context.type_name(type_id),
 			context.type_name(block.type_id),
 		));
-		return return_type;
+		return None;
 	}
 
 	let shape = &mut context.function_store.shapes[shape_index];
-	let concrete = &mut shape.concrete[concrete_index];
+	let concrete = &mut shape.concrete[specialization_index];
 	assert!(concrete.block.is_none());
 	concrete.block = Some(block);
 
-	return_type
+	let function_id = FunctionId { shape_index, specialization_index };
+	Some(ValidatedFunction { type_id, function_id })
 }
 
-fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Const<'a> {
+fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<Const<'a>> {
 	let explicit_type = match &statement.item.parsed_type {
 		Some(parsed_type) => context.lookup_type(&parsed_type.item),
 		None => None,
 	};
-	let expression = validate_expression(context, &statement.item.expression.item);
+	let expression = validate_expression(context, &statement.item.expression)?;
 	let type_id = explicit_type.unwrap_or(expression.type_id);
 
 	if let Some(explicit_type) = explicit_type {
 		if explicit_type != expression.type_id {
-			context.messages.error(
+			context.error(
 				message!(
 					"Const type mismatch between explicit type {} and expression type {}",
 					context.type_store.type_name(context.module_path, explicit_type),
@@ -1042,11 +1085,14 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 		}
 	}
 
-	Const { name: statement.item.name.item, type_id, expression }
+	Some(Const { name: statement.item.name.item, type_id, expression })
 }
 
-fn validate_expression<'a>(context: &mut Context<'a, '_>, expression: &'a tree::Expression<'a>) -> Expression<'a> {
-	match expression {
+fn validate_expression<'a>(
+	context: &mut Context<'a, '_>,
+	expression: &'a tree::Node<tree::Expression<'a>>,
+) -> Option<Expression<'a>> {
+	let expression = match &expression.item {
 		tree::Expression::Block(block) => {
 			let validated_block = validate_block(context.child_scope(), &block, false);
 			Expression {
@@ -1069,9 +1115,40 @@ fn validate_expression<'a>(context: &mut Context<'a, '_>, expression: &'a tree::
 		},
 
 		tree::Expression::StructLiteral(_) => unimplemented!("tree::Expression::StructLiteral"),
-		tree::Expression::Call(_) => unimplemented!("tree::Expression::Call"),
+
+		tree::Expression::Call(call) => {
+			let symbol = context.lookup_symbol(&call.path_segments.item)?;
+			let name = symbol.name;
+			let shape_index = match symbol.kind {
+				SymbolKind::Function { shape_index } => shape_index,
+
+				kind => {
+					context.error(message!("Cannot call symbol {name:?}, it is a {kind}"));
+					return None;
+				}
+			};
+
+			let mut type_arguments = Vec::new();
+			for type_argument in &call.type_arguments {
+				let type_id = context.lookup_type(&type_argument)?;
+				type_arguments.push(type_id);
+			}
+
+			let mut arguments = Vec::new();
+			for argument in &call.arguments {
+				let expression = validate_expression(context, argument)?;
+				arguments.push(expression);
+			}
+
+			let validated = validate_function(context, shape_index, expression.span, type_arguments)?;
+			let call = Call { name, function_id: validated.function_id, arguments };
+			Expression { type_id: validated.type_id, kind: ExpressionKind::Call(call) }
+		}
+
 		tree::Expression::Read(_) => unimplemented!("tree::Expression::Read"),
 		tree::Expression::UnaryOperation(_) => unimplemented!("tree::Expression::UnaryOperation"),
 		tree::Expression::BinaryOperation(_) => unimplemented!("tree::Expression::BinaryOperation"),
-	}
+	};
+
+	Some(expression)
 }
