@@ -39,7 +39,7 @@ fn main() {
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
 	let mut root_layers = RootLayers::new();
-	let blocks = validate(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
+	let _blocks = validate(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
 
 	messages.print_errors("Validation error");
 	if messages.any_errors() {

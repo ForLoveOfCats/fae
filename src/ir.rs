@@ -41,12 +41,12 @@ pub enum SymbolKind {
 impl std::fmt::Display for SymbolKind {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let name = match self {
-			SymbolKind::BuiltinType { .. } => "built in type",
-			SymbolKind::Type { .. } => "type",
-			SymbolKind::Function { .. } => "function",
-			SymbolKind::Const { .. } => "constant",
-			SymbolKind::Let { .. } => "immutable binding",
-			SymbolKind::Mut { .. } => "mutable binding",
+			SymbolKind::BuiltinType { .. } => "a built in type",
+			SymbolKind::Type { .. } => "a type",
+			SymbolKind::Function { .. } => "a function",
+			SymbolKind::Const { .. } => "a constant",
+			SymbolKind::Let { .. } => "an immutable binding",
+			SymbolKind::Mut { .. } => "a mutable binding",
 		};
 
 		f.write_str(name)
@@ -56,6 +56,7 @@ impl std::fmt::Display for SymbolKind {
 #[derive(Debug, Clone, Copy)]
 pub struct Readable<'a> {
 	pub name: &'a str,
+	pub type_id: TypeId,
 	pub kind: ReadableKind,
 }
 
@@ -298,12 +299,6 @@ pub struct TypeId {
 	pub specialization: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ReadableId {
-	pub index: usize,
-	pub thread: usize,
-}
-
 #[derive(Debug)]
 pub struct Block<'a> {
 	pub type_id: TypeId,
@@ -421,7 +416,7 @@ pub struct Call<'a> {
 #[derive(Debug)]
 pub struct Read<'a> {
 	pub name: &'a str,
-	pub readable_id: ReadableId,
+	pub readable_index: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

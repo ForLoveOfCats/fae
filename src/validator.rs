@@ -54,11 +54,11 @@ impl<'a, 'b> Context<'a, 'b> {
 		self.symbols.push_symbol(self.messages, symbol);
 	}
 
-	fn push_readable(&mut self, name: tree::Node<&'a str>, kind: ReadableKind) {
+	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) {
 		let span = Some(name.span);
 		let name = name.item;
 
-		let readable_index = self.readables.push_readable(name, kind);
+		let readable_index = self.readables.push(name, type_id, kind);
 		let kind = match kind {
 			ReadableKind::Const => SymbolKind::Const { readable_index },
 			ReadableKind::Let => SymbolKind::Let { readable_index },
@@ -225,10 +225,14 @@ impl<'a> Readables<'a> {
 		Readables { readables: Vec::new() }
 	}
 
-	fn push_readable(&mut self, name: &'a str, kind: ReadableKind) -> usize {
+	fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
 		let index = self.readables.len();
-		self.readables.push(Readable { name, kind });
+		self.readables.push(Readable { name, type_id, kind });
 		index
+	}
+
+	fn get(&mut self, index: usize) -> Option<Readable<'a>> {
+		self.readables.get(index).copied()
 	}
 }
 
@@ -1042,7 +1046,7 @@ fn validate_function<'a>(
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
 		};
-		child.push_readable(parameter.name, kind);
+		child.push_readable(parameter.name, parameter.type_id, kind);
 	}
 
 	let block = validate_block(child, tree_block, false);
@@ -1123,7 +1127,7 @@ fn validate_expression<'a>(
 				SymbolKind::Function { shape_index } => shape_index,
 
 				kind => {
-					context.error(message!("Cannot call symbol {name:?}, it is a {kind}"));
+					context.error(message!("Cannot call symbol {name:?}, it is {kind}"));
 					return None;
 				}
 			};
@@ -1145,7 +1149,22 @@ fn validate_expression<'a>(
 			Expression { type_id: validated.type_id, kind: ExpressionKind::Call(call) }
 		}
 
-		tree::Expression::Read(_) => unimplemented!("tree::Expression::Read"),
+		tree::Expression::Read(read) => {
+			let symbol = context.lookup_symbol(&read.path_segments.item)?;
+			let readable_index = match symbol.kind {
+				SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
+
+				kind => {
+					context.error(message!("Cannot read value from {kind}"));
+					return None;
+				}
+			};
+
+			let readable = context.readables.get(readable_index)?;
+			let kind = ExpressionKind::Read(Read { name: readable.name, readable_index });
+			Expression { type_id: readable.type_id, kind }
+		}
+
 		tree::Expression::UnaryOperation(_) => unimplemented!("tree::Expression::UnaryOperation"),
 		tree::Expression::BinaryOperation(_) => unimplemented!("tree::Expression::BinaryOperation"),
 	};
