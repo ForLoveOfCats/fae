@@ -347,7 +347,7 @@ pub struct Mut<'a> {
 
 #[derive(Debug)]
 pub struct Return<'a> {
-	pub expression: Expression<'a>,
+	pub expression: Option<Expression<'a>>,
 }
 
 #[derive(Debug)]

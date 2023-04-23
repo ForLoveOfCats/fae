@@ -153,6 +153,10 @@ impl<'a> Tokenizer<'a> {
 		peeked
 	}
 
+	pub fn peek_kind(&mut self) -> ParseResult<TokenKind> {
+		self.peek().map(|token| token.kind)
+	}
+
 	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
 		self.next_optional_messages(&mut Some(messages))
 	}

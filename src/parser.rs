@@ -168,15 +168,17 @@ fn parse_expression_climb<'a>(
 ) -> ParseResult<Node<Expression<'a>>> {
 	let mut result = parse_expression_atom(messages, tokenizer)?;
 
-	while let Some(op) = token_to_operator(tokenizer.peek()?) {
-		let precedence = op.item.precedence();
+	let peeked = tokenizer.peek().ok();
+	let operator = peeked.and_then(|token| token_to_operator(token));
+	while let Some(operator) = operator {
+		let precedence = operator.item.precedence();
 		if precedence < min_precedence {
 			break;
 		}
 
 		tokenizer.next(messages).expect("Known peeked token");
 
-		let associativity = op.item.associativity();
+		let associativity = operator.item.associativity();
 		let next_min_precedence = match associativity {
 			Associativity::Left => precedence + 1,
 			Associativity::Right => precedence,
@@ -186,7 +188,7 @@ fn parse_expression_climb<'a>(
 		let left_span = result.span;
 		let right_span = right.span;
 
-		let binary_operation = BinaryOperation { op, right, left: result };
+		let binary_operation = BinaryOperation { op: operator, right, left: result };
 		let boxed = Box::new(binary_operation);
 		let expression = Expression::BinaryOperation(boxed);
 
@@ -352,7 +354,7 @@ fn parse_struct_initializer<'a>(
 
 	let mut field_initializers = Vec::new();
 
-	while tokenizer.peek()?.kind != TokenKind::CloseBrace {
+	while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 		check_not_reserved(messages, name_token)?;
 		let name = Node::from_token(name_token.text, name_token);
@@ -465,7 +467,7 @@ fn parse_generic_attribute<'a>(
 		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 		names.push(Node::new(name_token.text, name_token.span));
 
-		if tokenizer.peek()?.kind == TokenKind::Newline {
+		if tokenizer.peek_kind() == Ok(TokenKind::Newline) {
 			tokenizer.expect(messages, TokenKind::Newline)?;
 			break;
 		}
@@ -501,7 +503,7 @@ fn parse_path_segments<'a>(
 
 		segments.push(Node::from_token(segment_token.text, segment_token));
 
-		if tokenizer.peek()?.kind == TokenKind::DoubleColon {
+		if tokenizer.peek_kind() == Ok(TokenKind::DoubleColon) {
 			tokenizer.expect(messages, TokenKind::DoubleColon)?;
 		} else {
 			break;
@@ -522,7 +524,7 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 		Token { kind: TokenKind::Ampersand, .. } => {
 			let ampersand = tokenizer.expect(messages, TokenKind::Ampersand)?;
 
-			if tokenizer.peek()?.kind == TokenKind::OpenBracket {
+			if tokenizer.peek_kind() == Ok(TokenKind::OpenBracket) {
 				tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
 				let inner = Box::new(parse_type(messages, tokenizer)?);
@@ -547,10 +549,10 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 				Ok(Token { kind: TokenKind::OpenBracket, .. }) => {
 					tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
-					if tokenizer.peek()?.kind != TokenKind::CloseBracket {
+					if tokenizer.peek_kind() != Ok(TokenKind::CloseBracket) {
 						loop {
 							arguments.push(parse_type(messages, tokenizer)?);
-							if tokenizer.peek()?.kind != TokenKind::Comma {
+							if tokenizer.peek_kind() != Ok(TokenKind::Comma) {
 								break;
 							}
 							tokenizer.expect(messages, TokenKind::Comma)?;
@@ -686,7 +688,7 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	check_not_reserved(messages, name_token)?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
+	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 		tokenizer.expect(messages, TokenKind::Colon)?;
 		Some(parse_type(messages, tokenizer)?)
 	} else {
@@ -711,7 +713,7 @@ fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	check_not_reserved(messages, name_token)?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
+	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 		tokenizer.expect(messages, TokenKind::Colon)?;
 		Some(parse_type(messages, tokenizer)?)
 	} else {
@@ -736,7 +738,7 @@ fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	check_not_reserved(messages, name_token)?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let parsed_type = if tokenizer.peek()?.kind == TokenKind::Colon {
+	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 		tokenizer.expect(messages, TokenKind::Colon)?;
 		Some(parse_type(messages, tokenizer)?)
 	} else {
@@ -757,11 +759,18 @@ fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Return<'a>>> {
 	let return_token = tokenizer.expect_word(messages, "return")?;
 
-	let expression = parse_expression(messages, tokenizer)?;
+	let expression = match tokenizer.peek_kind() {
+		Ok(TokenKind::Newline) => None,
+		_ => Some(parse_expression(messages, tokenizer)?),
+	};
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let span = return_token.span + expression.span;
+	let span = match &expression {
+		Some(expression) => return_token.span + expression.span,
+		None => return_token.span,
+	};
+
 	let item = Return { expression };
 	Ok(Node { item, span })
 }

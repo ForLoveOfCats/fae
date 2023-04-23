@@ -245,7 +245,7 @@ pub struct Read<'a> {
 
 #[derive(Debug)]
 pub struct Return<'a> {
-	pub expression: Node<Expression<'a>>,
+	pub expression: Option<Node<Expression<'a>>>,
 }
 
 #[derive(Debug)]

@@ -976,13 +976,14 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			tree::Statement::Mut(..) => unimplemented!("tree::Statement::Mut"),
 
 			tree::Statement::Return(statement) => {
-				let expression = &statement.item.expression;
-				let expression = match validate_expression(&mut context, expression) {
-					Some(expression) => expression,
-					None => continue,
+				let expression = statement.item.expression.as_ref();
+				let expression = expression.and_then(|expression| validate_expression(&mut context, expression));
+
+				let type_id = match &expression {
+					Some(expression) => expression.type_id,
+					None => context.type_store.void_type_id,
 				};
 
-				let type_id = expression.type_id;
 				let boxed_return = Box::new(Return { expression });
 				let kind = StatementKind::Return(boxed_return);
 				statements.push(Statement { type_id, kind })
