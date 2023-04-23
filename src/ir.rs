@@ -185,7 +185,7 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct FunctionShape<'a> {
-	pub name: &'a str,
+	pub name: Node<&'a str>,
 	pub module_path: &'a [String],
 	pub file_index: usize,
 
@@ -199,7 +199,7 @@ pub struct FunctionShape<'a> {
 
 impl<'a> FunctionShape<'a> {
 	pub fn new(
-		name: &'a str,
+		name: Node<&'a str>,
 		module_path: &'a [String],
 		file_index: usize,
 		generics: Vec<Node<&'a str>>,
@@ -347,11 +347,13 @@ pub struct Mut<'a> {
 
 #[derive(Debug)]
 pub struct Return<'a> {
+	pub span: Span,
 	pub expression: Option<Expression<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Expression<'a> {
+	pub span: Span,
 	pub type_id: TypeId,
 	pub kind: ExpressionKind<'a>,
 }

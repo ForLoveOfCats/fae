@@ -891,11 +891,12 @@ fn create_block_functions<'a>(
 				parameters.push(ParameterShape { name, parameter_type, is_mutable });
 			}
 
-			let name = statement.name.item;
+			let name = statement.name;
 			let generics = statement.generics.clone();
 			let block = &statement.block.item;
 			let shape = FunctionShape::new(name, module_path, file_index, generics, parameters, return_type, block);
 
+			let name = statement.name.item;
 			let shape_index = function_store.register_shape(shape);
 			let kind = SymbolKind::Function { shape_index };
 			let span = Some(statement.name.span);
@@ -977,14 +978,18 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 			tree::Statement::Return(statement) => {
 				let expression = statement.item.expression.as_ref();
-				let expression = expression.and_then(|expression| validate_expression(&mut context, expression));
+				let span = match &expression {
+					Some(expression) => statement.span + expression.span,
+					None => statement.span,
+				};
 
+				let expression = expression.and_then(|expression| validate_expression(&mut context, expression));
 				let type_id = match &expression {
 					Some(expression) => expression.type_id,
 					None => context.type_store.void_type_id,
 				};
 
-				let boxed_return = Box::new(Return { expression });
+				let boxed_return = Box::new(Return { span, expression });
 				let kind = StatementKind::Return(boxed_return);
 				statements.push(Statement { type_id, kind })
 			}
@@ -1012,7 +1017,7 @@ fn validate_non_generic_function<'a>(context: &mut Context<'a, '_>, statement: &
 			})
 			.unwrap();
 
-		validate_function(context, shape_index, statement.name.span, Vec::new());
+		validate_function(context, shape_index, statement.name.span, Vec::new(), &[]);
 	}
 }
 
@@ -1026,8 +1031,10 @@ fn validate_function<'a>(
 	shape_index: usize,
 	invoke_span: Span,
 	type_arguments: Vec<TypeId>,
+	arguments: &[Expression],
 ) -> Option<ValidatedFunction> {
 	let shape = &mut context.function_store.shapes[shape_index];
+	let name_span = shape.name.span;
 	let tree_block = shape.block;
 	let specialization_index = shape.get_or_add_specialization(context.messages, invoke_span, type_arguments)?;
 
@@ -1040,9 +1047,28 @@ fn validate_function<'a>(
 	}
 
 	let parameters = specialized.parameters.clone();
+	if arguments.len() != parameters.len() {
+		let message = message!("Expected {} arguments but got {}", parameters.len(), arguments.len());
+		context.error(message.span(invoke_span));
+	}
+
+	for (index, parameter) in parameters.iter().enumerate() {
+		if let Some(argument) = arguments.get(index) {
+			if parameter.type_id != argument.type_id {
+				context.error(
+					message!(
+						"Argument type mismatch, expected {} but got {}",
+						context.type_name(parameter.type_id),
+						context.type_name(argument.type_id)
+					)
+					.span(argument.span),
+				);
+			}
+		}
+	}
 
 	let mut child = context.child_scope();
-	for parameter in parameters {
+	for parameter in &parameters {
 		let kind = match parameter.is_mutable {
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
@@ -1051,13 +1077,32 @@ fn validate_function<'a>(
 	}
 
 	let block = validate_block(child, tree_block, false);
-	if block.type_id != type_id {
-		context.error(message!(
-			"Function expects return type of {} but block evalutes to type {}",
-			context.type_name(type_id),
-			context.type_name(block.type_id),
-		));
-		return None;
+	let traced = trace_return(context, &block);
+
+	// Don't love this chunk of logic
+	if type_id == context.type_store.void_type_id {
+		// Expects void return
+		if let Some(traced) = traced {
+			if traced.type_id != context.type_store.void_type_id {
+				context.error(message!("Return of value from void function").span(traced.span));
+				return None;
+			}
+		}
+	} else {
+		// Expects non-void return
+		if let Some(traced) = traced {
+			if traced.type_id != type_id {
+				context.error(message!(
+					"Function expects return type of {} but body returns type {}",
+					context.type_name(type_id),
+					context.type_name(traced.type_id),
+				));
+				return None;
+			}
+		} else {
+			context.error(message!("Not all code paths return a value").span(name_span));
+			return None;
+		}
 	}
 
 	let shape = &mut context.function_store.shapes[shape_index];
@@ -1067,6 +1112,29 @@ fn validate_function<'a>(
 
 	let function_id = FunctionId { shape_index, specialization_index };
 	Some(ValidatedFunction { type_id, function_id })
+}
+
+struct TracedReturn {
+	span: Span,
+	type_id: TypeId,
+}
+
+// TODO: Update once flow control gets added
+// See https://github.com/ForLoveOfCats/Mountain/blob/OriginalC/compiler/validator.c#L1007
+fn trace_return(context: &Context, block: &Block) -> Option<TracedReturn> {
+	for statement in &block.statements {
+		if let StatementKind::Return(statement) = &statement.kind {
+			let type_id = match &statement.expression {
+				Some(expression) => expression.type_id,
+				None => context.type_store.void_type_id,
+			};
+
+			let span = statement.span;
+			return Some(TracedReturn { span, type_id });
+		}
+	}
+
+	None
 }
 
 fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<Const<'a>> {
@@ -1097,16 +1165,17 @@ fn validate_expression<'a>(
 	context: &mut Context<'a, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
 ) -> Option<Expression<'a>> {
+	let span = expression.span;
+
 	let expression = match &expression.item {
 		tree::Expression::Block(block) => {
 			let validated_block = validate_block(context.child_scope(), &block, false);
-			Expression {
-				type_id: validated_block.type_id,
-				kind: ExpressionKind::Block(validated_block),
-			}
+			let type_id = validated_block.type_id;
+			Expression { span, type_id, kind: ExpressionKind::Block(validated_block) }
 		}
 
 		tree::Expression::IntegerLiteral(literal) => Expression {
+			span,
 			type_id: context.type_store.u64_type_id,
 			kind: ExpressionKind::IntegerLiteral(IntegerLiteral { value: literal.value.item }),
 		},
@@ -1114,10 +1183,10 @@ fn validate_expression<'a>(
 		tree::Expression::FloatLiteral(_) => unimplemented!("tree::Expression::FloatLiteral"),
 		tree::Expression::CharLiteral(_) => unimplemented!("tree::Expression::CharLiteral"),
 
-		tree::Expression::StringLiteral(literal) => Expression {
-			type_id: context.type_store.string_type_id,
-			kind: ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item }),
-		},
+		tree::Expression::StringLiteral(literal) => {
+			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });
+			Expression { span, type_id: context.type_store.string_type_id, kind }
+		}
 
 		tree::Expression::StructLiteral(_) => unimplemented!("tree::Expression::StructLiteral"),
 
@@ -1128,7 +1197,7 @@ fn validate_expression<'a>(
 				SymbolKind::Function { shape_index } => shape_index,
 
 				kind => {
-					context.error(message!("Cannot call symbol {name:?}, it is {kind}"));
+					context.error(message!("Cannot call {kind}").span(call.path_segments.span));
 					return None;
 				}
 			};
@@ -1145,9 +1214,9 @@ fn validate_expression<'a>(
 				arguments.push(expression);
 			}
 
-			let validated = validate_function(context, shape_index, expression.span, type_arguments)?;
-			let call = Call { name, function_id: validated.function_id, arguments };
-			Expression { type_id: validated.type_id, kind: ExpressionKind::Call(call) }
+			let validated = validate_function(context, shape_index, expression.span, type_arguments, &arguments)?;
+			let kind = ExpressionKind::Call(Call { name, function_id: validated.function_id, arguments });
+			Expression { span, type_id: validated.type_id, kind }
 		}
 
 		tree::Expression::Read(read) => {
@@ -1156,14 +1225,14 @@ fn validate_expression<'a>(
 				SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
 
 				kind => {
-					context.error(message!("Cannot read value from {kind}"));
+					context.error(message!("Cannot read value from {kind}").span(read.path_segments.span));
 					return None;
 				}
 			};
 
 			let readable = context.readables.get(readable_index)?;
 			let kind = ExpressionKind::Read(Read { name: readable.name, readable_index });
-			Expression { type_id: readable.type_id, kind }
+			Expression { span, type_id: readable.type_id, kind }
 		}
 
 		tree::Expression::UnaryOperation(_) => unimplemented!("tree::Expression::UnaryOperation"),

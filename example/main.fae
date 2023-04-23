@@ -9,12 +9,12 @@ struct MyStruct {
 }
 
 generic T
-fn generic_function(value: T, mut other: i32): T {
-	return value
+fn generic_function(value: T, mut other: u64): T {
+	return other
 }
 
 fn function(): void {
-	generic_function[i32](4, 15)
+	generic_function[u64](4, 2)
 	return
 
 	/*
