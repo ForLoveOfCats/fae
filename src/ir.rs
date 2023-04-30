@@ -1,6 +1,7 @@
 use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::{self, Node};
+use crate::validator::Readables;
 
 /*
  * The current structure of the IR utilizes nested `Box`-es and `Vec`-es which is rather inefficient
@@ -188,6 +189,7 @@ pub struct FunctionShape<'a> {
 	pub name: Node<&'a str>,
 	pub module_path: &'a [String],
 	pub file_index: usize,
+	pub is_main: bool,
 
 	pub generics: Vec<Node<&'a str>>,
 	pub parameters: Vec<ParameterShape<'a>>,
@@ -207,10 +209,13 @@ impl<'a> FunctionShape<'a> {
 		return_type: GenericOrTypeId,
 		block: &'a tree::Block<'a>,
 	) -> Self {
+		let is_main = module_path == &["main"] && name.item == "main";
+
 		FunctionShape {
 			name,
 			module_path,
 			file_index,
+			is_main,
 			generics,
 			parameters,
 			return_type,
@@ -222,6 +227,7 @@ impl<'a> FunctionShape<'a> {
 	pub fn get_or_add_specialization(
 		&mut self,
 		messages: &mut Messages,
+		readables: &mut Readables<'a>,
 		invoke_span: Span,
 		type_arguments: Vec<TypeId>,
 	) -> Option<usize> {
@@ -249,7 +255,12 @@ impl<'a> FunctionShape<'a> {
 				};
 
 				let is_mutable = parameter.is_mutable;
-				Parameter { name: parameter.name, type_id, is_mutable }
+				let kind = match is_mutable {
+					true => ReadableKind::Mut,
+					false => ReadableKind::Let,
+				};
+				let readable_index = readables.push(parameter.name.item, type_id, kind);
+				Parameter { name: parameter.name, type_id, readable_index, is_mutable }
 			})
 			.collect::<Vec<_>>();
 
@@ -284,6 +295,7 @@ pub struct Function<'a> {
 pub struct Parameter<'a> {
 	pub name: Node<&'a str>,
 	pub type_id: TypeId,
+	pub readable_index: usize,
 	pub is_mutable: bool,
 }
 

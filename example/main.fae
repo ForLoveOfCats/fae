@@ -2,18 +2,24 @@ using sub_folder::sub_module
 
 const CONSTANT: &[u8] = "Hello there!"
 
+struct NonGeneric {
+	field: i64
+}
+
 generic T
 struct MyStruct {
 	field: f64
 	other_field: T
 }
 
+
+
 generic T
 fn generic_function(value: T, mut other: u64): T {
 	return other
 }
 
-fn function(): void {
+fn main(): void {
 	generic_function[u64](4, 2)
 	return
 

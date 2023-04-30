@@ -55,10 +55,14 @@ impl<'a, 'b> Context<'a, 'b> {
 	}
 
 	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) {
+		let readable_index = self.readables.push(name.item, type_id, kind);
+		self.push_readable_with_index(name, kind, readable_index);
+	}
+
+	fn push_readable_with_index(&mut self, name: tree::Node<&'a str>, kind: ReadableKind, readable_index: usize) {
 		let span = Some(name.span);
 		let name = name.item;
 
-		let readable_index = self.readables.push(name, type_id, kind);
 		let kind = match kind {
 			ReadableKind::Const => SymbolKind::Const { readable_index },
 			ReadableKind::Let => SymbolKind::Let { readable_index },
@@ -225,7 +229,7 @@ impl<'a> Readables<'a> {
 		Readables { readables: Vec::new() }
 	}
 
-	fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
+	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
 		let index = self.readables.len();
 		self.readables.push(Readable { name, type_id, kind });
 		index
@@ -320,6 +324,7 @@ pub struct TypeStore<'a> {
 	void_type_id: TypeId,
 	reference_type_index: usize,
 	slice_type_index: usize,
+	slice_specializations: Vec<usize>,
 
 	u64_type_id: TypeId,
 	string_type_id: TypeId,
@@ -361,9 +366,26 @@ impl<'a> TypeStore<'a> {
 			void_type_id,
 			reference_type_index,
 			slice_type_index,
+			slice_specializations: Vec::new(),
 			u64_type_id,
 			string_type_id,
 		}
+	}
+
+	pub fn primative_len(&self) -> usize {
+		self.primatives.len()
+	}
+
+	pub fn user_types(&self) -> &[UserType] {
+		&self.user_types
+	}
+
+	pub fn slice_type_index(&self) -> usize {
+		self.slice_type_index
+	}
+
+	pub fn slice_specializations(&self) -> &[usize] {
+		&self.slice_specializations
 	}
 
 	#[must_use]
@@ -409,6 +431,7 @@ impl<'a> TypeStore<'a> {
 
 				let index = self.slice_type_index;
 				let specialization = inner_id.index | inner_id.specialization << 4 * 8;
+				self.slice_specializations.push(specialization);
 				return Some(TypeId { index, specialization });
 			}
 
@@ -451,18 +474,14 @@ impl<'a> TypeStore<'a> {
 		Some(TypeId { index: type_index, specialization: concrete_index })
 	}
 
-	fn type_name(&self, module_path: &'a [String], type_id: TypeId) -> String {
+	pub fn type_name(&self, module_path: &'a [String], type_id: TypeId) -> String {
 		if type_id.index == self.reference_type_index {
-			let index = 0xFFFFFFFF & type_id.specialization;
-			let specialization = type_id.specialization >> 4 * 8;
-			let type_id = TypeId { index, specialization };
+			let type_id = Self::unpack_ref_slice_specialization(type_id.specialization);
 			return format!("`&{}`", self.type_name(module_path, type_id));
 		}
 
-		if type_id.index == self.slice_type_index {
-			let index = 0xFFFFFFFF & type_id.specialization;
-			let specialization = type_id.specialization >> 4 * 8;
-			let type_id = TypeId { index, specialization };
+		if type_id.index == self.slice_type_index() {
+			let type_id = Self::unpack_ref_slice_specialization(type_id.specialization);
 			return format!("`&[{}]`", self.type_name(module_path, type_id));
 		}
 
@@ -503,6 +522,20 @@ impl<'a> TypeStore<'a> {
 			format!("`{}`", self.primatives.primatives[type_id.index].name)
 		}
 	}
+
+	pub fn is_reference(&self, type_id: TypeId) -> bool {
+		type_id.index == self.reference_type_index
+	}
+
+	pub fn unpack_ref_slice_specialization(specialization: usize) -> TypeId {
+		let index = 0xFFFFFFFF & specialization;
+		let specialization = specialization >> 4 * 8;
+		TypeId { index, specialization }
+	}
+
+	pub fn primative(&self, type_id: TypeId) -> Option<PrimativeType> {
+		self.primatives.primatives.get(type_id.index).copied()
+	}
 }
 
 #[derive(Debug)]
@@ -513,6 +546,10 @@ pub struct FunctionStore<'a> {
 impl<'a> FunctionStore<'a> {
 	pub fn new() -> Self {
 		FunctionStore { shapes: Vec::new() }
+	}
+
+	pub fn shapes(&self) -> &[FunctionShape] {
+		&self.shapes
 	}
 
 	fn register_shape(&mut self, shape: FunctionShape<'a>) -> usize {
@@ -528,14 +565,13 @@ pub fn validate<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &'a [tree::File<'a>],
-) -> Vec<Block<'a>> {
+) {
 	create_and_fill_root_types(messages, root_layers, type_store, parsed_files);
 	resolve_root_type_imports(messages, root_layers, parsed_files);
 
 	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
 	resolve_root_function_imports(messages, root_layers, parsed_files);
 
-	let mut blocks = Vec::new();
 	let mut readables = Readables::new();
 	let mut symbols = Symbols::new();
 
@@ -559,10 +595,8 @@ pub fn validate<'a>(
 			symbols: &mut symbols,
 		};
 
-		blocks.push(validate_block(context, &parsed_file.block, true));
+		validate_block(context, &parsed_file.block, true);
 	}
-
-	blocks
 }
 
 fn create_and_fill_root_types<'a>(
@@ -802,7 +836,7 @@ fn fill_block_types<'a>(
 						let user_type = &type_store.user_types[type_index - type_store.primatives.len()];
 						let struct_shape = match &user_type.kind {
 							UserTypeKind::Struct { shape } => shape,
-							_ => unreachable!("{:?}", user_type.kind),
+							// _ => unreachable!("{:?}", user_type.kind),
 						};
 
 						let index = struct_shape
@@ -837,7 +871,7 @@ fn fill_block_types<'a>(
 				let user_type = &mut type_store.user_types[type_index - type_store.primatives.len()];
 				match &mut user_type.kind {
 					UserTypeKind::Struct { shape } => shape.fields.push(node),
-					_ => unreachable!("{:?}", user_type.kind),
+					// _ => unreachable!("{:?}", user_type.kind),
 				};
 			}
 		}
@@ -958,7 +992,9 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 			tree::Statement::Block(..) => unimplemented!("tree::Statement::Block"),
 
-			tree::Statement::Using(..) | tree::Statement::Struct(..) => {} // Already handled in a pre-pass
+			tree::Statement::Using(..) => {}
+
+			tree::Statement::Struct(statement) => validate_non_generic_struct(&mut context, statement),
 
 			tree::Statement::Function(statement) => validate_non_generic_function(&mut context, statement),
 
@@ -1001,6 +1037,32 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 	Block { type_id, statements }
 }
 
+fn validate_non_generic_struct<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Struct<'a>) {
+	if statement.generics.is_empty() {
+		let type_index = context
+			.symbols
+			.symbols
+			.iter()
+			.find_map(|symbol| {
+				if let SymbolKind::Type { type_index } = symbol.kind {
+					if symbol.name == statement.name.item {
+						return Some(type_index);
+					}
+				}
+				None
+			})
+			.unwrap();
+
+		let primative_len = context.type_store.primatives.len();
+		let user_type = &mut context.type_store.user_types[type_index - primative_len];
+		let shape = match &mut user_type.kind {
+			UserTypeKind::Struct { shape } => shape,
+		};
+
+		shape.get_or_add_specialization(context.messages, Span::zero(), Vec::new());
+	}
+}
+
 fn validate_non_generic_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Function<'a>) {
 	if statement.generics.is_empty() {
 		let shape_index = context
@@ -1036,13 +1098,13 @@ fn validate_function<'a>(
 	let shape = &mut context.function_store.shapes[shape_index];
 	let name_span = shape.name.span;
 	let tree_block = shape.block;
-	let specialization_index = shape.get_or_add_specialization(context.messages, invoke_span, type_arguments)?;
+	let index = shape.get_or_add_specialization(context.messages, context.readables, invoke_span, type_arguments)?;
 
-	let specialized = &shape.concrete[specialization_index];
+	let specialized = &shape.concrete[index];
 	let type_id = specialized.return_type;
 	if specialized.block.is_some() {
 		// This specialization has already been validated
-		let function_id = FunctionId { shape_index, specialization_index };
+		let function_id = FunctionId { shape_index, specialization_index: index };
 		return Some(ValidatedFunction { type_id, function_id });
 	}
 
@@ -1073,7 +1135,7 @@ fn validate_function<'a>(
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
 		};
-		child.push_readable(parameter.name, parameter.type_id, kind);
+		child.push_readable_with_index(parameter.name, kind, parameter.readable_index);
 	}
 
 	let block = validate_block(child, tree_block, false);
@@ -1106,11 +1168,11 @@ fn validate_function<'a>(
 	}
 
 	let shape = &mut context.function_store.shapes[shape_index];
-	let concrete = &mut shape.concrete[specialization_index];
+	let concrete = &mut shape.concrete[index];
 	assert!(concrete.block.is_none());
 	concrete.block = Some(block);
 
-	let function_id = FunctionId { shape_index, specialization_index };
+	let function_id = FunctionId { shape_index, specialization_index: index };
 	Some(ValidatedFunction { type_id, function_id })
 }
 
