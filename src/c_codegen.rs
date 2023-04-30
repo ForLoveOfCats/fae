@@ -23,13 +23,29 @@ pub fn generate_code(
 	optimization_level: OptimizationLevel,
 	binary_path: &Path,
 ) {
+	// Ignore failure, it's probably just because there's no file there yet
+	_ = std::fs::remove_file(binary_path);
+
 	let optimization_flag = match optimization_level {
 		OptimizationLevel::None => "-O0",
 		OptimizationLevel::Release => "-O2",
 	};
 
 	let mut cc = Command::new(CC)
-		.args(&["-x", "c", "-std=c11", optimization_flag, "-o"])
+		.args(&[
+			"-x",
+			"c",
+			"-std=c11",
+			"-pedantic",
+			"-Wall",
+			"-Wextra",
+			"-Wvla",
+			"-Wshadow",
+			"-Werror",
+			"-Wno-unused-parameter",
+			optimization_flag,
+			"-o",
+		])
 		.arg(binary_path)
 		.arg("-")
 		.stdin(Stdio::piped())
@@ -39,20 +55,22 @@ pub fn generate_code(
 		.expect("Failed to launch C compiler");
 
 	let mut stdin = cc.stdin.take().expect("Failed to get C compiler stdin");
-	let stdout = cc.stdout.take().expect("Failed to get C compiler stdout");
+	let stderr = cc.stderr.take().expect("Failed to get C compiler stdout");
 
 	let mut output: Vec<u8> = Vec::new();
 
 	generate_initial_output(&mut output).unwrap();
 
-	// TODO: Order user types and slice specalization
-
 	for (index, user_type) in type_store.user_types().iter().enumerate() {
-		generate_user_type(type_store, index + type_store.primative_len(), user_type, &mut output).unwrap();
+		forward_declare_user_type(type_store, index + type_store.primative_len(), user_type, &mut output).unwrap();
 	}
 
 	for &specialization in type_store.slice_specializations() {
 		generate_slice_specializations(type_store, specialization, &mut output).unwrap();
+	}
+
+	for (index, user_type) in type_store.user_types().iter().enumerate() {
+		generate_user_type(type_store, index + type_store.primative_len(), user_type, &mut output).unwrap();
 	}
 
 	for (shape_index, shape) in function_store.shapes().iter().enumerate() {
@@ -68,25 +86,45 @@ pub fn generate_code(
 	write!(stdin, "{output}").expect("Failed to write output to C compiler stdin");
 	drop(stdin);
 
-	let stdout = std::io::read_to_string(stdout).expect("Failed to read C compiler stdout");
-	println!("{}", stdout);
-	cc.wait().expect("C compiler failed");
+	if !cc.wait().unwrap().success() {
+		println!("{}", std::io::read_to_string(stderr).expect("Failed to read C compiler stderr"));
+		panic!("C Compiler failed");
+	}
 }
 
 fn generate_initial_output(output: Output) -> Result {
 	write!(output, "{}\n", include_str!("./initial_output.c"))
 }
 
+fn forward_declare_user_type(type_store: &TypeStore, index: usize, user_type: &UserType, output: Output) -> Result {
+	match &user_type.kind {
+		UserTypeKind::Struct { shape } => {
+			for specialization in 0..shape.concrete.len() {
+				write!(output, "typedef struct ")?;
+				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				write!(output, " ")?;
+				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				write!(output, ";\n\n")?;
+			}
+		}
+	}
+
+	Ok(())
+}
+
 fn generate_user_type(type_store: &TypeStore, index: usize, user_type: &UserType, output: Output) -> Result {
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			for (specialization, concrete) in shape.concrete.iter().enumerate() {
-				write!(output, "typedef struct {{ ")?;
+				write!(output, "typedef struct ")?;
+				println!("{}", type_store.type_name(&[], TypeId { index, specialization }));
+				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				write!(output, " {{\n")?;
 
 				for field in &concrete.fields {
 					generate_type_id(type_store, field.type_id, output)?;
 					// TODO: These should have an id instead of using the name here
-					write!(output, " {}; ", field.name)?;
+					write!(output, " {};\n", field.name)?;
 				}
 
 				write!(output, "}} ")?;
@@ -139,6 +177,9 @@ fn generate_function(
 		generate_type_id(type_store, parameter.type_id, output)?;
 		write!(output, " ")?;
 		generate_readable_index(parameter.readable_index, output)?;
+	}
+	if function.parameters.is_empty() {
+		write!(output, "void")?;
 	}
 	write!(output, ") {{\n")?;
 

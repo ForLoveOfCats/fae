@@ -16,7 +16,7 @@ typedef int8_t i8;
 typedef double f64;
 typedef float f32;
 
-void fae_main();
+void fae_main(void);
 
 int main(int argc, char **argv) {
 	(void)argc;
