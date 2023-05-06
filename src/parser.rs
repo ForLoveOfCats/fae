@@ -347,7 +347,7 @@ fn parse_struct_initializer<'a>(
 
 	while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-		check_not_reserved(messages, name_token)?;
+		check_not_reserved(messages, name_token, "field name")?;
 		let name = Node::from_token(name_token.text, name_token);
 
 		tokenizer.expect(messages, TokenKind::Colon)?;
@@ -490,7 +490,7 @@ fn parse_path_segments<'a>(
 
 	loop {
 		let segment_token = tokenizer.expect(messages, TokenKind::Word)?;
-		check_not_reserved(messages, segment_token)?;
+		check_not_reserved(messages, segment_token, "path segment")?;
 
 		segments.push(Node::from_token(segment_token.text, segment_token));
 
@@ -577,7 +577,7 @@ fn parse_function_declaration<'a>(
 	tokenizer.expect_word(messages, "fn")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-	check_not_reserved(messages, name_token)?;
+	check_not_reserved(messages, name_token, "function name")?;
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parameters = parse_parameters(messages, tokenizer)?;
@@ -609,7 +609,7 @@ fn parse_parameters<'a>(
 		};
 
 		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-		check_not_reserved(messages, name_token)?;
+		check_not_reserved(messages, name_token, "parameter name")?;
 		let name = Node::from_token(name_token.text, name_token);
 
 		tokenizer.expect(messages, TokenKind::Colon)?;
@@ -645,7 +645,7 @@ fn parse_struct_declaration<'a>(
 	tokenizer.expect_word(messages, "struct")?;
 
 	let struct_name_token = tokenizer.expect(messages, TokenKind::Word)?;
-	check_not_reserved(messages, struct_name_token)?;
+	check_not_reserved(messages, struct_name_token, "struct name")?;
 	let name = Node::from_token(struct_name_token.text, struct_name_token);
 
 	tokenizer.expect(messages, TokenKind::OpenBrace)?;
@@ -655,7 +655,7 @@ fn parse_struct_declaration<'a>(
 
 	while !reached_close_brace(tokenizer) {
 		let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
-		check_not_reserved(messages, field_name_token)?;
+		check_not_reserved(messages, field_name_token, "struct field")?;
 		let name = Node::from_token(field_name_token.text, field_name_token);
 
 		tokenizer.expect(messages, TokenKind::Colon)?;
@@ -676,7 +676,7 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	let const_token = tokenizer.expect_word(messages, "const")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-	check_not_reserved(messages, name_token)?;
+	check_not_reserved(messages, name_token, "const name")?;
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
@@ -711,7 +711,7 @@ fn parse_binding_statement<'a>(
 	};
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-	check_not_reserved(messages, name_token)?;
+	check_not_reserved(messages, name_token, "binding name")?;
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
@@ -751,11 +751,11 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 	Ok(Node { item, span })
 }
 
-fn check_not_reserved(messages: &mut Messages, token: Token) -> ParseResult<()> {
+fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
 	let is_reserved = matches!(token.text, "const" | "fn" | "let" | "mut" | "return" | "struct" | "using" | "generic");
 
 	if is_reserved {
-		messages.error(message!("Reserved word {:?}", token.text).span(token.span));
+		messages.error(message!("Cannot use reserved word {:?} as {use_as}", token.text).span(token.span));
 		Err(())
 	} else {
 		Ok(())
