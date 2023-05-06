@@ -1,8 +1,7 @@
 use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
-use crate::tree;
-use crate::tree::PathSegments;
+use crate::tree::{self, BinaryOperator, PathSegments};
 
 #[derive(Debug)]
 pub struct Context<'a, 'b> {
@@ -182,7 +181,7 @@ impl<'a> Symbols<'a> {
 			messages.error(
 				message!("Duplicate symbol {:?}", symbol.name)
 					.span_if_some(symbol.span)
-					.note_if_some("Original symbol here", found.span, found.file_index),
+					.note_if_some(found.span, found.file_index, "Original symbol here"),
 			);
 			false
 		} else {
@@ -1337,7 +1336,41 @@ fn validate_expression<'a>(
 		}
 
 		tree::Expression::UnaryOperation(_) => unimplemented!("tree::Expression::UnaryOperation"),
-		tree::Expression::BinaryOperation(_) => unimplemented!("tree::Expression::BinaryOperation"),
+
+		tree::Expression::BinaryOperation(operation) => {
+			let op = operation.op.item;
+			let left = validate_expression(context, &operation.left)?;
+			let right = validate_expression(context, &operation.right)?;
+
+			if left.type_id != right.type_id {
+				context.error(
+					message!("{} type mismatch", op.name())
+						.span(span)
+						.note(note!(
+							operation.left.span,
+							context.file_index,
+							"Left type {}",
+							context.type_name(left.type_id)
+						))
+						.note(note!(
+							operation.right.span,
+							context.file_index,
+							"Right type {}",
+							context.type_name(right.type_id)
+						)),
+				);
+				return None;
+			}
+
+			let type_id = match op {
+				BinaryOperator::Assign => context.type_store.void_type_id,
+				_ => left.type_id,
+			};
+
+			let operation = Box::new(BinaryOperation { op, left, right });
+			let kind = ExpressionKind::BinaryOperation(operation);
+			Expression { span, type_id, kind }
+		}
 	};
 
 	Some(expression)

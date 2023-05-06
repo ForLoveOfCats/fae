@@ -141,7 +141,7 @@ fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Sp
 	if !spans.is_empty() {
 		let mut message = message!("{label} does not allow attributes").span(span);
 		for &span in spans {
-			message = message.note("Attribute here", span, messages.current_file_index());
+			message = message.note(note!(span, messages.current_file_index(), "Attribute here"));
 		}
 
 		messages.error(message);
@@ -418,11 +418,11 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 		duplicate_span: Span,
 	) -> ParseResult<()> {
 		if let Some(attribute) = attribute {
-			messages.error(message!("Duplicate attribute {name:?}").span(duplicate_span).note(
-				"Original here",
-				attribute.span,
-				messages.current_file_index(),
-			));
+			messages.error(
+				message!("Duplicate attribute {name:?}")
+					.span(duplicate_span)
+					.note(note!(attribute.span, messages.current_file_index(), "Original here")),
+			);
 			return Err(());
 		}
 

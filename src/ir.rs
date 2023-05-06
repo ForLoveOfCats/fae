@@ -1,6 +1,6 @@
 use crate::error::Messages;
 use crate::span::Span;
-use crate::tree::{self, Node};
+use crate::tree::{self, Node, BinaryOperator};
 use crate::validator::Readables;
 
 /*
@@ -436,15 +436,6 @@ pub enum UnaryOperator {
 pub struct UnaryOperation<'a> {
 	pub op: UnaryOperator,
 	pub expression: Expression<'a>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryOperator {
-	Assign,
-	Add,
-	Sub,
-	Mul,
-	Div,
 }
 
 #[derive(Debug)]

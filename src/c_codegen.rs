@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::ir::*;
+use crate::tree::BinaryOperator;
 use crate::validator::{FunctionStore, TypeStore};
 
 const CC: &str = "clang";
@@ -43,6 +44,7 @@ pub fn generate_code(
 			"-Wshadow",
 			"-Werror",
 			"-Wno-format",
+			"-Wno-unused-variable",
 			"-Wno-unused-parameter",
 			optimization_flag,
 			"-o",
@@ -218,12 +220,27 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 					write!(output, "return;\n")?;
 				}
 			}
-
-			kind => unimplemented!("statement {kind:?}"),
 		}
 	}
 
 	Ok(())
+}
+
+fn generate_binary_operation(operation: &BinaryOperation, output: Output) -> Result {
+	write!(output, "(")?;
+	generate_expression(&operation.left, output)?;
+
+	let op = match operation.op {
+		BinaryOperator::Assign => "=",
+		BinaryOperator::Add => "+",
+		BinaryOperator::Sub => "-",
+		BinaryOperator::Mul => "*",
+		BinaryOperator::Div => "/",
+	};
+	write!(output, " {} ", op)?;
+
+	generate_expression(&operation.right, output)?;
+	write!(output, ")")
 }
 
 fn generate_expression(expression: &Expression, output: Output) -> Result {
@@ -251,6 +268,8 @@ fn generate_expression(expression: &Expression, output: Output) -> Result {
 		}
 
 		ExpressionKind::Read(read) => generate_readable_index(read.readable_index, output)?,
+
+		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(operation, output)?,
 
 		kind => unimplemented!("expression {kind:?}"),
 	}

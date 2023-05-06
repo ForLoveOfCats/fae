@@ -190,6 +190,7 @@ pub enum Associativity {
 	Right,
 }
 
+// Should this type live in `ir.rs` instead?
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
 	Assign,
@@ -197,6 +198,18 @@ pub enum BinaryOperator {
 	Sub,
 	Mul,
 	Div,
+}
+
+impl BinaryOperator {
+	pub fn name(self) -> &'static str {
+		match self {
+			BinaryOperator::Assign => "Assignment",
+			BinaryOperator::Add => "Addition",
+			BinaryOperator::Sub => "Subtraction",
+			BinaryOperator::Mul => "Multiplication",
+			BinaryOperator::Div => "Division",
+		}
+	}
 }
 
 impl BinaryOperator {

@@ -85,12 +85,12 @@ impl Message {
 		self
 	}
 
-	pub fn note(mut self, text: &str, span: Span, file_index: usize) -> Message {
-		self.notes.push(Note::new(text, span, file_index));
+	pub fn note(mut self, note: Note) -> Message {
+		self.notes.push(note);
 		self
 	}
 
-	pub fn note_if_some(mut self, text: &str, span: Option<Span>, file_index: Option<usize>) -> Message {
+	pub fn note_if_some(mut self, span: Option<Span>, file_index: Option<usize>, text: &str) -> Message {
 		if let Some(note) = Note::maybe_new(text, span, file_index) {
 			self.notes.push(note);
 		}
@@ -184,8 +184,7 @@ pub struct Note {
 }
 
 impl Note {
-	pub fn new(text: &str, span: Span, file_index: usize) -> Note {
-		let text = text.to_owned();
+	pub fn new(span: Span, file_index: usize, text: String) -> Note {
 		Note { text, span, file_index }
 	}
 
@@ -196,8 +195,8 @@ impl Note {
 
 #[macro_export]
 macro_rules! note {
-	($span:expr, $($arg:tt)*) => {
-		$crate::error::Annotation::new($span, format!( $($arg)* ))
+	($span:expr, $file_index:expr, $($arg:tt)*) => {
+		$crate::error::Note::new($span, $file_index, format!( $($arg)* ))
 	}
 }
 
