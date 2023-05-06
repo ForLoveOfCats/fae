@@ -326,7 +326,9 @@ pub struct TypeStore<'a> {
 	slice_type_index: usize,
 	slice_specializations: Vec<usize>,
 
+	u32_type_id: TypeId,
 	u64_type_id: TypeId,
+	f64_type_id: TypeId,
 	string_type_id: TypeId,
 }
 
@@ -346,17 +348,21 @@ impl<'a> TypeStore<'a> {
 		let u8_type_index = primatives.next_index;
 		primative_type_symbols.push(primatives.push("u8", PrimativeKind::U8));
 		primative_type_symbols.push(primatives.push("u16", PrimativeKind::U16));
+		let u32_type_index = primatives.next_index;
 		primative_type_symbols.push(primatives.push("u32", PrimativeKind::U32));
 		let u64_type_index = primatives.next_index;
 		primative_type_symbols.push(primatives.push("u64", PrimativeKind::U64));
 
 		primative_type_symbols.push(primatives.push("f16", PrimativeKind::F16));
 		primative_type_symbols.push(primatives.push("f32", PrimativeKind::F32));
+		let f64_type_index = primatives.next_index;
 		primative_type_symbols.push(primatives.push("f64", PrimativeKind::F64));
 
 		let reference_type_index = primatives.next_type_index();
 		let slice_type_index = primatives.next_type_index();
+		let u32_type_id = TypeId { index: u32_type_index, specialization: 0 };
 		let u64_type_id = TypeId { index: u64_type_index, specialization: 0 };
+		let f64_type_id = TypeId { index: f64_type_index, specialization: 0 };
 		let string_type_id = TypeId { index: slice_type_index, specialization: u8_type_index };
 
 		TypeStore {
@@ -367,7 +373,9 @@ impl<'a> TypeStore<'a> {
 			reference_type_index,
 			slice_type_index,
 			slice_specializations: Vec::new(),
+			u32_type_id,
 			u64_type_id,
+			f64_type_id,
 			string_type_id,
 		}
 	}
@@ -1274,14 +1282,20 @@ fn validate_expression<'a>(
 			Expression { span, type_id, kind: ExpressionKind::Block(validated_block) }
 		}
 
-		tree::Expression::IntegerLiteral(literal) => Expression {
-			span,
-			type_id: context.type_store.u64_type_id,
-			kind: ExpressionKind::IntegerLiteral(IntegerLiteral { value: literal.value.item }),
-		},
+		tree::Expression::IntegerLiteral(literal) => {
+			let kind = ExpressionKind::IntegerLiteral(IntegerLiteral { value: literal.value.item });
+			Expression { span, type_id: context.type_store.u64_type_id, kind }
+		}
 
-		tree::Expression::FloatLiteral(_) => unimplemented!("tree::Expression::FloatLiteral"),
-		tree::Expression::CharLiteral(_) => unimplemented!("tree::Expression::CharLiteral"),
+		tree::Expression::FloatLiteral(literal) => {
+			let kind = ExpressionKind::FloatLiteral(FloatLiteral { value: literal.value.item });
+			Expression { span, type_id: context.type_store.f64_type_id, kind }
+		}
+
+		tree::Expression::CodepointLiteral(literal) => {
+			let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
+			Expression { span, type_id: context.type_store.u32_type_id, kind }
+		}
 
 		tree::Expression::StringLiteral(literal) => {
 			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });

@@ -248,7 +248,7 @@ fn generate_expression(expression: &Expression, output: Output) -> Result {
 		ExpressionKind::IntegerLiteral(literal) => write!(output, "{}", literal.value)?,
 		ExpressionKind::FloatLiteral(literal) => write!(output, "{}", literal.value)?,
 
-		ExpressionKind::CharLiteral(literal) => write!(output, "{}", literal.value as u32)?,
+		ExpressionKind::CodepointLiteral(literal) => write!(output, "{}", literal.value as u32)?,
 		ExpressionKind::StringLiteral(literal) => write!(output, "{:?}", literal.value)?, // This will fail in some cases
 
 		ExpressionKind::Call(call) => {

@@ -226,11 +226,14 @@ fn parse_expression_atom<'a>(
 			Ok(Node::from_token(Expression::StringLiteral(StringLiteral { value }), string_token))
 		}
 
-		TokenKind::Char => {
-			let char_token = tokenizer.expect(messages, TokenKind::Char)?;
-			let value = Node::from_token(char_token.text.chars().next().unwrap(), char_token);
+		TokenKind::Codepoint => {
+			let codepoint_token = tokenizer.expect(messages, TokenKind::Codepoint)?;
+			let value = Node::from_token(codepoint_token.text.chars().next().unwrap(), codepoint_token);
 
-			Ok(Node::from_token(Expression::CharLiteral(CharLiteral { value }), char_token))
+			Ok(Node::from_token(
+				Expression::CodepointLiteral(CodepointLiteral { value }),
+				codepoint_token,
+			))
 		}
 
 		TokenKind::Word => {

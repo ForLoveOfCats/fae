@@ -8,7 +8,7 @@ pub enum TokenKind {
 
 	Word,
 	String,
-	Char,
+	Codepoint,
 
 	OpenParen,
 	CloseParen,
@@ -53,7 +53,7 @@ impl std::fmt::Display for TokenKind {
 
 			TokenKind::Word => "word",
 			TokenKind::String => "string literal",
-			TokenKind::Char => "character literal",
+			TokenKind::Codepoint => "codepoint literal",
 
 			TokenKind::OpenParen => "'('",
 			TokenKind::CloseParen => "')'",
@@ -290,7 +290,12 @@ impl<'a> Tokenizer<'a> {
 				self.advance_by_codepoint(messages)?;
 				self.expect_byte(messages, b'\'')?;
 
-				Ok(Token::new(&self.source[start_index + 1..self.offset], Char, start_index, self.offset + 1))
+				Ok(Token::new(
+					&self.source[start_index + 1..self.offset],
+					Codepoint,
+					start_index,
+					self.offset + 1,
+				))
 			}
 
 			[b'\"', ..] => {

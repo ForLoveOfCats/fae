@@ -1,6 +1,6 @@
 use crate::error::Messages;
 use crate::span::Span;
-use crate::tree::{self, Node, BinaryOperator};
+use crate::tree::{self, BinaryOperator, Node};
 use crate::validator::Readables;
 
 /*
@@ -371,7 +371,7 @@ pub enum ExpressionKind<'a> {
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
 
-	CharLiteral(CharLiteral),
+	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
 	StructLiteral(StructLiteral<'a>),
@@ -393,7 +393,7 @@ pub struct FloatLiteral {
 }
 
 #[derive(Debug)]
-pub struct CharLiteral {
+pub struct CodepointLiteral {
 	pub value: char,
 }
 

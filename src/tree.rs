@@ -147,7 +147,7 @@ pub struct FloatLiteral {
 }
 
 #[derive(Debug)]
-pub struct CharLiteral {
+pub struct CodepointLiteral {
 	pub value: Node<char>,
 }
 
@@ -317,7 +317,7 @@ pub enum Expression<'a> {
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
 
-	CharLiteral(CharLiteral),
+	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
 	StructLiteral(StructLiteral<'a>),
