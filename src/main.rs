@@ -37,6 +37,7 @@ fn main() {
 		parsed_files.push(parse_file(&mut messages, file));
 	}
 
+	let any_parse_errors = messages.any_errors();
 	messages.print_errors("Parse error");
 	messages.reset();
 
@@ -47,7 +48,7 @@ fn main() {
 	validate(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
 
 	messages.print_errors("Validation error");
-	if messages.any_errors() {
+	if any_parse_errors || messages.any_errors() {
 		return;
 	}
 	messages.reset();
