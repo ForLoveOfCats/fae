@@ -159,9 +159,7 @@ fn parse_expression_climb<'a>(
 ) -> ParseResult<Node<Expression<'a>>> {
 	let mut result = parse_expression_atom(messages, tokenizer)?;
 
-	let peeked = tokenizer.peek().ok();
-	let operator = peeked.and_then(|token| token_to_operator(token));
-	while let Some(operator) = operator {
+	while let Some(operator) = tokenizer.peek().ok().and_then(|token| token_to_operator(token)) {
 		let precedence = operator.item.precedence();
 		if precedence < min_precedence {
 			break;
