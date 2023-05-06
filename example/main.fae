@@ -20,7 +20,8 @@ fn generic_function(value: T, mut other: u64): T {
 }
 
 fn main(): void {
-	generic_function[u64](4, 2)
+	let variable = 2
+	generic_function[u64](4, variable)
 	return
 
 	/*

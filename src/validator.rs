@@ -54,9 +54,10 @@ impl<'a, 'b> Context<'a, 'b> {
 		self.symbols.push_symbol(self.messages, symbol);
 	}
 
-	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) {
+	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
 		let readable_index = self.readables.push(name.item, type_id, kind);
 		self.push_readable_with_index(name, kind, readable_index);
+		readable_index
 	}
 
 	fn push_readable_with_index(&mut self, name: tree::Node<&'a str>, kind: ReadableKind, readable_index: usize) {
@@ -776,8 +777,7 @@ fn create_block_types<'a>(
 			match statement {
 				tree::Statement::Expression(..)
 				| tree::Statement::Block(..)
-				| tree::Statement::Let(..)
-				| tree::Statement::Mut(..)
+				| tree::Statement::Binding(..)
 				| tree::Statement::Return(..) => {
 					messages.error(
 						message!("{} is not allowed in a root scope", statement.name_and_article())
@@ -974,8 +974,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 		match statement {
 			tree::Statement::Expression(..)
 			| tree::Statement::Block(..)
-			| tree::Statement::Let(..)
-			| tree::Statement::Mut(..)
+			| tree::Statement::Binding(..)
 			| tree::Statement::Return(..)
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
@@ -1009,8 +1008,16 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 				statements.push(Statement { type_id, kind });
 			}
 
-			tree::Statement::Let(..) => unimplemented!("tree::Statement::Let"),
-			tree::Statement::Mut(..) => unimplemented!("tree::Statement::Mut"),
+			tree::Statement::Binding(statement) => {
+				let validated = match validate_binding(&mut context, statement) {
+					Some(validated) => validated,
+					None => continue,
+				};
+
+				let type_id = validated.type_id;
+				let kind = StatementKind::Binding(Box::new(validated));
+				statements.push(Statement { type_id, kind });
+			}
 
 			tree::Statement::Return(statement) => {
 				let expression = statement.item.expression.as_ref();
@@ -1221,6 +1228,38 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 	}
 
 	Some(Const { name: statement.item.name.item, type_id, expression })
+}
+
+fn validate_binding<'a>(
+	context: &mut Context<'a, '_>,
+	statement: &'a tree::Node<tree::Binding<'a>>,
+) -> Option<Binding<'a>> {
+	let expression = validate_expression(context, &statement.item.expression)?;
+	if let Some(parsed_type) = &statement.item.parsed_type {
+		let type_id = context.lookup_type(&parsed_type.item)?;
+		if type_id != expression.type_id {
+			context.error(
+				message!(
+					"Expression type {} mismatch with explicit binding type {}",
+					context.type_name(expression.type_id),
+					context.type_name(type_id)
+				)
+				.span(statement.item.expression.span),
+			);
+			return None;
+		}
+	};
+
+	let is_mutable = statement.item.is_mutable;
+	let kind = match is_mutable {
+		true => ReadableKind::Mut,
+		false => ReadableKind::Let,
+	};
+	let readable_index = context.push_readable(statement.item.name, expression.type_id, kind);
+
+	let name = statement.item.name.item;
+	let type_id = expression.type_id;
+	Some(Binding { name, type_id, expression, readable_index, is_mutable })
 }
 
 fn validate_expression<'a>(

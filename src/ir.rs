@@ -330,8 +330,7 @@ pub enum StatementKind<'a> {
 	Block(Block<'a>),
 
 	Const(Box<Const<'a>>),
-	Let(Box<Let<'a>>),
-	Mut(Box<Mut<'a>>),
+	Binding(Box<Binding<'a>>),
 
 	Return(Box<Return<'a>>),
 }
@@ -344,17 +343,12 @@ pub struct Const<'a> {
 }
 
 #[derive(Debug)]
-pub struct Let<'a> {
+pub struct Binding<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
-}
-
-#[derive(Debug)]
-pub struct Mut<'a> {
-	pub name: &'a str,
-	pub type_id: TypeId,
-	pub expression: Expression<'a>,
+	pub readable_index: usize,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug)]

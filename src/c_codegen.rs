@@ -42,6 +42,7 @@ pub fn generate_code(
 			"-Wvla",
 			"-Wshadow",
 			"-Werror",
+			"-Wno-format",
 			"-Wno-unused-parameter",
 			optimization_flag,
 			"-o",
@@ -117,7 +118,6 @@ fn generate_user_type(type_store: &TypeStore, index: usize, user_type: &UserType
 		UserTypeKind::Struct { shape } => {
 			for (specialization, concrete) in shape.concrete.iter().enumerate() {
 				write!(output, "typedef struct ")?;
-				println!("{}", type_store.type_name(&[], TypeId { index, specialization }));
 				generate_type_id(type_store, TypeId { index, specialization }, output)?;
 				write!(output, " {{\n")?;
 
@@ -183,12 +183,12 @@ fn generate_function(
 	}
 	write!(output, ") {{\n")?;
 
-	generate_block(function.block.as_ref().unwrap(), output)?;
+	generate_block(type_store, function.block.as_ref().unwrap(), output)?;
 
 	write!(output, "}}\n\n")
 }
 
-fn generate_block(block: &Block, output: Output) -> Result {
+fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Result {
 	for statement in &block.statements {
 		match &statement.kind {
 			StatementKind::Expression(expression) => {
@@ -196,16 +196,27 @@ fn generate_block(block: &Block, output: Output) -> Result {
 				write!(output, ";\n")?;
 			}
 
-			StatementKind::Block(block) => generate_block(block, output)?, // Probably wrong?
+			StatementKind::Block(block) => generate_block(type_store, block, output)?, // Probably wrong?
 
 			StatementKind::Const(_) => {}
 
-			StatementKind::Return(statement) => {
-				write!(output, "return ")?;
-				if let Some(expression) = &statement.expression {
-					generate_expression(expression, output)?;
-				}
+			StatementKind::Binding(binding) => {
+				generate_type_id(type_store, binding.type_id, output)?;
+				write!(output, " ")?;
+				generate_readable_index(binding.readable_index, output)?;
+				write!(output, " = ")?;
+				generate_expression(&binding.expression, output)?;
 				write!(output, ";\n")?;
+			}
+
+			StatementKind::Return(statement) => {
+				if let Some(expression) = &statement.expression {
+					write!(output, "return ")?;
+					generate_expression(expression, output)?;
+					write!(output, ";\n")?;
+				} else {
+					write!(output, "return;\n")?;
+				}
 			}
 
 			kind => unimplemented!("statement {kind:?}"),

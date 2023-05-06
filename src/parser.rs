@@ -74,19 +74,10 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
-			Token { kind: TokenKind::Word, text: "let", .. } => {
+			Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
 				disallow_attributes(messages, attributes, token.span, "A let statement");
-				if let Ok(statement) = parse_let_statement(messages, tokenizer) {
-					items.push(Statement::Let(Box::new(statement)));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "mut", .. } => {
-				disallow_attributes(messages, attributes, token.span, "A mut statement");
-				if let Ok(statement) = parse_mut_statement(messages, tokenizer) {
-					items.push(Statement::Mut(Box::new(statement)));
+				if let Ok(statement) = parse_binding_statement(messages, tokenizer) {
+					items.push(Statement::Binding(Box::new(statement)));
 				} else {
 					consume_error_syntax(messages, tokenizer);
 				}
@@ -706,8 +697,18 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	Ok(Node { item, span })
 }
 
-fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Let<'a>>> {
-	let let_token = tokenizer.expect_word(messages, "let")?;
+fn parse_binding_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Node<Binding<'a>>> {
+	let is_mutable;
+	let keyword_token = if let Ok(Token { text: "mut", .. }) = tokenizer.peek() {
+		is_mutable = true;
+		tokenizer.expect_word(messages, "mut")?
+	} else {
+		is_mutable = false;
+		tokenizer.expect_word(messages, "let")?
+	};
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	check_not_reserved(messages, name_token)?;
@@ -726,33 +727,8 @@ fn parse_let_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let span = let_token.span + expression.span;
-	let item = Let { name, parsed_type, expression };
-	Ok(Node { item, span })
-}
-
-fn parse_mut_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Mut<'a>>> {
-	let mut_token = tokenizer.expect_word(messages, "mut")?;
-
-	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-	check_not_reserved(messages, name_token)?;
-	let name = Node::from_token(name_token.text, name_token);
-
-	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
-		tokenizer.expect(messages, TokenKind::Colon)?;
-		Some(parse_type(messages, tokenizer)?)
-	} else {
-		None
-	};
-
-	tokenizer.expect(messages, TokenKind::Equal)?;
-
-	let expression = parse_expression(messages, tokenizer)?;
-
-	tokenizer.expect(messages, TokenKind::Newline)?;
-
-	let span = mut_token.span + expression.span;
-	let item = Mut { name, parsed_type, expression };
+	let span = keyword_token.span + expression.span;
+	let item = Binding { name, parsed_type, expression, is_mutable };
 	Ok(Node { item, span })
 }
 

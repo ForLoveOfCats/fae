@@ -59,5 +59,5 @@ fn main() {
 		.spawn()
 		.expect("Failed to launch resulting binary")
 		.wait();
-	println!("Binary execusion result: {status:?}")
+	println!("Binary execution result: {status:?}")
 }

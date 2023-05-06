@@ -129,17 +129,11 @@ pub struct Const<'a> {
 }
 
 #[derive(Debug)]
-pub struct Let<'a> {
+pub struct Binding<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub expression: Node<Expression<'a>>,
-}
-
-#[derive(Debug)]
-pub struct Mut<'a> {
-	pub name: Node<&'a str>,
-	pub parsed_type: Option<Node<Type<'a>>>,
-	pub expression: Node<Expression<'a>>,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug)]
@@ -260,8 +254,7 @@ pub enum Statement<'a> {
 	Function(Box<Function<'a>>),
 
 	Const(Box<Node<Const<'a>>>),
-	Let(Box<Node<Let<'a>>>),
-	Mut(Box<Node<Mut<'a>>>),
+	Binding(Box<Node<Binding<'a>>>),
 
 	Return(Box<Node<Return<'a>>>),
 }
@@ -278,8 +271,7 @@ impl<'a> Statement<'a> {
 			Struct(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
 			Const(statement) => statement.span,
-			Let(statement) => statement.span,
-			Mut(statement) => statement.span,
+			Binding(statement) => statement.span,
 			Return(statement) => statement.span,
 		}
 	}
@@ -294,8 +286,7 @@ impl<'a> Statement<'a> {
 			Struct(..) => "A struct definition",
 			Function(..) => "A function definition",
 			Const(..) => "A const definition",
-			Let(..) => "A let statement",
-			Mut(..) => "A mut statement",
+			Binding(..) => "A binding definition",
 			Return(..) => "A return statement",
 		}
 	}
