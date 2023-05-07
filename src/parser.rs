@@ -296,6 +296,10 @@ fn parse_expression_atom<'a>(
 }
 
 fn parse_type_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Type<'a>>> {
+	if tokenizer.peek_kind() != Ok(TokenKind::OpenBracket) {
+		return Ok(Vec::new());
+	}
+
 	tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
 	let mut types = Vec::new();
