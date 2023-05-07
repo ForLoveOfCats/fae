@@ -326,10 +326,10 @@ pub struct TypeStore<'a> {
 	slice_type_index: usize,
 	slice_specializations: Vec<usize>,
 
-	u32_type_id: TypeId,
-	u64_type_id: TypeId,
-	f64_type_id: TypeId,
-	string_type_id: TypeId,
+	pub u32_type_id: TypeId,
+	pub u64_type_id: TypeId,
+	pub f64_type_id: TypeId,
+	pub string_type_id: TypeId,
 }
 
 impl<'a> TypeStore<'a> {

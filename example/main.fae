@@ -20,10 +20,14 @@ fn generic_function(value: T, mut other: u64, float: f64, char: u32): T {
 }
 
 fn main(): void {
+	// TODO: Show better return type mismatch error
 	// TODO: Validate assignment mutability
 	mut variable = 2
 	variable = 8 * 5 + 3 / 1
 	generic_function[u64](4, variable, 9.6, 'A')
+
+	let string = "❤"
+
 	return
 
 	/*

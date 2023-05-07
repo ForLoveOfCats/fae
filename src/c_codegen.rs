@@ -38,6 +38,7 @@ pub fn generate_code(
 			"c",
 			"-std=c11",
 			"-pedantic",
+			"-funsigned-char",
 			"-Wall",
 			"-Wextra",
 			"-Wvla",
@@ -194,7 +195,7 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 	for statement in &block.statements {
 		match &statement.kind {
 			StatementKind::Expression(expression) => {
-				generate_expression(expression, output)?;
+				generate_expression(type_store, expression, output)?;
 				write!(output, ";\n")?;
 			}
 
@@ -207,14 +208,14 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 				write!(output, " ")?;
 				generate_readable_index(binding.readable_index, output)?;
 				write!(output, " = ")?;
-				generate_expression(&binding.expression, output)?;
+				generate_expression(type_store, &binding.expression, output)?;
 				write!(output, ";\n")?;
 			}
 
 			StatementKind::Return(statement) => {
 				if let Some(expression) = &statement.expression {
 					write!(output, "return ")?;
-					generate_expression(expression, output)?;
+					generate_expression(type_store, expression, output)?;
 					write!(output, ";\n")?;
 				} else {
 					write!(output, "return;\n")?;
@@ -226,7 +227,7 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 	Ok(())
 }
 
-fn generate_call(call: &Call, output: Output) -> Result {
+fn generate_call(type_store: &TypeStore, call: &Call, output: Output) -> Result {
 	generate_functon_id(call.function_id, output)?;
 	write!(output, "(")?;
 
@@ -236,15 +237,15 @@ fn generate_call(call: &Call, output: Output) -> Result {
 			write!(output, ", ")?;
 		}
 		first = false;
-		generate_expression(argument, output)?;
+		generate_expression(type_store, argument, output)?;
 	}
 
 	write!(output, ")")
 }
 
-fn generate_binary_operation(operation: &BinaryOperation, output: Output) -> Result {
+fn generate_binary_operation(type_store: &TypeStore, operation: &BinaryOperation, output: Output) -> Result {
 	write!(output, "(")?;
-	generate_expression(&operation.left, output)?;
+	generate_expression(type_store, &operation.left, output)?;
 
 	let op = match operation.op {
 		BinaryOperator::Assign => "=",
@@ -255,28 +256,45 @@ fn generate_binary_operation(operation: &BinaryOperation, output: Output) -> Res
 	};
 	write!(output, " {} ", op)?;
 
-	generate_expression(&operation.right, output)?;
+	generate_expression(type_store, &operation.right, output)?;
 	write!(output, ")")
 }
 
-fn generate_expression(expression: &Expression, output: Output) -> Result {
+fn generate_expression(type_store: &TypeStore, expression: &Expression, output: Output) -> Result {
 	match &expression.kind {
-		ExpressionKind::IntegerLiteral(literal) => write!(output, "{}", literal.value)?,
-		ExpressionKind::FloatLiteral(literal) => write!(output, "{}", literal.value)?,
+		ExpressionKind::IntegerLiteral(literal) => write!(output, "{}", literal.value),
+		ExpressionKind::FloatLiteral(literal) => write!(output, "{}", literal.value),
 
-		ExpressionKind::CodepointLiteral(literal) => write!(output, "{}", literal.value as u32)?,
-		ExpressionKind::StringLiteral(literal) => write!(output, "{:?}", literal.value)?, // This will fail in some cases
+		ExpressionKind::CodepointLiteral(literal) => write!(output, "{}", literal.value as u32),
 
-		ExpressionKind::Call(call) => generate_call(call, output)?,
+		ExpressionKind::StringLiteral(literal) => {
+			let type_id = type_store.string_type_id;
+			generate_struct_construction(type_store, type_id, output, |output| {
+				write!(output, ".items = (u8*){:?}, .len = {}", literal.value, literal.value.len())
+			})
+		}
 
-		ExpressionKind::Read(read) => generate_readable_index(read.readable_index, output)?,
+		ExpressionKind::Call(call) => generate_call(type_store, call, output),
 
-		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(operation, output)?,
+		ExpressionKind::Read(read) => generate_readable_index(read.readable_index, output),
+
+		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(type_store, operation, output),
 
 		kind => unimplemented!("expression {kind:?}"),
 	}
+}
 
-	Ok(())
+fn generate_struct_construction(
+	type_store: &TypeStore,
+	type_id: TypeId,
+	output: Output,
+	callback: impl Fn(Output) -> Result,
+) -> Result {
+	write!(output, "((")?;
+	generate_type_id(type_store, type_id, output)?;
+	write!(output, ") {{ ")?;
+	callback(output)?;
+	write!(output, " }})")
 }
 
 fn generate_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result {
