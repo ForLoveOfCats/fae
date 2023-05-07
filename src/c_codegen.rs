@@ -226,6 +226,22 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 	Ok(())
 }
 
+fn generate_call(call: &Call, output: Output) -> Result {
+	generate_functon_id(call.function_id, output)?;
+	write!(output, "(")?;
+
+	let mut first = true;
+	for argument in &call.arguments {
+		if !first {
+			write!(output, ", ")?;
+		}
+		first = false;
+		generate_expression(argument, output)?;
+	}
+
+	write!(output, ")")
+}
+
 fn generate_binary_operation(operation: &BinaryOperation, output: Output) -> Result {
 	write!(output, "(")?;
 	generate_expression(&operation.left, output)?;
@@ -251,21 +267,7 @@ fn generate_expression(expression: &Expression, output: Output) -> Result {
 		ExpressionKind::CodepointLiteral(literal) => write!(output, "{}", literal.value as u32)?,
 		ExpressionKind::StringLiteral(literal) => write!(output, "{:?}", literal.value)?, // This will fail in some cases
 
-		ExpressionKind::Call(call) => {
-			generate_functon_id(call.function_id, output)?;
-			write!(output, "(")?;
-
-			let mut first = true;
-			for argument in &call.arguments {
-				if !first {
-					write!(output, ", ")?;
-				}
-				first = false;
-				generate_expression(argument, output)?;
-			}
-
-			write!(output, ")")?;
-		}
+		ExpressionKind::Call(call) => generate_call(call, output)?,
 
 		ExpressionKind::Read(read) => generate_readable_index(read.readable_index, output)?,
 
