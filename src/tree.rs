@@ -75,16 +75,20 @@ pub enum Type<'a> {
 	Slice(Box<Node<Type<'a>>>),
 
 	Path {
-		segments: PathSegments<'a>,
-		arguments: Vec<Node<Type<'a>>>,
+		path_segments: Node<PathSegments<'a>>,
+		type_arguments: Vec<Node<Type<'a>>>,
 	},
 }
 
 impl<'a> Type<'a> {
 	pub fn as_single_segment(&self) -> Option<&'a str> {
 		match self {
-			Type::Path { segments, arguments } if segments.len() == 1 && arguments.is_empty() => {
-				Some(segments.segments[0].item)
+			Type::Path { path_segments, type_arguments } => {
+				if path_segments.item.len() == 1 && type_arguments.is_empty() {
+					Some(path_segments.item.segments[0].item)
+				} else {
+					None
+				}
 			}
 
 			_ => None,
@@ -158,7 +162,7 @@ pub struct StringLiteral<'a> {
 
 #[derive(Debug)]
 pub struct StructLiteral<'a> {
-	pub path_segments: Node<PathSegments<'a>>,
+	pub parsed_type: Node<Type<'a>>,
 	pub initializer: Node<StructInitializer<'a>>,
 }
 
@@ -241,7 +245,7 @@ pub struct BinaryOperation<'a> {
 #[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: Vec<Type<'a>>,
+	pub type_arguments: Vec<Node<Type<'a>>>,
 	pub arguments: Vec<Node<Expression<'a>>>,
 }
 

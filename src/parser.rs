@@ -242,15 +242,16 @@ fn parse_expression_atom<'a>(
 			}
 
 			let path_segments = parse_path_segments(messages, tokenizer)?;
+			let type_arguments = parse_type_arguments(messages, tokenizer)?;
 
 			let (is_call, is_struct_literal) = match tokenizer.peek() {
-				Ok(Token { kind: TokenKind::OpenParen | TokenKind::OpenBracket, .. }) => (true, false),
+				Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
 				Ok(Token { kind: TokenKind::OpenBrace, .. }) => (false, true),
 				_ => (false, false),
 			};
 
 			if is_call {
-				let type_arguments = parse_type_arguments(messages, tokenizer)?;
+				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
 				let arguments_node = parse_arguments(messages, tokenizer)?;
 				let arguments = arguments_node.item;
 				let span = path_segments.span + arguments_node.span;
@@ -260,12 +261,25 @@ fn parse_expression_atom<'a>(
 			}
 
 			if is_struct_literal {
+				let type_span = match &type_arguments {
+					Some(type_arguments) => path_segments.span + type_arguments.span,
+					None => path_segments.span,
+				};
+				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+				let type_object = Type::Path { path_segments, type_arguments };
+				let parsed_type = Node::new(type_object, type_span);
+
 				let initializer = parse_struct_initializer(messages, tokenizer)?;
 
-				let span = path_segments.span + initializer.span;
-				let struct_literal = StructLiteral { path_segments, initializer };
+				let span = type_span + initializer.span;
+				let struct_literal = StructLiteral { parsed_type, initializer };
 
 				return Ok(Node::new(Expression::StructLiteral(struct_literal), span));
+			}
+
+			if let Some(type_arguments) = type_arguments {
+				// This is a weird error
+				messages.error(message!("Type arguments not allowed on binding read").span(type_arguments.span));
 			}
 
 			let span = path_segments.span;
@@ -295,16 +309,21 @@ fn parse_expression_atom<'a>(
 	}
 }
 
-fn parse_type_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Type<'a>>> {
+// Holy return type batman
+// TODO: Do something about this
+fn parse_type_arguments<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Option<Node<Vec<Node<Type<'a>>>>>> {
 	if tokenizer.peek_kind() != Ok(TokenKind::OpenBracket) {
-		return Ok(Vec::new());
+		return Ok(None);
 	}
 
-	tokenizer.expect(messages, TokenKind::OpenBracket)?;
+	let open_token = tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
 	let mut types = Vec::new();
 	while !reached_close_bracket(tokenizer) {
-		types.push(parse_type(messages, tokenizer)?.item);
+		types.push(parse_type(messages, tokenizer)?);
 
 		if reached_close_bracket(tokenizer) {
 			break;
@@ -313,9 +332,10 @@ fn parse_type_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 		tokenizer.expect(messages, TokenKind::Comma)?;
 	}
 
-	tokenizer.expect(messages, TokenKind::CloseBracket)?;
+	let close_token = tokenizer.expect(messages, TokenKind::CloseBracket)?;
 
-	Ok(types)
+	let span = open_token.span + close_token.span;
+	Ok(Some(Node::new(types, span)))
 }
 
 fn parse_arguments<'a>(
@@ -537,17 +557,16 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 		}
 
 		_ => {
-			let parsed_path = parse_path_segments(messages, tokenizer)?;
-			let segments = parsed_path.item;
+			let path_segments = parse_path_segments(messages, tokenizer)?;
 
-			let mut arguments = Vec::new();
+			let mut type_arguments = Vec::new();
 			let span = match tokenizer.peek() {
 				Ok(Token { kind: TokenKind::OpenBracket, .. }) => {
 					tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
 					if tokenizer.peek_kind() != Ok(TokenKind::CloseBracket) {
 						loop {
-							arguments.push(parse_type(messages, tokenizer)?);
+							type_arguments.push(parse_type(messages, tokenizer)?);
 							if tokenizer.peek_kind() != Ok(TokenKind::Comma) {
 								break;
 							}
@@ -556,13 +575,13 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 					}
 
 					let close_bracket = tokenizer.expect(messages, TokenKind::CloseBracket)?;
-					parsed_path.span + close_bracket.span
+					path_segments.span + close_bracket.span
 				}
 
-				_ => parsed_path.span,
+				_ => path_segments.span,
 			};
 
-			Node::new(Type::Path { segments, arguments }, span)
+			Node::new(Type::Path { path_segments, type_arguments }, span)
 		}
 	};
 

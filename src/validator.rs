@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
+use crate::tree::Node;
 use crate::tree::{self, BinaryOperator, PathSegments};
 
 #[derive(Debug)]
@@ -77,7 +78,7 @@ impl<'a, 'b> Context<'a, 'b> {
 			.lookup_symbol(self.messages, self.root_layers, self.type_store, path)
 	}
 
-	fn lookup_type(&mut self, parsed_type: &tree::Type<'a>) -> Option<TypeId> {
+	fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
 		self.type_store
 			.lookup_type(self.messages, self.root_layers, self.symbols, parsed_type)
 	}
@@ -417,13 +418,13 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
-		parsed_type: &tree::Type<'a>,
+		parsed_type: &Node<tree::Type<'a>>,
 	) -> Option<TypeId> {
-		let (segments, arguments) = match parsed_type {
+		let (path_segments, type_arguments) = match &parsed_type.item {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner.item)?;
+				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner)?;
 				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
 				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
 
@@ -433,7 +434,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner.item)?;
+				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner)?;
 				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
 				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
 
@@ -443,17 +444,16 @@ impl<'a> TypeStore<'a> {
 				return Some(TypeId { index, specialization });
 			}
 
-			tree::Type::Path { segments, arguments } => (segments, arguments),
+			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
 		};
 
-		assert!(!segments.segments.is_empty());
-		let symbol = symbols.lookup_symbol(messages, root_layers, self, &segments)?;
+		assert!(!path_segments.item.segments.is_empty());
+		let symbol = symbols.lookup_symbol(messages, root_layers, self, &path_segments.item)?;
 
 		let type_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_index } => {
-				if !arguments.is_empty() {
-					let span = segments.segments.last().unwrap().span;
-					messages.error(message!("Builtin types do not accept type arguments").span(span));
+				if !type_arguments.is_empty() {
+					messages.error(message!("Builtin types do not accept type arguments").span(parsed_type.span));
 					return None;
 				}
 
@@ -463,15 +463,14 @@ impl<'a> TypeStore<'a> {
 			SymbolKind::Type { type_index } => type_index,
 
 			_ => {
-				let span = segments.segments.last().unwrap().span;
-				messages.error(message!("Symbol {:?} is not a type", symbol.name).span(span));
+				messages.error(message!("Symbol {:?} is not a type", symbol.name).span(path_segments.span));
 				return None;
 			}
 		};
 
-		let mut type_args = Vec::with_capacity(arguments.len());
-		for argument in arguments {
-			type_args.push(self.lookup_type(messages, root_layers, symbols, &argument.item)?);
+		let mut type_args = Vec::with_capacity(type_arguments.len());
+		for argument in type_arguments {
+			type_args.push(self.lookup_type(messages, root_layers, symbols, &argument)?);
 		}
 
 		let user_type = &mut self.user_types[type_index - self.primatives.len()];
@@ -836,9 +835,12 @@ fn fill_block_types<'a>(
 				.unwrap();
 
 			for field in &statement.fields {
+				// TODO: Refactor this to look nicer
 				let generic_type = match &field.parsed_type.item {
-					tree::Type::Path { segments, arguments } if segments.len() == 1 && arguments.is_empty() => {
-						let segment = segments.segments[0];
+					tree::Type::Path { path_segments, type_arguments }
+						if path_segments.item.len() == 1 && type_arguments.is_empty() =>
+					{
+						let segment = path_segments.item.segments[0];
 
 						let user_type = &type_store.user_types[type_index - type_store.primatives.len()];
 						let struct_shape = match &user_type.kind {
@@ -865,7 +867,7 @@ fn fill_block_types<'a>(
 				let field_type = match generic_type {
 					Some(field_type) => field_type,
 
-					None => match type_store.lookup_type(messages, root_layers, symbols, &field.parsed_type.item) {
+					None => match type_store.lookup_type(messages, root_layers, symbols, &field.parsed_type) {
 						Some(id) => GenericOrTypeId::TypeId { id },
 						None => return,
 					},
@@ -897,8 +899,8 @@ fn create_block_functions<'a>(
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
-			let parsed_type = &statement.parsed_type.item;
-			let single_sement = parsed_type.as_single_segment();
+			let parsed_type = &statement.parsed_type;
+			let single_sement = parsed_type.item.as_single_segment();
 
 			let mut generics = statement.generics.iter().enumerate();
 			let generic = generics.find(|(_, g)| single_sement == Some(g.item));
@@ -913,8 +915,8 @@ fn create_block_functions<'a>(
 
 			let mut parameters = Vec::new();
 			for parameter in &statement.parameters {
-				let parsed_type = &parameter.item.parsed_type.item;
-				let single_sement = parsed_type.as_single_segment();
+				let parsed_type = &parameter.item.parsed_type;
+				let single_sement = parsed_type.item.as_single_segment();
 
 				let mut generics = statement.generics.iter().enumerate();
 				let generic = generics.find(|(_, g)| single_sement == Some(g.item));
@@ -1215,7 +1217,7 @@ fn trace_return(context: &Context, block: &Block) -> Option<TracedReturn> {
 
 fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<Const<'a>> {
 	let explicit_type = match &statement.item.parsed_type {
-		Some(parsed_type) => context.lookup_type(&parsed_type.item),
+		Some(parsed_type) => context.lookup_type(&parsed_type),
 		None => None,
 	};
 	let expression = validate_expression(context, &statement.item.expression)?;
@@ -1243,7 +1245,7 @@ fn validate_binding<'a>(
 ) -> Option<Binding<'a>> {
 	let expression = validate_expression(context, &statement.item.expression)?;
 	if let Some(parsed_type) = &statement.item.parsed_type {
-		let type_id = context.lookup_type(&parsed_type.item)?;
+		let type_id = context.lookup_type(&parsed_type)?;
 		if type_id != expression.type_id {
 			context.error(
 				message!(
@@ -1302,7 +1304,65 @@ fn validate_expression<'a>(
 			Expression { span, type_id: context.type_store.string_type_id, kind }
 		}
 
-		tree::Expression::StructLiteral(_) => unimplemented!("tree::Expression::StructLiteral"),
+		tree::Expression::StructLiteral(literal) => {
+			let type_id = context.lookup_type(&literal.parsed_type)?;
+			let user_type = &context.type_store.user_types[type_id.index - context.type_store.primatives.len()];
+			let shape = match &user_type.kind {
+				UserTypeKind::Struct { shape } => shape,
+			};
+
+			// Hate this
+			let fields = shape.concrete[type_id.specialization].fields.clone();
+			let mut fields = fields.iter();
+
+			let mut field_initializers = Vec::new();
+
+			for intializer in &literal.initializer.item.field_initializers {
+				let expression = validate_expression(context, &intializer.expression)?;
+
+				let field = match fields.next() {
+					Some(field) => field,
+
+					None => {
+						context.error(
+							message!("Unexpected field initalizer, to many field initalizers")
+								.span(intializer.name.span),
+						);
+						continue;
+					}
+				};
+
+				if field.name != intializer.name.item {
+					context.error(
+						message!(
+							"Expected initalizer for field named {:?}, got {:?} instead",
+							field.name,
+							intializer.name.item,
+						)
+						.span(intializer.name.span),
+					);
+					continue;
+				}
+
+				if field.type_id != expression.type_id {
+					context.error(
+						message!(
+							"Field intializer type mismatch, expected {} but got {} instead",
+							context.type_name(field.type_id),
+							context.type_name(expression.type_id),
+						)
+						.span(intializer.name.span + expression.span),
+					);
+					continue;
+				}
+
+				let field_index = field.field_index;
+				field_initializers.push(FieldInitializer { field_index, expression });
+			}
+
+			let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
+			Expression { span, type_id, kind }
+		}
 
 		tree::Expression::Call(call) => {
 			let symbol = context.lookup_symbol(&call.path_segments.item)?;

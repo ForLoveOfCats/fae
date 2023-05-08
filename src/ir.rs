@@ -147,6 +147,7 @@ impl<'a> StructShape<'a> {
 			return None;
 		}
 
+		let mut next_field_index = 0;
 		let fields = self
 			.fields
 			.iter()
@@ -156,7 +157,9 @@ impl<'a> StructShape<'a> {
 					GenericOrTypeId::Generic { index } => type_arguments[index],
 				};
 
-				Field { name: field.item.name, type_id }
+				let field_index = next_field_index;
+				next_field_index += 1;
+				Field { name: field.item.name, type_id, field_index }
 			})
 			.collect::<Vec<_>>();
 
@@ -178,10 +181,11 @@ pub struct Struct<'a> {
 	pub fields: Vec<Field<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Field<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
+	pub field_index: usize,
 }
 
 #[derive(Debug)]
@@ -404,13 +408,13 @@ pub struct StringLiteral<'a> {
 
 #[derive(Debug)]
 pub struct StructLiteral<'a> {
-	pub name: &'a str,
+	pub type_id: TypeId,
 	pub field_initializers: Vec<FieldInitializer<'a>>,
 }
 
 #[derive(Debug)]
 pub struct FieldInitializer<'a> {
-	pub name: &'a str,
+	pub field_index: usize,
 	pub expression: Expression<'a>,
 }
 

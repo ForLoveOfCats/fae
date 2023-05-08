@@ -126,8 +126,7 @@ fn generate_user_type(type_store: &TypeStore, index: usize, user_type: &UserType
 
 				for field in &concrete.fields {
 					generate_type_id(type_store, field.type_id, output)?;
-					// TODO: These should have an id instead of using the name here
-					write!(output, " {};\n", field.name)?;
+					write!(output, " fi_{};\n", field.field_index)?;
 				}
 
 				write!(output, "}} ")?;
@@ -227,6 +226,18 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 	Ok(())
 }
 
+fn generate_struct_literal(type_store: &TypeStore, literal: &StructLiteral, output: Output) -> Result {
+	generate_struct_construction(type_store, literal.type_id, output, |output| {
+		for initalizer in &literal.field_initializers {
+			write!(output, ".fi_{} = ", initalizer.field_index)?;
+			generate_expression(type_store, &initalizer.expression, output)?;
+			write!(output, ", ")?;
+		}
+
+		Ok(())
+	})
+}
+
 fn generate_call(type_store: &TypeStore, call: &Call, output: Output) -> Result {
 	generate_functon_id(call.function_id, output)?;
 	write!(output, "(")?;
@@ -273,6 +284,8 @@ fn generate_expression(type_store: &TypeStore, expression: &Expression, output: 
 				write!(output, ".items = (u8*){:?}, .len = {}", literal.value, literal.value.len())
 			})
 		}
+
+		ExpressionKind::StructLiteral(literal) => generate_struct_literal(type_store, literal, output),
 
 		ExpressionKind::Call(call) => generate_call(type_store, call, output),
 
