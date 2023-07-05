@@ -3,6 +3,7 @@ use crate::ir::*;
 use crate::span::Span;
 use crate::tree::Node;
 use crate::tree::{self, BinaryOperator, PathSegments};
+use crate::type_store::*;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b> {
@@ -176,8 +177,8 @@ impl<'a> Symbols<'a> {
 
 	// TODO: Use named return in Fae
 	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) -> bool {
-		// TODO: Allow duplicate symbole when symbol is variable
-		if let Some(found) = self.symbols.iter().find(|s| s.name == symbol.name) {
+		// TODO: Allow duplicate symbol when symbol is variable
+		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
 			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 			messages.error(
 				message!("Duplicate symbol {:?}", symbol.name)
@@ -191,7 +192,7 @@ impl<'a> Symbols<'a> {
 		}
 	}
 
-	fn lookup_symbol(
+	pub fn lookup_symbol(
 		&self,
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
@@ -208,7 +209,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			if let Some(&found) = self.symbols.iter().find(|symbol| symbol.name == name) {
+			if let Some(&found) = self.symbols.iter().rev().find(|symbol| symbol.name == name) {
 				return Some(found);
 			}
 
@@ -231,7 +232,6 @@ impl<'a> Readables<'a> {
 	}
 
 	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
-		let index = self.readables.len();
 		self.readables.push(Readable { name, type_id, kind });
 		index
 	}
@@ -283,265 +283,6 @@ impl<'a> RootLayer<'a> {
 	fn importable_functions(&self) -> &[Symbol<'a>] {
 		let types_len = self.importable_types_len + self.imported_types_len;
 		&self.symbols.symbols[types_len..types_len + self.importable_functions_len]
-	}
-}
-
-#[derive(Debug)]
-struct Primatives {
-	next_index: usize,
-	primatives: Vec<PrimativeType>,
-}
-
-impl Primatives {
-	fn new() -> Primatives {
-		Primatives { next_index: 0, primatives: Vec::new() }
-	}
-
-	fn len(&self) -> usize {
-		self.next_index
-	}
-
-	fn push<'a>(&mut self, name: &'static str, kind: PrimativeKind) -> Symbol<'a> {
-		let type_id = TypeId { index: self.next_type_index(), specialization: 0 };
-		self.primatives.push(PrimativeType { name, kind, type_id });
-		let kind = SymbolKind::BuiltinType { type_index: type_id.index };
-		Symbol { name, kind, span: None, file_index: None }
-	}
-
-	fn next_type_index(&mut self) -> usize {
-		let index = self.next_index;
-		self.next_index += 1;
-		index
-	}
-}
-
-#[derive(Debug)]
-pub struct TypeStore<'a> {
-	primatives: Primatives,
-	primative_type_symbols: Vec<Symbol<'a>>,
-
-	user_types: Vec<UserType<'a>>,
-
-	void_type_id: TypeId,
-	reference_type_index: usize,
-	slice_type_index: usize,
-	slice_specializations: Vec<usize>,
-
-	pub u32_type_id: TypeId,
-	pub u64_type_id: TypeId,
-	pub f64_type_id: TypeId,
-	pub string_type_id: TypeId,
-}
-
-impl<'a> TypeStore<'a> {
-	pub fn new() -> Self {
-		let mut primative_type_symbols = Vec::new();
-		let mut primatives = Primatives::new();
-
-		let void_type_id = TypeId { index: primatives.next_index, specialization: 0 };
-		primative_type_symbols.push(primatives.push("void", PrimativeKind::Void));
-
-		primative_type_symbols.push(primatives.push("i8", PrimativeKind::I8));
-		primative_type_symbols.push(primatives.push("i16", PrimativeKind::I16));
-		primative_type_symbols.push(primatives.push("i32", PrimativeKind::I32));
-		primative_type_symbols.push(primatives.push("i64", PrimativeKind::I64));
-
-		let u8_type_index = primatives.next_index;
-		primative_type_symbols.push(primatives.push("u8", PrimativeKind::U8));
-		primative_type_symbols.push(primatives.push("u16", PrimativeKind::U16));
-		let u32_type_index = primatives.next_index;
-		primative_type_symbols.push(primatives.push("u32", PrimativeKind::U32));
-		let u64_type_index = primatives.next_index;
-		primative_type_symbols.push(primatives.push("u64", PrimativeKind::U64));
-
-		primative_type_symbols.push(primatives.push("f16", PrimativeKind::F16));
-		primative_type_symbols.push(primatives.push("f32", PrimativeKind::F32));
-		let f64_type_index = primatives.next_index;
-		primative_type_symbols.push(primatives.push("f64", PrimativeKind::F64));
-
-		let reference_type_index = primatives.next_type_index();
-		let slice_type_index = primatives.next_type_index();
-		let u32_type_id = TypeId { index: u32_type_index, specialization: 0 };
-		let u64_type_id = TypeId { index: u64_type_index, specialization: 0 };
-		let f64_type_id = TypeId { index: f64_type_index, specialization: 0 };
-		let string_type_id = TypeId { index: slice_type_index, specialization: u8_type_index };
-
-		TypeStore {
-			primatives,
-			primative_type_symbols,
-			user_types: Vec::new(),
-			void_type_id,
-			reference_type_index,
-			slice_type_index,
-			slice_specializations: Vec::new(),
-			u32_type_id,
-			u64_type_id,
-			f64_type_id,
-			string_type_id,
-		}
-	}
-
-	pub fn primative_len(&self) -> usize {
-		self.primatives.len()
-	}
-
-	pub fn user_types(&self) -> &[UserType] {
-		&self.user_types
-	}
-
-	pub fn slice_type_index(&self) -> usize {
-		self.slice_type_index
-	}
-
-	pub fn slice_specializations(&self) -> &[usize] {
-		&self.slice_specializations
-	}
-
-	#[must_use]
-	fn register_type(
-		&mut self,
-		name: &'a str,
-		kind: UserTypeKind<'a>,
-		span: Span,
-		file_index: Option<usize>,
-		module_path: &'a [String],
-	) -> Symbol<'a> {
-		let type_index = self.user_types.len() + self.primatives.len();
-		assert!(type_index < u32::MAX as usize, "{type_index}");
-		self.user_types.push(UserType { span, module_path, kind });
-		let kind = SymbolKind::Type { type_index };
-		Symbol { name, kind, span: Some(span), file_index }
-	}
-
-	fn lookup_type(
-		&mut self,
-		messages: &mut Messages,
-		root_layers: &RootLayers<'a>,
-		symbols: &Symbols<'a>,
-		parsed_type: &Node<tree::Type<'a>>,
-	) -> Option<TypeId> {
-		let (path_segments, type_arguments) = match &parsed_type.item {
-			tree::Type::Void => return Some(self.void_type_id),
-
-			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner)?;
-				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
-				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
-
-				let index = self.reference_type_index;
-				let specialization = inner_id.index | inner_id.specialization << 4 * 8;
-				return Some(TypeId { index, specialization });
-			}
-
-			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner)?;
-				assert!(inner_id.index < u32::MAX as usize, "{}", inner_id.index);
-				assert!(inner_id.specialization < u32::MAX as usize, "{}", inner_id.specialization);
-
-				let index = self.slice_type_index;
-				let specialization = inner_id.index | inner_id.specialization << 4 * 8;
-				self.slice_specializations.push(specialization);
-				return Some(TypeId { index, specialization });
-			}
-
-			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
-		};
-
-		assert!(!path_segments.item.segments.is_empty());
-		let symbol = symbols.lookup_symbol(messages, root_layers, self, &path_segments.item)?;
-
-		let type_index = match symbol.kind {
-			SymbolKind::BuiltinType { type_index } => {
-				if !type_arguments.is_empty() {
-					messages.error(message!("Builtin types do not accept type arguments").span(parsed_type.span));
-					return None;
-				}
-
-				return Some(self.primatives.primatives[type_index].type_id);
-			}
-
-			SymbolKind::Type { type_index } => type_index,
-
-			_ => {
-				messages.error(message!("Symbol {:?} is not a type", symbol.name).span(path_segments.span));
-				return None;
-			}
-		};
-
-		let mut type_args = Vec::with_capacity(type_arguments.len());
-		for argument in type_arguments {
-			type_args.push(self.lookup_type(messages, root_layers, symbols, &argument)?);
-		}
-
-		let user_type = &mut self.user_types[type_index - self.primatives.len()];
-		let concrete_index = match &mut user_type.kind {
-			UserTypeKind::Struct { shape } => shape.get_or_add_specialization(messages, user_type.span, type_args)?,
-		};
-
-		Some(TypeId { index: type_index, specialization: concrete_index })
-	}
-
-	pub fn type_name(&self, module_path: &'a [String], type_id: TypeId) -> String {
-		if type_id.index == self.reference_type_index {
-			let type_id = Self::unpack_ref_slice_specialization(type_id.specialization);
-			return format!("`&{}`", self.type_name(module_path, type_id));
-		}
-
-		if type_id.index == self.slice_type_index() {
-			let type_id = Self::unpack_ref_slice_specialization(type_id.specialization);
-			return format!("`&[{}]`", self.type_name(module_path, type_id));
-		}
-
-		if type_id.index >= self.primatives.len() {
-			let user_type = &self.user_types[type_id.index - self.primatives.len()];
-			match &user_type.kind {
-				UserTypeKind::Struct { shape } => {
-					let mut type_module_path = user_type.module_path;
-					for index in 0..module_path.len().min(module_path.len()) {
-						if user_type.module_path[index] == module_path[index] {
-							type_module_path = &type_module_path[1..];
-						}
-					}
-
-					let type_module_path = if user_type.module_path.is_empty() {
-						String::new()
-					} else {
-						format!("{}::", user_type.module_path.join("::"))
-					};
-
-					let specialization = &shape.concrete[type_id.specialization];
-					let generics = if specialization.type_arguments.is_empty() {
-						String::new()
-					} else {
-						let mut generics = String::from("[");
-						for &type_argument in &specialization.type_arguments {
-							generics.push_str(&self.type_name(module_path, type_argument));
-						}
-						generics.push(']');
-						generics
-					};
-
-					format!("`{type_module_path}{}{generics}`", shape.name)
-				}
-			}
-		} else {
-			assert!(type_id.specialization == 0, "{}", type_id.specialization);
-			format!("`{}`", self.primatives.primatives[type_id.index].name)
-		}
-	}
-
-	pub fn is_reference(&self, type_id: TypeId) -> bool {
-		type_id.index == self.reference_type_index
-	}
-
-	pub fn unpack_ref_slice_specialization(specialization: usize) -> TypeId {
-		let index = 0xFFFFFFFF & specialization;
-		let specialization = specialization >> 4 * 8;
-		TypeId { index, specialization }
-	}
-
-	pub fn primative(&self, type_id: TypeId) -> Option<PrimativeType> {
-		self.primatives.primatives.get(type_id.index).copied()
 	}
 }
 
@@ -802,7 +543,7 @@ fn create_block_types<'a>(
 		if let tree::Statement::Struct(statement) = statement {
 			//Start off with no fields, they will be added during the next pre-pass
 			//so that all types exist in order to populate field types
-			let shape = StructShape::new(statement.name.item, statement.generics.clone());
+			let shape = Struct::new(statement.name.item, statement.generics.clone());
 			let name = statement.name.item;
 			let kind = UserTypeKind::Struct { shape };
 			let span = statement.name.span;
@@ -1004,7 +745,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 			tree::Statement::Struct(statement) => validate_non_generic_struct(&mut context, statement),
 
-			tree::Statement::Function(statement) => validate_non_generic_function(&mut context, statement),
+			tree::Statement::Function(statement) => validate_function(&mut context, statement),
 
 			tree::Statement::Const(statement) => {
 				let validated = match validate_const(&mut context, statement) {
@@ -1079,82 +820,44 @@ fn validate_non_generic_struct<'a>(context: &mut Context<'a, '_>, statement: &'a
 	}
 }
 
-fn validate_non_generic_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Function<'a>) {
-	if statement.generics.is_empty() {
-		let shape_index = context
-			.symbols
-			.symbols
-			.iter()
-			.find_map(|symbol| {
-				if let SymbolKind::Function { shape_index } = symbol.kind {
-					if symbol.name == statement.name.item {
-						return Some(shape_index);
-					}
+fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Function<'a>) {
+	let shape_index = context
+		.symbols
+		.symbols
+		.iter()
+		.rev()
+		.find_map(|symbol| {
+			if let SymbolKind::Function { shape_index } = symbol.kind {
+				if symbol.name == statement.name.item {
+					return Some(shape_index);
 				}
-				None
-			})
-			.unwrap();
-
-		validate_function(context, shape_index, statement.name.span, Vec::new(), &[]);
-	}
-}
-
-struct ValidatedFunction {
-	type_id: TypeId,
-	function_id: FunctionId,
-}
-
-fn validate_function<'a>(
-	context: &mut Context<'a, '_>,
-	shape_index: usize,
-	invoke_span: Span,
-	type_arguments: Vec<TypeId>,
-	arguments: &[Expression],
-) -> Option<ValidatedFunction> {
-	let shape = &mut context.function_store.shapes[shape_index];
-	let name_span = shape.name.span;
-	let tree_block = shape.block;
-	let index = shape.get_or_add_specialization(context.messages, context.readables, invoke_span, type_arguments)?;
-
-	let specialized = &shape.concrete[index];
-	let type_id = specialized.return_type;
-	if specialized.block.is_some() {
-		// This specialization has already been validated
-		let function_id = FunctionId { shape_index, specialization_index: index };
-		return Some(ValidatedFunction { type_id, function_id });
-	}
-
-	let parameters = specialized.parameters.clone();
-	if arguments.len() != parameters.len() {
-		let message = message!("Expected {} arguments but got {}", parameters.len(), arguments.len());
-		context.error(message.span(invoke_span));
-	}
-
-	for (index, parameter) in parameters.iter().enumerate() {
-		if let Some(argument) = arguments.get(index) {
-			if parameter.type_id != argument.type_id {
-				context.error(
-					message!(
-						"Argument type mismatch, expected {} but got {}",
-						context.type_name(parameter.type_id),
-						context.type_name(argument.type_id)
-					)
-					.span(argument.span),
-				);
 			}
-		}
+			None
+		})
+		.unwrap();
+
+	let mut scope = context.child_scope();
+
+	for (generic_index, generic) in statement.generics.iter().enumerate() {
+		let kind = SymbolKind::Generic { function_shape_index: shape_index, generic_index };
+		scope.push_symbol(Symbol {
+			name: generic.item,
+			kind,
+			span: Some(generic.span),
+			file_index: Some(context.file_index),
+		})
 	}
 
-	let mut child = context.child_scope();
-	for parameter in &parameters {
+	for parameter in &statement.parameters {
+		let parameter = parameter.item;
 		let kind = match parameter.is_mutable {
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
 		};
-		child.push_readable_with_index(parameter.name, kind, parameter.readable_index);
+		scope.push_readable_with_index(parameter.name, kind, parameter.readable_index);
 	}
 
-	let block = validate_block(child, tree_block, false);
+	let block = validate_block(scope, &statement.block.item, false);
 	let traced = trace_return(context, &block);
 
 	// Don't love this chunk of logic
@@ -1163,7 +866,7 @@ fn validate_function<'a>(
 		if let Some(traced) = traced {
 			if traced.type_id != context.type_store.void_type_id {
 				context.error(message!("Return of value from void function").span(traced.span));
-				return None;
+				return;
 			}
 		}
 	} else {
@@ -1175,26 +878,18 @@ fn validate_function<'a>(
 					context.type_name(type_id),
 					context.type_name(traced.type_id),
 				));
-				return None;
+				return;
 			}
 		} else {
-			context.error(message!("Not all code paths return a value").span(name_span));
-			return None;
+			context.error(message!("Not all code paths return a value").span(statement.name.span));
+			return;
 		}
 	}
-
-	let shape = &mut context.function_store.shapes[shape_index];
-	let concrete = &mut shape.concrete[index];
-	assert!(concrete.block.is_none());
-	concrete.block = Some(block);
-
-	let function_id = FunctionId { shape_index, specialization_index: index };
-	Some(ValidatedFunction { type_id, function_id })
 }
 
 struct TracedReturn {
 	span: Span,
-	type_id: TypeId,
+	type_id: GenericOrTypeId,
 }
 
 // TODO: Update once flow control gets added
@@ -1204,7 +899,7 @@ fn trace_return(context: &Context, block: &Block) -> Option<TracedReturn> {
 		if let StatementKind::Return(statement) = &statement.kind {
 			let type_id = match &statement.expression {
 				Some(expression) => expression.type_id,
-				None => context.type_store.void_type_id,
+				None => GenericOrTypeId::TypeId { id: context.type_store.void_type_id },
 			};
 
 			let span = statement.span;
@@ -1312,7 +1007,7 @@ fn validate_expression<'a>(
 			};
 
 			// Hate this
-			let fields = shape.concrete[type_id.specialization].fields.clone();
+			let fields = shape.specializations[type_id.specialization].fields.clone();
 			let mut fields = fields.iter();
 
 			let mut field_initializers = Vec::new();
@@ -1388,9 +1083,10 @@ fn validate_expression<'a>(
 				arguments.push(expression);
 			}
 
-			let validated = validate_function(context, shape_index, expression.span, type_arguments, &arguments)?;
-			let kind = ExpressionKind::Call(Call { name, function_id: validated.function_id, arguments });
-			Expression { span, type_id: validated.type_id, kind }
+			unimplemented!()
+			// let validated = validate_function(context, shape_index, expression.span, type_arguments, &arguments)?;
+			// let kind = ExpressionKind::Call(Call { name, function_id: validated.function_id, arguments });
+			// Expression { span, type_id: validated.type_id, kind }
 		}
 
 		tree::Expression::Read(read) => {

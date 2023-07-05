@@ -4,7 +4,8 @@ use std::process::{Command, Stdio};
 
 use crate::ir::*;
 use crate::tree::BinaryOperator;
-use crate::validator::{FunctionStore, TypeStore};
+use crate::type_store::TypeStore;
+use crate::validator::FunctionStore;
 
 const CC: &str = "clang";
 
@@ -311,7 +312,7 @@ fn generate_struct_construction(
 }
 
 fn generate_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result {
-	if type_store.is_reference(type_id) {
+	if type_store.is_pointer(type_id) {
 		write!(output, "*")?;
 		let type_id = TypeStore::unpack_ref_slice_specialization(type_id.specialization);
 		return generate_type_id(type_store, type_id, output);

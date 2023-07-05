@@ -1,6 +1,7 @@
 use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::{self, BinaryOperator, Node};
+use crate::type_store::*;
 use crate::validator::Readables;
 
 /*
@@ -31,8 +32,9 @@ pub struct Symbol<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolKind {
-	BuiltinType { type_index: usize }, //Not used for slice/reference as those are not symbols
-	Type { type_index: usize },
+	BuiltinType { type_id: TypeId },
+	Type { shape_index: usize },
+	Generic { function_shape_index: usize, generic_index: usize },
 	Function { shape_index: usize },
 	Const { readable_index: usize },
 	Let { readable_index: usize },
@@ -69,126 +71,6 @@ pub enum ReadableKind {
 }
 
 #[derive(Debug)]
-pub enum GenericOrTypeId {
-	TypeId { id: TypeId },
-	Generic { index: usize },
-}
-
-#[derive(Debug)]
-pub struct UserType<'a> {
-	pub span: Span,
-	pub module_path: &'a [String],
-	pub kind: UserTypeKind<'a>,
-}
-
-#[derive(Debug)]
-pub enum UserTypeKind<'a> {
-	Struct { shape: StructShape<'a> },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct PrimativeType {
-	pub name: &'static str,
-	pub kind: PrimativeKind,
-	pub type_id: TypeId,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PrimativeKind {
-	Void,
-
-	I8,
-	I16,
-	I32,
-	I64,
-
-	U8,
-	U16,
-	U32,
-	U64,
-
-	F16,
-	F32,
-	F64,
-}
-
-#[derive(Debug)]
-pub struct StructShape<'a> {
-	pub name: &'a str,
-	pub generics: Vec<Node<&'a str>>,
-
-	pub fields: Vec<Node<FieldShape<'a>>>,
-
-	pub concrete: Vec<Struct<'a>>,
-}
-
-impl<'a> StructShape<'a> {
-	pub fn new(name: &'a str, generics: Vec<Node<&'a str>>) -> Self {
-		StructShape { name, generics, fields: Vec::new(), concrete: Vec::new() }
-	}
-
-	pub fn get_or_add_specialization(
-		&mut self,
-		messages: &mut Messages,
-		invoke_span: Span,
-		type_arguments: Vec<TypeId>,
-	) -> Option<usize> {
-		for (index, existing) in self.concrete.iter().enumerate() {
-			if existing.type_arguments == type_arguments {
-				return Some(index);
-			}
-		}
-
-		if self.generics.len() != type_arguments.len() {
-			messages.error(
-				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
-					.span(invoke_span),
-			);
-			return None;
-		}
-
-		let mut next_field_index = 0;
-		let fields = self
-			.fields
-			.iter()
-			.map(|field| {
-				let type_id = match field.item.field_type {
-					GenericOrTypeId::TypeId { id } => id,
-					GenericOrTypeId::Generic { index } => type_arguments[index],
-				};
-
-				let field_index = next_field_index;
-				next_field_index += 1;
-				Field { name: field.item.name, type_id, field_index }
-			})
-			.collect::<Vec<_>>();
-
-		let concrete = Struct { type_arguments, fields };
-		self.concrete.push(concrete);
-		Some(self.concrete.len() - 1)
-	}
-}
-
-#[derive(Debug)]
-pub struct FieldShape<'a> {
-	pub name: &'a str,
-	pub field_type: GenericOrTypeId,
-}
-
-#[derive(Debug)]
-pub struct Struct<'a> {
-	pub type_arguments: Vec<TypeId>,
-	pub fields: Vec<Field<'a>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Field<'a> {
-	pub name: &'a str,
-	pub type_id: TypeId,
-	pub field_index: usize,
-}
-
-#[derive(Debug)]
 pub struct FunctionShape<'a> {
 	pub name: Node<&'a str>,
 	pub module_path: &'a [String],
@@ -198,8 +80,8 @@ pub struct FunctionShape<'a> {
 	pub generics: Vec<Node<&'a str>>,
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: GenericOrTypeId,
+	pub block: Option<Block<'a>>,
 
-	pub block: &'a tree::Block<'a>,
 	pub concrete: Vec<Function<'a>>,
 }
 
@@ -223,7 +105,7 @@ impl<'a> FunctionShape<'a> {
 			generics,
 			parameters,
 			return_type,
-			block,
+			block: None,
 			concrete: Vec::new(),
 		}
 	}
@@ -274,7 +156,7 @@ impl<'a> FunctionShape<'a> {
 		};
 
 		let index = self.concrete.len();
-		let concrete = Function { type_arguments, parameters, return_type, block: None };
+		let concrete = Function { type_arguments, parameters, return_type };
 		self.concrete.push(concrete);
 		Some(index)
 	}
@@ -292,7 +174,6 @@ pub struct Function<'a> {
 	pub type_arguments: Vec<TypeId>,
 	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
-	pub block: Option<Block<'a>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -309,21 +190,15 @@ pub struct FunctionId {
 	pub specialization_index: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TypeId {
-	pub index: usize,
-	pub specialization: usize,
-}
-
 #[derive(Debug)]
 pub struct Block<'a> {
-	pub type_id: TypeId,
+	pub type_id: GenericOrTypeId,
 	pub statements: Vec<Statement<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Statement<'a> {
-	pub type_id: TypeId,
+	pub type_id: GenericOrTypeId,
 	pub kind: StatementKind<'a>,
 }
 
@@ -342,14 +217,14 @@ pub enum StatementKind<'a> {
 #[derive(Debug)]
 pub struct Const<'a> {
 	pub name: &'a str,
-	pub type_id: TypeId,
+	pub type_id: GenericOrTypeId,
 	pub expression: Expression<'a>,
 }
 
 #[derive(Debug)]
 pub struct Binding<'a> {
 	pub name: &'a str,
-	pub type_id: TypeId,
+	pub type_id: GenericOrTypeId,
 	pub expression: Expression<'a>,
 	pub readable_index: usize,
 	pub is_mutable: bool,
@@ -364,7 +239,7 @@ pub struct Return<'a> {
 #[derive(Debug)]
 pub struct Expression<'a> {
 	pub span: Span,
-	pub type_id: TypeId,
+	pub type_id: GenericOrTypeId,
 	pub kind: ExpressionKind<'a>,
 }
 

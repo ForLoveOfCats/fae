@@ -8,6 +8,7 @@ mod parser;
 mod span;
 mod tokenizer;
 mod tree;
+mod type_store;
 mod validator;
 
 use std::path::Path;
