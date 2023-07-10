@@ -46,6 +46,7 @@ impl std::fmt::Display for SymbolKind {
 		let name = match self {
 			SymbolKind::BuiltinType { .. } => "a built in type",
 			SymbolKind::Type { .. } => "a type",
+			SymbolKind::Generic { .. } => "a generic parameter",
 			SymbolKind::Function { .. } => "a function",
 			SymbolKind::Const { .. } => "a constant",
 			SymbolKind::Let { .. } => "an immutable binding",
@@ -192,13 +193,13 @@ pub struct FunctionId {
 
 #[derive(Debug)]
 pub struct Block<'a> {
-	pub type_id: GenericOrTypeId,
+	pub type_id: TypeId,
 	pub statements: Vec<Statement<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Statement<'a> {
-	pub type_id: GenericOrTypeId,
+	pub type_id: TypeId,
 	pub kind: StatementKind<'a>,
 }
 
@@ -217,14 +218,14 @@ pub enum StatementKind<'a> {
 #[derive(Debug)]
 pub struct Const<'a> {
 	pub name: &'a str,
-	pub type_id: GenericOrTypeId,
+	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }
 
 #[derive(Debug)]
 pub struct Binding<'a> {
 	pub name: &'a str,
-	pub type_id: GenericOrTypeId,
+	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 	pub readable_index: usize,
 	pub is_mutable: bool,
@@ -239,7 +240,7 @@ pub struct Return<'a> {
 #[derive(Debug)]
 pub struct Expression<'a> {
 	pub span: Span,
-	pub type_id: GenericOrTypeId,
+	pub type_id: TypeId,
 	pub kind: ExpressionKind<'a>,
 }
 

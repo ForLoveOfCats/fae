@@ -10,7 +10,7 @@ pub struct TypeId {
 }
 
 impl TypeId {
-	fn index(self) -> usize {
+	pub fn index(self) -> usize {
 		self.entry as usize
 	}
 }
@@ -32,26 +32,35 @@ pub struct StructShape<'a> {
 }
 
 impl<'a> StructShape<'a> {
-	fn get_or_add_specialization(
+	pub fn new(name: &'a str, generics: Vec<Node<&'a str>>) -> Self {
+		StructShape {
+			name,
+			generics,
+			fields: Vec::new(),
+			specializations: Vec::new(),
+		}
+	}
+
+	pub fn get_or_add_specialization(
 		&mut self,
 		messages: &mut Messages,
-		type_store: &mut TypeStore,
+		type_entries: &mut Vec<TypeEntry>,
 		shape_index: usize,
 		invoke_span: Span,
 		type_arguments: Vec<TypeId>,
 	) -> Option<TypeId> {
-		for (index, existing) in self.specializations.iter().enumerate() {
-			if existing.type_arguments == type_arguments {
-				return Some(existing.type_id);
-			}
-		}
-
-		if self.generics.len() != type_arguments.len() {
+		if type_arguments.len() != self.generics.len() {
 			messages.error(
 				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
 					.span(invoke_span),
 			);
 			return None;
+		}
+
+		for existing in &self.specializations {
+			if existing.type_arguments == type_arguments {
+				return Some(existing.type_id);
+			}
 		}
 
 		let mut fields = Vec::with_capacity(self.fields.len());
@@ -64,9 +73,9 @@ impl<'a> StructShape<'a> {
 		}
 
 		let specialization_index = self.specializations.len();
-		let type_id = TypeId { entry: type_store.type_entries.len() as u32 };
+		let type_id = TypeId { entry: type_entries.len() as u32 };
 		let entry = TypeEntry::new(TypeEntryKind::UserType { shape_index, specialization_index });
-		type_store.type_entries.push(entry);
+		type_entries.push(entry);
 
 		self.specializations.push(Struct { type_id, type_arguments, fields });
 		Some(type_id)
@@ -125,9 +134,9 @@ pub enum PrimativeKind {
 }
 
 #[derive(Debug, Clone, Copy, Hash)]
-struct TypeEntry {
-	kind: TypeEntryKind,
-	reference_entries: Option<u32>,
+pub struct TypeEntry {
+	pub kind: TypeEntryKind,
+	pub reference_entries: Option<u32>,
 }
 
 impl TypeEntry {
@@ -137,20 +146,21 @@ impl TypeEntry {
 }
 
 #[derive(Debug, Clone, Copy, Hash)]
-enum TypeEntryKind {
+pub enum TypeEntryKind {
 	BuiltinType { kind: PrimativeKind },
 	UserType { shape_index: usize, specialization_index: usize },
 	Pointer { mutable: bool, type_id: TypeId },
 	Slice { mutable: bool, type_id: TypeId },
-	Generic { index: usize },
+	UserTypeGeneric { shape_index: usize, generic_index: usize },
+	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 }
 
 #[derive(Debug)]
 pub struct TypeStore<'a> {
-	primative_type_symbols: Vec<Symbol<'a>>,
+	pub primative_type_symbols: Vec<Symbol<'a>>,
 
-	type_entries: Vec<TypeEntry>,
-	user_types: Vec<UserType<'a>>,
+	pub type_entries: Vec<TypeEntry>,
+	pub user_types: Vec<UserType<'a>>,
 
 	void_type_id: TypeId,
 	u32_type_id: TypeId,
@@ -208,6 +218,10 @@ impl<'a> TypeStore<'a> {
 		type_store.string_type_id = string_type_id;
 
 		type_store
+	}
+
+	pub fn void_type_id(&self) -> TypeId {
+		self.void_type_id
 	}
 
 	pub fn u32_type_id(&self) -> TypeId {
@@ -275,7 +289,6 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	#[must_use]
 	pub fn register_type(
 		&mut self,
 		name: &'a str,
@@ -284,11 +297,26 @@ impl<'a> TypeStore<'a> {
 		file_index: Option<usize>,
 		module_path: &'a [String],
 	) -> Symbol<'a> {
+		// Type entry gets added during specialization
 		let shape_index = self.user_types.len();
 		self.user_types.push(UserType { span, module_path, kind });
 
 		let kind = SymbolKind::Type { shape_index };
 		Symbol { name, kind, span: Some(span), file_index }
+	}
+
+	pub fn register_function_generic(
+		&mut self,
+		name: &'a str,
+		span: Span,
+		function_shape_index: usize,
+		generic_index: usize,
+		file_index: usize,
+	) -> Symbol<'a> {
+		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
+		self.type_entries.push(TypeEntry::new(kind));
+		let kind = SymbolKind::Generic { function_shape_index, generic_index };
+		Symbol { name, kind, span: Some(span), file_index: Some(file_index) }
 	}
 
 	pub fn lookup_type(
@@ -341,9 +369,10 @@ impl<'a> TypeStore<'a> {
 		}
 
 		let user_type = &mut self.user_types[shape_index];
+		let type_entries = &mut self.type_entries;
 		let type_id = match &mut user_type.kind {
 			UserTypeKind::Struct { shape } => {
-				shape.get_or_add_specialization(messages, self, shape_index, user_type.span, type_args)?
+				shape.get_or_add_specialization(messages, type_entries, shape_index, user_type.span, type_args)?
 			}
 		};
 
@@ -396,7 +425,13 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::Generic { index } => format!("generic {index}"), // TODO
+			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
+				format!("function generic {function_shape_index}:{generic_index}") // TODO
+			}
+
+			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+				format!("user type generic {shape_index}:{generic_index}") // TODO
+			}
 		}
 	}
 

@@ -1,7 +1,7 @@
 #[macro_use]
 mod error;
 
-mod c_codegen;
+// mod c_codegen;
 mod file;
 mod ir;
 mod parser;
@@ -11,13 +11,14 @@ mod tree;
 mod type_store;
 mod validator;
 
-use std::path::Path;
+// use std::path::Path;
 
-use c_codegen::{generate_code, OptimizationLevel};
+// use c_codegen::{generate_code, OptimizationLevel};
 use error::Messages;
 use file::load_all_files;
 use parser::parse_file;
-use validator::{validate, FunctionStore, RootLayers, TypeStore};
+use type_store::TypeStore;
+use validator::{validate, FunctionStore, RootLayers};
 
 fn main() {
 	// Can be folded into parallel parsing, ish
@@ -55,11 +56,11 @@ fn main() {
 	messages.reset();
 
 	//Not parallelizable
-	let binary_path = Path::new("./output.executable");
-	generate_code(&type_store, &function_store, OptimizationLevel::None, binary_path);
-	let status = std::process::Command::new(binary_path)
-		.spawn()
-		.expect("Failed to launch resulting binary")
-		.wait();
-	println!("Binary execution result: {status:?}")
+	// let binary_path = Path::new("./output.executable");
+	// generate_code(&type_store, &function_store, OptimizationLevel::None, binary_path);
+	// let status = std::process::Command::new(binary_path)
+	// 	.spawn()
+	// 	.expect("Failed to launch resulting binary")
+	// 	.wait();
+	// println!("Binary execution result: {status:?}")
 }

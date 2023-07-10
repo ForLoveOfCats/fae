@@ -232,6 +232,7 @@ impl<'a> Readables<'a> {
 	}
 
 	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
+		let index = self.readables.len();
 		self.readables.push(Readable { name, type_id, kind });
 		index
 	}
@@ -543,7 +544,7 @@ fn create_block_types<'a>(
 		if let tree::Statement::Struct(statement) = statement {
 			//Start off with no fields, they will be added during the next pre-pass
 			//so that all types exist in order to populate field types
-			let shape = Struct::new(statement.name.item, statement.generics.clone());
+			let shape = StructShape::new(statement.name.item, statement.generics.clone());
 			let name = statement.name.item;
 			let kind = UserTypeKind::Struct { shape };
 			let span = statement.name.span;
@@ -562,13 +563,13 @@ fn fill_block_types<'a>(
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Struct(statement) = statement {
-			let type_index = symbols
+			let shape_index = symbols
 				.symbols
 				.iter()
 				.find_map(|symbol| {
-					if let SymbolKind::Type { type_index } = symbol.kind {
+					if let SymbolKind::Type { shape_index } = symbol.kind {
 						if symbol.name == statement.name.item {
-							return Some(type_index);
+							return Some(shape_index);
 						}
 					}
 					None
@@ -583,7 +584,7 @@ fn fill_block_types<'a>(
 					{
 						let segment = path_segments.item.segments[0];
 
-						let user_type = &type_store.user_types[type_index - type_store.primatives.len()];
+						let user_type = &type_store.user_types[shape_index];
 						let struct_shape = match &user_type.kind {
 							UserTypeKind::Struct { shape } => shape,
 							// _ => unreachable!("{:?}", user_type.kind),
@@ -618,7 +619,7 @@ fn fill_block_types<'a>(
 				let span = field.name.span + field.parsed_type.span;
 				let node = tree::Node::new(field_shape, span);
 
-				let user_type = &mut type_store.user_types[type_index - type_store.primatives.len()];
+				let user_type = &mut type_store.user_types[shape_index];
 				match &mut user_type.kind {
 					UserTypeKind::Struct { shape } => shape.fields.push(node),
 					// _ => unreachable!("{:?}", user_type.kind),
@@ -743,7 +744,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 			tree::Statement::Using(..) => {}
 
-			tree::Statement::Struct(statement) => validate_non_generic_struct(&mut context, statement),
+			tree::Statement::Struct(..) => {}
 
 			tree::Statement::Function(statement) => validate_function(&mut context, statement),
 
@@ -779,7 +780,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 				let expression = expression.and_then(|expression| validate_expression(&mut context, expression));
 				let type_id = match &expression {
 					Some(expression) => expression.type_id,
-					None => context.type_store.void_type_id,
+					None => context.type_store.void_type_id(),
 				};
 
 				let boxed_return = Box::new(Return { span, expression });
@@ -790,38 +791,13 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 	}
 
 	// TODO: Add `give` keywork and support block expressions
-	let type_id = context.type_store.void_type_id;
+	// Make sure to disallow in root of function
+	let type_id = context.type_store.void_type_id();
 	Block { type_id, statements }
 }
 
-fn validate_non_generic_struct<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Struct<'a>) {
-	if statement.generics.is_empty() {
-		let type_index = context
-			.symbols
-			.symbols
-			.iter()
-			.find_map(|symbol| {
-				if let SymbolKind::Type { type_index } = symbol.kind {
-					if symbol.name == statement.name.item {
-						return Some(type_index);
-					}
-				}
-				None
-			})
-			.unwrap();
-
-		let primative_len = context.type_store.primatives.len();
-		let user_type = &mut context.type_store.user_types[type_index - primative_len];
-		let shape = match &mut user_type.kind {
-			UserTypeKind::Struct { shape } => shape,
-		};
-
-		shape.get_or_add_specialization(context.messages, Span::zero(), Vec::new());
-	}
-}
-
 fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Function<'a>) {
-	let shape_index = context
+	let function_shape_index = context
 		.symbols
 		.symbols
 		.iter()
@@ -839,32 +815,47 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	let mut scope = context.child_scope();
 
 	for (generic_index, generic) in statement.generics.iter().enumerate() {
-		let kind = SymbolKind::Generic { function_shape_index: shape_index, generic_index };
-		scope.push_symbol(Symbol {
-			name: generic.item,
-			kind,
-			span: Some(generic.span),
-			file_index: Some(context.file_index),
-		})
+		let symbol = scope.type_store.register_function_generic(
+			generic.item,
+			generic.span,
+			function_shape_index,
+			generic_index,
+			scope.file_index,
+		);
+		scope.push_symbol(symbol);
 	}
 
 	for parameter in &statement.parameters {
-		let parameter = parameter.item;
+		let parameter = &parameter.item;
 		let kind = match parameter.is_mutable {
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
 		};
-		scope.push_readable_with_index(parameter.name, kind, parameter.readable_index);
+
+		let type_id = match scope.lookup_type(&parameter.parsed_type) {
+			Some(type_id) => type_id,
+			None => return,
+		};
+
+		scope.push_readable(parameter.name, type_id, kind);
 	}
 
-	let block = validate_block(scope, &statement.block.item, false);
+	let type_id = match scope.lookup_type(&statement.parsed_type) {
+		Some(type_id) => type_id,
+		None => return,
+	};
+
+	let mut block = validate_block(scope, &statement.block.item, false);
+	assert_eq!(block.type_id, context.type_store.void_type_id()); // Hack
+	block.type_id = type_id;
+
 	let traced = trace_return(context, &block);
 
 	// Don't love this chunk of logic
-	if type_id == context.type_store.void_type_id {
+	if type_id == context.type_store.void_type_id() {
 		// Expects void return
 		if let Some(traced) = traced {
-			if traced.type_id != context.type_store.void_type_id {
+			if traced.type_id != context.type_store.void_type_id() {
 				context.error(message!("Return of value from void function").span(traced.span));
 				return;
 			}
@@ -885,11 +876,15 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 			return;
 		}
 	}
+
+	let shape_block = &mut context.function_store.shapes[function_shape_index].block;
+	assert!(shape_block.is_none());
+	*shape_block = Some(block);
 }
 
 struct TracedReturn {
 	span: Span,
-	type_id: GenericOrTypeId,
+	type_id: TypeId,
 }
 
 // TODO: Update once flow control gets added
@@ -899,7 +894,7 @@ fn trace_return(context: &Context, block: &Block) -> Option<TracedReturn> {
 		if let StatementKind::Return(statement) = &statement.kind {
 			let type_id = match &statement.expression {
 				Some(expression) => expression.type_id,
-				None => GenericOrTypeId::TypeId { id: context.type_store.void_type_id },
+				None => context.type_store.void_type_id(),
 			};
 
 			let span = statement.span;
@@ -981,33 +976,45 @@ fn validate_expression<'a>(
 
 		tree::Expression::IntegerLiteral(literal) => {
 			let kind = ExpressionKind::IntegerLiteral(IntegerLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.u64_type_id, kind }
+			Expression { span, type_id: context.type_store.u64_type_id(), kind }
 		}
 
 		tree::Expression::FloatLiteral(literal) => {
 			let kind = ExpressionKind::FloatLiteral(FloatLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.f64_type_id, kind }
+			Expression { span, type_id: context.type_store.f64_type_id(), kind }
 		}
 
 		tree::Expression::CodepointLiteral(literal) => {
 			let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.u32_type_id, kind }
+			Expression { span, type_id: context.type_store.u32_type_id(), kind }
 		}
 
 		tree::Expression::StringLiteral(literal) => {
 			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.string_type_id, kind }
+			Expression { span, type_id: context.type_store.string_type_id(), kind }
 		}
 
 		tree::Expression::StructLiteral(literal) => {
 			let type_id = context.lookup_type(&literal.parsed_type)?;
-			let user_type = &context.type_store.user_types[type_id.index - context.type_store.primatives.len()];
-			let shape = match &user_type.kind {
+			let type_entry = &context.type_store.type_entries[type_id.index()];
+			let (shape_index, specialization_index) = match &type_entry.kind {
+				TypeEntryKind::UserType { shape_index, specialization_index } => (*shape_index, *specialization_index),
+
+				_ => {
+					let name = context.type_name(type_id);
+					let message = message!("Cannot construct type {name} like a struct as it is not a struct");
+					context.error(message.span(literal.parsed_type.span));
+					return None;
+				}
+			};
+
+			let user_type = &mut context.type_store.user_types[shape_index];
+			let shape = match &mut user_type.kind {
 				UserTypeKind::Struct { shape } => shape,
 			};
 
 			// Hate this
-			let fields = shape.specializations[type_id.specialization].fields.clone();
+			let fields = shape.specializations[specialization_index].fields.clone();
 			let mut fields = fields.iter();
 
 			let mut field_initializers = Vec::new();
@@ -1133,7 +1140,7 @@ fn validate_expression<'a>(
 			}
 
 			let type_id = match op {
-				BinaryOperator::Assign => context.type_store.void_type_id,
+				BinaryOperator::Assign => context.type_store.void_type_id(),
 				_ => left.type_id,
 			};
 
