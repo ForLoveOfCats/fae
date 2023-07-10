@@ -13,6 +13,16 @@ struct MyStruct {
 }
 
 
+generic T
+fn a(arg: T): T {
+	return b[T](arg)
+}
+
+generic T
+fn b(arg: T): T {
+	return arg
+}
+
 
 generic T
 fn generic_function(value: T, mut other: u64, float: f64, char: u32): T {

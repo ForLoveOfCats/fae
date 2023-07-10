@@ -149,6 +149,12 @@ impl<'a> FunctionShape<'a> {
 		invoke_span: Span,
 		type_arguments: Vec<TypeId>,
 	) -> Option<FunctionSpecializationResult> {
+		if self.generics.len() != type_arguments.len() {
+			let error = message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len());
+			messages.error(error.span(invoke_span));
+			return None;
+		}
+
 		let return_type = match self.return_type {
 			GenericOrTypeId::TypeId { id } => id,
 			GenericOrTypeId::Generic { index } => type_arguments[index],
@@ -158,14 +164,6 @@ impl<'a> FunctionShape<'a> {
 			if existing.type_arguments == type_arguments {
 				return Some(FunctionSpecializationResult { specialization_index, return_type });
 			}
-		}
-
-		if self.generics.len() != type_arguments.len() {
-			messages.error(
-				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
-					.span(invoke_span),
-			);
-			return None;
 		}
 
 		let parameters = self
