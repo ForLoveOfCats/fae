@@ -1,7 +1,7 @@
 use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::{self, BinaryOperator, Node};
-use crate::type_store::*;
+use crate::type_store::{self, *};
 use crate::validator::Readables;
 
 /*
@@ -34,7 +34,7 @@ pub struct Symbol<'a> {
 pub enum SymbolKind {
 	BuiltinType { type_id: TypeId },
 	Type { shape_index: usize },
-	Generic { function_shape_index: usize, generic_index: usize },
+	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 	Function { shape_index: usize },
 	Const { readable_index: usize },
 	Let { readable_index: usize },
@@ -46,7 +46,7 @@ impl std::fmt::Display for SymbolKind {
 		let name = match self {
 			SymbolKind::BuiltinType { .. } => "a built in type",
 			SymbolKind::Type { .. } => "a type",
-			SymbolKind::Generic { .. } => "a generic parameter",
+			SymbolKind::FunctionGeneric { .. } => "a function generic parameter",
 			SymbolKind::Function { .. } => "a function",
 			SymbolKind::Const { .. } => "a constant",
 			SymbolKind::Let { .. } => "an immutable binding",
@@ -71,6 +71,13 @@ pub enum ReadableKind {
 	Mut,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct FunctionGenericParameter<'a> {
+	pub name: Node<&'a str>,
+	pub symbol: Symbol<'a>,
+	pub generic_type_id: TypeId,
+}
+
 #[derive(Debug)]
 pub struct FunctionShape<'a> {
 	pub name: Node<&'a str>,
@@ -78,25 +85,49 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
-	pub generics: Vec<Node<&'a str>>,
+	pub generics: Vec<FunctionGenericParameter<'a>>,
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: GenericOrTypeId,
 	pub block: Option<Block<'a>>,
 
-	pub concrete: Vec<Function<'a>>,
+	pub specializations: Vec<Function<'a>>,
+}
+
+// Anonymous structs pls save me
+pub struct FunctionSpecializationResult {
+	pub specialization_index: usize,
+	pub return_type: TypeId,
 }
 
 impl<'a> FunctionShape<'a> {
 	pub fn new(
+		type_store: &mut TypeStore<'a>,
 		name: Node<&'a str>,
 		module_path: &'a [String],
 		file_index: usize,
-		generics: Vec<Node<&'a str>>,
+		function_shape_index: usize,
+		generics_names: Vec<Node<&'a str>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: GenericOrTypeId,
-		block: &'a tree::Block<'a>,
 	) -> Self {
 		let is_main = module_path == &["main"] && name.item == "main";
+
+		let mut generics = Vec::new();
+		for (generic_index, generic) in generics_names.into_iter().enumerate() {
+			let name = generic.item;
+			let generic_type_id = type_store.register_function_generic(
+				name,
+				generic.span,
+				function_shape_index,
+				generic_index,
+				file_index,
+			);
+
+			let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
+			let span = Some(generic.span);
+			let symbol = Symbol { name, kind, span, file_index: Some(file_index) };
+			generics.push(FunctionGenericParameter { name: generic, symbol, generic_type_id });
+		}
 
 		FunctionShape {
 			name,
@@ -107,7 +138,7 @@ impl<'a> FunctionShape<'a> {
 			parameters,
 			return_type,
 			block: None,
-			concrete: Vec::new(),
+			specializations: Vec::new(),
 		}
 	}
 
@@ -117,10 +148,15 @@ impl<'a> FunctionShape<'a> {
 		readables: &mut Readables<'a>,
 		invoke_span: Span,
 		type_arguments: Vec<TypeId>,
-	) -> Option<usize> {
-		for (index, existing) in self.concrete.iter().enumerate() {
+	) -> Option<FunctionSpecializationResult> {
+		let return_type = match self.return_type {
+			GenericOrTypeId::TypeId { id } => id,
+			GenericOrTypeId::Generic { index } => type_arguments[index],
+		};
+
+		for (specialization_index, existing) in self.specializations.iter().enumerate() {
 			if existing.type_arguments == type_arguments {
-				return Some(index);
+				return Some(FunctionSpecializationResult { specialization_index, return_type });
 			}
 		}
 
@@ -151,15 +187,10 @@ impl<'a> FunctionShape<'a> {
 			})
 			.collect::<Vec<_>>();
 
-		let return_type = match self.return_type {
-			GenericOrTypeId::TypeId { id } => id,
-			GenericOrTypeId::Generic { index } => type_arguments[index],
-		};
-
-		let index = self.concrete.len();
+		let specialization_index = self.specializations.len();
 		let concrete = Function { type_arguments, parameters, return_type };
-		self.concrete.push(concrete);
-		Some(index)
+		self.specializations.push(concrete);
+		Some(FunctionSpecializationResult { specialization_index, return_type })
 	}
 }
 

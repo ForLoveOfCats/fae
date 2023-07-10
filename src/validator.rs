@@ -81,7 +81,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
 	fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
 		self.type_store
-			.lookup_type(self.messages, self.root_layers, self.symbols, parsed_type)
+			.lookup_type(self.messages, self.function_store, self.root_layers, self.symbols, parsed_type)
 	}
 
 	fn type_name(&self, type_id: TypeId) -> String {
@@ -315,7 +315,7 @@ pub fn validate<'a>(
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
-	create_and_fill_root_types(messages, root_layers, type_store, parsed_files);
+	create_and_fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 	resolve_root_type_imports(messages, root_layers, parsed_files);
 
 	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
@@ -350,8 +350,9 @@ pub fn validate<'a>(
 
 fn create_and_fill_root_types<'a>(
 	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
@@ -375,7 +376,7 @@ fn create_and_fill_root_types<'a>(
 
 		// Yuck, I do not like this
 		let mut symbols = layer.symbols.clone();
-		fill_block_types(messages, type_store, root_layers, &mut symbols, block);
+		fill_block_types(messages, type_store, function_store, root_layers, &mut symbols, block);
 		root_layers.create_module_path(&parsed_file.module_path).symbols = symbols;
 	}
 }
@@ -557,6 +558,7 @@ fn create_block_types<'a>(
 fn fill_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
@@ -606,13 +608,13 @@ fn fill_block_types<'a>(
 					_ => None,
 				};
 
-				let field_type = match generic_type {
-					Some(field_type) => field_type,
-
-					None => match type_store.lookup_type(messages, root_layers, symbols, &field.parsed_type) {
+				let field_type = if let Some(field_type) = generic_type {
+					field_type
+				} else {
+					match type_store.lookup_type(messages, function_store, root_layers, symbols, &field.parsed_type) {
 						Some(id) => GenericOrTypeId::TypeId { id },
 						None => return,
-					},
+					}
 				};
 
 				let field_shape = FieldShape { name: field.name.item, field_type };
@@ -649,7 +651,7 @@ fn create_block_functions<'a>(
 			let return_type = if let Some(generic) = generic {
 				GenericOrTypeId::Generic { index: generic.0 }
 			} else {
-				match type_store.lookup_type(messages, root_layers, symbols, &parsed_type) {
+				match type_store.lookup_type(messages, function_store, root_layers, symbols, &parsed_type) {
 					Some(id) => GenericOrTypeId::TypeId { id },
 					None => continue,
 				}
@@ -665,7 +667,7 @@ fn create_block_functions<'a>(
 				let parameter_type = if let Some(generic) = generic {
 					GenericOrTypeId::Generic { index: generic.0 }
 				} else {
-					match type_store.lookup_type(messages, root_layers, symbols, &parsed_type) {
+					match type_store.lookup_type(messages, function_store, root_layers, symbols, &parsed_type) {
 						Some(id) => GenericOrTypeId::TypeId { id },
 						None => continue,
 					}
@@ -678,8 +680,16 @@ fn create_block_functions<'a>(
 
 			let name = statement.name;
 			let generics = statement.generics.clone();
-			let block = &statement.block.item;
-			let shape = FunctionShape::new(name, module_path, file_index, generics, parameters, return_type, block);
+			let shape = FunctionShape::new(
+				type_store,
+				name,
+				module_path,
+				file_index,
+				function_store.shapes().len(), // Hack
+				generics,
+				parameters,
+				return_type,
+			);
 
 			let name = statement.name.item;
 			let shape_index = function_store.register_shape(shape);
@@ -703,7 +713,14 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			false,
 			context.file_index,
 		);
-		fill_block_types(context.messages, context.type_store, context.root_layers, context.symbols, block);
+		fill_block_types(
+			context.messages,
+			context.type_store,
+			context.function_store,
+			context.root_layers,
+			context.symbols,
+			block,
+		);
 		_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
 
 		create_block_functions(
@@ -814,15 +831,9 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 
 	let mut scope = context.child_scope();
 
-	for (generic_index, generic) in statement.generics.iter().enumerate() {
-		let symbol = scope.type_store.register_function_generic(
-			generic.item,
-			generic.span,
-			function_shape_index,
-			generic_index,
-			scope.file_index,
-		);
-		scope.push_symbol(symbol);
+	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
+	for generic in generics {
+		scope.push_symbol(generic.symbol);
 	}
 
 	for parameter in &statement.parameters {
@@ -864,11 +875,15 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		// Expects non-void return
 		if let Some(traced) = traced {
 			if traced.type_id != type_id {
-				context.error(message!(
-					"Function expects return type of {} but body returns type {}",
-					context.type_name(type_id),
-					context.type_name(traced.type_id),
-				));
+				context.error(
+					message!(
+						"Function {:?} expects return type of {} but body returns type {}",
+						statement.name.item,
+						context.type_name(type_id),
+						context.type_name(traced.type_id),
+					)
+					.span(statement.name.span), // TODO: Get a better span here
+				);
 				return;
 			}
 		} else {
@@ -1090,10 +1105,13 @@ fn validate_expression<'a>(
 				arguments.push(expression);
 			}
 
-			unimplemented!()
-			// let validated = validate_function(context, shape_index, expression.span, type_arguments, &arguments)?;
-			// let kind = ExpressionKind::Call(Call { name, function_id: validated.function_id, arguments });
-			// Expression { span, type_id: validated.type_id, kind }
+			let shape = &mut context.function_store.shapes[shape_index];
+			let results = shape.get_or_add_specialization(context.messages, context.readables, span, type_arguments)?;
+			let FunctionSpecializationResult { specialization_index, return_type } = results;
+
+			let function_id = FunctionId { shape_index, specialization_index };
+			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
+			Expression { span, type_id: return_type, kind }
 		}
 
 		tree::Expression::Read(read) => {

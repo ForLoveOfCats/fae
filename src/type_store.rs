@@ -2,7 +2,7 @@ use crate::error::Messages;
 use crate::ir::{Symbol, SymbolKind};
 use crate::span::Span;
 use crate::tree::{self, Node};
-use crate::validator::{RootLayers, Symbols};
+use crate::validator::{FunctionStore, RootLayers, Symbols};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId {
@@ -312,16 +312,17 @@ impl<'a> TypeStore<'a> {
 		function_shape_index: usize,
 		generic_index: usize,
 		file_index: usize,
-	) -> Symbol<'a> {
+	) -> TypeId {
+		let entry = self.type_entries.len() as u32;
 		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
 		self.type_entries.push(TypeEntry::new(kind));
-		let kind = SymbolKind::Generic { function_shape_index, generic_index };
-		Symbol { name, kind, span: Some(span), file_index: Some(file_index) }
+		TypeId { entry }
 	}
 
 	pub fn lookup_type(
 		&mut self,
 		messages: &mut Messages,
+		function_store: &mut FunctionStore,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
@@ -330,12 +331,12 @@ impl<'a> TypeStore<'a> {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner)?;
+				let inner_id = self.lookup_type(messages, function_store, root_layers, symbols, &inner)?;
 				return Some(self.pointer_to(inner_id, false)); // TODO: Parse mutability
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(messages, root_layers, symbols, &inner)?;
+				let inner_id = self.lookup_type(messages, function_store, root_layers, symbols, &inner)?;
 				return Some(self.slice_of(inner_id, false)); // TODO: Parse mutability
 			}
 
@@ -357,6 +358,12 @@ impl<'a> TypeStore<'a> {
 
 			SymbolKind::Type { shape_index } => shape_index,
 
+			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
+				let shape = &function_store.shapes()[function_shape_index];
+				let generic = &shape.generics[generic_index];
+				return Some(generic.generic_type_id);
+			}
+
 			_ => {
 				messages.error(message!("Symbol {:?} is not a type", symbol.name).span(path_segments.span));
 				return None;
@@ -365,7 +372,7 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(type_arguments.len());
 		for argument in type_arguments {
-			type_args.push(self.lookup_type(messages, root_layers, symbols, &argument)?);
+			type_args.push(self.lookup_type(messages, function_store, root_layers, symbols, &argument)?);
 		}
 
 		let user_type = &mut self.user_types[shape_index];

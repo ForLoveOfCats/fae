@@ -16,7 +16,7 @@ struct MyStruct {
 
 generic T
 fn generic_function(value: T, mut other: u64, float: f64, char: u32): T {
-	return other
+	return value
 }
 
 fn main(): void {
