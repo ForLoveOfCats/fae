@@ -85,7 +85,8 @@ impl<'a, 'b> Context<'a, 'b> {
 	}
 
 	fn type_name(&self, type_id: TypeId) -> String {
-		self.type_store.type_name(self.module_path, type_id)
+		self.type_store
+			.type_name(self.function_store, self.module_path, type_id)
 	}
 }
 
@@ -933,11 +934,12 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 			context.error(
 				message!(
 					"Const type mismatch between explicit type {} and expression type {}",
-					context.type_store.type_name(context.module_path, explicit_type),
-					context.type_store.type_name(context.module_path, expression.type_id),
+					context.type_name(explicit_type),
+					context.type_name(expression.type_id),
 				)
 				.span(statement.span),
 			);
+			return None;
 		}
 	}
 

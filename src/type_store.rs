@@ -386,11 +386,11 @@ impl<'a> TypeStore<'a> {
 		Some(type_id)
 	}
 
-	pub fn type_name(&self, module_path: &'a [String], type_id: TypeId) -> String {
-		format!("`{}`", self.internal_type_name(module_path, type_id))
+	pub fn type_name(&self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
+		format!("`{}`", self.internal_type_name(function_store, module_path, type_id))
 	}
 
-	fn internal_type_name(&self, module_path: &'a [String], type_id: TypeId) -> String {
+	fn internal_type_name(&self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
 		match self.type_entries[type_id.index()].kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
 				PrimativeKind::Void => "void",
@@ -417,7 +417,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::Pointer { mutable, type_id } => {
-				let inner = self.internal_type_name(module_path, type_id);
+				let inner = self.internal_type_name(function_store, module_path, type_id);
 				match mutable {
 					true => format!("&mut {}", inner),
 					false => format!("&{}", inner),
@@ -425,7 +425,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::Slice { mutable, type_id } => {
-				let inner = self.internal_type_name(module_path, type_id);
+				let inner = self.internal_type_name(function_store, module_path, type_id);
 				match mutable {
 					true => format!("&mut [{}]", inner),
 					false => format!("&[{}]", inner),
@@ -433,7 +433,9 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
-				format!("function generic {function_shape_index}:{generic_index}") // TODO
+				let shape = &function_store.shapes()[function_shape_index];
+				let generic = &shape.generics[generic_index];
+				generic.name.item.to_owned()
 			}
 
 			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
