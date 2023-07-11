@@ -1101,15 +1101,47 @@ fn validate_expression<'a>(
 				type_arguments.push(type_id);
 			}
 
+			let shape = &mut context.function_store.shapes[shape_index];
+			let results = shape.get_or_add_specialization(context.messages, context.readables, span, type_arguments)?;
+			let FunctionSpecializationResult { specialization_index, return_type } = results;
+
 			let mut arguments = Vec::new();
 			for argument in &call.arguments {
 				let expression = validate_expression(context, argument)?;
 				arguments.push(expression);
 			}
 
-			let shape = &mut context.function_store.shapes[shape_index];
-			let results = shape.get_or_add_specialization(context.messages, context.readables, span, type_arguments)?;
-			let FunctionSpecializationResult { specialization_index, return_type } = results;
+			let shape = &context.function_store.shapes[shape_index];
+			let specialization = &shape.specializations[specialization_index];
+
+			// Don't bail immediately with type mismatch, we want to check every argument and the argument count
+			let mut arguments_type_mismatch = false;
+			for (index, argument) in arguments.iter().enumerate() {
+				let parameter = match specialization.parameters.get(index) {
+					Some(parameter) => parameter,
+					None => break,
+				};
+
+				if argument.type_id != parameter.type_id {
+					let error = message!(
+						"Expected argument of type {}, got {}",
+						context.type_name(parameter.type_id),
+						context.type_name(argument.type_id)
+					);
+					context.messages.error(error.span(argument.span));
+					arguments_type_mismatch = true;
+				}
+			}
+
+			if arguments.len() != specialization.parameters.len() {
+				let error = message!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
+				context.error(error.span(span));
+				return None;
+			}
+
+			if arguments_type_mismatch {
+				return None;
+			}
 
 			let function_id = FunctionId { shape_index, specialization_index };
 			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
