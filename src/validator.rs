@@ -1,6 +1,5 @@
 use crate::error::*;
 use crate::ir::*;
-use crate::span::Span;
 use crate::tree::Node;
 use crate::tree::{self, BinaryOperator, PathSegments};
 use crate::type_store::*;

@@ -1,7 +1,7 @@
 use crate::error::Messages;
 use crate::span::Span;
-use crate::tree::{self, BinaryOperator, Node};
-use crate::type_store::{self, *};
+use crate::tree::{BinaryOperator, Node};
+use crate::type_store::*;
 use crate::validator::Readables;
 
 /*
@@ -114,18 +114,16 @@ impl<'a> FunctionShape<'a> {
 
 		let mut generics = Vec::new();
 		for (generic_index, generic) in generics_names.into_iter().enumerate() {
-			let name = generic.item;
-			let generic_type_id = type_store.register_function_generic(
-				name,
-				generic.span,
-				function_shape_index,
-				generic_index,
-				file_index,
-			);
+			let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
 
 			let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-			let span = Some(generic.span);
-			let symbol = Symbol { name, kind, span, file_index: Some(file_index) };
+			let symbol = Symbol {
+				name: generic.item,
+				kind,
+				span: Some(generic.span),
+				file_index: Some(file_index),
+			};
+
 			generics.push(FunctionGenericParameter { name: generic, symbol, generic_type_id });
 		}
 

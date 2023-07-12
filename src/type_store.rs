@@ -305,14 +305,7 @@ impl<'a> TypeStore<'a> {
 		Symbol { name, kind, span: Some(span), file_index }
 	}
 
-	pub fn register_function_generic(
-		&mut self,
-		name: &'a str,
-		span: Span,
-		function_shape_index: usize,
-		generic_index: usize,
-		file_index: usize,
-	) -> TypeId {
+	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
 		let entry = self.type_entries.len() as u32;
 		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
 		self.type_entries.push(TypeEntry::new(kind));
