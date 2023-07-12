@@ -182,7 +182,7 @@ impl<'a> Symbols<'a> {
 		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
 			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 			messages.error(
-				message!("Duplicate symbol {:?}", symbol.name)
+				message!("Duplicate symbol `{}`", symbol.name)
 					.span_if_some(symbol.span)
 					.note_if_some(found.span, found.file_index, "Original symbol here"),
 			);
@@ -214,7 +214,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			messages.error(message!("No symbol {name:?} in the current scope").span(segment.span));
+			messages.error(message!("No symbol `{name}` in the current scope").span(segment.span));
 			None
 		} else {
 			root_layers.lookup_path_symbol(messages, path)
@@ -273,7 +273,7 @@ impl<'a> RootLayer<'a> {
 		let found = self.symbols.symbols.iter().find(|symbol| symbol.name == name);
 
 		if found.is_none() {
-			messages.error(message!("No symbol named {name:?} in root of module {:?}", self.name).span(segment.span));
+			messages.error(message!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
 		}
 		found.copied()
 	}
@@ -861,36 +861,9 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	assert_eq!(block.type_id, context.type_store.void_type_id()); // Hack
 	block.type_id = type_id;
 
-	let traced = trace_return(context, &block);
-
-	// Don't love this chunk of logic
-	if type_id == context.type_store.void_type_id() {
-		// Expects void return
-		if let Some(traced) = traced {
-			if traced.type_id != context.type_store.void_type_id() {
-				context.error(message!("Return of value from void function").span(traced.span));
-				return;
-			}
-		}
-	} else {
-		// Expects non-void return
-		if let Some(traced) = traced {
-			if traced.type_id != type_id {
-				context.error(
-					message!(
-						"Function {:?} expects return type of {} but body returns type {}",
-						statement.name.item,
-						context.type_name(type_id),
-						context.type_name(traced.type_id),
-					)
-					.span(statement.name.span), // TODO: Get a better span here
-				);
-				return;
-			}
-		} else {
-			context.error(message!("Not all code paths return a value").span(statement.name.span));
-			return;
-		}
+	if trace_return(context, type_id, &block) == TracedReturn::NotCovered {
+		let error = message!("Not all code paths for function `{}` return a value", statement.name.item);
+		context.error(error.span(statement.name.span));
 	}
 
 	let shape_block = &mut context.function_store.shapes[function_shape_index].block;
@@ -898,14 +871,15 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	*shape_block = Some(block);
 }
 
-struct TracedReturn {
-	span: Span,
-	type_id: TypeId,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum TracedReturn {
+	Covered,
+	NotCovered,
 }
 
 // TODO: Update once flow control gets added
 // See https://github.com/ForLoveOfCats/Mountain/blob/OriginalC/compiler/validator.c#L1007
-fn trace_return(context: &Context, block: &Block) -> Option<TracedReturn> {
+fn trace_return(context: &mut Context, return_type: TypeId, block: &Block) -> TracedReturn {
 	for statement in &block.statements {
 		if let StatementKind::Return(statement) = &statement.kind {
 			let type_id = match &statement.expression {
@@ -913,12 +887,18 @@ fn trace_return(context: &Context, block: &Block) -> Option<TracedReturn> {
 				None => context.type_store.void_type_id(),
 			};
 
-			let span = statement.span;
-			return Some(TracedReturn { span, type_id });
+			if type_id != return_type {
+				let expected = context.type_name(return_type);
+				let got = context.type_name(type_id);
+				let error = message!("Expected return type of {expected}, got {got}");
+				context.error(error.span(statement.span));
+			}
+
+			return TracedReturn::Covered;
 		}
 	}
 
-	None
+	TracedReturn::NotCovered
 }
 
 fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<Const<'a>> {
@@ -1054,7 +1034,7 @@ fn validate_expression<'a>(
 				if field.name != intializer.name.item {
 					context.error(
 						message!(
-							"Expected initalizer for field named {:?}, got {:?} instead",
+							"Expected initalizer for field `{}`, got `{}` instead",
 							field.name,
 							intializer.name.item,
 						)

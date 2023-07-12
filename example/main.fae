@@ -31,7 +31,6 @@ fn generic_function(value: T, mut other: u64, float: f64, char: u32): T {
 
 fn main(): void {
 	// TODO: Check for a main function
-	// TODO: Show better return type mismatch error
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
