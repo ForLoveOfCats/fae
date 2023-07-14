@@ -7,11 +7,15 @@ struct NonGeneric {
 }
 
 generic T
-struct MyStruct {
+struct StructA {
 	field: u64
-	other_field: T
+	other_field: StructB[T]
 }
 
+generic T
+struct StructB {
+	inner: T
+}
 
 generic T
 fn a(arg: T): T {
@@ -34,15 +38,17 @@ fn main(): void {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
-	mut variable = 2
+	/*mut variable = 2
 	variable = 8 * 5 + 3 / 1
 	generic_function[u64](4, variable, 9.6, 'A')
 
 	let string = "❤"
-
-	let object = MyStruct[f64] {
+*/
+	let object = StructA[f64] {
 		field: 42,
-		other_field: 2.9, 
+		other_field: StructB[f64] {
+			inner: 4.2,
+		},
 	}
 
 	return

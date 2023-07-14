@@ -1,12 +1,12 @@
 use crate::error::Messages;
-use crate::ir::{Symbol, SymbolKind};
+use crate::ir::{GenericParameter, Symbol, SymbolKind};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId {
-	entry: u32,
+	pub entry: u32,
 }
 
 impl TypeId {
@@ -15,16 +15,10 @@ impl TypeId {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GenericOrTypeId {
-	TypeId { id: TypeId },
-	Generic { index: usize },
-}
-
 #[derive(Debug)]
 pub struct StructShape<'a> {
 	pub name: &'a str,
-	pub generics: Vec<Node<&'a str>>,
+	pub generics: Vec<GenericParameter<'a>>,
 
 	pub fields: Vec<Node<FieldShape<'a>>>,
 
@@ -32,7 +26,7 @@ pub struct StructShape<'a> {
 }
 
 impl<'a> StructShape<'a> {
-	pub fn new(name: &'a str, generics: Vec<Node<&'a str>>) -> Self {
+	pub fn new(name: &'a str, generics: Vec<GenericParameter<'a>>) -> Self {
 		StructShape {
 			name,
 			generics,
@@ -65,10 +59,7 @@ impl<'a> StructShape<'a> {
 
 		let mut fields = Vec::with_capacity(self.fields.len());
 		for (field_index, field) in self.fields.iter().enumerate() {
-			let type_id = match field.item.field_type {
-				GenericOrTypeId::TypeId { id } => id,
-				GenericOrTypeId::Generic { index } => type_arguments[index],
-			};
+			let type_id = field.item.field_type;
 			fields.push(Field { name: field.item.name, type_id, field_index });
 		}
 
@@ -85,7 +76,7 @@ impl<'a> StructShape<'a> {
 #[derive(Debug)]
 pub struct FieldShape<'a> {
 	pub name: &'a str,
-	pub field_type: GenericOrTypeId,
+	pub field_type: TypeId,
 }
 
 #[derive(Debug)]
@@ -140,7 +131,7 @@ pub struct TypeEntry {
 }
 
 impl TypeEntry {
-	fn new(kind: TypeEntryKind) -> TypeEntry {
+	pub fn new(kind: TypeEntryKind) -> TypeEntry {
 		TypeEntry { kind, reference_entries: None }
 	}
 }
@@ -351,9 +342,19 @@ impl<'a> TypeStore<'a> {
 
 			SymbolKind::Type { shape_index } => shape_index,
 
+			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
+				let user_type = &self.user_types[shape_index];
+				match &user_type.kind {
+					UserTypeKind::Struct { shape } => {
+						let generic = &shape.generics[generic_index];
+						return Some(generic.generic_type_id);
+					}
+				}
+			}
+
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
-				let shape = &function_store.shapes()[function_shape_index];
-				let generic = &shape.generics[generic_index];
+				let generics = &function_store.generics()[function_shape_index];
+				let generic = &generics[generic_index];
 				return Some(generic.generic_type_id);
 			}
 

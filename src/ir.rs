@@ -34,8 +34,9 @@ pub struct Symbol<'a> {
 pub enum SymbolKind {
 	BuiltinType { type_id: TypeId },
 	Type { shape_index: usize },
+	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
-	Function { shape_index: usize },
+	Function { function_shape_index: usize },
 	Const { readable_index: usize },
 	Let { readable_index: usize },
 	Mut { readable_index: usize },
@@ -46,6 +47,7 @@ impl std::fmt::Display for SymbolKind {
 		let name = match self {
 			SymbolKind::BuiltinType { .. } => "a built in type",
 			SymbolKind::Type { .. } => "a type",
+			SymbolKind::UserTypeGeneric { .. } => "a type generic parameter",
 			SymbolKind::FunctionGeneric { .. } => "a function generic parameter",
 			SymbolKind::Function { .. } => "a function",
 			SymbolKind::Const { .. } => "a constant",
@@ -72,9 +74,8 @@ pub enum ReadableKind {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct FunctionGenericParameter<'a> {
+pub struct GenericParameter<'a> {
 	pub name: Node<&'a str>,
-	pub symbol: Symbol<'a>,
 	pub generic_type_id: TypeId,
 }
 
@@ -85,9 +86,9 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
-	pub generics: Vec<FunctionGenericParameter<'a>>,
+	pub generics: Vec<GenericParameter<'a>>,
 	pub parameters: Vec<ParameterShape<'a>>,
-	pub return_type: GenericOrTypeId,
+	pub return_type: TypeId,
 	pub block: Option<Block<'a>>,
 
 	pub specializations: Vec<Function<'a>>,
@@ -106,26 +107,11 @@ impl<'a> FunctionShape<'a> {
 		module_path: &'a [String],
 		file_index: usize,
 		function_shape_index: usize,
-		generics_names: Vec<Node<&'a str>>,
+		generics: Vec<GenericParameter<'a>>,
 		parameters: Vec<ParameterShape<'a>>,
-		return_type: GenericOrTypeId,
+		return_type: TypeId,
 	) -> Self {
 		let is_main = module_path == &["main"] && name.item == "main";
-
-		let mut generics = Vec::new();
-		for (generic_index, generic) in generics_names.into_iter().enumerate() {
-			let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-
-			let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-			let symbol = Symbol {
-				name: generic.item,
-				kind,
-				span: Some(generic.span),
-				file_index: Some(file_index),
-			};
-
-			generics.push(FunctionGenericParameter { name: generic, symbol, generic_type_id });
-		}
 
 		FunctionShape {
 			name,
@@ -153,11 +139,7 @@ impl<'a> FunctionShape<'a> {
 			return None;
 		}
 
-		let return_type = match self.return_type {
-			GenericOrTypeId::TypeId { id } => id,
-			GenericOrTypeId::Generic { index } => type_arguments[index],
-		};
-
+		let return_type = self.return_type;
 		for (specialization_index, existing) in self.specializations.iter().enumerate() {
 			if existing.type_arguments == type_arguments {
 				return Some(FunctionSpecializationResult { specialization_index, return_type });
@@ -168,16 +150,14 @@ impl<'a> FunctionShape<'a> {
 			.parameters
 			.iter()
 			.map(|parameter| {
-				let type_id = match parameter.parameter_type {
-					GenericOrTypeId::TypeId { id } => id,
-					GenericOrTypeId::Generic { index } => type_arguments[index],
-				};
-
+				let type_id = parameter.type_id;
 				let is_mutable = parameter.is_mutable;
+
 				let kind = match is_mutable {
 					true => ReadableKind::Mut,
 					false => ReadableKind::Let,
 				};
+
 				let readable_index = readables.push(parameter.name.item, type_id, kind);
 				Parameter { name: parameter.name, type_id, readable_index, is_mutable }
 			})
@@ -193,7 +173,7 @@ impl<'a> FunctionShape<'a> {
 #[derive(Debug)]
 pub struct ParameterShape<'a> {
 	pub name: Node<&'a str>,
-	pub parameter_type: GenericOrTypeId,
+	pub type_id: TypeId,
 	pub is_mutable: bool,
 }
 

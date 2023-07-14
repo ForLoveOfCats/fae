@@ -175,6 +175,10 @@ impl<'a> Symbols<'a> {
 		self.symbols.extend_from_slice(&other.symbols);
 	}
 
+	fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
+		SymbolsScope { initial_symbols_len: self.len(), symbols: self }
+	}
+
 	// TODO: Use named return in Fae
 	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) -> bool {
 		// TODO: Allow duplicate symbol when symbol is variable
@@ -218,6 +222,17 @@ impl<'a> Symbols<'a> {
 		} else {
 			root_layers.lookup_path_symbol(messages, path)
 		}
+	}
+}
+
+struct SymbolsScope<'a, 'b> {
+	initial_symbols_len: usize,
+	symbols: &'b mut Symbols<'a>,
+}
+
+impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
+	fn drop(&mut self) {
+		self.symbols.symbols.truncate(self.initial_symbols_len);
 	}
 }
 
@@ -290,21 +305,23 @@ impl<'a> RootLayer<'a> {
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
 	shapes: Vec<FunctionShape<'a>>,
+
+	// Need to have a copy of each shape's generic parameters around before
+	// the shape has been fully constructed so signature types can be looked up
+	generics: Vec<Vec<GenericParameter<'a>>>,
 }
 
 impl<'a> FunctionStore<'a> {
 	pub fn new() -> Self {
-		FunctionStore { shapes: Vec::new() }
+		FunctionStore { shapes: Vec::new(), generics: Vec::new() }
 	}
 
 	pub fn shapes(&self) -> &[FunctionShape] {
 		&self.shapes
 	}
 
-	fn register_shape(&mut self, shape: FunctionShape<'a>) -> usize {
-		let index = self.shapes.len();
-		self.shapes.push(shape);
-		index
+	pub fn generics(&self) -> &[Vec<GenericParameter<'a>>] {
+		&self.generics
 	}
 }
 
@@ -545,7 +562,18 @@ fn create_block_types<'a>(
 		if let tree::Statement::Struct(statement) = statement {
 			//Start off with no fields, they will be added during the next pre-pass
 			//so that all types exist in order to populate field types
-			let shape = StructShape::new(statement.name.item, statement.generics.clone());
+
+			let shape_index = symbols.len();
+			let mut generics = Vec::new();
+			for (generic_index, &generic) in statement.generics.iter().enumerate() {
+				let entry = type_store.type_entries.len() as u32;
+				let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index };
+				type_store.type_entries.push(TypeEntry::new(kind));
+				let generic_type_id = TypeId { entry };
+				generics.push(GenericParameter { name: generic, generic_type_id });
+			}
+
+			let shape = StructShape::new(statement.name.item, generics);
 			let name = statement.name.item;
 			let kind = UserTypeKind::Struct { shape };
 			let span = statement.name.span;
@@ -568,6 +596,7 @@ fn fill_block_types<'a>(
 			let shape_index = symbols
 				.symbols
 				.iter()
+				.rev()
 				.find_map(|symbol| {
 					if let SymbolKind::Type { shape_index } = symbol.kind {
 						if symbol.name == statement.name.item {
@@ -578,43 +607,32 @@ fn fill_block_types<'a>(
 				})
 				.unwrap();
 
-			for field in &statement.fields {
-				// TODO: Refactor this to look nicer
-				let generic_type = match &field.parsed_type.item {
-					tree::Type::Path { path_segments, type_arguments }
-						if path_segments.item.len() == 1 && type_arguments.is_empty() =>
-					{
-						let segment = path_segments.item.segments[0];
+			let shape = match &type_store.user_types[shape_index].kind {
+				UserTypeKind::Struct { shape } => shape,
+			};
 
-						let user_type = &type_store.user_types[shape_index];
-						let struct_shape = match &user_type.kind {
-							UserTypeKind::Struct { shape } => shape,
-							// _ => unreachable!("{:?}", user_type.kind),
-						};
-
-						let index = struct_shape
-							.generics
-							.iter()
-							.enumerate()
-							.find(|(_, &g)| g.item == segment.item)
-							.map(|(i, _)| i);
-
-						match index {
-							Some(index) => Some(GenericOrTypeId::Generic { index }),
-							None => None,
-						}
-					}
-
-					_ => None,
+			let scope = symbols.child_scope();
+			for (generic_index, generic) in shape.generics.iter().enumerate() {
+				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
+				let symbol = Symbol {
+					name: generic.name.item,
+					kind,
+					span: Some(generic.name.span),
+					file_index: Some(messages.current_file_index()),
 				};
+				scope.symbols.push_symbol(messages, symbol);
+			}
 
-				let field_type = if let Some(field_type) = generic_type {
-					field_type
-				} else {
-					match type_store.lookup_type(messages, function_store, root_layers, symbols, &field.parsed_type) {
-						Some(id) => GenericOrTypeId::TypeId { id },
-						None => return,
-					}
+			for field in &statement.fields {
+				let field_type = match type_store.lookup_type(
+					messages,
+					function_store,
+					root_layers,
+					scope.symbols,
+					&field.parsed_type,
+				) {
+					Some(type_id) => type_id,
+					None => return,
 				};
 
 				let field_shape = FieldShape { name: field.name.item, field_type };
@@ -643,46 +661,58 @@ fn create_block_functions<'a>(
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
-			let parsed_type = &statement.parsed_type;
-			let single_sement = parsed_type.item.as_single_segment();
+			let scope = symbols.child_scope();
+			let function_shape_index = function_store.shapes.len();
 
-			let mut generics = statement.generics.iter().enumerate();
-			let generic = generics.find(|(_, g)| single_sement == Some(g.item));
-			let return_type = if let Some(generic) = generic {
-				GenericOrTypeId::Generic { index: generic.0 }
-			} else {
-				match type_store.lookup_type(messages, function_store, root_layers, symbols, &parsed_type) {
-					Some(id) => GenericOrTypeId::TypeId { id },
-					None => continue,
-				}
+			let mut generics = Vec::new();
+			for (generic_index, &generic) in statement.generics.iter().enumerate() {
+				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
+				generics.push(GenericParameter { name: generic, generic_type_id });
+
+				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
+				let symbol = Symbol {
+					name: generic.item,
+					kind,
+					span: Some(generic.span),
+					file_index: Some(messages.current_file_index()),
+				};
+				scope.symbols.push_symbol(messages, symbol);
+			}
+
+			function_store.generics.push(generics.clone());
+
+			let parsed_type = &statement.parsed_type;
+			#[rustfmt::skip] // I *hate* it when rustfmt inserts a newline after `=`
+			let return_type = type_store.lookup_type(messages, function_store, root_layers, scope.symbols, &parsed_type);
+			let return_type = match return_type {
+				Some(type_id) => type_id,
+				None => continue,
 			};
 
 			let mut parameters = Vec::new();
 			for parameter in &statement.parameters {
-				let parsed_type = &parameter.item.parsed_type;
-				let single_sement = parsed_type.item.as_single_segment();
+				let type_id = type_store.lookup_type(
+					messages,
+					function_store,
+					root_layers,
+					scope.symbols,
+					&parameter.item.parsed_type,
+				);
 
-				let mut generics = statement.generics.iter().enumerate();
-				let generic = generics.find(|(_, g)| single_sement == Some(g.item));
-				let parameter_type = if let Some(generic) = generic {
-					GenericOrTypeId::Generic { index: generic.0 }
-				} else {
-					match type_store.lookup_type(messages, function_store, root_layers, symbols, &parsed_type) {
-						Some(id) => GenericOrTypeId::TypeId { id },
-						None => continue,
-					}
+				let type_id = match type_id {
+					Some(type_id) => type_id,
+					None => continue,
 				};
 
 				let name = parameter.item.name;
 				let is_mutable = parameter.item.is_mutable;
-				parameters.push(ParameterShape { name, parameter_type, is_mutable });
+				parameters.push(ParameterShape { name, type_id, is_mutable });
 			}
 
-			let name = statement.name;
-			let generics = statement.generics.clone();
+			drop(scope);
 			let shape = FunctionShape::new(
 				type_store,
-				name,
+				statement.name,
 				module_path,
 				file_index,
 				function_store.shapes().len(), // Hack
@@ -692,8 +722,8 @@ fn create_block_functions<'a>(
 			);
 
 			let name = statement.name.item;
-			let shape_index = function_store.register_shape(shape);
-			let kind = SymbolKind::Function { shape_index };
+			function_store.shapes.push(shape);
+			let kind = SymbolKind::Function { function_shape_index };
 			let span = Some(statement.name.span);
 			let symbol = Symbol { name, kind, span, file_index: Some(file_index) };
 			symbols.push_symbol(messages, symbol);
@@ -814,26 +844,32 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 }
 
 fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Function<'a>) {
-	let function_shape_index = context
-		.symbols
-		.symbols
-		.iter()
-		.rev()
-		.find_map(|symbol| {
-			if let SymbolKind::Function { shape_index } = symbol.kind {
-				if symbol.name == statement.name.item {
-					return Some(shape_index);
-				}
+	let function_shape_index = context.symbols.symbols.iter().rev().find_map(|symbol| {
+		if let SymbolKind::Function { function_shape_index: shape_index } = symbol.kind {
+			if symbol.name == statement.name.item {
+				return Some(shape_index);
 			}
-			None
-		})
-		.unwrap();
+		}
+		None
+	});
+
+	let function_shape_index = match function_shape_index {
+		Some(function_shape_index) => function_shape_index,
+		None => return,
+	};
 
 	let mut scope = context.child_scope();
 
 	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
-	for generic in generics {
-		scope.push_symbol(generic.symbol);
+	for (generic_index, generic) in generics.into_iter().enumerate() {
+		let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			file_index: Some(scope.file_index),
+		};
+		scope.push_symbol(symbol);
 	}
 
 	for parameter in &statement.parameters {
@@ -1022,10 +1058,7 @@ fn validate_expression<'a>(
 					Some(field) => field,
 
 					None => {
-						context.error(
-							message!("Unexpected field initalizer, to many field initalizers")
-								.span(intializer.name.span),
-						);
+						context.error(message!("Unexpected extra field initalizer").span(intializer.name.span));
 						continue;
 					}
 				};
@@ -1066,7 +1099,7 @@ fn validate_expression<'a>(
 			let symbol = context.lookup_symbol(&call.path_segments.item)?;
 			let name = symbol.name;
 			let shape_index = match symbol.kind {
-				SymbolKind::Function { shape_index } => shape_index,
+				SymbolKind::Function { function_shape_index: shape_index } => shape_index,
 
 				kind => {
 					context.error(message!("Cannot call {kind}").span(call.path_segments.span));
