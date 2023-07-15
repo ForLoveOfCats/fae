@@ -1089,8 +1089,8 @@ fn validate_expression<'a>(
 		tree::Expression::Call(call) => {
 			let symbol = context.lookup_symbol(&call.path_segments.item)?;
 			let name = symbol.name;
-			let shape_index = match symbol.kind {
-				SymbolKind::Function { function_shape_index: shape_index } => shape_index,
+			let function_shape_index = match symbol.kind {
+				SymbolKind::Function { function_shape_index } => function_shape_index,
 
 				kind => {
 					context.error(message!("Cannot call {kind}").span(call.path_segments.span));
@@ -1104,8 +1104,15 @@ fn validate_expression<'a>(
 				type_arguments.push(type_id);
 			}
 
-			let shape = &mut context.function_store.shapes[shape_index];
-			let results = shape.get_or_add_specialization(context.messages, context.readables, span, type_arguments)?;
+			let shape = &mut context.function_store.shapes[function_shape_index];
+			let results = shape.get_or_add_specialization(
+				context.messages,
+				context.type_store,
+				context.readables,
+				function_shape_index,
+				span,
+				type_arguments,
+			)?;
 			let FunctionSpecializationResult { specialization_index, return_type } = results;
 
 			let mut arguments = Vec::new();
@@ -1114,7 +1121,7 @@ fn validate_expression<'a>(
 				arguments.push(expression);
 			}
 
-			let shape = &context.function_store.shapes[shape_index];
+			let shape = &context.function_store.shapes[function_shape_index];
 			let specialization = &shape.specializations[specialization_index];
 
 			// Don't bail immediately with type mismatch, we want to check every argument and the argument count
@@ -1146,7 +1153,7 @@ fn validate_expression<'a>(
 				return None;
 			}
 
-			let function_id = FunctionId { shape_index, specialization_index };
+			let function_id = FunctionId { function_shape_index, specialization_index };
 			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
 			Expression { span, type_id: return_type, kind }
 		}

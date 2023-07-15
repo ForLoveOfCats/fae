@@ -40,13 +40,18 @@ impl<'a> StructShape<'a> {
 		messages: &mut Messages,
 		type_entries: &mut Vec<TypeEntry>,
 		shape_index: usize,
-		invoke_span: Span,
+		invoke_span: Option<Span>,
 		type_arguments: Vec<TypeId>,
 	) -> Option<TypeId> {
 		if type_arguments.len() != self.generics.len() {
 			messages.error(
-				message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len())
-					.span(invoke_span),
+				message!(
+					"Expected {} type arguments for `{}`, got {}",
+					self.generics.len(),
+					self.name,
+					type_arguments.len()
+				)
+				.span_if_some(invoke_span),
 			);
 			return None;
 		}
@@ -140,8 +145,8 @@ impl TypeEntry {
 pub enum TypeEntryKind {
 	BuiltinType { kind: PrimativeKind },
 	UserType { shape_index: usize, specialization_index: usize },
-	Pointer { mutable: bool, type_id: TypeId },
-	Slice { mutable: bool, type_id: TypeId },
+	Pointer { type_id: TypeId, mutable: bool },
+	Slice { type_id: TypeId, mutable: bool },
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 }
@@ -245,16 +250,16 @@ impl<'a> TypeStore<'a> {
 
 		let entries = self.type_entries.len() as u32;
 
-		let kind = TypeEntryKind::Pointer { mutable: false, type_id };
+		let kind = TypeEntryKind::Pointer { type_id, mutable: false };
 		self.type_entries.push(TypeEntry::new(kind));
 
-		let kind = TypeEntryKind::Pointer { mutable: true, type_id };
+		let kind = TypeEntryKind::Pointer { type_id, mutable: true };
 		self.type_entries.push(TypeEntry::new(kind));
 
-		let kind = TypeEntryKind::Slice { mutable: false, type_id };
+		let kind = TypeEntryKind::Slice { type_id, mutable: false };
 		self.type_entries.push(TypeEntry::new(kind));
 
-		let kind = TypeEntryKind::Slice { mutable: true, type_id };
+		let kind = TypeEntryKind::Slice { type_id, mutable: true };
 		self.type_entries.push(TypeEntry::new(kind));
 
 		let entry = &mut self.type_entries[type_id.index()];
@@ -373,11 +378,94 @@ impl<'a> TypeStore<'a> {
 		let type_entries = &mut self.type_entries;
 		let type_id = match &mut user_type.kind {
 			UserTypeKind::Struct { shape } => {
-				shape.get_or_add_specialization(messages, type_entries, shape_index, user_type.span, type_args)?
+				shape.get_or_add_specialization(messages, type_entries, shape_index, Some(user_type.span), type_args)?
 			}
 		};
 
 		Some(type_id)
+	}
+
+	pub fn specialize_with_function_generics(
+		&mut self,
+		messages: &mut Messages,
+		function_shape_index: usize,
+		function_type_arguments: &[TypeId],
+		type_id: TypeId,
+	) -> TypeId {
+		let entry = self.type_entries[type_id.index()];
+		match &entry.kind {
+			TypeEntryKind::BuiltinType { .. } => type_id,
+
+			TypeEntryKind::UserType { shape_index, specialization_index } => {
+				let shape = &mut self.user_types[*shape_index];
+				match &mut shape.kind {
+					UserTypeKind::Struct { shape } => {
+						let specialization = &mut shape.specializations[*specialization_index];
+						let any_function_generic = specialization.type_arguments.iter().any(|t| {
+							matches!(self.type_entries[t.index()].kind, TypeEntryKind::FunctionGeneric { .. })
+						});
+
+						if !any_function_generic {
+							return type_id;
+						}
+
+						let mut new_struct_type_arguments = Vec::new();
+						for &struct_type_argument in &specialization.type_arguments {
+							let entry = &self.type_entries[struct_type_argument.index()];
+							match &entry.kind {
+								TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
+									assert_eq!(function_shape_index, *shape_index);
+									new_struct_type_arguments.push(function_type_arguments[*generic_index]);
+								}
+
+								_ => new_struct_type_arguments.push(struct_type_argument),
+							}
+						}
+
+						shape
+							.get_or_add_specialization(
+								messages,
+								&mut self.type_entries,
+								*shape_index,
+								None,
+								new_struct_type_arguments,
+							)
+							.unwrap()
+					}
+				}
+			}
+
+			TypeEntryKind::Pointer { type_id, mutable } => {
+				let type_id = self.specialize_with_function_generics(
+					messages,
+					function_shape_index,
+					function_type_arguments,
+					*type_id,
+				);
+
+				self.pointer_to(type_id, *mutable)
+			}
+
+			TypeEntryKind::Slice { type_id, mutable } => {
+				let type_id = self.specialize_with_function_generics(
+					messages,
+					function_shape_index,
+					function_type_arguments,
+					*type_id,
+				);
+
+				self.slice_of(type_id, *mutable)
+			}
+
+			// A user type generic should never escape the initial field checking
+			// Instead when the type is specialized a normal type id will be returned
+			TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
+
+			TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
+				assert_eq!(function_shape_index, *shape_index);
+				function_type_arguments[*generic_index]
+			}
+		}
 	}
 
 	pub fn type_name(&self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
@@ -410,7 +498,7 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::Pointer { mutable, type_id } => {
+			TypeEntryKind::Pointer { type_id, mutable } => {
 				let inner = self.internal_type_name(function_store, module_path, type_id);
 				match mutable {
 					true => format!("&mut {}", inner),
@@ -418,7 +506,7 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::Slice { mutable, type_id } => {
+			TypeEntryKind::Slice { type_id, mutable } => {
 				let inner = self.internal_type_name(function_store, module_path, type_id);
 				match mutable {
 					true => format!("&mut [{}]", inner),

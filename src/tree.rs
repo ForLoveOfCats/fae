@@ -80,22 +80,6 @@ pub enum Type<'a> {
 	},
 }
 
-impl<'a> Type<'a> {
-	pub fn as_single_segment(&self) -> Option<&'a str> {
-		match self {
-			Type::Path { path_segments, type_arguments } => {
-				if path_segments.item.len() == 1 && type_arguments.is_empty() {
-					Some(path_segments.item.segments[0].item)
-				} else {
-					None
-				}
-			}
-
-			_ => None,
-		}
-	}
-}
-
 #[derive(Debug)]
 pub struct Struct<'a> {
 	pub generics: Vec<Node<&'a str>>,
