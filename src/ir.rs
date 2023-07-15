@@ -102,11 +102,9 @@ pub struct FunctionSpecializationResult {
 
 impl<'a> FunctionShape<'a> {
 	pub fn new(
-		type_store: &mut TypeStore<'a>,
 		name: Node<&'a str>,
 		module_path: &'a [String],
 		file_index: usize,
-		function_shape_index: usize,
 		generics: Vec<GenericParameter<'a>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: TypeId,

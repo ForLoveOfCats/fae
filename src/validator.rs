@@ -710,19 +710,10 @@ fn create_block_functions<'a>(
 			}
 
 			drop(scope);
-			let shape = FunctionShape::new(
-				type_store,
-				statement.name,
-				module_path,
-				file_index,
-				function_store.shapes().len(), // Hack
-				generics,
-				parameters,
-				return_type,
-			);
+			let shape = FunctionShape::new(statement.name, module_path, file_index, generics, parameters, return_type);
+			function_store.shapes.push(shape);
 
 			let name = statement.name.item;
-			function_store.shapes.push(shape);
 			let kind = SymbolKind::Function { function_shape_index };
 			let span = Some(statement.name.span);
 			let symbol = Symbol { name, kind, span, file_index: Some(file_index) };
