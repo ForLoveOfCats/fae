@@ -68,7 +68,7 @@ pub enum UserTypeKind<'a> {
 	Struct { shape: StructShape<'a> },
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum PrimativeKind {
 	Void,
 
@@ -85,6 +85,25 @@ pub enum PrimativeKind {
 	F16,
 	F32,
 	F64,
+}
+
+impl PrimativeKind {
+	pub fn name(self) -> &'static str {
+		match self {
+			PrimativeKind::Void => "void",
+			PrimativeKind::I8 => "i8",
+			PrimativeKind::I16 => "i16",
+			PrimativeKind::I32 => "i32",
+			PrimativeKind::I64 => "i64",
+			PrimativeKind::U8 => "u8",
+			PrimativeKind::U16 => "u16",
+			PrimativeKind::U32 => "u32",
+			PrimativeKind::U64 => "u64",
+			PrimativeKind::F16 => "f16",
+			PrimativeKind::F32 => "f32",
+			PrimativeKind::F64 => "f64",
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, Hash)]

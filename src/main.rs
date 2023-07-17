@@ -1,7 +1,7 @@
 #[macro_use]
 mod error;
 
-// mod c_codegen;
+mod c_codegen;
 mod file;
 mod ir;
 mod parser;

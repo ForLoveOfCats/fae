@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use crate::ir::*;
 use crate::tree::BinaryOperator;
-use crate::type_store::TypeStore;
+use crate::type_store::*;
 use crate::validator::FunctionStore;
 
 const CC: &str = "clang";
@@ -78,10 +78,10 @@ pub fn generate_code(
 		generate_user_type(type_store, index + type_store.primative_len(), user_type, &mut output).unwrap();
 	}
 
-	for (shape_index, shape) in function_store.shapes().iter().enumerate() {
-		for (specialization_index, concrete) in shape.concrete.iter().enumerate() {
-			let function_id = FunctionId { shape_index, specialization_index };
-			generate_function(type_store, concrete, function_id, shape.is_main, &mut output).unwrap();
+	for (function_shape_index, shape) in function_store.shapes().iter().enumerate() {
+		for (specialization_index, specialization) in shape.specializations.iter().enumerate() {
+			let function_id = FunctionId { function_shape_index, specialization_index };
+			generate_function(type_store, specialization, function_id, shape.is_main, &mut output).unwrap();
 		}
 	}
 
@@ -104,11 +104,11 @@ fn generate_initial_output(output: Output) -> Result {
 fn forward_declare_user_type(type_store: &TypeStore, index: usize, user_type: &UserType, output: Output) -> Result {
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
-			for specialization in 0..shape.concrete.len() {
+			for specialization in &shape.specializations {
 				write!(output, "typedef struct ")?;
-				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				generate_type_id(type_store, specialization.type_id, output)?;
 				write!(output, " ")?;
-				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				generate_type_id(type_store, specialization.type_id, output)?;
 				write!(output, ";\n\n")?;
 			}
 		}
@@ -120,18 +120,18 @@ fn forward_declare_user_type(type_store: &TypeStore, index: usize, user_type: &U
 fn generate_user_type(type_store: &TypeStore, index: usize, user_type: &UserType, output: Output) -> Result {
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
-			for (specialization, concrete) in shape.concrete.iter().enumerate() {
+			for specialization in &shape.specializations {
 				write!(output, "typedef struct ")?;
-				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				generate_type_id(type_store, specialization.type_id, output)?;
 				write!(output, " {{\n")?;
 
-				for field in &concrete.fields {
+				for field in &specialization.fields {
 					generate_type_id(type_store, field.type_id, output)?;
 					write!(output, " fi_{};\n", field.field_index)?;
 				}
 
 				write!(output, "}} ")?;
-				generate_type_id(type_store, TypeId { index, specialization }, output)?;
+				generate_type_id(type_store, specialization.type_id, output)?;
 				write!(output, ";\n\n")?;
 			}
 		}
@@ -280,7 +280,7 @@ fn generate_expression(type_store: &TypeStore, expression: &Expression, output: 
 		ExpressionKind::CodepointLiteral(literal) => write!(output, "{}", literal.value as u32),
 
 		ExpressionKind::StringLiteral(literal) => {
-			let type_id = type_store.string_type_id;
+			let type_id = type_store.string_type_id();
 			generate_struct_construction(type_store, type_id, output, |output| {
 				write!(output, ".items = (u8*){:?}, .len = {}", literal.value, literal.value.len())
 			})
@@ -312,21 +312,23 @@ fn generate_struct_construction(
 }
 
 fn generate_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result {
-	if type_store.is_pointer(type_id) {
-		write!(output, "*")?;
-		let type_id = TypeStore::unpack_ref_slice_specialization(type_id.specialization);
-		return generate_type_id(type_store, type_id, output);
-	}
+	let entry = &type_store.type_entries[type_id.index()];
+	match &entry.kind {
+		TypeEntryKind::BuiltinType { kind } => write!(output, "{}", kind.name()),
 
-	if let Some(primative) = type_store.primative(type_id) {
-		return write!(output, "{}", primative.name);
-	}
+		TypeEntryKind::UserType { .. } => write!(output, "{}", type_id.entry),
 
-	write!(output, "ty_{}_{}", type_id.index, type_id.specialization)
+		TypeEntryKind::Pointer { type_id, .. } => write!(output, "*{}", type_id.entry),
+
+		TypeEntryKind::Slice { .. } => write!(output, "{}", type_id.entry),
+
+		TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
+		TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
+	}
 }
 
 fn generate_functon_id(function_id: FunctionId, output: Output) -> Result {
-	write!(output, "fn_{}_{}", function_id.shape_index, function_id.specialization_index)
+	write!(output, "fn_{}_{}", function_id.function_shape_index, function_id.specialization_index)
 }
 
 fn generate_readable_index(readable_index: usize, output: Output) -> Result {
