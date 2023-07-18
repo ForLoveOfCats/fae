@@ -106,19 +106,44 @@ impl PrimativeKind {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TypeEntry {
 	pub kind: TypeEntryKind,
 	pub reference_entries: Option<u32>,
+	pub is_generatable: bool,
 }
 
 impl TypeEntry {
-	pub fn new(kind: TypeEntryKind) -> TypeEntry {
-		TypeEntry { kind, reference_entries: None }
+	pub fn new(type_store: &TypeStore, kind: TypeEntryKind) -> TypeEntry {
+		let is_generatable = match kind {
+			TypeEntryKind::BuiltinType { .. } => true,
+
+			TypeEntryKind::UserType { shape_index, specialization_index } => {
+				let user_type = &type_store.user_types[shape_index];
+				match &user_type.kind {
+					UserTypeKind::Struct { shape } => {
+						let specialization = &shape.specializations[specialization_index];
+						specialization
+							.type_arguments
+							.iter()
+							.any(|t| type_store.type_entries[t.index()].is_generatable)
+					}
+				}
+			}
+
+			TypeEntryKind::Pointer { type_id, .. } | TypeEntryKind::Slice { type_id, .. } => {
+				let entry = type_store.type_entries[type_id.index()];
+				entry.is_generatable
+			}
+
+			TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => false,
+		};
+
+		TypeEntry { kind, reference_entries: None, is_generatable }
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeEntryKind {
 	BuiltinType { kind: PrimativeKind },
 	UserType { shape_index: usize, specialization_index: usize },
@@ -164,7 +189,7 @@ impl<'a> TypeStore<'a> {
 		let mut push_primative = |name, kind| {
 			let type_id = TypeId { entry: type_entries.len() as u32 };
 			let kind = TypeEntryKind::BuiltinType { kind };
-			type_entries.push(TypeEntry { kind, reference_entries: None });
+			type_entries.push(TypeEntry { kind, reference_entries: None, is_generatable: true });
 
 			let kind = SymbolKind::BuiltinType { type_id };
 			let symbol = Symbol { name, kind, span: None, file_index: None };
@@ -244,21 +269,21 @@ impl<'a> TypeStore<'a> {
 		let entries = self.type_entries.len() as u32;
 
 		let kind = TypeEntryKind::Pointer { type_id, mutable: false };
-		self.type_entries.push(TypeEntry::new(kind));
+		self.type_entries.push(TypeEntry::new(self, kind));
 
 		let kind = TypeEntryKind::Pointer { type_id, mutable: true };
-		self.type_entries.push(TypeEntry::new(kind));
+		self.type_entries.push(TypeEntry::new(self, kind));
 
 		let kind = TypeEntryKind::Slice { type_id, mutable: false };
 		let description = SliceDescription {
 			entry: self.type_entries.len() as u32,
 			sliced_type_id: type_id,
 		};
-		self.type_entries.push(TypeEntry::new(kind));
+		self.type_entries.push(TypeEntry::new(self, kind));
 		self.slice_descriptions.push(description);
 
 		let kind = TypeEntryKind::Slice { type_id, mutable: true };
-		self.type_entries.push(TypeEntry::new(kind));
+		self.type_entries.push(TypeEntry::new(self, kind));
 
 		let entry = &mut self.type_entries[type_id.index()];
 		entry.reference_entries = Some(entries);
@@ -302,7 +327,7 @@ impl<'a> TypeStore<'a> {
 	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
 		let entry = self.type_entries.len() as u32;
 		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
-		self.type_entries.push(TypeEntry::new(kind));
+		self.type_entries.push(TypeEntry::new(self, kind));
 		TypeId { entry }
 	}
 
@@ -428,13 +453,14 @@ impl<'a> TypeStore<'a> {
 
 		let specialization_index = shape.specializations.len();
 		let type_id = TypeId { entry: self.type_entries.len() as u32 };
-		let entry = TypeEntry::new(TypeEntryKind::UserType { shape_index, specialization_index });
-		self.type_entries.push(entry);
 
 		let description = UserTypeSpecializationDescription { shape_index, specialization_index };
 		self.user_type_generate_order.push(description);
-
 		shape.specializations.push(Struct { type_id, type_arguments, fields });
+
+		let entry = TypeEntry::new(self, TypeEntryKind::UserType { shape_index, specialization_index });
+		self.type_entries.push(entry);
+
 		Some(type_id)
 	}
 

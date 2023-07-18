@@ -110,6 +110,10 @@ fn forward_declare_user_type(
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			let specialization = &shape.specializations[description.specialization_index];
+			let entry = &type_store.type_entries[specialization.type_id.index()];
+			if !entry.is_generatable {
+				return Ok(());
+			}
 
 			write!(output, "typedef struct ")?;
 			generate_type_id(type_store, specialization.type_id, output)?;
@@ -132,6 +136,10 @@ fn generate_user_type(
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			let specialization = &shape.specializations[description.specialization_index];
+			let entry = &type_store.type_entries[specialization.type_id.index()];
+			if !entry.is_generatable {
+				return Ok(());
+			}
 
 			write!(output, "typedef struct ")?;
 			generate_type_id(type_store, specialization.type_id, output)?;

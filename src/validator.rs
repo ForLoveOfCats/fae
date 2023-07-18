@@ -568,7 +568,7 @@ fn create_block_types<'a>(
 			for (generic_index, &generic) in statement.generics.iter().enumerate() {
 				let entry = type_store.type_entries.len() as u32;
 				let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index };
-				type_store.type_entries.push(TypeEntry::new(kind));
+				type_store.type_entries.push(TypeEntry::new(type_store, kind));
 				let generic_type_id = TypeId { entry };
 				generics.push(GenericParameter { name: generic, generic_type_id });
 			}
