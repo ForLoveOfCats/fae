@@ -68,7 +68,7 @@ pub enum UserTypeKind<'a> {
 	Struct { shape: StructShape<'a> },
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimativeKind {
 	Void,
 
@@ -106,7 +106,7 @@ impl PrimativeKind {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy)]
 pub struct TypeEntry {
 	pub kind: TypeEntryKind,
 	pub reference_entries: Option<u32>,
@@ -118,7 +118,7 @@ impl TypeEntry {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy)]
 pub enum TypeEntryKind {
 	BuiltinType { kind: PrimativeKind },
 	UserType { shape_index: usize, specialization_index: usize },
@@ -128,12 +128,26 @@ pub enum TypeEntryKind {
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SliceDescription {
+	pub entry: u32, // First immutable, then mutable directly after
+	pub sliced_type_id: TypeId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UserTypeSpecializationDescription {
+	pub shape_index: usize,
+	pub specialization_index: usize,
+}
+
 #[derive(Debug)]
 pub struct TypeStore<'a> {
 	pub primative_type_symbols: Vec<Symbol<'a>>,
 
 	pub type_entries: Vec<TypeEntry>,
+	pub slice_descriptions: Vec<SliceDescription>,
 	pub user_types: Vec<UserType<'a>>,
+	pub user_type_generate_order: Vec<UserTypeSpecializationDescription>,
 
 	void_type_id: TypeId,
 	u32_type_id: TypeId,
@@ -178,7 +192,9 @@ impl<'a> TypeStore<'a> {
 		let mut type_store = TypeStore {
 			primative_type_symbols,
 			type_entries,
+			slice_descriptions: Vec::new(),
 			user_types: Vec::new(),
+			user_type_generate_order: Vec::new(),
 			void_type_id,
 			u32_type_id,
 			u64_type_id,
@@ -234,7 +250,12 @@ impl<'a> TypeStore<'a> {
 		self.type_entries.push(TypeEntry::new(kind));
 
 		let kind = TypeEntryKind::Slice { type_id, mutable: false };
+		let description = SliceDescription {
+			entry: self.type_entries.len() as u32,
+			sliced_type_id: type_id,
+		};
 		self.type_entries.push(TypeEntry::new(kind));
+		self.slice_descriptions.push(description);
 
 		let kind = TypeEntryKind::Slice { type_id, mutable: true };
 		self.type_entries.push(TypeEntry::new(kind));
@@ -409,6 +430,9 @@ impl<'a> TypeStore<'a> {
 		let type_id = TypeId { entry: self.type_entries.len() as u32 };
 		let entry = TypeEntry::new(TypeEntryKind::UserType { shape_index, specialization_index });
 		self.type_entries.push(entry);
+
+		let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+		self.user_type_generate_order.push(description);
 
 		shape.specializations.push(Struct { type_id, type_arguments, fields });
 		Some(type_id)

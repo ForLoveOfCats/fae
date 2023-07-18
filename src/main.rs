@@ -11,9 +11,9 @@ mod tree;
 mod type_store;
 mod validator;
 
-// use std::path::Path;
+use std::path::Path;
 
-// use c_codegen::{generate_code, OptimizationLevel};
+use c_codegen::{generate_code, OptimizationLevel};
 use error::Messages;
 use file::load_all_files;
 use parser::parse_file;
@@ -56,11 +56,11 @@ fn main() {
 	messages.reset();
 
 	//Not parallelizable
-	// let binary_path = Path::new("./output.executable");
-	// generate_code(&type_store, &function_store, OptimizationLevel::None, binary_path);
-	// let status = std::process::Command::new(binary_path)
-	// 	.spawn()
-	// 	.expect("Failed to launch resulting binary")
-	// 	.wait();
-	// println!("Binary execution result: {status:?}")
+	let binary_path = Path::new("./output.executable");
+	generate_code(&type_store, &function_store, OptimizationLevel::None, binary_path);
+	let status = std::process::Command::new(binary_path)
+		.spawn()
+		.expect("Failed to launch resulting binary")
+		.wait();
+	println!("Binary execution result: {status:?}")
 }

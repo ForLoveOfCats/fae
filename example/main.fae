@@ -5,18 +5,18 @@ const CONSTANT: &[u8] = "Hello there!"
 struct NonGeneric {
 	field: u64
 }
-
+/*
 generic T
 struct StructA {
 	field: u64
 	other_field: StructB[T]
 }
-
+*/
 generic T
 struct StructB {
 	inner: T
 }
-
+/*
 generic T
 fn a(arg: T): T {
 	return b[T](arg)
@@ -32,6 +32,7 @@ generic T
 fn generic_function(value: T, mut other: u64, float: f64, char: u32): T {
 	return value
 }
+*/
 
 fn main(): void {
 	// TODO: Check for a main function
@@ -41,16 +42,24 @@ fn main(): void {
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 	mut variable = 2
 	variable = 8 * 5 + 3 / 1
-	generic_function[u64](4, variable, 9.6, 'A')
+	//generic_function[u64](4, variable, 9.6, 'A')
 
 	let string = "❤"
+	
+	let non_generic = NonGeneric {
+		field: 5,
+	}
+	
+	let yes_generic = StructB[f64] {
+		inner: 5.3,
+	}
 
-	let object = StructA[f64] {
+	/*let object = StructA[f64] {
 		field: 42,
 		other_field: StructB[f64] {
 			inner: 4.2,
 		},
-	}
+	}*/
 
 	return
 

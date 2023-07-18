@@ -21,6 +21,6 @@ void fae_main(void);
 int main(int argc, char **argv) {
 	(void)argc;
 	(void)argv;
-	fae_main();
+	// fae_main();
 	return 0;
 }
