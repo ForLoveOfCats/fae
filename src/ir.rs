@@ -123,62 +123,6 @@ impl<'a> FunctionShape<'a> {
 			specializations: Vec::new(),
 		}
 	}
-
-	pub fn get_or_add_specialization(
-		&mut self,
-		messages: &mut Messages,
-		type_store: &mut TypeStore<'a>,
-		readables: &mut Readables<'a>,
-		function_shape_index: usize,
-		invoke_span: Span,
-		type_arguments: Vec<TypeId>,
-	) -> Option<FunctionSpecializationResult> {
-		if self.generics.len() != type_arguments.len() {
-			let error = message!("Expected {} type arguments, got {}", self.generics.len(), type_arguments.len());
-			messages.error(error.span(invoke_span));
-			return None;
-		}
-
-		for (specialization_index, existing) in self.specializations.iter().enumerate() {
-			if existing.type_arguments == type_arguments {
-				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
-			}
-		}
-
-		let parameters = self
-			.parameters
-			.iter()
-			.map(|parameter| {
-				let type_id = type_store.specialize_with_function_generics(
-					messages,
-					function_shape_index,
-					&type_arguments,
-					parameter.type_id,
-				);
-
-				let is_mutable = parameter.is_mutable;
-				let kind = match is_mutable {
-					true => ReadableKind::Mut,
-					false => ReadableKind::Let,
-				};
-
-				let readable_index = readables.push(parameter.name.item, type_id, kind);
-				Parameter { name: parameter.name, type_id, readable_index, is_mutable }
-			})
-			.collect::<Vec<_>>();
-
-		let return_type = type_store.specialize_with_function_generics(
-			messages,
-			function_shape_index,
-			&type_arguments,
-			self.return_type,
-		);
-
-		let specialization_index = self.specializations.len();
-		let concrete = Function { type_arguments, parameters, return_type };
-		self.specializations.push(concrete);
-		Some(FunctionSpecializationResult { specialization_index, return_type })
-	}
 }
 
 #[derive(Debug)]
@@ -186,6 +130,7 @@ pub struct ParameterShape<'a> {
 	pub name: Node<&'a str>,
 	pub type_id: TypeId,
 	pub is_mutable: bool,
+	pub readable_index: usize,
 }
 
 #[derive(Debug)]
@@ -193,6 +138,7 @@ pub struct Function<'a> {
 	pub type_arguments: Vec<TypeId>,
 	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
+	pub been_generated: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

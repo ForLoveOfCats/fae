@@ -26,13 +26,13 @@ generic T
 fn b(arg: T): T {
 	return arg
 }
+*/
 
 
 generic T
 fn generic_function(value: T, mut other: u64, float: f64, char: u32): T {
 	return value
 }
-*/
 
 fn main(): void {
 	// TODO: Check for a main function
@@ -42,7 +42,7 @@ fn main(): void {
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 	mut variable = 2
 	variable = 8 * 5 + 3 / 1
-	//generic_function[u64](4, variable, 9.6, 'A')
+	generic_function[u64](4, variable, 9.6, 'A')
 
 	let string = "❤"
 	

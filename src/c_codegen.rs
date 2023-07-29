@@ -21,7 +21,7 @@ pub enum OptimizationLevel {
 
 pub fn generate_code(
 	type_store: &TypeStore,
-	_function_store: &FunctionStore,
+	function_store: &FunctionStore,
 	optimization_level: OptimizationLevel,
 	binary_path: &Path,
 ) {
@@ -78,12 +78,9 @@ pub fn generate_code(
 		generate_user_type(type_store, description, &mut output).unwrap();
 	}
 
-	// for (function_shape_index, shape) in function_store.shapes().iter().enumerate() {
-	// 	for (specialization_index, specialization) in shape.specializations.iter().enumerate() {
-	// 		let function_id = FunctionId { function_shape_index, specialization_index };
-	// 		generate_function(type_store, specialization, function_id, shape.is_main, &mut output).unwrap();
-	// 	}
-	// }
+	for &description in function_store.generate_order() {
+		generate_function(type_store, function_store, description, &mut output).unwrap();
+	}
 
 	let output = String::from_utf8(output).unwrap();
 	println!("{output}");
@@ -169,43 +166,52 @@ fn generate_slice_specialization(type_store: &TypeStore, description: SliceDescr
 	write!(output, " *items; usize len; }} sl_{};\n\n", description.entry + 1)
 }
 
-// fn generate_function(
-// 	type_store: &TypeStore,
-// 	function: &Function,
-// 	function_id: FunctionId,
-// 	is_main: bool,
-// 	output: Output,
-// ) -> Result {
-// 	generate_type_id(type_store, function.return_type, output)?;
-// 	write!(output, " ")?;
+fn generate_function(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	function_id: FunctionId,
+	output: Output,
+) -> Result {
+	let shape = &function_store.shapes()[function_id.function_shape_index];
+	let specialization = &shape.specializations[function_id.specialization_index];
 
-// 	if is_main {
-// 		write!(output, "fae_main")?;
-// 	} else {
-// 		generate_functon_id(function_id, output)?;
-// 	}
+	for type_argument in &specialization.type_arguments {
+		let entry = &type_store.type_entries[type_argument.index()];
+		if !entry.is_generatable {
+			return Ok(());
+		}
+	}
 
-// 	write!(output, "(")?;
+	generate_type_id(type_store, specialization.return_type, output)?;
+	write!(output, " ")?;
 
-// 	let mut first = true;
-// 	for parameter in &function.parameters {
-// 		if !first {
-// 			write!(output, ", ")?;
-// 		}
-// 		first = false;
-// 		generate_type_id(type_store, parameter.type_id, output)?;
-// 		write!(output, " ")?;
-// 		generate_readable_index(parameter.readable_index, output)?;
-// 	}
-// 	if function.parameters.is_empty() {
-// 		write!(output, "void")?;
-// 	}
-// 	write!(output, ") {{\n")?;
+	// if is_main {
+	// 	write!(output, "fae_main")?;
+	// } else {
+	generate_functon_id(function_id, output)?;
+	// }
 
-// 	generate_block(type_store, function.block.as_ref().unwrap(), output)?;
+	write!(output, "(")?;
 
-// 	write!(output, "}}\n\n")
-// }
+	let mut first = true;
+	for parameter in &specialization.parameters {
+		if !first {
+			write!(output, ", ")?;
+		}
+		first = false;
+		generate_type_id(type_store, parameter.type_id, output)?;
+		write!(output, " ")?;
+		generate_readable_index(parameter.readable_index, output)?;
+	}
+	if specialization.parameters.is_empty() {
+		write!(output, "void")?;
+	}
+	write!(output, ") {{\n")?;
+
+	generate_block(type_store, shape.block.as_ref().unwrap(), output)?;
+
+	write!(output, "}}\n\n")
+}
 
 fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Result {
 	for statement in &block.statements {

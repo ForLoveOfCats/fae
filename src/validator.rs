@@ -1,5 +1,6 @@
 use crate::error::*;
 use crate::ir::*;
+use crate::span::Span;
 use crate::tree::Node;
 use crate::tree::{self, BinaryOperator, PathSegments};
 use crate::type_store::*;
@@ -56,22 +57,27 @@ impl<'a, 'b> Context<'a, 'b> {
 
 	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
 		let readable_index = self.readables.push(name.item, type_id, kind);
-		self.push_readable_with_index(name, kind, readable_index);
-		readable_index
-	}
 
-	fn push_readable_with_index(&mut self, name: tree::Node<&'a str>, kind: ReadableKind, readable_index: usize) {
 		let span = Some(name.span);
 		let name = name.item;
-
 		let kind = match kind {
 			ReadableKind::Const => SymbolKind::Const { readable_index },
 			ReadableKind::Let => SymbolKind::Let { readable_index },
 			ReadableKind::Mut => SymbolKind::Mut { readable_index },
 		};
 
-		self.push_symbol(Symbol { name, kind, span, file_index: Some(self.file_index) })
+		self.push_symbol(Symbol { name, kind, span, file_index: Some(self.file_index) });
+		readable_index
 	}
+
+	// fn update_readable(
+	// 	&mut self,
+	// 	name: tree::Node<&'a str>,
+	// 	type_id: TypeId,
+	// 	kind: ReadableKind,
+	// 	readable_index: usize,
+	// ) {
+	// }
 
 	fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
 		self.symbols
@@ -309,11 +315,17 @@ pub struct FunctionStore<'a> {
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
 	generics: Vec<Vec<GenericParameter<'a>>>,
+
+	generate_order: Vec<FunctionId>,
 }
 
 impl<'a> FunctionStore<'a> {
 	pub fn new() -> Self {
-		FunctionStore { shapes: Vec::new(), generics: Vec::new() }
+		FunctionStore {
+			shapes: Vec::new(),
+			generics: Vec::new(),
+			generate_order: Vec::new(),
+		}
 	}
 
 	pub fn shapes(&self) -> &[FunctionShape] {
@@ -322,6 +334,71 @@ impl<'a> FunctionStore<'a> {
 
 	pub fn generics(&self) -> &[Vec<GenericParameter<'a>>] {
 		&self.generics
+	}
+
+	pub fn generate_order(&self) -> &[FunctionId] {
+		&self.generate_order
+	}
+
+	pub fn get_or_add_specialization(
+		&mut self,
+		messages: &mut Messages,
+		type_store: &mut TypeStore<'a>,
+		function_shape_index: usize,
+		invoke_span: Span,
+		type_arguments: Vec<TypeId>,
+	) -> Option<FunctionSpecializationResult> {
+		let shape = &mut self.shapes[function_shape_index];
+
+		if shape.generics.len() != type_arguments.len() {
+			let error = message!("Expected {} type arguments, got {}", shape.generics.len(), type_arguments.len());
+			messages.error(error.span(invoke_span));
+			return None;
+		}
+
+		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
+			if existing.type_arguments == type_arguments {
+				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
+			}
+		}
+
+		let parameters = shape
+			.parameters
+			.iter()
+			.map(|parameter| {
+				let type_id = type_store.specialize_with_function_generics(
+					messages,
+					function_shape_index,
+					&type_arguments,
+					parameter.type_id,
+				);
+
+				let is_mutable = parameter.is_mutable;
+				let readable_index = parameter.readable_index;
+				Parameter { name: parameter.name, type_id, readable_index, is_mutable }
+			})
+			.collect::<Vec<_>>();
+
+		let return_type = type_store.specialize_with_function_generics(
+			messages,
+			function_shape_index,
+			&type_arguments,
+			shape.return_type,
+		);
+
+		let specialization_index = shape.specializations.len();
+		let concrete = Function {
+			type_arguments,
+			parameters,
+			return_type,
+			been_generated: false,
+		};
+		shape.specializations.push(concrete);
+
+		let function_id = FunctionId { function_shape_index, specialization_index };
+		self.generate_order.push(function_id);
+
+		Some(FunctionSpecializationResult { specialization_index, return_type })
 	}
 }
 
@@ -335,10 +412,10 @@ pub fn validate<'a>(
 	create_and_fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 	resolve_root_type_imports(messages, root_layers, parsed_files);
 
-	create_root_functions(messages, root_layers, type_store, function_store, parsed_files);
+	let mut readables = Readables::new();
+	create_root_functions(messages, root_layers, type_store, function_store, &mut readables, parsed_files);
 	resolve_root_function_imports(messages, root_layers, parsed_files);
 
-	let mut readables = Readables::new();
 	let mut symbols = Symbols::new();
 
 	for parsed_file in parsed_files {
@@ -424,6 +501,7 @@ fn create_root_functions<'a>(
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
@@ -440,6 +518,7 @@ fn create_root_functions<'a>(
 			type_store,
 			function_store,
 			root_layers,
+			readables,
 			&mut symbols,
 			parsed_file.module_path,
 			block,
@@ -654,6 +733,7 @@ fn create_block_functions<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	root_layers: &RootLayers<'a>,
+	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
 	block: &'a tree::Block<'a>,
@@ -704,9 +784,17 @@ fn create_block_functions<'a>(
 					None => continue,
 				};
 
-				let name = parameter.item.name;
 				let is_mutable = parameter.item.is_mutable;
-				parameters.push(ParameterShape { name, type_id, is_mutable });
+				let readable_kind = match is_mutable {
+					false => ReadableKind::Let,
+					true => ReadableKind::Mut,
+				};
+
+				let name = parameter.item.name.item;
+				let readable_index = readables.push(name, type_id, readable_kind);
+
+				let name = parameter.item.name;
+				parameters.push(ParameterShape { name, type_id, is_mutable, readable_index });
 			}
 
 			drop(scope);
@@ -749,6 +837,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.type_store,
 			context.function_store,
 			context.root_layers,
+			context.readables,
 			context.symbols,
 			context.module_path,
 			block,
@@ -863,19 +952,22 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		scope.push_symbol(symbol);
 	}
 
-	for parameter in &statement.parameters {
+	for (index, parameter) in statement.parameters.iter().enumerate() {
+		let span = parameter.span;
 		let parameter = &parameter.item;
+
+		let shape = &scope.function_store.shapes[function_shape_index];
+		let parameter_shape = &shape.parameters[index];
+
+		let readable_index = parameter_shape.readable_index;
 		let kind = match parameter.is_mutable {
-			true => ReadableKind::Mut,
-			false => ReadableKind::Let,
+			false => SymbolKind::Let { readable_index },
+			true => SymbolKind::Mut { readable_index },
 		};
 
-		let type_id = match scope.lookup_type(&parameter.parsed_type) {
-			Some(type_id) => type_id,
-			None => return,
-		};
-
-		scope.push_readable(parameter.name, type_id, kind);
+		let name = parameter.name.item;
+		let file_index = Some(scope.file_index);
+		scope.push_symbol(Symbol { name, kind, span: Some(span), file_index });
 	}
 
 	let type_id = match scope.lookup_type(&statement.parsed_type) {
@@ -1104,11 +1196,9 @@ fn validate_expression<'a>(
 				type_arguments.push(type_id);
 			}
 
-			let shape = &mut context.function_store.shapes[function_shape_index];
-			let results = shape.get_or_add_specialization(
+			let results = context.function_store.get_or_add_specialization(
 				context.messages,
 				context.type_store,
-				context.readables,
 				function_shape_index,
 				span,
 				type_arguments,
