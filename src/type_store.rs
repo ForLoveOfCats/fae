@@ -1,5 +1,5 @@
 use crate::error::Messages;
-use crate::ir::{GenericParameter, Symbol, SymbolKind};
+use crate::ir::{GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
@@ -110,13 +110,13 @@ impl PrimativeKind {
 pub struct TypeEntry {
 	pub kind: TypeEntryKind,
 	pub reference_entries: Option<u32>,
-	pub is_generatable: bool,
+	pub generic_poisoned: bool,
 }
 
 impl TypeEntry {
 	pub fn new(type_store: &TypeStore, kind: TypeEntryKind) -> TypeEntry {
-		let is_generatable = match kind {
-			TypeEntryKind::BuiltinType { .. } => true,
+		let generic_poisoned = match kind {
+			TypeEntryKind::BuiltinType { .. } => false,
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let user_type = &type_store.user_types[shape_index];
@@ -126,20 +126,20 @@ impl TypeEntry {
 						specialization
 							.type_arguments
 							.iter()
-							.any(|t| type_store.type_entries[t.index()].is_generatable)
+							.any(|t| type_store.type_entries[t.index()].generic_poisoned)
 					}
 				}
 			}
 
 			TypeEntryKind::Pointer { type_id, .. } | TypeEntryKind::Slice { type_id, .. } => {
 				let entry = type_store.type_entries[type_id.index()];
-				entry.is_generatable
+				entry.generic_poisoned
 			}
 
-			TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => false,
+			TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => true,
 		};
 
-		TypeEntry { kind, reference_entries: None, is_generatable }
+		TypeEntry { kind, reference_entries: None, generic_poisoned }
 	}
 }
 
@@ -189,7 +189,7 @@ impl<'a> TypeStore<'a> {
 		let mut push_primative = |name, kind| {
 			let type_id = TypeId { entry: type_entries.len() as u32 };
 			let kind = TypeEntryKind::BuiltinType { kind };
-			type_entries.push(TypeEntry { kind, reference_entries: None, is_generatable: true });
+			type_entries.push(TypeEntry { kind, reference_entries: None, generic_poisoned: false });
 
 			let kind = SymbolKind::BuiltinType { type_id };
 			let symbol = Symbol { name, kind, span: None, file_index: None };
@@ -335,6 +335,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages,
 		function_store: &mut FunctionStore,
+		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
@@ -343,13 +344,13 @@ impl<'a> TypeStore<'a> {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let inner_id = self.lookup_type(messages, function_store, root_layers, symbols, &inner)?;
-				return Some(self.pointer_to(inner_id, false)); // TODO: Parse mutability
+				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, &inner)?;
+				return Some(self.pointer_to(id, false)); // TODO: Parse mutability
 			}
 
 			tree::Type::Slice(inner) => {
-				let inner_id = self.lookup_type(messages, function_store, root_layers, symbols, &inner)?;
-				return Some(self.slice_of(inner_id, false)); // TODO: Parse mutability
+				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, &inner)?;
+				return Some(self.slice_of(id, false)); // TODO: Parse mutability
 			}
 
 			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
@@ -394,16 +395,18 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(type_arguments.len());
 		for argument in type_arguments {
-			type_args.push(self.lookup_type(messages, function_store, root_layers, symbols, &argument)?);
+			let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, &argument)?;
+			type_args.push(id);
 		}
 
 		let invoke_span = self.user_types[shape_index].span;
-		self.get_or_add_shape_specialization(messages, shape_index, Some(invoke_span), type_args)
+		self.get_or_add_shape_specialization(messages, generic_usages, shape_index, Some(invoke_span), type_args)
 	}
 
 	pub fn get_or_add_shape_specialization(
 		&mut self,
 		messages: &mut Messages,
+		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
 		type_arguments: Vec<TypeId>,
@@ -432,6 +435,10 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
+		let type_arguments_generic_poisoned = type_arguments
+			.iter()
+			.any(|id| self.type_entries[id.index()].generic_poisoned);
+
 		let mut fields = Vec::with_capacity(shape.fields.len());
 		for (field_index, field) in shape.fields.iter().enumerate() {
 			fields.push(Field {
@@ -442,8 +449,13 @@ impl<'a> TypeStore<'a> {
 		}
 
 		for field in &mut fields {
-			let type_id = field.type_id;
-			field.type_id = self.specialize_with_user_type_generics(messages, shape_index, &type_arguments, type_id);
+			field.type_id = self.specialize_with_user_type_generics(
+				messages,
+				generic_usages,
+				shape_index,
+				&type_arguments,
+				field.type_id,
+			);
 		}
 
 		let user_type = &mut self.user_types[shape_index];
@@ -453,13 +465,20 @@ impl<'a> TypeStore<'a> {
 
 		let specialization_index = shape.specializations.len();
 		let type_id = TypeId { entry: self.type_entries.len() as u32 };
-
-		let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-		self.user_type_generate_order.push(description);
-		shape.specializations.push(Struct { type_id, type_arguments, fields });
+		let specialization = Struct { type_id, type_arguments: type_arguments.clone(), fields };
+		shape.specializations.push(specialization);
 
 		let entry = TypeEntry::new(self, TypeEntryKind::UserType { shape_index, specialization_index });
 		self.type_entries.push(entry);
+
+		if type_arguments_generic_poisoned {
+			let kind = GenericUsageKind::UserType { shape_index };
+			let usage = GenericUsage { type_arguments, kind };
+			generic_usages.push(usage)
+		}
+
+		let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+		self.user_type_generate_order.push(description);
 
 		Some(type_id)
 	}
@@ -467,6 +486,7 @@ impl<'a> TypeStore<'a> {
 	pub fn specialize_with_user_type_generics(
 		&mut self,
 		messages: &mut Messages,
+		generic_usages: &mut Vec<GenericUsage>,
 		type_shape_index: usize,
 		type_arguments: &[TypeId],
 		type_id: TypeId,
@@ -503,21 +523,37 @@ impl<'a> TypeStore<'a> {
 							}
 						}
 
-						self.get_or_add_shape_specialization(messages, *shape_index, None, new_struct_type_arguments)
-							.unwrap()
+						self.get_or_add_shape_specialization(
+							messages,
+							generic_usages,
+							*shape_index,
+							None,
+							new_struct_type_arguments,
+						)
+						.unwrap()
 					}
 				}
 			}
 
 			TypeEntryKind::Pointer { type_id, mutable } => {
-				let index = type_shape_index;
-				let type_id = self.specialize_with_user_type_generics(messages, index, type_arguments, *type_id);
+				let type_id = self.specialize_with_user_type_generics(
+					messages,
+					generic_usages,
+					type_shape_index,
+					type_arguments,
+					*type_id,
+				);
 				self.pointer_to(type_id, *mutable)
 			}
 
 			TypeEntryKind::Slice { type_id, mutable } => {
-				let index = type_shape_index;
-				let type_id = self.specialize_with_user_type_generics(messages, index, type_arguments, *type_id);
+				let type_id = self.specialize_with_user_type_generics(
+					messages,
+					generic_usages,
+					type_shape_index,
+					type_arguments,
+					*type_id,
+				);
 				self.slice_of(type_id, *mutable)
 			}
 
@@ -533,6 +569,7 @@ impl<'a> TypeStore<'a> {
 	pub fn specialize_with_function_generics(
 		&mut self,
 		messages: &mut Messages,
+		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &[TypeId],
 		type_id: TypeId,
@@ -569,8 +606,14 @@ impl<'a> TypeStore<'a> {
 							}
 						}
 
-						self.get_or_add_shape_specialization(messages, *shape_index, None, new_struct_type_arguments)
-							.unwrap()
+						self.get_or_add_shape_specialization(
+							messages,
+							generic_usages,
+							*shape_index,
+							None,
+							new_struct_type_arguments,
+						)
+						.unwrap()
 					}
 				}
 			}
@@ -578,22 +621,22 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Pointer { type_id, mutable } => {
 				let type_id = self.specialize_with_function_generics(
 					messages,
+					generic_usages,
 					function_shape_index,
 					function_type_arguments,
 					*type_id,
 				);
-
 				self.pointer_to(type_id, *mutable)
 			}
 
 			TypeEntryKind::Slice { type_id, mutable } => {
 				let type_id = self.specialize_with_function_generics(
 					messages,
+					generic_usages,
 					function_shape_index,
 					function_type_arguments,
 					*type_id,
 				);
-
 				self.slice_of(type_id, *mutable)
 			}
 
@@ -681,9 +724,5 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 		}
-	}
-
-	pub fn is_pointer(&self, type_id: TypeId) -> bool {
-		matches!(self.type_entries[type_id.index()].kind, TypeEntryKind::Pointer { .. })
 	}
 }

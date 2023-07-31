@@ -108,7 +108,7 @@ fn forward_declare_user_type(
 		UserTypeKind::Struct { shape } => {
 			let specialization = &shape.specializations[description.specialization_index];
 			let entry = &type_store.type_entries[specialization.type_id.index()];
-			if !entry.is_generatable {
+			if entry.generic_poisoned {
 				return Ok(());
 			}
 
@@ -134,7 +134,7 @@ fn generate_user_type(
 		UserTypeKind::Struct { shape } => {
 			let specialization = &shape.specializations[description.specialization_index];
 			let entry = &type_store.type_entries[specialization.type_id.index()];
-			if !entry.is_generatable {
+			if entry.generic_poisoned {
 				return Ok(());
 			}
 
@@ -177,7 +177,7 @@ fn generate_function(
 
 	for type_argument in &specialization.type_arguments {
 		let entry = &type_store.type_entries[type_argument.index()];
-		if !entry.is_generatable {
+		if entry.generic_poisoned {
 			return Ok(());
 		}
 	}
@@ -185,11 +185,11 @@ fn generate_function(
 	generate_type_id(type_store, specialization.return_type, output)?;
 	write!(output, " ")?;
 
-	// if is_main {
-	// 	write!(output, "fae_main")?;
-	// } else {
-	generate_functon_id(function_id, output)?;
-	// }
+	if shape.is_main {
+		write!(output, "fae_main")?;
+	} else {
+		generate_functon_id(function_id, output)?;
+	}
 
 	write!(output, "(")?;
 
@@ -208,20 +208,35 @@ fn generate_function(
 	}
 	write!(output, ") {{\n")?;
 
-	generate_block(type_store, shape.block.as_ref().unwrap(), output)?;
+	generate_block(
+		type_store,
+		function_store,
+		&specialization.type_arguments,
+		shape.block.as_ref().unwrap(),
+		output,
+	)?;
 
 	write!(output, "}}\n\n")
 }
 
-fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Result {
+fn generate_block(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	function_type_arguments: &[TypeId],
+	block: &Block,
+	output: Output,
+) -> Result {
 	for statement in &block.statements {
 		match &statement.kind {
 			StatementKind::Expression(expression) => {
-				generate_expression(type_store, expression, output)?;
+				generate_expression(type_store, function_store, function_type_arguments, expression, output)?;
 				write!(output, ";\n")?;
 			}
 
-			StatementKind::Block(block) => generate_block(type_store, block, output)?, // Probably wrong?
+			StatementKind::Block(block) => {
+				// Probably wrong?
+				generate_block(type_store, function_store, function_type_arguments, block, output)?;
+			}
 
 			StatementKind::Const(_) => {}
 
@@ -230,14 +245,14 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 				write!(output, " ")?;
 				generate_readable_index(binding.readable_index, output)?;
 				write!(output, " = ")?;
-				generate_expression(type_store, &binding.expression, output)?;
+				generate_expression(type_store, function_store, function_type_arguments, &binding.expression, output)?;
 				write!(output, ";\n")?;
 			}
 
 			StatementKind::Return(statement) => {
 				if let Some(expression) = &statement.expression {
 					write!(output, "return ")?;
-					generate_expression(type_store, expression, output)?;
+					generate_expression(type_store, function_store, function_type_arguments, expression, output)?;
 					write!(output, ";\n")?;
 				} else {
 					write!(output, "return;\n")?;
@@ -249,11 +264,17 @@ fn generate_block(type_store: &TypeStore, block: &Block, output: Output) -> Resu
 	Ok(())
 }
 
-fn generate_struct_literal(type_store: &TypeStore, literal: &StructLiteral, output: Output) -> Result {
+fn generate_struct_literal(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	function_type_arguments: &[TypeId],
+	literal: &StructLiteral,
+	output: Output,
+) -> Result {
 	generate_struct_construction(type_store, literal.type_id, output, |output| {
 		for initalizer in &literal.field_initializers {
 			write!(output, ".fi_{} = ", initalizer.field_index)?;
-			generate_expression(type_store, &initalizer.expression, output)?;
+			generate_expression(type_store, function_store, function_type_arguments, &initalizer.expression, output)?;
 			write!(output, ", ")?;
 		}
 
@@ -261,7 +282,21 @@ fn generate_struct_literal(type_store: &TypeStore, literal: &StructLiteral, outp
 	})
 }
 
-fn generate_call(type_store: &TypeStore, call: &Call, output: Output) -> Result {
+fn generate_call(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	function_type_arguments: &[TypeId],
+	call: &Call,
+	output: Output,
+) -> Result {
+	// function_store.specialize_with_function_generics(
+	// 	messages,
+	// 	type_store,
+	// 	function_id,
+	// 	caller_shape_index,
+	// 	caller_type_arguments,
+	// );
+
 	generate_functon_id(call.function_id, output)?;
 	write!(output, "(")?;
 
@@ -271,15 +306,21 @@ fn generate_call(type_store: &TypeStore, call: &Call, output: Output) -> Result 
 			write!(output, ", ")?;
 		}
 		first = false;
-		generate_expression(type_store, argument, output)?;
+		generate_expression(type_store, function_store, function_type_arguments, argument, output)?;
 	}
 
 	write!(output, ")")
 }
 
-fn generate_binary_operation(type_store: &TypeStore, operation: &BinaryOperation, output: Output) -> Result {
+fn generate_binary_operation(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	function_type_arguments: &[TypeId],
+	operation: &BinaryOperation,
+	output: Output,
+) -> Result {
 	write!(output, "(")?;
-	generate_expression(type_store, &operation.left, output)?;
+	generate_expression(type_store, function_store, function_type_arguments, &operation.left, output)?;
 
 	let op = match operation.op {
 		BinaryOperator::Assign => "=",
@@ -290,11 +331,17 @@ fn generate_binary_operation(type_store: &TypeStore, operation: &BinaryOperation
 	};
 	write!(output, " {} ", op)?;
 
-	generate_expression(type_store, &operation.right, output)?;
+	generate_expression(type_store, function_store, function_type_arguments, &operation.right, output)?;
 	write!(output, ")")
 }
 
-fn generate_expression(type_store: &TypeStore, expression: &Expression, output: Output) -> Result {
+fn generate_expression(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	function_type_arguments: &[TypeId],
+	expression: &Expression,
+	output: Output,
+) -> Result {
 	match &expression.kind {
 		ExpressionKind::IntegerLiteral(literal) => write!(output, "{}", literal.value),
 		ExpressionKind::FloatLiteral(literal) => write!(output, "{}", literal.value),
@@ -308,13 +355,17 @@ fn generate_expression(type_store: &TypeStore, expression: &Expression, output: 
 			})
 		}
 
-		ExpressionKind::StructLiteral(literal) => generate_struct_literal(type_store, literal, output),
+		ExpressionKind::StructLiteral(literal) => {
+			generate_struct_literal(type_store, function_store, function_type_arguments, literal, output)
+		}
 
-		ExpressionKind::Call(call) => generate_call(type_store, call, output),
+		ExpressionKind::Call(call) => generate_call(type_store, function_store, function_type_arguments, call, output),
 
 		ExpressionKind::Read(read) => generate_readable_index(read.readable_index, output),
 
-		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(type_store, operation, output),
+		ExpressionKind::BinaryOperation(operation) => {
+			generate_binary_operation(type_store, function_store, function_type_arguments, operation, output)
+		}
 
 		kind => unimplemented!("expression {kind:?}"),
 	}

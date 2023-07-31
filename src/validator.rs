@@ -14,6 +14,8 @@ pub struct Context<'a, 'b> {
 
 	type_store: &'b mut TypeStore<'a>,
 	function_store: &'b mut FunctionStore<'a>,
+	function_generic_usages: &'b mut Vec<GenericUsage>,
+
 	root_layers: &'b RootLayers<'a>,
 
 	readables: &'b mut Readables<'a>,
@@ -38,6 +40,8 @@ impl<'a, 'b> Context<'a, 'b> {
 
 			type_store: &mut *self.type_store,
 			function_store: &mut *self.function_store,
+			function_generic_usages: &mut *self.function_generic_usages,
+
 			root_layers: &*self.root_layers,
 
 			readables: &mut *self.readables,
@@ -70,23 +74,20 @@ impl<'a, 'b> Context<'a, 'b> {
 		readable_index
 	}
 
-	// fn update_readable(
-	// 	&mut self,
-	// 	name: tree::Node<&'a str>,
-	// 	type_id: TypeId,
-	// 	kind: ReadableKind,
-	// 	readable_index: usize,
-	// ) {
-	// }
-
 	fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
 		self.symbols
 			.lookup_symbol(self.messages, self.root_layers, self.type_store, path)
 	}
 
 	fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
-		self.type_store
-			.lookup_type(self.messages, self.function_store, self.root_layers, self.symbols, parsed_type)
+		self.type_store.lookup_type(
+			self.messages,
+			self.function_store,
+			self.function_generic_usages,
+			self.root_layers,
+			self.symbols,
+			parsed_type,
+		)
 	}
 
 	fn type_name(&self, type_id: TypeId) -> String {
@@ -344,15 +345,16 @@ impl<'a> FunctionStore<'a> {
 		&mut self,
 		messages: &mut Messages,
 		type_store: &mut TypeStore<'a>,
+		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
-		invoke_span: Span,
+		invoke_span: Option<Span>,
 		type_arguments: Vec<TypeId>,
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &mut self.shapes[function_shape_index];
 
 		if shape.generics.len() != type_arguments.len() {
 			let error = message!("Expected {} type arguments, got {}", shape.generics.len(), type_arguments.len());
-			messages.error(error.span(invoke_span));
+			messages.error(error.span_if_some(invoke_span));
 			return None;
 		}
 
@@ -362,12 +364,17 @@ impl<'a> FunctionStore<'a> {
 			}
 		}
 
+		let type_arguments_generic_poisoned = type_arguments
+			.iter()
+			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
+
 		let parameters = shape
 			.parameters
 			.iter()
 			.map(|parameter| {
 				let type_id = type_store.specialize_with_function_generics(
 					messages,
+					generic_usages,
 					function_shape_index,
 					&type_arguments,
 					parameter.type_id,
@@ -381,6 +388,7 @@ impl<'a> FunctionStore<'a> {
 
 		let return_type = type_store.specialize_with_function_generics(
 			messages,
+			generic_usages,
 			function_shape_index,
 			&type_arguments,
 			shape.return_type,
@@ -388,17 +396,118 @@ impl<'a> FunctionStore<'a> {
 
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
-			type_arguments,
+			type_arguments: type_arguments.clone(),
 			parameters,
 			return_type,
 			been_generated: false,
 		};
 		shape.specializations.push(concrete);
 
+		if type_arguments_generic_poisoned {
+			let kind = GenericUsageKind::Function { function_shape_index };
+			let usage = GenericUsage { type_arguments, kind };
+			generic_usages.push(usage)
+		} else {
+			let function_type_arguments = type_arguments;
+
+			for generic_usage in shape.generic_usages.clone() {
+				let mut type_arguments = Vec::with_capacity(generic_usage.type_arguments.len());
+				for &type_argument in &generic_usage.type_arguments {
+					let type_id = type_store.specialize_with_function_generics(
+						messages,
+						generic_usages,
+						function_shape_index,
+						&function_type_arguments,
+						type_argument,
+					);
+
+					type_arguments.push(type_id);
+				}
+
+				match generic_usage.kind {
+					GenericUsageKind::UserType { shape_index } => {
+						type_store.get_or_add_shape_specialization(
+							messages,
+							generic_usages,
+							shape_index,
+							None,
+							type_arguments,
+						);
+					}
+
+					GenericUsageKind::Function { function_shape_index } => {
+						self.get_or_add_specialization(
+							messages,
+							type_store,
+							generic_usages,
+							function_shape_index,
+							invoke_span,
+							type_arguments,
+						);
+					}
+				}
+			}
+		}
+
 		let function_id = FunctionId { function_shape_index, specialization_index };
 		self.generate_order.push(function_id);
 
 		Some(FunctionSpecializationResult { specialization_index, return_type })
+	}
+
+	pub fn specialize_with_function_generics(
+		&mut self,
+		messages: &mut Messages,
+		type_store: &mut TypeStore<'a>,
+		function_id: FunctionId,
+		caller_shape_index: usize,
+		caller_type_arguments: &[TypeId],
+	) -> FunctionId {
+		let shape = &self.shapes[function_id.function_shape_index];
+		let specialization = &shape.specializations[function_id.specialization_index];
+		if specialization.type_arguments.is_empty() {
+			return function_id;
+		}
+
+		let generic_poisoned = specialization
+			.type_arguments
+			.iter()
+			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
+		if !generic_poisoned {
+			return function_id;
+		}
+
+		let mut type_arguments = Vec::with_capacity(specialization.type_arguments.len());
+		let mut generic_usages = Vec::new();
+		for &type_argument in &specialization.type_arguments {
+			let type_id = type_store.specialize_with_function_generics(
+				messages,
+				&mut generic_usages,
+				caller_shape_index,
+				caller_type_arguments,
+				type_argument,
+			);
+
+			assert!(generic_usages.is_empty());
+			type_arguments.push(type_id);
+		}
+
+		let result = self
+			.get_or_add_specialization(
+				messages,
+				type_store,
+				&mut generic_usages,
+				function_id.function_shape_index,
+				None,
+				type_arguments,
+			)
+			.unwrap();
+		assert!(generic_usages.is_empty());
+
+		FunctionId {
+			function_shape_index: function_id.function_shape_index,
+			specialization_index: result.specialization_index,
+		}
 	}
 }
 
@@ -409,13 +518,31 @@ pub fn validate<'a>(
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
-	create_and_fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
+	let mut function_generic_usages = Vec::new();
+
+	create_and_fill_root_types(
+		messages,
+		type_store,
+		function_store,
+		&mut function_generic_usages,
+		root_layers,
+		parsed_files,
+	);
 	resolve_root_type_imports(messages, root_layers, parsed_files);
 
 	let mut readables = Readables::new();
-	create_root_functions(messages, root_layers, type_store, function_store, &mut readables, parsed_files);
+	create_root_functions(
+		messages,
+		root_layers,
+		type_store,
+		function_store,
+		&mut function_generic_usages,
+		&mut readables,
+		parsed_files,
+	);
 	resolve_root_function_imports(messages, root_layers, parsed_files);
 
+	assert!(function_generic_usages.is_empty());
 	let mut symbols = Symbols::new();
 
 	for parsed_file in parsed_files {
@@ -432,6 +559,7 @@ pub fn validate<'a>(
 			messages,
 			type_store,
 			function_store,
+			function_generic_usages: &mut function_generic_usages,
 			root_layers,
 			readables: &mut readables,
 			initial_symbols_len: symbols.len(),
@@ -446,6 +574,7 @@ fn create_and_fill_root_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
@@ -470,7 +599,7 @@ fn create_and_fill_root_types<'a>(
 
 		// Yuck, I do not like this
 		let mut symbols = layer.symbols.clone();
-		fill_block_types(messages, type_store, function_store, root_layers, &mut symbols, block);
+		fill_block_types(messages, type_store, function_store, generic_usages, root_layers, &mut symbols, block);
 		root_layers.create_module_path(&parsed_file.module_path).symbols = symbols;
 	}
 }
@@ -501,6 +630,7 @@ fn create_root_functions<'a>(
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
@@ -517,6 +647,7 @@ fn create_root_functions<'a>(
 			messages,
 			type_store,
 			function_store,
+			generic_usages,
 			root_layers,
 			readables,
 			&mut symbols,
@@ -666,6 +797,7 @@ fn fill_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
@@ -706,6 +838,7 @@ fn fill_block_types<'a>(
 				let field_type = match type_store.lookup_type(
 					messages,
 					function_store,
+					generic_usages,
 					root_layers,
 					scope.symbols,
 					&field.parsed_type,
@@ -732,6 +865,7 @@ fn create_block_functions<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
@@ -762,8 +896,15 @@ fn create_block_functions<'a>(
 			function_store.generics.push(generics.clone());
 
 			let parsed_type = &statement.parsed_type;
-			#[rustfmt::skip] // I *hate* it when rustfmt inserts a newline after `=`
-			let return_type = type_store.lookup_type(messages, function_store, root_layers, scope.symbols, &parsed_type);
+			let return_type = type_store.lookup_type(
+				messages,
+				function_store,
+				generic_usages,
+				root_layers,
+				scope.symbols,
+				&parsed_type,
+			);
+
 			let return_type = match return_type {
 				Some(type_id) => type_id,
 				None => continue,
@@ -774,6 +915,7 @@ fn create_block_functions<'a>(
 				let type_id = type_store.lookup_type(
 					messages,
 					function_store,
+					generic_usages,
 					root_layers,
 					scope.symbols,
 					&parameter.item.parsed_type,
@@ -826,6 +968,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.messages,
 			context.type_store,
 			context.function_store,
+			context.function_generic_usages,
 			context.root_layers,
 			context.symbols,
 			block,
@@ -836,6 +979,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.messages,
 			context.type_store,
 			context.function_store,
+			context.function_generic_usages,
 			context.root_layers,
 			context.readables,
 			context.symbols,
@@ -939,6 +1083,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	};
 
 	let mut scope = context.child_scope();
+	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
 	for (generic_index, generic) in generics.into_iter().enumerate() {
@@ -970,23 +1115,36 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		scope.push_symbol(Symbol { name, kind, span: Some(span), file_index });
 	}
 
-	let type_id = match scope.lookup_type(&statement.parsed_type) {
-		Some(type_id) => type_id,
-		None => return,
-	};
-
+	let type_id = scope.lookup_type(&statement.parsed_type);
 	let mut block = validate_block(scope, &statement.block.item, false);
-	assert_eq!(block.type_id, context.type_store.void_type_id()); // Hack
-	block.type_id = type_id;
+	if let Some(type_id) = type_id {
+		block.type_id = type_id;
+	}
 
-	if trace_return(context, type_id, &block) == TracedReturn::NotCovered {
+	if trace_return(context, block.type_id, &block) == TracedReturn::NotCovered {
 		let error = message!("Not all code paths for function `{}` return a value", statement.name.item);
 		context.error(error.span(statement.name.span));
 	}
 
-	let shape_block = &mut context.function_store.shapes[function_shape_index].block;
-	assert!(shape_block.is_none());
-	*shape_block = Some(block);
+	let shape = &mut context.function_store.shapes[function_shape_index];
+	assert!(shape.block.is_none());
+	shape.block = Some(block);
+
+	let generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
+	assert!(shape.generic_usages.is_empty());
+	shape.generic_usages = generic_usages;
+	context.function_generic_usages.truncate(initial_generic_usages_len);
+
+	if shape.is_main {
+		context.function_store.get_or_add_specialization(
+			context.messages,
+			context.type_store,
+			context.function_generic_usages,
+			function_shape_index,
+			None,
+			Vec::new(),
+		);
+	}
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -1128,7 +1286,7 @@ fn validate_expression<'a>(
 				UserTypeKind::Struct { shape } => shape,
 			};
 
-			// Hate this
+			// Hate this clone
 			let fields = shape.specializations[specialization_index].fields.clone();
 			let mut fields = fields.iter();
 
@@ -1199,8 +1357,9 @@ fn validate_expression<'a>(
 			let results = context.function_store.get_or_add_specialization(
 				context.messages,
 				context.type_store,
+				context.function_generic_usages,
 				function_shape_index,
-				span,
+				Some(span),
 				type_arguments,
 			)?;
 			let FunctionSpecializationResult { specialization_index, return_type } = results;

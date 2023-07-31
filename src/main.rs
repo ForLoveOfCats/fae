@@ -58,6 +58,7 @@ fn main() {
 	//Not parallelizable
 	let binary_path = Path::new("./output.executable");
 	generate_code(&type_store, &function_store, OptimizationLevel::None, binary_path);
+	assert!(!messages.any_errors());
 	let status = std::process::Command::new(binary_path)
 		.spawn()
 		.expect("Failed to launch resulting binary")

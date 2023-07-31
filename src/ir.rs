@@ -1,8 +1,6 @@
-use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::{BinaryOperator, Node};
 use crate::type_store::*;
-use crate::validator::Readables;
 
 /*
  * The current structure of the IR utilizes nested `Box`-es and `Vec`-es which is rather inefficient
@@ -79,7 +77,19 @@ pub struct GenericParameter<'a> {
 	pub generic_type_id: TypeId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct GenericUsage {
+	pub type_arguments: Vec<TypeId>,
+	pub kind: GenericUsageKind,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum GenericUsageKind {
+	UserType { shape_index: usize },
+	Function { function_shape_index: usize },
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionShape<'a> {
 	pub name: Node<&'a str>,
 	pub module_path: &'a [String],
@@ -90,6 +100,7 @@ pub struct FunctionShape<'a> {
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: TypeId,
 	pub block: Option<Block<'a>>,
+	pub generic_usages: Vec<GenericUsage>,
 
 	pub specializations: Vec<Function<'a>>,
 }
@@ -120,12 +131,13 @@ impl<'a> FunctionShape<'a> {
 			parameters,
 			return_type,
 			block: None,
+			generic_usages: Vec::new(),
 			specializations: Vec::new(),
 		}
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParameterShape<'a> {
 	pub name: Node<&'a str>,
 	pub type_id: TypeId,
@@ -133,7 +145,7 @@ pub struct ParameterShape<'a> {
 	pub readable_index: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function<'a> {
 	pub type_arguments: Vec<TypeId>,
 	pub parameters: Vec<Parameter<'a>>,
@@ -155,19 +167,19 @@ pub struct FunctionId {
 	pub specialization_index: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block<'a> {
 	pub type_id: TypeId,
 	pub statements: Vec<Statement<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Statement<'a> {
 	pub type_id: TypeId,
 	pub kind: StatementKind<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StatementKind<'a> {
 	Expression(Expression<'a>),
 
@@ -179,14 +191,14 @@ pub enum StatementKind<'a> {
 	Return(Box<Return<'a>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Const<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Binding<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
@@ -195,20 +207,20 @@ pub struct Binding<'a> {
 	pub is_mutable: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Return<'a> {
 	pub span: Span,
 	pub expression: Option<Expression<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
 	pub kind: ExpressionKind<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExpressionKind<'a> {
 	Block(Block<'a>),
 
@@ -226,46 +238,46 @@ pub enum ExpressionKind<'a> {
 	BinaryOperation(Box<BinaryOperation<'a>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntegerLiteral {
 	pub value: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FloatLiteral {
 	pub value: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CodepointLiteral {
 	pub value: char,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StringLiteral<'a> {
 	pub value: &'a str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructLiteral<'a> {
 	pub type_id: TypeId,
 	pub field_initializers: Vec<FieldInitializer<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldInitializer<'a> {
 	pub field_index: usize,
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Call<'a> {
 	pub name: &'a str,
 	pub function_id: FunctionId,
 	pub arguments: Vec<Expression<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Read<'a> {
 	pub name: &'a str,
 	pub readable_index: usize,
@@ -276,13 +288,13 @@ pub enum UnaryOperator {
 	Negate,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnaryOperation<'a> {
 	pub op: UnaryOperator,
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryOperation<'a> {
 	pub op: BinaryOperator,
 	pub left: Expression<'a>,
