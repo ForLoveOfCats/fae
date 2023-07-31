@@ -341,7 +341,22 @@ impl<'a> FunctionStore<'a> {
 		&self.generate_order
 	}
 
-	pub fn get_or_add_specialization(
+	fn get_specialization(
+		&self,
+		function_shape_index: usize,
+		type_arguments: &[TypeId],
+	) -> Option<FunctionSpecializationResult> {
+		let shape = &self.shapes[function_shape_index];
+		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
+			if existing.type_arguments == type_arguments {
+				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
+			}
+		}
+
+		None
+	}
+
+	fn get_or_add_specialization(
 		&mut self,
 		messages: &mut Messages,
 		type_store: &mut TypeStore<'a>,
@@ -350,20 +365,18 @@ impl<'a> FunctionStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: Vec<TypeId>,
 	) -> Option<FunctionSpecializationResult> {
-		let shape = &mut self.shapes[function_shape_index];
-
+		let shape = &self.shapes[function_shape_index];
 		if shape.generics.len() != type_arguments.len() {
 			let error = message!("Expected {} type arguments, got {}", shape.generics.len(), type_arguments.len());
 			messages.error(error.span_if_some(invoke_span));
 			return None;
 		}
 
-		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
-			if existing.type_arguments == type_arguments {
-				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
-			}
+		if let Some(result) = self.get_specialization(function_shape_index, &type_arguments) {
+			return Some(result);
 		}
 
+		let shape = &mut self.shapes[function_shape_index];
 		let type_arguments_generic_poisoned = type_arguments
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
@@ -456,8 +469,8 @@ impl<'a> FunctionStore<'a> {
 	}
 
 	pub fn specialize_with_function_generics(
-		&mut self,
-		messages: &mut Messages,
+		&self,
+		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_id: FunctionId,
 		caller_shape_index: usize,
@@ -493,14 +506,7 @@ impl<'a> FunctionStore<'a> {
 		}
 
 		let result = self
-			.get_or_add_specialization(
-				messages,
-				type_store,
-				&mut generic_usages,
-				function_id.function_shape_index,
-				None,
-				type_arguments,
-			)
+			.get_specialization(function_id.function_shape_index, &type_arguments)
 			.unwrap();
 		assert!(generic_usages.is_empty());
 
