@@ -1137,9 +1137,53 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	shape.block = Some(block);
 
 	let generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
+	context.function_generic_usages.truncate(initial_generic_usages_len);
+
+	if !generic_usages.is_empty() && !shape.specializations.is_empty() {
+		for specialization in shape.specializations.clone() {
+			for generic_usage in &generic_usages {
+				let mut type_arguments = Vec::with_capacity(generic_usage.type_arguments.len());
+				for &type_argument in &generic_usage.type_arguments {
+					let type_id = context.type_store.specialize_with_function_generics(
+						context.messages,
+						&mut Vec::new(),
+						function_shape_index,
+						&specialization.type_arguments,
+						type_argument,
+					);
+
+					type_arguments.push(type_id);
+				}
+
+				match generic_usage.kind {
+					GenericUsageKind::UserType { shape_index } => {
+						context.type_store.get_or_add_shape_specialization(
+							context.messages,
+							context.function_generic_usages,
+							shape_index,
+							None,
+							type_arguments,
+						);
+					}
+
+					GenericUsageKind::Function { function_shape_index } => {
+						context.function_store.get_or_add_specialization(
+							context.messages,
+							context.type_store,
+							context.function_generic_usages,
+							function_shape_index,
+							None,
+							type_arguments,
+						);
+					}
+				}
+			}
+		}
+	}
+
+	let shape = &mut context.function_store.shapes[function_shape_index];
 	assert!(shape.generic_usages.is_empty());
 	shape.generic_usages = generic_usages;
-	context.function_generic_usages.truncate(initial_generic_usages_len);
 
 	if shape.is_main {
 		context.function_store.get_or_add_specialization(

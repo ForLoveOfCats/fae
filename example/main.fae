@@ -1,12 +1,3 @@
-generic T
-fn a(arg: T): T {
-	return b[T](arg)
-}
-
-generic T
-fn b(arg: T): T {
-	return arg
-}
 
 fn main(): void {
 	// TODO: Check for a main function
@@ -16,7 +7,17 @@ fn main(): void {
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 	// TODO: Allow no return for void functions
 
-	a[u64](42)
+	out_of_order_a[f64](4.2)
 
 	return
+}
+
+generic TA
+fn out_of_order_a(arg_a: TA): TA {
+	return out_of_order_b[TA](arg_a)
+}
+
+generic TB
+fn out_of_order_b(arg_b: TB): TB {
+	return arg_b
 }
