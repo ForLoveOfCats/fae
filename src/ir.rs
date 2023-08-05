@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::span::Span;
 use crate::tree::{BinaryOperator, Node};
 use crate::type_store::*;
@@ -99,7 +101,7 @@ pub struct FunctionShape<'a> {
 	pub generics: Vec<GenericParameter<'a>>,
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: TypeId,
-	pub block: Option<Block<'a>>,
+	pub block: Option<Rc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
 
 	pub specializations: Vec<Function<'a>>,
@@ -150,6 +152,7 @@ pub struct Function<'a> {
 	pub type_arguments: Vec<TypeId>,
 	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
+	pub been_queued: bool,
 	pub been_generated: bool,
 }
 
@@ -266,7 +269,6 @@ pub struct StructLiteral<'a> {
 
 #[derive(Debug, Clone)]
 pub struct FieldInitializer<'a> {
-	pub field_index: usize,
 	pub expression: Expression<'a>,
 }
 
@@ -280,6 +282,7 @@ pub struct Call<'a> {
 #[derive(Debug, Clone)]
 pub struct Read<'a> {
 	pub name: &'a str,
+	pub type_id: TypeId,
 	pub readable_index: usize,
 }
 

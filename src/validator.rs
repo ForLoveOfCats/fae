@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
@@ -311,34 +313,18 @@ impl<'a> RootLayer<'a> {
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
-	shapes: Vec<FunctionShape<'a>>,
+	pub shapes: Vec<FunctionShape<'a>>,
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
-	generics: Vec<Vec<GenericParameter<'a>>>,
+	pub generics: Vec<Vec<GenericParameter<'a>>>,
 
-	generate_order: Vec<FunctionId>,
+	pub main: Option<FunctionId>,
 }
 
 impl<'a> FunctionStore<'a> {
 	pub fn new() -> Self {
-		FunctionStore {
-			shapes: Vec::new(),
-			generics: Vec::new(),
-			generate_order: Vec::new(),
-		}
-	}
-
-	pub fn shapes(&self) -> &[FunctionShape] {
-		&self.shapes
-	}
-
-	pub fn generics(&self) -> &[Vec<GenericParameter<'a>>] {
-		&self.generics
-	}
-
-	pub fn generate_order(&self) -> &[FunctionId] {
-		&self.generate_order
+		FunctionStore { shapes: Vec::new(), generics: Vec::new(), main: None }
 	}
 
 	fn get_specialization(
@@ -412,6 +398,7 @@ impl<'a> FunctionStore<'a> {
 			type_arguments: type_arguments.clone(),
 			parameters,
 			return_type,
+			been_queued: false,
 			been_generated: false,
 		};
 		shape.specializations.push(concrete);
@@ -461,9 +448,6 @@ impl<'a> FunctionStore<'a> {
 				}
 			}
 		}
-
-		let function_id = FunctionId { function_shape_index, specialization_index };
-		self.generate_order.push(function_id);
 
 		Some(FunctionSpecializationResult { specialization_index, return_type })
 	}
@@ -573,6 +557,10 @@ pub fn validate<'a>(
 		};
 
 		validate_block(context, &parsed_file.block, true);
+	}
+
+	if function_store.main.is_none() {
+		messages.error(message!("Missing main function"));
 	}
 }
 
@@ -1134,7 +1122,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 
 	let shape = &mut context.function_store.shapes[function_shape_index];
 	assert!(shape.block.is_none());
-	shape.block = Some(block);
+	shape.block = Some(Rc::new(block));
 
 	let generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
 	context.function_generic_usages.truncate(initial_generic_usages_len);
@@ -1186,7 +1174,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	shape.generic_usages = generic_usages;
 
 	if shape.is_main {
-		context.function_store.get_or_add_specialization(
+		let result = context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
 			context.function_generic_usages,
@@ -1194,6 +1182,18 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 			None,
 			Vec::new(),
 		);
+
+		if let Some(result) = result {
+			if context.function_store.main.is_some() {
+				let message = message!("Duplicate main function, this should be impossible");
+				context.error(message.span(statement.name.span));
+				return;
+			}
+
+			let specialization_index = result.specialization_index;
+			let function_id = FunctionId { function_shape_index, specialization_index };
+			context.function_store.main = Some(function_id);
+		}
 	}
 }
 
@@ -1378,8 +1378,7 @@ fn validate_expression<'a>(
 					continue;
 				}
 
-				let field_index = field.field_index;
-				field_initializers.push(FieldInitializer { field_index, expression });
+				field_initializers.push(FieldInitializer { expression });
 			}
 
 			let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
@@ -1469,7 +1468,13 @@ fn validate_expression<'a>(
 			};
 
 			let readable = context.readables.get(readable_index)?;
-			let kind = ExpressionKind::Read(Read { name: readable.name, readable_index });
+			let read = Read {
+				name: readable.name,
+				type_id: readable.type_id,
+				readable_index,
+			};
+
+			let kind = ExpressionKind::Read(read);
 			Expression { span, type_id: readable.type_id, kind }
 		}
 

@@ -57,7 +57,7 @@ fn main() {
 
 	//Not parallelizable
 	let binary_path = Path::new("./output.executable");
-	generate_code(&mut messages, &mut type_store, &function_store, OptimizationLevel::None, binary_path);
+	generate_code(&mut messages, &mut type_store, &mut function_store, OptimizationLevel::None, binary_path);
 	assert!(!messages.any_errors());
 	let status = std::process::Command::new(binary_path)
 		.spawn()

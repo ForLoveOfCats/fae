@@ -53,7 +53,6 @@ pub struct Struct<'a> {
 pub struct Field<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
-	pub field_index: usize,
 }
 
 #[derive(Debug)]
@@ -382,7 +381,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
-				let generics = &function_store.generics()[function_shape_index];
+				let generics = &function_store.generics[function_shape_index];
 				let generic = &generics[generic_index];
 				return Some(generic.generic_type_id);
 			}
@@ -440,12 +439,8 @@ impl<'a> TypeStore<'a> {
 			.any(|id| self.type_entries[id.index()].generic_poisoned);
 
 		let mut fields = Vec::with_capacity(shape.fields.len());
-		for (field_index, field) in shape.fields.iter().enumerate() {
-			fields.push(Field {
-				name: field.item.name,
-				type_id: field.item.field_type,
-				field_index,
-			});
+		for field in &shape.fields {
+			fields.push(Field { name: field.item.name, type_id: field.item.field_type });
 		}
 
 		for field in &mut fields {
@@ -709,7 +704,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
-				let shape = &function_store.shapes()[function_shape_index];
+				let shape = &function_store.shapes[function_shape_index];
 				let generic = &shape.generics[generic_index];
 				generic.name.item.to_owned()
 			}

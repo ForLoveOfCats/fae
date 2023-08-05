@@ -10,7 +10,7 @@ use crate::validator::FunctionStore;
 
 const CC: &str = "clang";
 
-type Result = std::io::Result<()>;
+type Result<T> = std::io::Result<T>;
 // type Output<'a> = &'a mut std::process::ChildStdin;
 type Output<'a> = &'a mut Vec<u8>;
 
@@ -23,15 +23,25 @@ pub enum OptimizationLevel {
 struct Context<'a, 'b> {
 	messages: &'b mut Messages<'a>,
 	type_store: &'b mut TypeStore<'a>,
-	function_store: &'b FunctionStore<'a>,
+	function_store: &'b mut FunctionStore<'a>,
+	function_generate_queue: &'b mut Vec<FunctionId>,
 	function_type_arguments: &'b [TypeId],
 	function_id: FunctionId,
+	next_temp_id: u64,
+}
+
+impl<'a, 'b> Context<'a, 'b> {
+	fn generate_temp_id(&mut self) -> u64 {
+		let id = self.next_temp_id;
+		self.next_temp_id += 1;
+		id
+	}
 }
 
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
-	function_store: &FunctionStore<'a>,
+	function_store: &mut FunctionStore<'a>,
 	optimization_level: OptimizationLevel,
 	binary_path: &Path,
 ) {
@@ -88,8 +98,11 @@ pub fn generate_code<'a>(
 		generate_user_type(type_store, description, &mut output).unwrap();
 	}
 
-	for &description in function_store.generate_order() {
-		generate_function(messages, type_store, function_store, description, &mut output).unwrap();
+	let main = function_store.main.unwrap();
+	let mut function_generate_queue = vec![main];
+	while let Some(function) = function_generate_queue.pop() {
+		generate_function(messages, type_store, function_store, &mut function_generate_queue, function, &mut output)
+			.unwrap();
 	}
 
 	let output = String::from_utf8(output).unwrap();
@@ -104,7 +117,7 @@ pub fn generate_code<'a>(
 	}
 }
 
-fn generate_initial_output(output: Output) -> Result {
+fn generate_initial_output(output: Output) -> Result<()> {
 	write!(output, "{}\n", include_str!("./initial_output.c"))
 }
 
@@ -112,7 +125,7 @@ fn forward_declare_user_type(
 	type_store: &TypeStore,
 	description: UserTypeSpecializationDescription,
 	output: Output,
-) -> Result {
+) -> Result<()> {
 	let user_type = &type_store.user_types[description.shape_index];
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
@@ -123,10 +136,10 @@ fn forward_declare_user_type(
 			}
 
 			write!(output, "typedef struct ")?;
-			generate_type_id(type_store, specialization.type_id, output)?;
+			generate_raw_type_id(type_store, specialization.type_id, output)?;
 
 			write!(output, " ")?;
-			generate_type_id(type_store, specialization.type_id, output)?;
+			generate_raw_type_id(type_store, specialization.type_id, output)?;
 			write!(output, ";\n\n")?;
 		}
 	}
@@ -138,7 +151,7 @@ fn generate_user_type(
 	type_store: &TypeStore,
 	description: UserTypeSpecializationDescription,
 	output: Output,
-) -> Result {
+) -> Result<()> {
 	let user_type = &type_store.user_types[description.shape_index];
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
@@ -149,16 +162,16 @@ fn generate_user_type(
 			}
 
 			write!(output, "typedef struct ")?;
-			generate_type_id(type_store, specialization.type_id, output)?;
+			generate_raw_type_id(type_store, specialization.type_id, output)?;
 			write!(output, " {{\n")?;
 
-			for field in &specialization.fields {
-				generate_type_id(type_store, field.type_id, output)?;
-				write!(output, " fi_{};\n", field.field_index)?;
+			for (index, field) in specialization.fields.iter().enumerate() {
+				generate_raw_type_id(type_store, field.type_id, output)?;
+				write!(output, " fi_{index};\n")?;
 			}
 
 			write!(output, "}} ")?;
-			generate_type_id(type_store, specialization.type_id, output)?;
+			generate_raw_type_id(type_store, specialization.type_id, output)?;
 			write!(output, ";\n\n")?;
 		}
 	}
@@ -166,34 +179,26 @@ fn generate_user_type(
 	Ok(())
 }
 
-fn generate_slice_specialization(type_store: &TypeStore, description: SliceDescription, output: Output) -> Result {
+fn generate_slice_specialization(type_store: &TypeStore, description: SliceDescription, output: Output) -> Result<()> {
 	write!(output, "typedef struct {{ ")?;
-	generate_type_id(type_store, description.sliced_type_id, output)?;
+	generate_raw_type_id(type_store, description.sliced_type_id, output)?;
 	write!(output, " const *items; usize len; }} sl_{};\n\n", description.entry)?;
 
 	write!(output, "typedef struct {{ ")?;
-	generate_type_id(type_store, description.sliced_type_id, output)?;
+	generate_raw_type_id(type_store, description.sliced_type_id, output)?;
 	write!(output, " *items; usize len; }} sl_{};\n\n", description.entry + 1)
 }
 
-fn generate_function<'a>(
-	messages: &mut Messages<'a>,
+fn generate_function_signature<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_id: FunctionId,
 	output: Output,
-) -> Result {
-	let shape = &function_store.shapes()[function_id.function_shape_index];
+) -> Result<()> {
+	let shape = &function_store.shapes[function_id.function_shape_index];
 	let specialization = &shape.specializations[function_id.specialization_index];
 
-	for type_argument in &specialization.type_arguments {
-		let entry = &type_store.type_entries[type_argument.index()];
-		if entry.generic_poisoned {
-			return Ok(());
-		}
-	}
-
-	generate_type_id(type_store, specialization.return_type, output)?;
+	generate_raw_type_id(type_store, specialization.return_type, output)?;
 	write!(output, " ")?;
 
 	if shape.is_main {
@@ -210,34 +215,66 @@ fn generate_function<'a>(
 			write!(output, ", ")?;
 		}
 		first = false;
-		generate_type_id(type_store, parameter.type_id, output)?;
+		generate_raw_type_id(type_store, parameter.type_id, output)?;
 		write!(output, " ")?;
 		generate_readable_index(parameter.readable_index, output)?;
 	}
 	if specialization.parameters.is_empty() {
 		write!(output, "void")?;
 	}
-	write!(output, ") {{\n")?;
+	write!(output, ")")
+}
+
+fn generate_function<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	function_generate_queue: &mut Vec<FunctionId>,
+	function_id: FunctionId,
+	output: Output,
+) -> Result<()> {
+	let shape = &mut function_store.shapes[function_id.function_shape_index];
+	let specialization = &mut shape.specializations[function_id.specialization_index];
+
+	assert_eq!(specialization.been_generated, false);
+	specialization.been_generated = true;
+
+	let shape = &function_store.shapes[function_id.function_shape_index];
+	let specialization = &shape.specializations[function_id.specialization_index];
+
+	for type_argument in &specialization.type_arguments {
+		let entry = &type_store.type_entries[type_argument.index()];
+		if entry.generic_poisoned {
+			return Ok(());
+		}
+	}
+
+	generate_function_signature(type_store, function_store, function_id, output)?;
+	write!(output, "{{\n")?;
+
+	let block = shape.block.clone();
+	let type_arguments = specialization.type_arguments.clone();
 
 	let mut context = Context {
 		messages,
 		type_store,
 		function_store,
-		function_type_arguments: &specialization.type_arguments,
+		function_type_arguments: &type_arguments,
 		function_id,
+		function_generate_queue,
+		next_temp_id: 0,
 	};
 
-	generate_block(&mut context, shape.block.as_ref().unwrap(), output)?;
+	generate_block(&mut context, block.as_ref().unwrap(), output)?;
 
 	write!(output, "}}\n\n")
 }
 
-fn generate_block(context: &mut Context, block: &Block, output: Output) -> Result {
+fn generate_block(context: &mut Context, block: &Block, output: Output) -> Result<()> {
 	for statement in &block.statements {
 		match &statement.kind {
 			StatementKind::Expression(expression) => {
 				generate_expression(context, expression, output)?;
-				write!(output, ";\n")?;
 			}
 
 			StatementKind::Block(block) => {
@@ -248,19 +285,17 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 			StatementKind::Const(_) => {}
 
 			StatementKind::Binding(binding) => {
-				generate_type_id(context.type_store, binding.type_id, output)?;
+				let id = generate_expression(context, &binding.expression, output)?.unwrap();
+				generate_type_id(context, binding.type_id, output)?;
 				write!(output, " ")?;
 				generate_readable_index(binding.readable_index, output)?;
-				write!(output, " = ")?;
-				generate_expression(context, &binding.expression, output)?;
-				write!(output, ";\n")?;
+				write!(output, " = t_{id};\n")?;
 			}
 
 			StatementKind::Return(statement) => {
 				if let Some(expression) = &statement.expression {
-					write!(output, "return ")?;
-					generate_expression(context, expression, output)?;
-					write!(output, ";\n")?;
+					let id = generate_expression(context, expression, output)?.unwrap();
+					write!(output, "return t_{id};\n")?;
 				} else {
 					write!(output, "return;\n")?;
 				}
@@ -271,19 +306,28 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 	Ok(())
 }
 
-fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result {
-	generate_struct_construction_open(context.type_store, literal.type_id, output)?;
-
+fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<u64> {
+	let mut ids = Vec::new(); // Belch
 	for initalizer in &literal.field_initializers {
-		write!(output, ".fi_{} = ", initalizer.field_index)?;
-		generate_expression(context, &initalizer.expression, output)?;
-		write!(output, ", ")?;
+		let id = generate_expression(context, &initalizer.expression, output)?.unwrap();
+		ids.push(id);
 	}
 
-	generate_struct_construction_close(output)
+	let id = context.generate_temp_id();
+	generate_type_id(context, literal.type_id, output)?;
+	write!(output, " t_{id} = ")?;
+
+	generate_struct_construction_open(context, literal.type_id, output)?;
+	for (index, id) in ids.into_iter().enumerate() {
+		write!(output, ".fi_{index} = t_{id}, ")?;
+	}
+	generate_struct_construction_close(output)?;
+
+	write!(output, ";\n")?;
+	Ok(id)
 }
 
-fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result {
+fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<Option<u64>> {
 	let function_id = context.function_store.specialize_with_function_generics(
 		context.messages,
 		context.type_store,
@@ -292,24 +336,60 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result {
 		context.function_type_arguments,
 	);
 
+	let mut ids = Vec::new(); // Belch
+	for argument in &call.arguments {
+		let id = generate_expression(context, argument, output)?.unwrap();
+		ids.push(id);
+	}
+
+	let shape = &mut context.function_store.shapes[function_id.function_shape_index];
+	let specialization = &mut shape.specializations[function_id.specialization_index];
+
+	if !specialization.been_generated {
+		if !specialization.been_queued {
+			specialization.been_queued = true;
+			context.function_generate_queue.push(function_id);
+		}
+
+		generate_function_signature(context.type_store, context.function_store, function_id, output)?;
+		write!(output, ";\n")?;
+	}
+
+	let shape = &context.function_store.shapes[function_id.function_shape_index];
+	let specialization = &shape.specializations[function_id.specialization_index];
+
+	let mut maybe_id = None;
+	if specialization.return_type != context.type_store.void_type_id() {
+		let id = context.next_temp_id;
+		context.next_temp_id += 1;
+		maybe_id = Some(id);
+		let return_type = specialization.return_type;
+		generate_type_id(context, return_type, output)?;
+		write!(output, " t_{id} = ")?;
+	}
+
 	generate_functon_id(function_id, output)?;
 	write!(output, "(")?;
 
 	let mut first = true;
-	for argument in &call.arguments {
+	for id in ids {
 		if !first {
 			write!(output, ", ")?;
 		}
 		first = false;
-		generate_expression(context, argument, output)?;
+		write!(output, "t_{id}")?;
 	}
 
-	write!(output, ")")
+	write!(output, ");\n")?;
+
+	Ok(maybe_id)
 }
 
-fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result {
-	write!(output, "(")?;
-	generate_expression(context, &operation.left, output)?;
+fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<u64> {
+	let left_id = generate_expression(context, &operation.left, output)?.unwrap();
+	let right_id = generate_expression(context, &operation.right, output)?.unwrap();
+
+	write!(output, "t_{left_id} = (t_{left_id}")?;
 
 	let op = match operation.op {
 		BinaryOperator::Assign => "=",
@@ -320,47 +400,78 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	};
 	write!(output, " {} ", op)?;
 
-	generate_expression(context, &operation.right, output)?;
-	write!(output, ")")
+	write!(output, "t_{right_id});\n")?;
+
+	Ok(left_id)
 }
 
-fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> Result {
-	match &expression.kind {
-		ExpressionKind::IntegerLiteral(literal) => write!(output, "{}", literal.value),
-		ExpressionKind::FloatLiteral(literal) => write!(output, "{}", literal.value),
+fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<u64>> {
+	let id = context.generate_temp_id();
 
-		ExpressionKind::CodepointLiteral(literal) => write!(output, "{}", literal.value as u32),
+	match &expression.kind {
+		ExpressionKind::IntegerLiteral(literal) => write!(output, "u64 t_{id} = {};\n", literal.value)?,
+		ExpressionKind::FloatLiteral(literal) => write!(output, "f64 t_{id} = {};\n", literal.value)?,
+
+		ExpressionKind::CodepointLiteral(literal) => write!(output, "u64 t_{id} = {};\n", literal.value as u32)?,
 
 		ExpressionKind::StringLiteral(literal) => {
 			let type_id = context.type_store.string_type_id();
-			generate_struct_construction_open(context.type_store, type_id, output)?;
+			generate_type_id(context, type_id, output)?;
+			write!(output, " t_{id} = ")?;
+			generate_struct_construction_open(context, type_id, output)?;
 			write!(output, ".items = (u8*){:?}, .len = {}", literal.value, literal.value.len())?;
-			generate_struct_construction_close(output)
+			generate_struct_construction_close(output)?;
+			write!(output, ";\n")?;
 		}
 
-		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, literal, output),
+		ExpressionKind::StructLiteral(literal) => {
+			return generate_struct_literal(context, literal, output).map(|id| Some(id));
+		}
 
-		ExpressionKind::Call(call) => generate_call(context, call, output),
+		ExpressionKind::Call(call) => return generate_call(context, call, output),
 
-		ExpressionKind::Read(read) => generate_readable_index(read.readable_index, output),
+		ExpressionKind::Read(read) => {
+			generate_type_id(context, read.type_id, output)?;
+			write!(output, " t_{id} = ")?;
+			generate_readable_index(read.readable_index, output)?;
+			write!(output, ";\n")?;
+		}
 
-		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, operation, output),
+		ExpressionKind::BinaryOperation(operation) => {
+			return generate_binary_operation(context, operation, output).map(|id| Some(id));
+		}
 
 		kind => unimplemented!("expression {kind:?}"),
 	}
+
+	Ok(Some(id))
 }
 
-fn generate_struct_construction_open(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result {
+fn generate_struct_construction_open(context: &mut Context, type_id: TypeId, output: Output) -> Result<()> {
 	write!(output, "((")?;
-	generate_type_id(type_store, type_id, output)?;
+	generate_type_id(context, type_id, output)?;
 	write!(output, ") {{ ")
 }
 
-fn generate_struct_construction_close(output: Output) -> Result {
+fn generate_struct_construction_close(output: Output) -> Result<()> {
 	write!(output, " }})")
 }
 
-fn generate_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result {
+fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> Result<()> {
+	let mut generic_usages = Vec::new();
+	let type_id = context.type_store.specialize_with_function_generics(
+		context.messages,
+		&mut generic_usages,
+		context.function_id.function_shape_index,
+		context.function_type_arguments,
+		type_id,
+	);
+	assert_eq!(generic_usages.len(), 0);
+
+	generate_raw_type_id(context.type_store, type_id, output)
+}
+
+fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result<()> {
 	let entry = &type_store.type_entries[type_id.index()];
 	match &entry.kind {
 		TypeEntryKind::BuiltinType { kind } => write!(output, "{}", kind.name()),
@@ -371,7 +482,7 @@ fn generate_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> 
 
 		TypeEntryKind::Pointer { type_id, .. } => {
 			write!(output, "*")?;
-			generate_type_id(type_store, *type_id, output)
+			generate_raw_type_id(type_store, *type_id, output)
 		}
 
 		TypeEntryKind::Slice { type_id, .. } => write!(output, "sl_{}", type_id.entry),
@@ -381,10 +492,10 @@ fn generate_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> 
 	}
 }
 
-fn generate_functon_id(function_id: FunctionId, output: Output) -> Result {
+fn generate_functon_id(function_id: FunctionId, output: Output) -> Result<()> {
 	write!(output, "fn_{}_{}", function_id.function_shape_index, function_id.specialization_index)
 }
 
-fn generate_readable_index(readable_index: usize, output: Output) -> Result {
+fn generate_readable_index(readable_index: usize, output: Output) -> Result<()> {
 	write!(output, "re_{}", readable_index)
 }
