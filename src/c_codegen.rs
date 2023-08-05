@@ -385,6 +385,18 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	Ok(maybe_id)
 }
 
+fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<u64> {
+	let id = generate_expression(context, &operation.expression, output)?.unwrap();
+
+	let op = match operation.op {
+		UnaryOperator::Negate => "-",
+	};
+
+	write!(output, "t_{id} = {op}(t_{id});\n")?;
+
+	Ok(id)
+}
+
 fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<u64> {
 	let left_id = generate_expression(context, &operation.left, output)?.unwrap();
 	let right_id = generate_expression(context, &operation.right, output)?.unwrap();
@@ -435,6 +447,10 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 			write!(output, " t_{id} = ")?;
 			generate_readable_index(read.readable_index, output)?;
 			write!(output, ";\n")?;
+		}
+
+		ExpressionKind::UnaryOperation(operation) => {
+			return generate_unary_operation(context, operation, output).map(|id| Some(id));
 		}
 
 		ExpressionKind::BinaryOperation(operation) => {

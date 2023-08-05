@@ -1481,7 +1481,15 @@ fn validate_expression<'a>(
 			Expression { span, type_id: readable.type_id, kind }
 		}
 
-		tree::Expression::UnaryOperation(_) => unimplemented!("tree::Expression::UnaryOperation"),
+		tree::Expression::UnaryOperation(operation) => {
+			let op = match operation.op.item {
+				tree::UnaryOperator::Negate => UnaryOperator::Negate,
+			};
+			let expression = validate_expression(context, &operation.expression)?;
+			let type_id = expression.type_id;
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
+			Expression { span, type_id, kind }
+		}
 
 		tree::Expression::BinaryOperation(operation) => {
 			let op = operation.op.item;
