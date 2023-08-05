@@ -1224,6 +1224,9 @@ fn trace_return(context: &mut Context, return_type: TypeId, block: &Block) -> Tr
 		}
 	}
 
+	if return_type == context.type_store.void_type_id() {
+		return TracedReturn::Covered;
+	}
 	TracedReturn::NotCovered
 }
 

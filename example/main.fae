@@ -13,15 +13,12 @@ fn main(): void {
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
-	// TODO: Allow no return for void functions
 
 	a_before[u64](42)
 	a_before[f64](4.2)
 
 	a_after[u64](42)
 	a_after[f64](4.2)
-
-	return
 }
 
 generic T
