@@ -1,15 +1,23 @@
 use crate::error::Messages;
-use crate::ir::{GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind};
+use crate::ir::{Expression, GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy)]
 pub struct TypeId {
-	pub entry: u32,
+	entry: u32,
 }
 
 impl TypeId {
+	pub fn new(entry: u32) -> TypeId {
+		TypeId { entry }
+	}
+
+	pub fn is_void(self, type_store: &TypeStore) -> bool {
+		type_store.direct_equal(self, type_store.void_type_id)
+	}
+
 	pub fn index(self) -> usize {
 		self.entry as usize
 	}
@@ -70,6 +78,8 @@ pub enum UserTypeKind<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimativeKind {
 	Void,
+	UntypedInteger,
+	UntypedDecimal,
 
 	I8,
 	I16,
@@ -81,7 +91,6 @@ pub enum PrimativeKind {
 	U32,
 	U64,
 
-	F16,
 	F32,
 	F64,
 }
@@ -90,6 +99,8 @@ impl PrimativeKind {
 	pub fn name(self) -> &'static str {
 		match self {
 			PrimativeKind::Void => "void",
+			PrimativeKind::UntypedInteger => "untyped integer",
+			PrimativeKind::UntypedDecimal => "untyped decimal",
 			PrimativeKind::I8 => "i8",
 			PrimativeKind::I16 => "i16",
 			PrimativeKind::I32 => "i32",
@@ -98,14 +109,13 @@ impl PrimativeKind {
 			PrimativeKind::U16 => "u16",
 			PrimativeKind::U32 => "u32",
 			PrimativeKind::U64 => "u64",
-			PrimativeKind::F16 => "f16",
 			PrimativeKind::F32 => "f32",
 			PrimativeKind::F64 => "f64",
 		}
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct TypeEntry {
 	pub kind: TypeEntryKind,
 	pub reference_entries: Option<u32>,
@@ -142,7 +152,7 @@ impl TypeEntry {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum TypeEntryKind {
 	BuiltinType { kind: PrimativeKind },
 	UserType { shape_index: usize, specialization_index: usize },
@@ -152,7 +162,7 @@ pub enum TypeEntryKind {
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct SliceDescription {
 	pub entry: u32, // First immutable, then mutable directly after
 	pub sliced_type_id: TypeId,
@@ -174,9 +184,23 @@ pub struct TypeStore<'a> {
 	pub user_type_generate_order: Vec<UserTypeSpecializationDescription>,
 
 	void_type_id: TypeId,
+
+	integer_type_id: TypeId,
+	decimal_type_id: TypeId,
+
+	u8_type_id: TypeId,
+	u16_type_id: TypeId,
 	u32_type_id: TypeId,
 	u64_type_id: TypeId,
+
+	i8_type_id: TypeId,
+	i16_type_id: TypeId,
+	i32_type_id: TypeId,
+	i64_type_id: TypeId,
+
+	f32_type_id: TypeId,
 	f64_type_id: TypeId,
+
 	string_type_id: TypeId,
 }
 
@@ -185,33 +209,36 @@ impl<'a> TypeStore<'a> {
 		let mut primative_type_symbols = Vec::new();
 		let mut type_entries = Vec::new();
 
-		let mut push_primative = |name, kind| {
+		let mut push_primative = |name: Option<&'a str>, kind| {
 			let type_id = TypeId { entry: type_entries.len() as u32 };
 			let kind = TypeEntryKind::BuiltinType { kind };
 			type_entries.push(TypeEntry { kind, reference_entries: None, generic_poisoned: false });
 
-			let kind = SymbolKind::BuiltinType { type_id };
-			let symbol = Symbol { name, kind, span: None, file_index: None };
-			primative_type_symbols.push(symbol);
+			if let Some(name) = name {
+				let kind = SymbolKind::BuiltinType { type_id };
+				let symbol = Symbol { name, kind, span: None, file_index: None };
+				primative_type_symbols.push(symbol);
+			}
 
 			type_id
 		};
 
-		let void_type_id = push_primative("void", PrimativeKind::Void);
+		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
+		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
+		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
 
-		push_primative("i8", PrimativeKind::I8);
-		push_primative("i16", PrimativeKind::I16);
-		push_primative("i32", PrimativeKind::I32);
-		push_primative("i64", PrimativeKind::I64);
+		let i8_type_id = push_primative(Some("i8"), PrimativeKind::I8);
+		let i16_type_id = push_primative(Some("i16"), PrimativeKind::I16);
+		let i32_type_id = push_primative(Some("i32"), PrimativeKind::I32);
+		let i64_type_id = push_primative(Some("i64"), PrimativeKind::I64);
 
-		let u8_type_id = push_primative("u8", PrimativeKind::U8);
-		push_primative("u16", PrimativeKind::U16);
-		let u32_type_id = push_primative("u32", PrimativeKind::U32);
-		let u64_type_id = push_primative("u64", PrimativeKind::U64);
+		let u8_type_id = push_primative(Some("u8"), PrimativeKind::U8);
+		let u16_type_id = push_primative(Some("u16"), PrimativeKind::U16);
+		let u32_type_id = push_primative(Some("u32"), PrimativeKind::U32);
+		let u64_type_id = push_primative(Some("u64"), PrimativeKind::U64);
 
-		push_primative("f16", PrimativeKind::F16);
-		push_primative("f32", PrimativeKind::F32);
-		let f64_type_id = push_primative("f64", PrimativeKind::F64);
+		let f32_type_id = push_primative(Some("f32"), PrimativeKind::F32);
+		let f64_type_id = push_primative(Some("f64"), PrimativeKind::F64);
 
 		let mut type_store = TypeStore {
 			primative_type_symbols,
@@ -220,8 +247,17 @@ impl<'a> TypeStore<'a> {
 			user_types: Vec::new(),
 			user_type_generate_order: Vec::new(),
 			void_type_id,
+			integer_type_id,
+			decimal_type_id,
+			u8_type_id,
+			u16_type_id,
 			u32_type_id,
 			u64_type_id,
+			i8_type_id,
+			i16_type_id,
+			i32_type_id,
+			i64_type_id,
+			f32_type_id,
 			f64_type_id,
 			string_type_id: TypeId { entry: 0 },
 		};
@@ -241,16 +277,180 @@ impl<'a> TypeStore<'a> {
 		self.u32_type_id
 	}
 
-	pub fn u64_type_id(&self) -> TypeId {
-		self.u64_type_id
+	pub fn integer_type_id(&self) -> TypeId {
+		self.integer_type_id
 	}
 
-	pub fn f64_type_id(&self) -> TypeId {
-		self.f64_type_id
+	pub fn decimal_type_id(&self) -> TypeId {
+		self.decimal_type_id
 	}
 
 	pub fn string_type_id(&self) -> TypeId {
 		self.string_type_id
+	}
+
+	pub fn type_arguments_direct_equal(&self, a: &[TypeId], b: &[TypeId]) -> bool {
+		if a.len() != b.len() {
+			return false;
+		}
+
+		for (a, b) in a.iter().zip(b.iter()) {
+			if !self.direct_equal(*a, *b) {
+				return false;
+			}
+		}
+
+		true
+	}
+
+	pub fn direct_equal(&self, a: TypeId, b: TypeId) -> bool {
+		a.entry == b.entry
+	}
+
+	pub fn collapse_fair(&self, a: TypeId, b: TypeId) -> Option<TypeId> {
+		if a.entry == b.entry {
+			return Some(a);
+		}
+
+		// if either type is an untyped number then collapse to it, checking left first
+
+		None
+	}
+
+	pub fn collapse_to(&self, messages: &mut Messages<'a>, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
+		if to.entry == from.type_id.entry {
+			return Some(true);
+		}
+
+		let to_integer = to.entry == self.integer_type_id.entry;
+		let from_integer = from.type_id.entry == self.integer_type_id.entry;
+
+		let to_decimal = to.entry == self.decimal_type_id.entry;
+		let from_decimal = from.type_id.entry == self.decimal_type_id.entry;
+
+		if (to_integer && from_integer) || (to_decimal && from_decimal) {
+			return Some(true);
+		}
+
+		if (to_integer || to_decimal) && !(from_integer || from_decimal) {
+			return None;
+			// unreachable!("Attempted to collapse to untyped number from an expression which is not an untyped number");
+		}
+
+		// constant integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | TODO decimal
+		// constant decimal -> float of large enough
+
+		if from_integer {
+			let (value, span) = match &from.kind {
+				crate::ir::ExpressionKind::IntegerValue(value) => (value.value(), value.span()),
+				kind => panic!("Collapsing from_integer with a non-IntegerValue expression: {kind:#?}"),
+			};
+
+			let (to_float, bit_count, max_float_integer) = match to.entry {
+				e if e == self.f32_type_id.entry => (true, 32, 1_6777_215), // 2^24
+				e if e == self.f64_type_id.entry => (true, 64, 9_007_199_254_740_992), // 2^53
+				_ => (false, 0, 0),
+			};
+
+			if to_float {
+				if value.abs() > max_float_integer {
+					let err = message!("Constant integer {value} is unable to be represented as an `f{bit_count}`");
+					messages.error(err.span(span));
+					return None;
+				}
+
+				// constant integer -> float of large enough
+				return Some(true);
+			}
+
+			let (to_signed, to_unsigned, bit_count) = match to.entry {
+				e if e == self.i8_type_id.entry => (true, false, 8),
+				e if e == self.i16_type_id.entry => (true, false, 16),
+				e if e == self.i32_type_id.entry => (true, false, 32),
+				e if e == self.i64_type_id.entry => (true, false, 64),
+
+				e if e == self.u8_type_id.entry => (false, true, 8),
+				e if e == self.u16_type_id.entry => (false, true, 16),
+				e if e == self.u32_type_id.entry => (false, true, 32),
+				e if e == self.u64_type_id.entry => (false, true, 64),
+
+				_ => unreachable!(),
+			};
+
+			let min_value = -i128::pow(2, bit_count - 1);
+			let max_value = i128::pow(2, bit_count - 1) - 1;
+
+			if to_signed {
+				if value.is_negative() {
+					if value < min_value {
+						messages.error(
+							message!("Constant integer {value} is too small to be represented as an `i{bit_count}`")
+								.span(span),
+						);
+						return None;
+					}
+				} else {
+					if value > max_value {
+						messages.error(
+							message!("Constant integer {value} is too large to be represented as an `i{bit_count}`")
+								.span(span),
+						);
+						return None;
+					}
+				}
+
+				// constant integer -> signed of large enough
+				return Some(true);
+			}
+
+			assert!(to_unsigned);
+
+			if value.is_negative() {
+				messages.error(
+					message!("Constant integer {value} is negative and so cannot be represented as a `u{bit_count}`")
+						.span(span),
+				);
+				return None;
+			}
+
+			if value > max_value {
+				let err = message!("Constant integer {value} is too large to be represented as a `u{bit_count}`");
+				messages.error(err.span(span));
+				return None;
+			}
+
+			// constant integer -> unsigned of large enough if not negative
+			return Some(true);
+		}
+
+		if from_decimal {
+			let (value, span) = match &from.kind {
+				crate::ir::ExpressionKind::DecimalValue(value) => (value.value(), value.span()),
+				kind => panic!("Collapsing from_decimal with a non-DecimalValue expression: {kind:#?}"),
+			};
+
+			let (to_float, bit_count) = match to.entry {
+				e if e == self.f32_type_id.entry => (true, 32),
+				e if e == self.f64_type_id.entry => (true, 64),
+				_ => (false, 0),
+			};
+
+			if to_float {
+				if bit_count == 32 {
+					let cast = value as f32 as f64;
+					if cast != value {
+						let err = message!("Constant decimal {value} cannot be represented as an `f{bit_count}` without a loss in precision");
+						messages.error(err.span(span));
+						return None;
+					}
+				}
+
+				// constant decimal -> float of large enough
+				return Some(true);
+			}
+		}
+
+		Some(false)
 	}
 
 	fn get_or_create_reference_entries(&mut self, type_id: TypeId) -> u32 {
@@ -429,7 +629,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		for existing in &shape.specializations {
-			if existing.type_arguments == type_arguments {
+			if self.type_arguments_direct_equal(&existing.type_arguments, &type_arguments) {
 				return Some(existing.type_id);
 			}
 		}
@@ -650,21 +850,7 @@ impl<'a> TypeStore<'a> {
 
 	fn internal_type_name(&self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
 		match self.type_entries[type_id.index()].kind {
-			TypeEntryKind::BuiltinType { kind } => match kind {
-				PrimativeKind::Void => "void",
-				PrimativeKind::I8 => "i8",
-				PrimativeKind::I16 => "i16",
-				PrimativeKind::I32 => "i32",
-				PrimativeKind::I64 => "i64",
-				PrimativeKind::U8 => "u8",
-				PrimativeKind::U16 => "u16",
-				PrimativeKind::U32 => "u32",
-				PrimativeKind::U64 => "u64",
-				PrimativeKind::F16 => "f16",
-				PrimativeKind::F32 => "f32",
-				PrimativeKind::F64 => "f64",
-			}
-			.to_owned(),
+			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let shape = &self.user_types[shape_index];

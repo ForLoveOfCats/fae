@@ -422,18 +422,18 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 		let span = first_number_token.span + second_number_token.span;
 		return Ok(Node::new(Expression::FloatLiteral(FloatLiteral { value: Node::new(value, span) }), span));
 	} else {
-		let value = match first_number_token.text.parse::<u64>() {
+		let value = match first_number_token.text.parse::<i128>() {
 			Ok(value) => value,
+
 			Err(_) => {
 				messages.error(message!("Invalid integer literal").span(first_number_token.span));
 				return Err(());
 			}
 		};
 
-		return Ok(Node::from_token(
-			Expression::IntegerLiteral(IntegerLiteral { value: Node::from_token(value, first_number_token) }),
-			first_number_token,
-		));
+		let value = Node::from_token(value, first_number_token);
+		let expression = Expression::IntegerLiteral(IntegerLiteral { value });
+		return Ok(Node::from_token(expression, first_number_token));
 	}
 }
 

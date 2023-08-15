@@ -359,7 +359,8 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	let mut maybe_id = None;
-	if specialization.return_type != context.type_store.void_type_id() {
+	let void = context.type_store.void_type_id();
+	if !context.type_store.direct_equal(specialization.return_type, void) {
 		let id = context.next_temp_id;
 		context.next_temp_id += 1;
 		maybe_id = Some(id);
@@ -421,8 +422,15 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 	let id = context.generate_temp_id();
 
 	match &expression.kind {
-		ExpressionKind::IntegerLiteral(literal) => write!(output, "u64 t_{id} = {};\n", literal.value)?,
-		ExpressionKind::FloatLiteral(literal) => write!(output, "f64 t_{id} = {};\n", literal.value)?,
+		ExpressionKind::IntegerValue(value) => {
+			if value.value().is_negative() {
+				write!(output, "i64 t_{id} = -{};\n", value.value())?;
+			} else {
+				write!(output, "u64 t_{id} = {};\n", value.value())?;
+			}
+		}
+
+		ExpressionKind::DecimalValue(literal) => write!(output, "f64 t_{id} = {};\n", literal.value())?,
 
 		ExpressionKind::CodepointLiteral(literal) => write!(output, "u64 t_{id} = {};\n", literal.value as u32)?,
 
@@ -501,7 +509,7 @@ fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output)
 			generate_raw_type_id(type_store, *type_id, output)
 		}
 
-		TypeEntryKind::Slice { type_id, .. } => write!(output, "sl_{}", type_id.entry),
+		TypeEntryKind::Slice { type_id, .. } => write!(output, "sl_{}", type_id.index()),
 
 		TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
 		TypeEntryKind::FunctionGeneric { .. } => unreachable!(),

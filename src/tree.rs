@@ -126,7 +126,7 @@ pub struct Binding<'a> {
 
 #[derive(Debug)]
 pub struct IntegerLiteral {
-	pub value: Node<u64>,
+	pub value: Node<i128>,
 }
 
 #[derive(Debug)]

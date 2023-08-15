@@ -96,6 +96,10 @@ impl<'a, 'b> Context<'a, 'b> {
 		self.type_store
 			.type_name(self.function_store, self.module_path, type_id)
 	}
+
+	fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
+		self.type_store.collapse_to(self.messages, to, from)
+	}
 }
 
 #[derive(Debug)]
@@ -329,12 +333,13 @@ impl<'a> FunctionStore<'a> {
 
 	fn get_specialization(
 		&self,
+		type_store: &TypeStore<'a>,
 		function_shape_index: usize,
 		type_arguments: &[TypeId],
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
-			if existing.type_arguments == type_arguments {
+			if type_store.type_arguments_direct_equal(&existing.type_arguments, &type_arguments) {
 				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
 			}
 		}
@@ -358,7 +363,7 @@ impl<'a> FunctionStore<'a> {
 			return None;
 		}
 
-		if let Some(result) = self.get_specialization(function_shape_index, &type_arguments) {
+		if let Some(result) = self.get_specialization(type_store, function_shape_index, &type_arguments) {
 			return Some(result);
 		}
 
@@ -490,7 +495,7 @@ impl<'a> FunctionStore<'a> {
 		}
 
 		let result = self
-			.get_specialization(function_id.function_shape_index, &type_arguments)
+			.get_specialization(type_store, function_id.function_shape_index, &type_arguments)
 			.unwrap();
 		assert!(generic_usages.is_empty());
 
@@ -773,7 +778,7 @@ fn create_block_types<'a>(
 				let entry = type_store.type_entries.len() as u32;
 				let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index };
 				type_store.type_entries.push(TypeEntry::new(type_store, kind));
-				let generic_type_id = TypeId { entry };
+				let generic_type_id = TypeId::new(entry);
 				generics.push(GenericParameter { name: generic, generic_type_id });
 			}
 
@@ -1115,7 +1120,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		block.type_id = type_id;
 	}
 
-	if trace_return(context, block.type_id, &block) == TracedReturn::NotCovered {
+	if trace_return(context, block.type_id, &mut block) == TracedReturn::NotCovered {
 		let error = message!("Not all code paths for function `{}` return a value", statement.name.item);
 		context.error(error.span(statement.name.span));
 	}
@@ -1205,28 +1210,38 @@ enum TracedReturn {
 
 // TODO: Update once flow control gets added
 // See https://github.com/ForLoveOfCats/Mountain/blob/OriginalC/compiler/validator.c#L1007
-fn trace_return(context: &mut Context, return_type: TypeId, block: &Block) -> TracedReturn {
-	for statement in &block.statements {
-		if let StatementKind::Return(statement) = &statement.kind {
-			let type_id = match &statement.expression {
-				Some(expression) => expression.type_id,
-				None => context.type_store.void_type_id(),
+fn trace_return<'a>(context: &mut Context<'a, '_>, return_type: TypeId, block: &mut Block<'a>) -> TracedReturn {
+	for statement in &mut block.statements {
+		let StatementKind::Return(statement) = &mut statement.kind else {
+			continue;
+		};
+
+		let matches = match &mut statement.expression {
+			Some(expression) => match context.collapse_to(return_type, expression) {
+				Some(matches) => matches,
+				None => continue,
+			},
+
+			None => return_type.is_void(context.type_store),
+		};
+
+		if !matches {
+			let expected = context.type_name(return_type);
+			let got = match &statement.expression {
+				Some(expression) => context.type_name(expression.type_id),
+				None => context.type_name(context.type_store.void_type_id()),
 			};
-
-			if type_id != return_type {
-				let expected = context.type_name(return_type);
-				let got = context.type_name(type_id);
-				let error = message!("Expected return type of {expected}, got {got}");
-				context.error(error.span(statement.span));
-			}
-
-			return TracedReturn::Covered;
+			let error = message!("Expected return type of {expected}, got {got}");
+			context.error(error.span(statement.span));
 		}
-	}
 
-	if return_type == context.type_store.void_type_id() {
 		return TracedReturn::Covered;
 	}
+
+	if return_type.is_void(context.type_store) {
+		return TracedReturn::Covered;
+	}
+
 	TracedReturn::NotCovered
 }
 
@@ -1235,11 +1250,14 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 		Some(parsed_type) => context.lookup_type(&parsed_type),
 		None => None,
 	};
-	let expression = validate_expression(context, &statement.item.expression)?;
+	let mut expression = validate_expression(context, &statement.item.expression)?;
 	let type_id = explicit_type.unwrap_or(expression.type_id);
 
 	if let Some(explicit_type) = explicit_type {
-		if explicit_type != expression.type_id {
+		if !context
+			.type_store
+			.collapse_to(context.messages, explicit_type, &mut expression)?
+		{
 			context.error(
 				message!(
 					"Const type mismatch between explicit type {} and expression type {}",
@@ -1259,15 +1277,15 @@ fn validate_binding<'a>(
 	context: &mut Context<'a, '_>,
 	statement: &'a tree::Node<tree::Binding<'a>>,
 ) -> Option<Binding<'a>> {
-	let expression = validate_expression(context, &statement.item.expression)?;
+	let mut expression = validate_expression(context, &statement.item.expression)?;
 	if let Some(parsed_type) = &statement.item.parsed_type {
-		let type_id = context.lookup_type(&parsed_type)?;
-		if type_id != expression.type_id {
+		let explicit_type = context.lookup_type(&parsed_type)?;
+		if !context.collapse_to(explicit_type, &mut expression)? {
 			context.error(
 				message!(
 					"Expression type {} mismatch with explicit binding type {}",
 					context.type_name(expression.type_id),
-					context.type_name(type_id)
+					context.type_name(explicit_type)
 				)
 				.span(statement.item.expression.span),
 			);
@@ -1301,13 +1319,15 @@ fn validate_expression<'a>(
 		}
 
 		tree::Expression::IntegerLiteral(literal) => {
-			let kind = ExpressionKind::IntegerLiteral(IntegerLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.u64_type_id(), kind }
+			let value = IntegerValue::new(literal.value.item, literal.value.span);
+			let kind = ExpressionKind::IntegerValue(value);
+			Expression { span, type_id: context.type_store.integer_type_id(), kind }
 		}
 
 		tree::Expression::FloatLiteral(literal) => {
-			let kind = ExpressionKind::FloatLiteral(FloatLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.f64_type_id(), kind }
+			let value = DecimalValue::new(literal.value.item, literal.value.span);
+			let kind = ExpressionKind::DecimalValue(value);
+			Expression { span, type_id: context.type_store.decimal_type_id(), kind }
 		}
 
 		tree::Expression::CodepointLiteral(literal) => {
@@ -1346,7 +1366,7 @@ fn validate_expression<'a>(
 			let mut field_initializers = Vec::new();
 
 			for intializer in &literal.initializer.item.field_initializers {
-				let expression = validate_expression(context, &intializer.expression)?;
+				let mut expression = validate_expression(context, &intializer.expression)?;
 
 				let field = match fields.next() {
 					Some(field) => field,
@@ -1369,7 +1389,7 @@ fn validate_expression<'a>(
 					continue;
 				}
 
-				if field.type_id != expression.type_id {
+				if !context.collapse_to(field.type_id, &mut expression)? {
 					context.error(
 						message!(
 							"Field intializer type mismatch, expected {} but got {} instead",
@@ -1427,13 +1447,16 @@ fn validate_expression<'a>(
 
 			// Don't bail immediately with type mismatch, we want to check every argument and the argument count
 			let mut arguments_type_mismatch = false;
-			for (index, argument) in arguments.iter().enumerate() {
+			for (index, argument) in arguments.iter_mut().enumerate() {
 				let parameter = match specialization.parameters.get(index) {
 					Some(parameter) => parameter,
 					None => break,
 				};
 
-				if argument.type_id != parameter.type_id {
+				if !context
+					.type_store
+					.collapse_to(context.messages, parameter.type_id, argument)?
+				{
 					let error = message!(
 						"Expected argument of type {}, got {}",
 						context.type_name(parameter.type_id),
@@ -1485,7 +1508,18 @@ fn validate_expression<'a>(
 			let op = match operation.op.item {
 				tree::UnaryOperator::Negate => UnaryOperator::Negate,
 			};
-			let expression = validate_expression(context, &operation.expression)?;
+
+			let mut expression = validate_expression(context, &operation.expression)?;
+			match (op, &mut expression.kind) {
+				(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
+					value.negate(context.messages, span);
+					expression.span = expression.span + span;
+					return Some(expression);
+				}
+
+				_ => {}
+			}
+
 			let type_id = expression.type_id;
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
 			Expression { span, type_id, kind }
@@ -1496,7 +1530,8 @@ fn validate_expression<'a>(
 			let left = validate_expression(context, &operation.left)?;
 			let right = validate_expression(context, &operation.right)?;
 
-			if left.type_id != right.type_id {
+			let collapsed = context.type_store.collapse_fair(left.type_id, right.type_id);
+			let Some(collapsed) = collapsed else {
 				context.error(
 					message!("{} type mismatch", op.name())
 						.span(span)
@@ -1514,11 +1549,11 @@ fn validate_expression<'a>(
 						)),
 				);
 				return None;
-			}
+			};
 
 			let type_id = match op {
 				BinaryOperator::Assign => context.type_store.void_type_id(),
-				_ => left.type_id,
+				_ => collapsed,
 			};
 
 			let operation = Box::new(BinaryOperation { op, left, right });

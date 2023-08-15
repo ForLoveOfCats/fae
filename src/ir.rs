@@ -1,5 +1,7 @@
+use std::ops::Neg;
 use std::rc::Rc;
 
+use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::{BinaryOperator, Node};
 use crate::type_store::*;
@@ -227,8 +229,8 @@ pub struct Expression<'a> {
 pub enum ExpressionKind<'a> {
 	Block(Block<'a>),
 
-	IntegerLiteral(IntegerLiteral),
-	FloatLiteral(FloatLiteral),
+	IntegerValue(IntegerValue),
+	DecimalValue(DecimalValue),
 
 	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
@@ -239,16 +241,108 @@ pub enum ExpressionKind<'a> {
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
+
+	TypeCollapse(Box<TypeCollapse<'a>>),
 }
 
-#[derive(Debug, Clone)]
-pub struct IntegerLiteral {
-	pub value: u64,
+#[derive(Debug, Copy, Clone)]
+pub struct IntegerValue {
+	value: i128,
+	span: Span,
 }
 
-#[derive(Debug, Clone)]
-pub struct FloatLiteral {
-	pub value: f64,
+impl IntegerValue {
+	pub fn new(value: i128, span: Span) -> IntegerValue {
+		IntegerValue { value, span }
+	}
+
+	pub fn value(&self) -> i128 {
+		self.value
+	}
+
+	pub fn span(&self) -> Span {
+		self.span
+	}
+
+	pub fn negate(&mut self, messages: &mut Messages, sign_span: Span) {
+		let Some(value) = self.value.checked_neg() else {
+			let value = self.value;
+			let err = message!("Constant integer {value} overflows compiler representation if inverted");
+			messages.error(err.span(self.span));
+			return;
+		};
+
+		self.value = value;
+		self.span = self.span + sign_span;
+	}
+
+	pub fn add(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		let span = self.span + other.span;
+
+		let Some(value) = self.value.checked_add(other.value) else {
+			let err = message!("Overflow or underflow in constant addition");
+			messages.error(err.span(span));
+			return None;
+		};
+
+		Some(IntegerValue { value, span })
+	}
+
+	pub fn sub(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		let span = self.span + other.span;
+
+		let Some(value) = self.value.checked_sub(other.value) else {
+			let err = message!("Overflow or underflow in constant subtraction");
+			messages.error(err.span(span));
+			return None;
+		};
+
+		Some(IntegerValue { value, span })
+	}
+
+	pub fn mul(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		let span = self.span + other.span;
+
+		let Some(value) = self.value.checked_mul(other.value) else {
+			let err = message!("Overflow or underflow in constant multiplication");
+			messages.error(err.span(span));
+			return None;
+		};
+
+		Some(IntegerValue { value, span })
+	}
+
+	pub fn div(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		let span = self.span + other.span;
+
+		let Some(value) = self.value.checked_div(other.value) else {
+			let err = message!("Overflow or underflow in constant division");
+			messages.error(err.span(span));
+			return None;
+		};
+
+		Some(IntegerValue { value, span })
+	}
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct DecimalValue {
+	value: f64,
+	span: Span,
+}
+
+impl DecimalValue {
+	pub fn new(value: f64, span: Span) -> DecimalValue {
+		DecimalValue { value, span }
+	}
+
+	pub fn value(&self) -> f64 {
+		self.value
+	}
+
+	pub fn span(&self) -> Span {
+		self.span
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -302,4 +396,15 @@ pub struct BinaryOperation<'a> {
 	pub op: BinaryOperator,
 	pub left: Expression<'a>,
 	pub right: Expression<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeCollapse<'a> {
+	pub kind: TypeCollapseKind,
+	pub expression: Expression<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeCollapseKind {
+	NumericCast(PrimativeKind),
 }
