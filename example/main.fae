@@ -14,7 +14,9 @@ fn main(): void {
 	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 
-	a_before[u64](82 - 40)
+	a_before[u64](82 - 40.0)
+	a_before[i8](44 * 69)
+	a_before[u8](-5)
 	a_before[f64](4.2)
 
 	a_after[u32](42)

@@ -1,5 +1,7 @@
 use crate::error::Messages;
-use crate::ir::{Expression, GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind};
+use crate::ir::{
+	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind,
+};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
@@ -307,12 +309,55 @@ impl<'a> TypeStore<'a> {
 		a.entry == b.entry
 	}
 
-	pub fn collapse_fair(&self, a: TypeId, b: TypeId) -> Option<TypeId> {
-		if a.entry == b.entry {
-			return Some(a);
+	pub fn collapse_fair(
+		&self,
+		messages: &mut Messages<'a>,
+		a: &mut Expression<'a>,
+		b: &mut Expression<'a>,
+	) -> Option<TypeId> {
+		if a.type_id.entry == b.type_id.entry {
+			return Some(a.type_id);
 		}
 
-		// if either type is an untyped number then collapse to it, checking left first
+		// if both are untyped numbers then we know they are different, collapse to the decimal
+		// if either type is an untyped number we know the other isn't, collapse to the other type
+
+		let a_number = a.type_id.entry == self.integer_type_id.entry || a.type_id.entry == self.decimal_type_id.entry;
+		let b_number = b.type_id.entry == self.integer_type_id.entry || b.type_id.entry == self.decimal_type_id.entry;
+
+		if a_number && b_number {
+			let non_decimal = if a.type_id.entry == self.decimal_type_id.entry {
+				b
+			} else if b.type_id.entry == self.decimal_type_id.entry {
+				a
+			} else {
+				unreachable!();
+			};
+
+			let collapsed = self.collapse_to(messages, self.decimal_type_id, non_decimal)?;
+			return match collapsed {
+				true => Some(self.decimal_type_id),
+				false => None,
+			};
+		}
+
+		if a_number {
+			assert!(!b_number);
+			let collapsed = self.collapse_to(messages, b.type_id, a)?;
+			return match collapsed {
+				true => Some(b.type_id),
+				false => None,
+			};
+		}
+
+		if b_number {
+			assert!(!a_number);
+			let collapsed = self.collapse_to(messages, a.type_id, b)?;
+			return match collapsed {
+				true => Some(a.type_id),
+				false => None,
+			};
+		}
 
 		None
 	}
@@ -328,27 +373,33 @@ impl<'a> TypeStore<'a> {
 		let to_decimal = to.entry == self.decimal_type_id.entry;
 		let from_decimal = from.type_id.entry == self.decimal_type_id.entry;
 
-		if (to_integer && from_integer) || (to_decimal && from_decimal) {
-			return Some(true);
-		}
-
-		if (to_integer || to_decimal) && !(from_integer || from_decimal) {
-			return None;
-			// unreachable!("Attempted to collapse to untyped number from an expression which is not an untyped number");
-		}
-
-		// constant integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | TODO decimal
+		// constant integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
 		// constant decimal -> float of large enough
 
 		if from_integer {
 			let (value, span) = match &from.kind {
-				crate::ir::ExpressionKind::IntegerValue(value) => (value.value(), value.span()),
+				ExpressionKind::IntegerValue(value) => (value.value(), value.span()),
 				kind => panic!("Collapsing from_integer with a non-IntegerValue expression: {kind:#?}"),
 			};
 
+			const MAX_F23_INTEGER: i128 = 1_6777_215; // 2^24
+			const MAX_F64_INTEGER: i128 = 9_007_199_254_740_992; // 2^53
+
+			if to_decimal {
+				if value.abs() > MAX_F64_INTEGER {
+					let err = message!("Constant integer {value} is unable to be represented as a constant decimal");
+					messages.error(err.span(span));
+					return None;
+				}
+
+				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
+				*from = Expression { span: from.span, type_id: self.decimal_type_id, kind };
+				return Some(true);
+			}
+
 			let (to_float, bit_count, max_float_integer) = match to.entry {
-				e if e == self.f32_type_id.entry => (true, 32, 1_6777_215), // 2^24
-				e if e == self.f64_type_id.entry => (true, 64, 9_007_199_254_740_992), // 2^53
+				e if e == self.f32_type_id.entry => (true, 32, MAX_F23_INTEGER),
+				e if e == self.f64_type_id.entry => (true, 64, MAX_F64_INTEGER),
 				_ => (false, 0, 0),
 			};
 
@@ -374,14 +425,12 @@ impl<'a> TypeStore<'a> {
 				e if e == self.u32_type_id.entry => (false, true, 32),
 				e if e == self.u64_type_id.entry => (false, true, 64),
 
-				_ => unreachable!(),
+				_ => (false, false, 0),
 			};
-
-			let min_value = -i128::pow(2, bit_count - 1);
-			let max_value = i128::pow(2, bit_count - 1) - 1;
 
 			if to_signed {
 				if value.is_negative() {
+					let min_value = -i128::pow(2, bit_count - 1);
 					if value < min_value {
 						messages.error(
 							message!("Constant integer {value} is too small to be represented as an `i{bit_count}`")
@@ -390,6 +439,7 @@ impl<'a> TypeStore<'a> {
 						return None;
 					}
 				} else {
+					let max_value = i128::pow(2, bit_count - 1) - 1;
 					if value > max_value {
 						messages.error(
 							message!("Constant integer {value} is too large to be represented as an `i{bit_count}`")
@@ -403,29 +453,32 @@ impl<'a> TypeStore<'a> {
 				return Some(true);
 			}
 
-			assert!(to_unsigned);
-
-			if value.is_negative() {
-				messages.error(
-					message!("Constant integer {value} is negative and so cannot be represented as a `u{bit_count}`")
+			if to_unsigned {
+				if value.is_negative() {
+					messages.error(
+						message!(
+							"Constant integer {value} is negative and so cannot be represented as a `u{bit_count}`"
+						)
 						.span(span),
-				);
-				return None;
-			}
+					);
+					return None;
+				}
 
-			if value > max_value {
-				let err = message!("Constant integer {value} is too large to be represented as a `u{bit_count}`");
-				messages.error(err.span(span));
-				return None;
-			}
+				let max_value = i128::pow(2, bit_count - 1) - 1;
+				if value > max_value {
+					let err = message!("Constant integer {value} is too large to be represented as a `u{bit_count}`");
+					messages.error(err.span(span));
+					return None;
+				}
 
-			// constant integer -> unsigned of large enough if not negative
-			return Some(true);
+				// constant integer -> unsigned of large enough if not negative
+				return Some(true);
+			}
 		}
 
 		if from_decimal {
 			let (value, span) = match &from.kind {
-				crate::ir::ExpressionKind::DecimalValue(value) => (value.value(), value.span()),
+				ExpressionKind::DecimalValue(value) => (value.value(), value.span()),
 				kind => panic!("Collapsing from_decimal with a non-DecimalValue expression: {kind:#?}"),
 			};
 

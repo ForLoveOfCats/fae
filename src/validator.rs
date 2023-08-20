@@ -1311,33 +1311,33 @@ fn validate_expression<'a>(
 ) -> Option<Expression<'a>> {
 	let span = expression.span;
 
-	let expression = match &expression.item {
+	match &expression.item {
 		tree::Expression::Block(block) => {
 			let validated_block = validate_block(context.child_scope(), &block, false);
 			let type_id = validated_block.type_id;
-			Expression { span, type_id, kind: ExpressionKind::Block(validated_block) }
+			return Some(Expression { span, type_id, kind: ExpressionKind::Block(validated_block) });
 		}
 
 		tree::Expression::IntegerLiteral(literal) => {
 			let value = IntegerValue::new(literal.value.item, literal.value.span);
 			let kind = ExpressionKind::IntegerValue(value);
-			Expression { span, type_id: context.type_store.integer_type_id(), kind }
+			return Some(Expression { span, type_id: context.type_store.integer_type_id(), kind });
 		}
 
 		tree::Expression::FloatLiteral(literal) => {
 			let value = DecimalValue::new(literal.value.item, literal.value.span);
 			let kind = ExpressionKind::DecimalValue(value);
-			Expression { span, type_id: context.type_store.decimal_type_id(), kind }
+			return Some(Expression { span, type_id: context.type_store.decimal_type_id(), kind });
 		}
 
 		tree::Expression::CodepointLiteral(literal) => {
 			let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.u32_type_id(), kind }
+			return Some(Expression { span, type_id: context.type_store.u32_type_id(), kind });
 		}
 
 		tree::Expression::StringLiteral(literal) => {
 			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });
-			Expression { span, type_id: context.type_store.string_type_id(), kind }
+			return Some(Expression { span, type_id: context.type_store.string_type_id(), kind });
 		}
 
 		tree::Expression::StructLiteral(literal) => {
@@ -1405,7 +1405,7 @@ fn validate_expression<'a>(
 			}
 
 			let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
-			Expression { span, type_id, kind }
+			return Some(Expression { span, type_id, kind });
 		}
 
 		tree::Expression::Call(call) => {
@@ -1479,7 +1479,7 @@ fn validate_expression<'a>(
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
 			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
-			Expression { span, type_id: return_type, kind }
+			return Some(Expression { span, type_id: return_type, kind });
 		}
 
 		tree::Expression::Read(read) => {
@@ -1501,7 +1501,7 @@ fn validate_expression<'a>(
 			};
 
 			let kind = ExpressionKind::Read(read);
-			Expression { span, type_id: readable.type_id, kind }
+			return Some(Expression { span, type_id: readable.type_id, kind });
 		}
 
 		tree::Expression::UnaryOperation(operation) => {
@@ -1522,15 +1522,18 @@ fn validate_expression<'a>(
 
 			let type_id = expression.type_id;
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
-			Expression { span, type_id, kind }
+			return Some(Expression { span, type_id, kind });
 		}
 
 		tree::Expression::BinaryOperation(operation) => {
 			let op = operation.op.item;
-			let left = validate_expression(context, &operation.left)?;
-			let right = validate_expression(context, &operation.right)?;
 
-			let collapsed = context.type_store.collapse_fair(left.type_id, right.type_id);
+			let mut left = validate_expression(context, &operation.left)?;
+			let mut right = validate_expression(context, &operation.right)?;
+			let collapsed = context
+				.type_store
+				.collapse_fair(context.messages, &mut left, &mut right);
+
 			let Some(collapsed) = collapsed else {
 				context.error(
 					message!("{} type mismatch", op.name())
@@ -1551,6 +1554,10 @@ fn validate_expression<'a>(
 				return None;
 			};
 
+			if let Some(constant_math_result) = perform_constant_math(context, &left, &right, op) {
+				return Some(constant_math_result);
+			}
+
 			let type_id = match op {
 				BinaryOperator::Assign => context.type_store.void_type_id(),
 				_ => collapsed,
@@ -1558,9 +1565,54 @@ fn validate_expression<'a>(
 
 			let operation = Box::new(BinaryOperation { op, left, right });
 			let kind = ExpressionKind::BinaryOperation(operation);
-			Expression { span, type_id, kind }
+			return Some(Expression { span, type_id, kind });
 		}
 	};
+}
 
-	Some(expression)
+fn perform_constant_math<'a>(
+	context: &mut Context<'a, '_>,
+	left: &Expression,
+	right: &Expression,
+	op: BinaryOperator,
+) -> Option<Expression<'a>> {
+	if let ExpressionKind::IntegerValue(left) = left.kind {
+		let right = match &right.kind {
+			ExpressionKind::IntegerValue(right) => *right,
+			kind => unreachable!("{kind:?}"),
+		};
+
+		let value = match op {
+			BinaryOperator::Assign => return None,
+			BinaryOperator::Add => left.add(context.messages, right)?,
+			BinaryOperator::Sub => left.sub(context.messages, right)?,
+			BinaryOperator::Mul => left.mul(context.messages, right)?,
+			BinaryOperator::Div => left.div(context.messages, right)?,
+		};
+
+		let kind = ExpressionKind::IntegerValue(value);
+		let type_id = context.type_store.integer_type_id();
+		return Some(Expression { span: value.span(), type_id, kind });
+	}
+
+	if let ExpressionKind::DecimalValue(left) = left.kind {
+		let right = match &right.kind {
+			ExpressionKind::DecimalValue(right) => *right,
+			kind => unreachable!("{kind:?}"),
+		};
+
+		let value = match op {
+			BinaryOperator::Assign => return None,
+			BinaryOperator::Add => left.add(right),
+			BinaryOperator::Sub => left.sub(right),
+			BinaryOperator::Mul => left.mul(right),
+			BinaryOperator::Div => left.div(right),
+		};
+
+		let kind = ExpressionKind::DecimalValue(value);
+		let type_id = context.type_store.decimal_type_id();
+		return Some(Expression { span: value.span(), type_id, kind });
+	}
+
+	None
 }

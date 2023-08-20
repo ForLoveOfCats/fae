@@ -1,4 +1,3 @@
-use std::ops::Neg;
 use std::rc::Rc;
 
 use crate::error::Messages;
@@ -342,6 +341,35 @@ impl DecimalValue {
 
 	pub fn span(&self) -> Span {
 		self.span
+	}
+
+	pub fn negate(&mut self, sign_span: Span) {
+		self.value = -self.value;
+		self.span = self.span + sign_span;
+	}
+
+	pub fn add(self, other: DecimalValue) -> DecimalValue {
+		let span = self.span + other.span;
+		let value = self.value + other.value;
+		DecimalValue { value, span }
+	}
+
+	pub fn sub(self, other: DecimalValue) -> DecimalValue {
+		let span = self.span + other.span;
+		let value = self.value - other.value;
+		DecimalValue { value, span }
+	}
+
+	pub fn mul(self, other: DecimalValue) -> DecimalValue {
+		let span = self.span + other.span;
+		let value = self.value * other.value;
+		DecimalValue { value, span }
+	}
+
+	pub fn div(self, other: DecimalValue) -> DecimalValue {
+		let span = self.span + other.span;
+		let value = self.value / other.value;
+		DecimalValue { value, span }
 	}
 }
 
