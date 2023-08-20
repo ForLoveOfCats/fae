@@ -38,7 +38,7 @@ pub enum SymbolKind {
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 	Function { function_shape_index: usize },
-	Const { readable_index: usize },
+	Const { constant_index: usize },
 	Let { readable_index: usize },
 	Mut { readable_index: usize },
 }
@@ -69,7 +69,6 @@ pub struct Readable<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum ReadableKind {
-	Const,
 	Let,
 	Mut,
 }
@@ -189,17 +188,9 @@ pub enum StatementKind<'a> {
 
 	Block(Block<'a>),
 
-	Const(Box<Const<'a>>),
 	Binding(Box<Binding<'a>>),
 
 	Return(Box<Return<'a>>),
-}
-
-#[derive(Debug, Clone)]
-pub struct Const<'a> {
-	pub name: &'a str,
-	pub type_id: TypeId,
-	pub expression: Expression<'a>,
 }
 
 #[derive(Debug, Clone)]
@@ -240,8 +231,31 @@ pub enum ExpressionKind<'a> {
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
+}
 
-	TypeCollapse(Box<TypeCollapse<'a>>),
+impl<'a> ExpressionKind<'a> {
+	pub fn name_with_article(&self) -> &'static str {
+		match self {
+			ExpressionKind::Block(_) => "a block",
+			ExpressionKind::IntegerValue(_) => "an untyped integer",
+			ExpressionKind::DecimalValue(_) => "an untyped decimal",
+			ExpressionKind::CodepointLiteral(_) => "a codepoint literal",
+			ExpressionKind::StringLiteral(_) => "a string literal",
+			ExpressionKind::StructLiteral(_) => "a struct literal",
+			ExpressionKind::Call(_) => "a function call",
+			ExpressionKind::Read(_) => "a binding read",
+			ExpressionKind::UnaryOperation(_) => "an unary operation",
+			ExpressionKind::BinaryOperation(_) => "a binary operation",
+		}
+	}
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ConstantValue<'a> {
+	IntegerValue(i128),
+	DecimalValue(f64),
+	CodepointLiteral(char),
+	StringLiteral(&'a str),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -424,15 +438,4 @@ pub struct BinaryOperation<'a> {
 	pub op: BinaryOperator,
 	pub left: Expression<'a>,
 	pub right: Expression<'a>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeCollapse<'a> {
-	pub kind: TypeCollapseKind,
-	pub expression: Expression<'a>,
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeCollapseKind {
-	NumericCast(PrimativeKind),
 }

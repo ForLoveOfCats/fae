@@ -91,6 +91,7 @@ pub fn generate_code<'a>(
 	}
 
 	for &description in &type_store.slice_descriptions {
+		dbg!(description);
 		generate_slice_specialization(type_store, description, &mut output).unwrap();
 	}
 
@@ -281,8 +282,6 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 				// Probably wrong?
 				generate_block(context, block, output)?;
 			}
-
-			StatementKind::Const(_) => {}
 
 			StatementKind::Binding(binding) => {
 				let id = generate_expression(context, &binding.expression, output)?.unwrap();
@@ -509,7 +508,7 @@ fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output)
 			generate_raw_type_id(type_store, *type_id, output)
 		}
 
-		TypeEntryKind::Slice { type_id, .. } => write!(output, "sl_{}", type_id.index()),
+		TypeEntryKind::Slice { .. } => write!(output, "sl_{}", type_id.index()),
 
 		TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
 		TypeEntryKind::FunctionGeneric { .. } => unreachable!(),

@@ -20,6 +20,7 @@ pub struct Context<'a, 'b> {
 
 	root_layers: &'b RootLayers<'a>,
 
+	constants: &'b mut Vec<ConstantValue<'a>>,
 	readables: &'b mut Readables<'a>,
 
 	initial_symbols_len: usize,
@@ -46,6 +47,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
 			root_layers: &*self.root_layers,
 
+			constants: &mut *self.constants,
 			readables: &mut *self.readables,
 
 			initial_symbols_len: self.symbols.len(),
@@ -67,7 +69,6 @@ impl<'a, 'b> Context<'a, 'b> {
 		let span = Some(name.span);
 		let name = name.item;
 		let kind = match kind {
-			ReadableKind::Const => SymbolKind::Const { readable_index },
 			ReadableKind::Let => SymbolKind::Let { readable_index },
 			ReadableKind::Mut => SymbolKind::Mut { readable_index },
 		};
@@ -514,6 +515,7 @@ pub fn validate<'a>(
 	parsed_files: &'a [tree::File<'a>],
 ) {
 	let mut function_generic_usages = Vec::new();
+	let mut constants = Vec::new();
 
 	create_and_fill_root_types(
 		messages,
@@ -556,6 +558,7 @@ pub fn validate<'a>(
 			function_store,
 			function_generic_usages: &mut function_generic_usages,
 			root_layers,
+			constants: &mut constants,
 			readables: &mut readables,
 			initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
@@ -1019,14 +1022,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			tree::Statement::Function(statement) => validate_function(&mut context, statement),
 
 			tree::Statement::Const(statement) => {
-				let validated = match validate_const(&mut context, statement) {
-					Some(validated) => validated,
-					None => continue,
-				};
-
-				let type_id = validated.type_id;
-				let kind = StatementKind::Const(Box::new(validated));
-				statements.push(Statement { type_id, kind });
+				validate_const(&mut context, statement);
 			}
 
 			tree::Statement::Binding(statement) => {
@@ -1245,14 +1241,13 @@ fn trace_return<'a>(context: &mut Context<'a, '_>, return_type: TypeId, block: &
 	TracedReturn::NotCovered
 }
 
-fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<Const<'a>> {
+fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<()> {
 	let explicit_type = match &statement.item.parsed_type {
 		Some(parsed_type) => context.lookup_type(&parsed_type),
 		None => None,
 	};
-	let mut expression = validate_expression(context, &statement.item.expression)?;
-	let type_id = explicit_type.unwrap_or(expression.type_id);
 
+	let mut expression = validate_expression(context, &statement.item.expression)?;
 	if let Some(explicit_type) = explicit_type {
 		if !context
 			.type_store
@@ -1270,7 +1265,29 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 		}
 	}
 
-	Some(Const { name: statement.item.name.item, type_id, expression })
+	let value = match &expression.kind {
+		ExpressionKind::IntegerValue(value) => ConstantValue::IntegerValue(value.value()),
+		ExpressionKind::DecimalValue(value) => ConstantValue::DecimalValue(value.value()),
+		ExpressionKind::StringLiteral(literal) => ConstantValue::StringLiteral(literal.value),
+		ExpressionKind::CodepointLiteral(literal) => ConstantValue::CodepointLiteral(literal.value),
+
+		kind => {
+			let name = kind.name_with_article();
+			context.error(message!("Cannot have {name} as a const expression").span(expression.span));
+			return None;
+		}
+	};
+
+	let constant_index = context.constants.len();
+	context.constants.push(value);
+
+	let name = statement.item.name.item;
+	let kind = SymbolKind::Const { constant_index };
+	let span = Some(expression.span);
+	let symbol = Symbol { name, kind, span, file_index: Some(context.file_index) };
+	context.push_symbol(symbol);
+
+	Some(())
 }
 
 fn validate_binding<'a>(
@@ -1486,6 +1503,33 @@ fn validate_expression<'a>(
 			let symbol = context.lookup_symbol(&read.path_segments.item)?;
 			let readable_index = match symbol.kind {
 				SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
+
+				SymbolKind::Const { constant_index } => {
+					let constant = context.constants[constant_index];
+					let (kind, type_id) = match constant {
+						ConstantValue::IntegerValue(value) => {
+							let kind = ExpressionKind::IntegerValue(IntegerValue::new(value, span));
+							(kind, context.type_store.integer_type_id())
+						}
+
+						ConstantValue::DecimalValue(value) => {
+							let kind = ExpressionKind::DecimalValue(DecimalValue::new(value, span));
+							(kind, context.type_store.decimal_type_id())
+						}
+
+						ConstantValue::CodepointLiteral(value) => {
+							let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value });
+							(kind, context.type_store.u32_type_id())
+						}
+
+						ConstantValue::StringLiteral(value) => {
+							let kind = ExpressionKind::StringLiteral(StringLiteral { value });
+							(kind, context.type_store.string_type_id())
+						}
+					};
+
+					return Some(Expression { span, type_id, kind });
+				}
 
 				kind => {
 					context.error(message!("Cannot read value from {kind}").span(read.path_segments.span));
