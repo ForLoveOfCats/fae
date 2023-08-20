@@ -18,6 +18,7 @@ fn main(): void {
 	a_before[i8](-(20 * (10 + 5) / 2))
 	a_before[u8](-5)
 	a_before[f64](4.2)
+	a_before[f64](-4.2)
 
 	a_after[u32](42)
 	a_after[f64](4.2)

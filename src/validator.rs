@@ -1517,6 +1517,12 @@ fn validate_expression<'a>(
 					return Some(expression);
 				}
 
+				(UnaryOperator::Negate, ExpressionKind::DecimalValue(value)) => {
+					value.negate(span);
+					expression.span = expression.span + span;
+					return Some(expression);
+				}
+
 				_ => {}
 			}
 
