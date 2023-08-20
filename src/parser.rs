@@ -288,7 +288,12 @@ fn parse_expression_atom<'a>(
 			Ok(Node::new(Expression::Read(read), span))
 		}
 
-		TokenKind::OpenParen => parse_expression(messages, tokenizer),
+		TokenKind::OpenParen => {
+			tokenizer.expect(messages, TokenKind::OpenParen)?;
+			let expression = parse_expression(messages, tokenizer)?;
+			tokenizer.expect(messages, TokenKind::CloseParen)?;
+			Ok(expression)
+		}
 
 		TokenKind::OpenBrace => {
 			let parsed_block = parse_block(messages, tokenizer)?;

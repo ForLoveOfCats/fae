@@ -15,7 +15,7 @@ fn main(): void {
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 
 	a_before[u64](82 - 40.0)
-	a_before[i8](44 * 69)
+	a_before[i8](-(20 * (10 + 5) / 2))
 	a_before[u8](-5)
 	a_before[f64](4.2)
 
