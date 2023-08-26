@@ -80,6 +80,7 @@ pub enum UserTypeKind<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimativeKind {
 	Void,
+
 	UntypedInteger,
 	UntypedDecimal,
 
@@ -226,6 +227,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
+
 		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
 		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
 
@@ -367,9 +369,7 @@ impl<'a> TypeStore<'a> {
 			return Some(true);
 		}
 
-		let to_integer = to.entry == self.integer_type_id.entry;
 		let from_integer = from.type_id.entry == self.integer_type_id.entry;
-
 		let to_decimal = to.entry == self.decimal_type_id.entry;
 		let from_decimal = from.type_id.entry == self.decimal_type_id.entry;
 

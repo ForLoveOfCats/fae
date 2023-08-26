@@ -91,7 +91,6 @@ pub fn generate_code<'a>(
 	}
 
 	for &description in &type_store.slice_descriptions {
-		dbg!(description);
 		generate_slice_specialization(type_store, description, &mut output).unwrap();
 	}
 
