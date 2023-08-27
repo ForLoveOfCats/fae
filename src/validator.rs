@@ -1323,6 +1323,12 @@ fn validate_binding<'a>(
 		_ => expression.type_id,
 	};
 
+	if type_id.is_untyped_integer(context.type_store) {
+		context.error(message!("Cannot create binding of untyped integer").span(statement.span));
+	} else if type_id.is_untyped_decimal(context.type_store) {
+		context.error(message!("Cannot create binding of untyped decimal").span(statement.span));
+	}
+
 	let is_mutable = statement.item.is_mutable;
 	let kind = match is_mutable {
 		true => ReadableKind::Mut,

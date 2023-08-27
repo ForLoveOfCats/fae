@@ -20,6 +20,14 @@ impl TypeId {
 		type_store.direct_equal(self, type_store.void_type_id)
 	}
 
+	pub fn is_untyped_integer(self, type_store: &TypeStore) -> bool {
+		type_store.direct_equal(self, type_store.integer_type_id)
+	}
+
+	pub fn is_untyped_decimal(self, type_store: &TypeStore) -> bool {
+		type_store.direct_equal(self, type_store.decimal_type_id)
+	}
+
 	pub fn index(self) -> usize {
 		self.entry as usize
 	}
