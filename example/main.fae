@@ -1,5 +1,3 @@
-using sub_folder::sub_module
-
 generic T
 fn a_before(arg: T): T {
 	return b_after[T](arg)
@@ -14,10 +12,13 @@ const A = 8
 const GREETING = "Hello there"
 
 fn main(): void {
+	using sub_folder::sub_module
+
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
+	// TODO: Be able to emit messages without file index
 
 	sub_function()
 

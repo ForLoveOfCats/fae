@@ -517,15 +517,7 @@ pub fn validate<'a>(
 	let mut function_generic_usages = Vec::new();
 	let mut constants = Vec::new();
 
-	create_and_fill_root_types(
-		messages,
-		type_store,
-		function_store,
-		&mut function_generic_usages,
-		root_layers,
-		parsed_files,
-	);
-	resolve_root_type_imports(messages, root_layers, parsed_files);
+	create_root_types(messages, type_store, root_layers, parsed_files);
 
 	let mut readables = Readables::new();
 	create_root_functions(
@@ -537,7 +529,6 @@ pub fn validate<'a>(
 		&mut readables,
 		parsed_files,
 	);
-	resolve_root_function_imports(messages, root_layers, parsed_files);
 
 	assert!(function_generic_usages.is_empty());
 	let mut symbols = Symbols::new();
@@ -572,11 +563,9 @@ pub fn validate<'a>(
 	}
 }
 
-fn create_and_fill_root_types<'a>(
+fn create_root_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
-	function_store: &mut FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
@@ -590,40 +579,6 @@ fn create_and_fill_root_types<'a>(
 
 		create_block_types(messages, type_store, &mut layer.symbols, parsed_file.module_path, block, true, index);
 		layer.importable_types_len = layer.symbols.len();
-	}
-
-	for parsed_file in parsed_files {
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
-
-		let block = &parsed_file.block;
-		let index = parsed_file.source_file.index;
-		messages.set_current_file_index(index);
-
-		// Yuck, I do not like this
-		let mut symbols = layer.symbols.clone();
-		fill_block_types(messages, type_store, function_store, generic_usages, root_layers, &mut symbols, block);
-		root_layers.create_module_path(&parsed_file.module_path).symbols = symbols;
-	}
-}
-
-fn resolve_root_type_imports<'a>(
-	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
-	parsed_files: &[tree::File<'a>],
-) {
-	for parsed_file in parsed_files {
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
-
-		let block = &parsed_file.block;
-		let index = parsed_file.source_file.index;
-		messages.set_current_file_index(index);
-
-		// Yuck, I do not like this
-		let mut symbols = layer.symbols.clone();
-		let count = resolve_block_type_imports(messages, root_layers, &mut symbols, block);
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
-		layer.imported_types_len = count;
-		layer.symbols = symbols;
 	}
 }
 
@@ -661,25 +616,6 @@ fn create_root_functions<'a>(
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
 		layer.importable_functions_len = symbols.len() - old_symbols_len;
 		layer.symbols = symbols;
-	}
-}
-
-fn resolve_root_function_imports<'a>(
-	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
-	parsed_files: &[tree::File<'a>],
-) {
-	for parsed_file in parsed_files {
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
-
-		let block = &parsed_file.block;
-		let index = parsed_file.source_file.index;
-		messages.set_current_file_index(index);
-
-		// Yuck, I do not like this
-		let mut symbols = layer.symbols.clone();
-		resolve_block_function_imports(messages, root_layers, &mut symbols, block);
-		root_layers.create_module_path(&parsed_file.module_path).symbols = symbols;
 	}
 }
 
@@ -955,28 +891,27 @@ fn create_block_functions<'a>(
 }
 
 fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
-	// Root blocks already have had this done so imports can resolve, don't do it again
-	if !is_root {
-		create_block_types(
-			context.messages,
-			context.type_store,
-			context.symbols,
-			context.module_path,
-			block,
-			false,
-			context.file_index,
-		);
-		fill_block_types(
-			context.messages,
-			context.type_store,
-			context.function_store,
-			context.function_generic_usages,
-			context.root_layers,
-			context.symbols,
-			block,
-		);
-		_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
+	create_block_types(
+		context.messages,
+		context.type_store,
+		context.symbols,
+		context.module_path,
+		block,
+		false,
+		context.file_index,
+	);
+	fill_block_types(
+		context.messages,
+		context.type_store,
+		context.function_store,
+		context.function_generic_usages,
+		context.root_layers,
+		context.symbols,
+		block,
+	);
+	_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
 
+	if !is_root {
 		create_block_functions(
 			context.messages,
 			context.type_store,
@@ -989,8 +924,8 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			block,
 			context.file_index,
 		);
-		resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
 	}
+	resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
 
 	let mut statements = Vec::with_capacity(block.statements.len());
 
@@ -1072,9 +1007,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		None
 	});
 
-	let function_shape_index = match function_shape_index {
-		Some(function_shape_index) => function_shape_index,
-		None => return,
+	let Some(function_shape_index) = function_shape_index else {
+		return;
 	};
 
 	let mut scope = context.child_scope();
