@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use unicode_width::UnicodeWidthChar;
 
 use crate::{file::SourceFile, span::Span};
@@ -36,9 +34,9 @@ impl<'a> Messages<'a> {
 		self.current_file_index = file_index;
 	}
 
-	pub fn print_errors(&mut self, message_prefix: &str) {
+	pub fn print_errors(&mut self, prefix: &str) {
 		for error in &self.errors {
-			error.print(&self.sources, message_prefix);
+			error.print(&self.sources, prefix);
 			eprintln!();
 		}
 
@@ -56,7 +54,10 @@ impl<'a> Messages<'a> {
 	}
 
 	pub fn error(&mut self, mut message: Message) {
-		message.file_index = self.current_file_index;
+		if message.span.is_some() {
+			message.file_index = Some(self.current_file_index);
+		}
+
 		self.errors.push(message);
 		self.any_errors = true;
 	}
@@ -64,7 +65,7 @@ impl<'a> Messages<'a> {
 
 #[derive(Debug)]
 pub struct Message {
-	file_index: usize,
+	file_index: Option<usize>,
 	text: String,
 	span: Option<Span>,
 	notes: Vec<Note>,
@@ -72,7 +73,7 @@ pub struct Message {
 
 impl Message {
 	pub fn new(text: String) -> Message {
-		Message { file_index: usize::MAX, text, span: None, notes: Vec::new() }
+		Message { file_index: None, text, span: None, notes: Vec::new() }
 	}
 
 	pub fn span(mut self, span: Span) -> Message {
@@ -97,75 +98,74 @@ impl Message {
 		self
 	}
 
-	fn print(&self, sources: &[SourceFile], message_prefix: &str) {
-		let source_file = &sources[self.file_index];
-		let path = &source_file.path;
-		let source = &source_file.source;
-		Self::print_message(self.span, &self.text, path, source, message_prefix);
+	fn print(&self, sources: &[SourceFile], prefix: &str) {
+		Self::print_message(sources, self.file_index, self.span, &self.text, prefix);
 
 		for note in &self.notes {
-			let source_file = &sources[note.file_index];
-			let path = &source_file.path;
-			let source = &source_file.source;
-			Self::print_message(Some(note.span), &note.text, path, source, "Note");
+			Self::print_file_message(sources, note.file_index, note.span, &note.text, "Note");
+		}
+	}
+
+	fn print_message(sources: &[SourceFile], file_index: Option<usize>, span: Option<Span>, text: &str, prefix: &str) {
+		if let Some(span) = span {
+			let file_index = file_index.expect("Cannot have a span without a file index");
+			Self::print_file_message(sources, file_index, span, text, prefix);
+		} else {
+			eprintln!("{prefix}: {text}");
 		}
 	}
 
 	//This is a big ball of mess
-	fn print_message(span: Option<Span>, text: &str, path: &Path, source: &str, message_prefix: &str) {
-		if let Some(span) = span {
-			let (line, start, end) = {
-				let mut line_start = span.start;
-				while line_start > 0 {
-					if matches!(source.as_bytes()[line_start], b'\r' | b'\n') && line_start != span.start {
-						break;
-					}
-					line_start -= 1;
+	fn print_file_message(sources: &[SourceFile], file_index: usize, span: Span, text: &str, prefix: &str) {
+		let source_file = &sources[file_index];
+		let path = &source_file.path;
+		let source = &source_file.source;
+
+		let (line, start, end) = {
+			let mut line_start = span.start;
+			while line_start > 0 {
+				if matches!(source.as_bytes()[line_start], b'\r' | b'\n') && line_start != span.start {
+					break;
 				}
-
-				if line_start < span.start && matches!(source.as_bytes()[line_start], b'\r' | b'\n') {
-					line_start += 1;
-				}
-
-				let mut line_end = span.start;
-				while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
-					line_end += 1;
-				}
-
-				(&source[line_start..line_end], span.start - line_start, span.end - line_start)
-			};
-
-			let line_num = span.get_line_num(source);
-			let column_start = calc_spaces_from_byte_offset(line, start);
-
-			//TODO: Handle multi-line spans
-			eprint!("{message_prefix} {:?}, line {}, column {}: ", path, line_num, column_start);
-			eprint!("{}", text);
-
-			if start != end {
-				eprintln!();
-
-				//TODO: Handle multi-line spans
-				let gutter = format!("  {}| ", line_num);
-				eprint!("{}", gutter);
-				print_normalized_tabs(line);
-				eprintln!();
-
-				let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
-				let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
-				eprint!("{}{}", gutter_spacer, whitespace);
-
-				let column_end = calc_spaces_from_byte_offset(line, end - 1);
-				for _ in column_start..column_end + 1 {
-					eprint!("^");
-				}
+				line_start -= 1;
 			}
 
-			eprintln!();
-		} else {
-			eprint!("{message_prefix} {:?}: ", path);
-			eprintln!("{}", text);
+			if line_start < span.start && matches!(source.as_bytes()[line_start], b'\r' | b'\n') {
+				line_start += 1;
+			}
+
+			let mut line_end = span.start;
+			while line_end < source.len() && !matches!(source.as_bytes()[line_end], b'\r' | b'\n') {
+				line_end += 1;
+			}
+
+			(&source[line_start..line_end], span.start - line_start, span.end - line_start)
+		};
+
+		let line_num = span.get_line_num(source);
+		let column_start = calc_spaces_from_byte_offset(line, start);
+
+		eprint!("{prefix} {:?}, line {}, column {}: ", path, line_num, column_start);
+		eprintln!("{}", text);
+
+		assert_ne!(start, end);
+
+		//TODO: Handle multi-line spans
+		let gutter = format!("  {}| ", line_num);
+		eprint!("{}", gutter);
+		print_normalized_tabs(line);
+		eprintln!();
+
+		let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
+		let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
+		eprint!("{}{}", gutter_spacer, whitespace);
+
+		let column_end = calc_spaces_from_byte_offset(line, end - 1);
+		for _ in column_start..column_end + 1 {
+			eprint!("^");
 		}
+
+		eprintln!();
 	}
 }
 

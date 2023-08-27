@@ -11,14 +11,13 @@ fn b_before(arg: T): T {
 const A = 8
 const GREETING = "Hello there"
 
-fn main(): void {
+fn not_main(): void {
 	using sub_folder::sub_module
 
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
-	// TODO: Be able to emit messages without file index
 
 	sub_function()
 
