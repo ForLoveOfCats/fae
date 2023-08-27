@@ -1,2 +1,3 @@
-//fn sub_function(): void {
-//}
+fn sub_function(): i64 {
+	return -999
+}

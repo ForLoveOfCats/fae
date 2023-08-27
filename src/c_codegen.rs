@@ -421,11 +421,11 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 	match &expression.kind {
 		ExpressionKind::IntegerValue(value) => {
-			if value.value().is_negative() {
-				write!(output, "i64 t_{id} = -{};\n", value.value())?;
-			} else {
-				write!(output, "u64 t_{id} = {};\n", value.value())?;
-			}
+			let ty = match value.value().is_negative() {
+				true => "i64",
+				false => "u64",
+			};
+			write!(output, "{ty} t_{id} = {};\n", value.value())?;
 		}
 
 		ExpressionKind::DecimalValue(literal) => write!(output, "f64 t_{id} = {};\n", literal.value())?,

@@ -1,3 +1,5 @@
+using sub_folder::sub_module
+
 generic T
 fn a_before(arg: T): T {
 	return b_after[T](arg)
@@ -16,6 +18,8 @@ fn main(): void {
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
+
+	sub_function()
 
 	a_before[u64](A + 5)
 	a_before[&[u8]](GREETING)
