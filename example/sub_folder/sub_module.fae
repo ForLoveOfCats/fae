@@ -1,3 +1,5 @@
 fn sub_function(): i64 {
 	return -999
 }
+
+const SUB_CONST = 5594

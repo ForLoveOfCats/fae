@@ -11,7 +11,7 @@ fn b_before(arg: T): T {
 const A = 8
 const GREETING = "Hello there"
 
-fn not_main(): void {
+fn main(): void {
 	using sub_folder::sub_module
 
 	// TODO: Better display multi-line spans
@@ -20,6 +20,7 @@ fn not_main(): void {
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 
 	sub_function()
+	let a: i32 = SUB_CONST
 
 	a_before[u64](A + 5)
 	a_before[&[u8]](GREETING)

@@ -279,6 +279,7 @@ pub struct RootLayer<'a> {
 	importable_types_len: usize,
 	imported_types_len: usize,
 	importable_functions_len: usize,
+	importable_consts_len: usize,
 }
 
 impl<'a> RootLayer<'a> {
@@ -290,6 +291,7 @@ impl<'a> RootLayer<'a> {
 			importable_types_len: 0,
 			imported_types_len: 0,
 			importable_functions_len: 0,
+			importable_consts_len: 0,
 		}
 	}
 
@@ -313,6 +315,12 @@ impl<'a> RootLayer<'a> {
 	fn importable_functions(&self) -> &[Symbol<'a>] {
 		let types_len = self.importable_types_len + self.imported_types_len;
 		&self.symbols.symbols[types_len..types_len + self.importable_functions_len]
+	}
+
+	fn importable_consts(&self) -> &[Symbol<'a>] {
+		let types_len = self.importable_types_len + self.imported_types_len;
+		let start = types_len + self.importable_functions_len;
+		&self.symbols.symbols[start..start + self.importable_consts_len]
 	}
 }
 
@@ -531,7 +539,19 @@ pub fn validate<'a>(
 	);
 
 	assert!(function_generic_usages.is_empty());
+
 	let mut symbols = Symbols::new();
+	validate_root_consts(
+		messages,
+		root_layers,
+		type_store,
+		function_store,
+		&mut function_generic_usages,
+		&mut constants,
+		&mut readables,
+		parsed_files,
+		&mut symbols,
+	);
 
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
@@ -583,7 +603,7 @@ fn create_root_types<'a>(
 }
 
 fn create_root_functions<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -616,6 +636,49 @@ fn create_root_functions<'a>(
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
 		layer.importable_functions_len = symbols.len() - old_symbols_len;
 		layer.symbols = symbols;
+	}
+}
+
+fn validate_root_consts<'a>(
+	messages: &mut Messages<'a>,
+	root_layers: &mut RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	function_generic_usages: &mut Vec<GenericUsage>,
+	constants: &mut Vec<ConstantValue<'a>>,
+	readables: &mut Readables<'a>,
+	parsed_files: &'a [tree::File<'a>],
+	symbols: &mut Symbols<'a>,
+) {
+	for parsed_file in parsed_files {
+		let file_index = parsed_file.source_file.index;
+		messages.set_current_file_index(file_index);
+		let module_path = parsed_file.module_path;
+
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		symbols.duplicate(&layer.symbols);
+		let old_symbols_len = symbols.len();
+
+		let mut context = Context {
+			file_index,
+			module_path,
+			messages,
+			type_store,
+			function_store,
+			function_generic_usages,
+			root_layers,
+			constants,
+			readables,
+			initial_symbols_len: symbols.len(),
+			symbols,
+		};
+
+		validate_block_consts(&mut context, &parsed_file.block);
+		std::mem::forget(context);
+
+		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		layer.importable_consts_len = symbols.len() - old_symbols_len;
+		layer.symbols.duplicate(symbols);
 	}
 }
 
@@ -652,7 +715,7 @@ fn resolve_block_type_imports<'a>(
 	imported_count
 }
 
-fn resolve_block_function_imports<'a>(
+fn resolve_block_non_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -672,6 +735,10 @@ fn resolve_block_function_imports<'a>(
 		};
 
 		for &symbol in found.importable_functions() {
+			symbols.push_symbol(messages, symbol);
+		}
+
+		for &symbol in found.importable_consts() {
 			symbols.push_symbol(messages, symbol);
 		}
 	}
@@ -890,6 +957,14 @@ fn create_block_functions<'a>(
 	}
 }
 
+fn validate_block_consts<'a>(context: &mut Context<'a, '_>, block: &'a tree::Block<'a>) {
+	for statement in &block.statements {
+		if let tree::Statement::Const(statement) = statement {
+			validate_const(context, statement);
+		}
+	}
+}
+
 fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
 	create_block_types(
 		context.messages,
@@ -925,10 +1000,13 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.file_index,
 		);
 	}
-	resolve_block_function_imports(context.messages, context.root_layers, context.symbols, block);
+	resolve_block_non_type_imports(context.messages, context.root_layers, context.symbols, block);
+
+	if !is_root {
+		validate_block_consts(&mut context, block);
+	}
 
 	let mut statements = Vec::with_capacity(block.statements.len());
-
 	for statement in &block.statements {
 		match statement {
 			tree::Statement::Expression(..)
@@ -956,9 +1034,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 			tree::Statement::Function(statement) => validate_function(&mut context, statement),
 
-			tree::Statement::Const(statement) => {
-				validate_const(&mut context, statement);
-			}
+			tree::Statement::Const(..) => {}
 
 			tree::Statement::Binding(statement) => {
 				let validated = match validate_binding(&mut context, statement) {
@@ -1229,19 +1305,22 @@ fn validate_binding<'a>(
 	statement: &'a tree::Node<tree::Binding<'a>>,
 ) -> Option<Binding<'a>> {
 	let mut expression = validate_expression(context, &statement.item.expression)?;
-	if let Some(parsed_type) = &statement.item.parsed_type {
-		let explicit_type = context.lookup_type(&parsed_type)?;
-		if !context.collapse_to(explicit_type, &mut expression)? {
-			context.error(
-				message!(
-					"Expression type {} mismatch with explicit binding type {}",
-					context.type_name(expression.type_id),
-					context.type_name(explicit_type)
-				)
-				.span(statement.item.expression.span),
-			);
-			return None;
+
+	let type_id = match &statement.item.parsed_type {
+		Some(parsed_type) => {
+			let explicit_type = context.lookup_type(&parsed_type)?;
+			if !context.collapse_to(explicit_type, &mut expression)? {
+				let expected = context.type_name(explicit_type);
+				let got = context.type_name(expression.type_id);
+				let err = message!("Expected {expected} but got expression with type {got}");
+				context.error(err.span(statement.item.expression.span));
+				return None;
+			}
+
+			explicit_type
 		}
+
+		_ => expression.type_id,
 	};
 
 	let is_mutable = statement.item.is_mutable;
@@ -1252,7 +1331,6 @@ fn validate_binding<'a>(
 	let readable_index = context.push_readable(statement.item.name, expression.type_id, kind);
 
 	let name = statement.item.name.item;
-	let type_id = expression.type_id;
 	Some(Binding { name, type_id, expression, readable_index, is_mutable })
 }
 
