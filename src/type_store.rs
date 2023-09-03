@@ -395,8 +395,8 @@ impl<'a> TypeStore<'a> {
 
 			if to_decimal {
 				if value.abs() > MAX_F64_INTEGER {
-					let err = message!("Constant integer {value} is unable to be represented as a constant decimal");
-					messages.error(err.span(span));
+					let err = error!("Constant integer {value} is unable to be represented as a constant decimal");
+					messages.message(err.span(span));
 					return None;
 				}
 
@@ -413,8 +413,8 @@ impl<'a> TypeStore<'a> {
 
 			if to_float {
 				if value.abs() > max_float_integer {
-					let err = message!("Constant integer {value} is unable to be represented as an `f{bit_count}`");
-					messages.error(err.span(span));
+					let err = error!("Constant integer {value} is unable to be represented as an `f{bit_count}`");
+					messages.message(err.span(span));
 					return None;
 				}
 
@@ -440,8 +440,8 @@ impl<'a> TypeStore<'a> {
 				if value.is_negative() {
 					let min_value = -i128::pow(2, bit_count - 1);
 					if value < min_value {
-						messages.error(
-							message!("Constant integer {value} is too small to be represented as an `i{bit_count}`")
+						messages.message(
+							error!("Constant integer {value} is too small to be represented as an `i{bit_count}`")
 								.span(span),
 						);
 						return None;
@@ -449,8 +449,8 @@ impl<'a> TypeStore<'a> {
 				} else {
 					let max_value = i128::pow(2, bit_count - 1) - 1;
 					if value > max_value {
-						messages.error(
-							message!("Constant integer {value} is too large to be represented as an `i{bit_count}`")
+						messages.message(
+							error!("Constant integer {value} is too large to be represented as an `i{bit_count}`")
 								.span(span),
 						);
 						return None;
@@ -463,19 +463,17 @@ impl<'a> TypeStore<'a> {
 
 			if to_unsigned {
 				if value.is_negative() {
-					messages.error(
-						message!(
-							"Constant integer {value} is negative and so cannot be represented as a `u{bit_count}`"
-						)
-						.span(span),
+					messages.message(
+						error!("Constant integer {value} is negative and so cannot be represented as a `u{bit_count}`")
+							.span(span),
 					);
 					return None;
 				}
 
 				let max_value = i128::pow(2, bit_count - 1) - 1;
 				if value > max_value {
-					let err = message!("Constant integer {value} is too large to be represented as a `u{bit_count}`");
-					messages.error(err.span(span));
+					let err = error!("Constant integer {value} is too large to be represented as a `u{bit_count}`");
+					messages.message(err.span(span));
 					return None;
 				}
 
@@ -500,8 +498,8 @@ impl<'a> TypeStore<'a> {
 				if bit_count == 32 {
 					let cast = value as f32 as f64;
 					if cast != value {
-						let err = message!("Constant decimal {value} cannot be represented as an `f{bit_count}` without a loss in precision");
-						messages.error(err.span(span));
+						let err = error!("Constant decimal {value} cannot be represented as an `f{bit_count}` without a loss in precision");
+						messages.message(err.span(span));
 						return None;
 					}
 				}
@@ -621,7 +619,7 @@ impl<'a> TypeStore<'a> {
 		let shape_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_id } => {
 				if !type_arguments.is_empty() {
-					messages.error(message!("Builtin types do not accept type arguments").span(parsed_type.span));
+					messages.message(error!("Builtin types do not accept type arguments").span(parsed_type.span));
 					return None;
 				}
 
@@ -647,7 +645,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			_ => {
-				messages.error(message!("Symbol {:?} is not a type", symbol.name).span(path_segments.span));
+				messages.message(error!("Symbol {:?} is not a type", symbol.name).span(path_segments.span));
 				return None;
 			}
 		};
@@ -676,8 +674,8 @@ impl<'a> TypeStore<'a> {
 		};
 
 		if type_arguments.len() != shape.generics.len() {
-			messages.error(
-				message!(
+			messages.message(
+				error!(
 					"Expected {} type arguments for `{}`, got {}",
 					shape.generics.len(),
 					shape.name,

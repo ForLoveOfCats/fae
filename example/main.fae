@@ -13,7 +13,7 @@ fn b_before(arg: T): T {
 const A = 8
 const GREETING = "Hello there"
 
-fn main(): void {
+fn main() {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability

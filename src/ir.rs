@@ -279,8 +279,8 @@ impl IntegerValue {
 	pub fn negate(&mut self, messages: &mut Messages, sign_span: Span) {
 		let Some(value) = self.value.checked_neg() else {
 			let value = self.value;
-			let err = message!("Constant integer {value} overflows compiler representation if inverted");
-			messages.error(err.span(self.span));
+			let err = error!("Constant integer {value} overflows compiler representation if inverted");
+			messages.message(err.span(self.span));
 			return;
 		};
 
@@ -292,8 +292,8 @@ impl IntegerValue {
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_add(other.value) else {
-			let err = message!("Overflow or underflow in constant addition");
-			messages.error(err.span(span));
+			let err = error!("Overflow or underflow in constant addition");
+			messages.message(err.span(span));
 			return None;
 		};
 
@@ -304,8 +304,8 @@ impl IntegerValue {
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_sub(other.value) else {
-			let err = message!("Overflow or underflow in constant subtraction");
-			messages.error(err.span(span));
+			let err = error!("Overflow or underflow in constant subtraction");
+			messages.message(err.span(span));
 			return None;
 		};
 
@@ -316,8 +316,8 @@ impl IntegerValue {
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_mul(other.value) else {
-			let err = message!("Overflow or underflow in constant multiplication");
-			messages.error(err.span(span));
+			let err = error!("Overflow or underflow in constant multiplication");
+			messages.message(err.span(span));
 			return None;
 		};
 
@@ -328,8 +328,8 @@ impl IntegerValue {
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_div(other.value) else {
-			let err = message!("Overflow or underflow in constant division");
-			messages.error(err.span(span));
+			let err = error!("Overflow or underflow in constant division");
+			messages.message(err.span(span));
 			return None;
 		};
 

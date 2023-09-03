@@ -139,12 +139,12 @@ fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Sp
 	let spans = attributes.attribute_spans(&mut buffer);
 
 	if !spans.is_empty() {
-		let mut message = message!("{label} does not allow attributes").span(span);
+		let mut message = error!("{label} does not allow attributes").span(span);
 		for &span in spans {
 			message = message.note(note!(span, "Attribute here"));
 		}
 
-		messages.error(message);
+		messages.message(message);
 	}
 }
 
@@ -279,7 +279,7 @@ fn parse_expression_atom<'a>(
 
 			if let Some(type_arguments) = type_arguments {
 				// This is a weird error
-				messages.error(message!("Type arguments not allowed on binding read").span(type_arguments.span));
+				messages.message(error!("Type arguments not allowed on binding read").span(type_arguments.span));
 			}
 
 			let span = path_segments.span;
@@ -305,8 +305,8 @@ fn parse_expression_atom<'a>(
 		}
 
 		_ => {
-			messages.error(
-				message!("Unexpected token {:?} while attempting to parse expression atom", peeked.text)
+			messages.message(
+				error!("Unexpected token {:?} while attempting to parse expression atom", peeked.text)
 					.span(peeked.span),
 			);
 			Err(())
@@ -415,7 +415,7 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 		let value = match combined_text.parse::<f64>() {
 			Ok(value) => value,
 			Err(_) => {
-				messages.error(message!("Invalid float literal").span(Span {
+				messages.message(error!("Invalid float literal").span(Span {
 					start: first_number_token.span.start,
 					end: second_number_token.span.end,
 					file_index: tokenizer.file_index,
@@ -432,7 +432,7 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 			Ok(value) => value,
 
 			Err(_) => {
-				messages.error(message!("Invalid integer literal").span(first_number_token.span));
+				messages.message(error!("Invalid integer literal").span(first_number_token.span));
 				return Err(());
 			}
 		};
@@ -451,8 +451,8 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 		duplicate_span: Span,
 	) -> ParseResult<()> {
 		if let Some(attribute) = attribute {
-			messages.error(
-				message!("Duplicate attribute {name:?}")
+			messages.message(
+				error!("Duplicate attribute {name:?}")
 					.span(duplicate_span)
 					.note(note!(attribute.span, "Original here")),
 			);
@@ -538,7 +538,7 @@ fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 
 	let span = import_token.span + end;
 	if segments.is_empty() {
-		messages.error(message!("Missing import path").span(span));
+		messages.message(error!("Missing import path").span(span));
 		return Err(());
 	}
 
@@ -645,8 +645,12 @@ fn parse_function_declaration<'a>(
 
 	let parameters = parse_parameters(messages, tokenizer)?;
 
-	tokenizer.expect(messages, TokenKind::Colon)?;
-	let parsed_type = parse_type(messages, tokenizer)?;
+	let parsed_type = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
+		tokenizer.expect(messages, TokenKind::Colon)?;
+		Some(parse_type(messages, tokenizer)?)
+	} else {
+		None
+	};
 
 	let block = parse_block(messages, tokenizer)?;
 
@@ -818,7 +822,7 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 	let is_reserved = matches!(token.text, "const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic");
 
 	if is_reserved {
-		messages.error(message!("Cannot use reserved word {:?} as {use_as}", token.text).span(token.span));
+		messages.message(error!("Cannot use reserved word {:?} as {use_as}", token.text).span(token.span));
 		Err(())
 	} else {
 		Ok(())
@@ -875,12 +879,12 @@ fn consume_error_syntax(messages: &mut Messages, tokenizer: &mut Tokenizer) {
 
 	//Reached end of file while unbalanced
 	if brackets != 0 {
-		messages.error(message!("Unbalanced brackets"));
+		messages.message(error!("Unbalanced brackets"));
 	}
 	if parens != 0 {
-		messages.error(message!("Unbalanced parentheses"));
+		messages.message(error!("Unbalanced parentheses"));
 	}
 	if braces != 0 {
-		messages.error(message!("Unbalanced braces"));
+		messages.message(error!("Unbalanced braces"));
 	}
 }

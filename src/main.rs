@@ -39,7 +39,7 @@ fn main() {
 	}
 
 	let any_parse_errors = messages.any_errors();
-	messages.print_errors("Parse error");
+	messages.print_messages("Parse");
 	messages.reset();
 
 	//Partially parallelizable
@@ -48,7 +48,7 @@ fn main() {
 	let mut root_layers = RootLayers::new();
 	validate(&mut messages, &mut root_layers, &mut type_store, &mut function_store, &parsed_files);
 
-	messages.print_errors("Validation error");
+	messages.print_messages("Validation");
 	if any_parse_errors || messages.any_errors() {
 		return;
 	}

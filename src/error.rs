@@ -8,29 +8,27 @@ pub type ParseResult<T> = std::result::Result<T, ()>;
 
 #[derive(Debug)]
 pub struct Messages<'a> {
-	errors: Vec<Message>,
-	//NOTE: `self.errors` will be renamed to contain errors and warnings
-	//where each message knows what kind it is
+	messages: Vec<Message>,
 	any_errors: bool,
 	sources: &'a [SourceFile],
 }
 
 impl<'a> Messages<'a> {
 	pub fn new(sources: &'a [SourceFile]) -> Self {
-		Messages { errors: Vec::new(), any_errors: false, sources }
+		Messages { messages: Vec::new(), any_errors: false, sources }
 	}
 
-	pub fn print_errors(&mut self, prefix: &str) {
-		for error in &self.errors {
-			error.print(&self.sources, prefix);
+	pub fn print_messages(&mut self, stage: &str) {
+		for message in &self.messages {
+			message.print(&self.sources, stage);
 			eprintln!();
 		}
 
-		self.errors.clear();
+		self.messages.clear();
 	}
 
 	pub fn reset(&mut self) {
-		self.errors.clear();
+		self.messages.clear();
 		self.any_errors = false;
 	}
 
@@ -38,22 +36,52 @@ impl<'a> Messages<'a> {
 		self.any_errors
 	}
 
-	pub fn error(&mut self, message: Message) {
-		self.errors.push(message);
-		self.any_errors = true;
+	pub fn message(&mut self, message: Message) {
+		self.any_errors |= message.kind == MessageKind::Error;
+		self.messages.push(message);
+	}
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum MessageKind {
+	Error,
+	Warning,
+}
+
+impl MessageKind {
+	fn name(self) -> &'static str {
+		match self {
+			MessageKind::Error => "error",
+			MessageKind::Warning => "warning",
+		}
 	}
 }
 
 #[derive(Debug)]
 pub struct Message {
+	kind: MessageKind,
 	text: String,
 	span: Option<Span>,
 	notes: Vec<Note>,
 }
 
 impl Message {
-	pub fn new(text: String) -> Message {
-		Message { text, span: None, notes: Vec::new() }
+	pub fn error(text: String) -> Message {
+		Message {
+			kind: MessageKind::Error,
+			text,
+			span: None,
+			notes: Vec::new(),
+		}
+	}
+
+	pub fn warning(text: String) -> Message {
+		Message {
+			kind: MessageKind::Warning,
+			text,
+			span: None,
+			notes: Vec::new(),
+		}
 	}
 
 	pub fn span(mut self, span: Span) -> Message {
@@ -78,24 +106,25 @@ impl Message {
 		self
 	}
 
-	fn print(&self, sources: &[SourceFile], prefix: &str) {
-		Self::print_message(sources, self.span, &self.text, prefix);
+	fn print(&self, sources: &[SourceFile], stage: &str) {
+		self.print_message(sources, stage);
 
 		for note in &self.notes {
-			Self::print_file_message(sources, note.span, &note.text, "Note");
+			Self::print_file_message(sources, None, note.span, &note.text, "Note");
 		}
 	}
 
-	fn print_message(sources: &[SourceFile], span: Option<Span>, text: &str, prefix: &str) {
-		if let Some(span) = span {
-			Self::print_file_message(sources, span, text, prefix);
+	fn print_message(&self, sources: &[SourceFile], stage: &str) {
+		if let Some(span) = self.span {
+			Self::print_file_message(sources, Some(self.kind), span, &self.text, stage);
 		} else {
-			eprintln!("{prefix}: {text}");
+			let kind = self.kind.name();
+			eprintln!("{stage} {kind}: {}", self.text);
 		}
 	}
 
 	//This is a big ball of mess
-	fn print_file_message(sources: &[SourceFile], span: Span, text: &str, prefix: &str) {
+	fn print_file_message(sources: &[SourceFile], kind: Option<MessageKind>, span: Span, text: &str, stage: &str) {
 		let source_file = &sources[span.file_index];
 		let path = &source_file.path;
 		let source = &source_file.source;
@@ -124,7 +153,12 @@ impl Message {
 		let line_num = span.get_line_num(source);
 		let column_start = calc_spaces_from_byte_offset(line, start);
 
-		eprint!("{prefix} {:?}, line {}, column {}: ", path, line_num, column_start);
+		if let Some(kind) = kind {
+			let kind = kind.name();
+			eprint!("{stage} {kind} {:?}, line {}, column {}: ", path, line_num, column_start);
+		} else {
+			eprint!("{stage} {:?}, line {}, column {}: ", path, line_num, column_start);
+		}
 		eprintln!("{}", text);
 
 		assert_ne!(start, end);
@@ -149,9 +183,16 @@ impl Message {
 }
 
 #[macro_export]
-macro_rules! message {
+macro_rules! error {
 	($($arg:tt)*) => {
-		$crate::error::Message::new(format!( $($arg)* ))
+		$crate::error::Message::error(format!( $($arg)* ))
+	}
+}
+
+#[macro_export]
+macro_rules! warning {
+	($($arg:tt)*) => {
+		$crate::error::Message::warning(format!( $($arg)* ))
 	}
 }
 

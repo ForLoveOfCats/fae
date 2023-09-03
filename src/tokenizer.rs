@@ -377,8 +377,8 @@ impl<'a> Tokenizer<'a> {
 		let found = self.bytes[self.offset];
 		if found != expected {
 			if let Some(messages) = messages {
-				let err = message!("Expected {:?} but found {:?}", expected as char, found as char);
-				messages.error(err.span(Span {
+				let err = error!("Expected {:?} but found {:?}", expected as char, found as char);
+				messages.message(err.span(Span {
 					start: self.offset,
 					end: self.offset + 1,
 					file_index: self.file_index,
@@ -413,7 +413,7 @@ impl<'a> Tokenizer<'a> {
 	fn verify_not_eof(&self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
 		if self.offset >= self.source.len() {
 			if let Some(messages) = messages {
-				messages.error(message!("Unexpected end of file").span(Span {
+				messages.message(error!("Unexpected end of file").span(Span {
 					start: self.source.len().saturating_sub(1),
 					end: self.source.len().saturating_sub(1),
 					file_index: self.file_index,
@@ -431,8 +431,8 @@ impl<'a> Tokenizer<'a> {
 			return Ok(token);
 		}
 
-		let message = message!("Expected {expected} but found {:?}", token.text);
-		messages.error(message.span(token.span));
+		let message = error!("Expected {expected} but found {:?}", token.text);
+		messages.message(message.span(token.span));
 		Err(())
 	}
 
@@ -442,8 +442,8 @@ impl<'a> Tokenizer<'a> {
 			return Ok(token);
 		}
 
-		let message = message!("Expected word {expected:?} but found word {:?}", token.text);
-		messages.error(message.span(token.span));
+		let message = error!("Expected word {expected:?} but found word {:?}", token.text);
+		messages.message(message.span(token.span));
 		Err(())
 	}
 }

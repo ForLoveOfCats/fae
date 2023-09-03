@@ -55,8 +55,8 @@ impl<'a, 'b> Context<'a, 'b> {
 		}
 	}
 
-	fn error(&mut self, message: Message) {
-		self.messages.error(message);
+	fn message(&mut self, message: Message) {
+		self.messages.message(message);
 	}
 
 	fn push_symbol(&mut self, symbol: Symbol<'a>) {
@@ -122,7 +122,7 @@ impl<'a> RootLayers<'a> {
 				Some(index) => &layers[index],
 
 				None => {
-					messages.error(message!("Cannot find module layer for path segment").span(piece.span));
+					messages.message(error!("Cannot find module layer for path segment").span(piece.span));
 					return None;
 				}
 			};
@@ -197,8 +197,8 @@ impl<'a> Symbols<'a> {
 		// TODO: Allow duplicate symbol when symbol is variable
 		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
 			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
-			messages.error(
-				message!("Duplicate symbol `{}`", symbol.name)
+			messages.message(
+				error!("Duplicate symbol `{}`", symbol.name)
 					.span_if_some(symbol.span)
 					.note_if_some(found.span, "Original symbol here"),
 			);
@@ -209,8 +209,8 @@ impl<'a> Symbols<'a> {
 
 	fn push_imported_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>, import_span: Span) {
 		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
-			messages.error(
-				message!("Import conflicts with local symbol `{}`", found.name)
+			messages.message(
+				error!("Import conflicts with local symbol `{}`", found.name)
 					.span(import_span)
 					.note_if_some(found.span, "Local symbol here"),
 			);
@@ -240,7 +240,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			messages.error(message!("No symbol `{name}` in the current scope").span(segment.span));
+			messages.message(error!("No symbol `{name}` in the current scope").span(segment.span));
 			None
 		} else {
 			root_layers.lookup_path_symbol(messages, path)
@@ -312,7 +312,7 @@ impl<'a> RootLayer<'a> {
 		let found = self.symbols.symbols.iter().find(|symbol| symbol.name == name);
 
 		if found.is_none() {
-			messages.error(message!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
+			messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
 		}
 		found.copied()
 	}
@@ -376,8 +376,8 @@ impl<'a> FunctionStore<'a> {
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 		if shape.generics.len() != type_arguments.len() {
-			let error = message!("Expected {} type arguments, got {}", shape.generics.len(), type_arguments.len());
-			messages.error(error.span_if_some(invoke_span));
+			let error = error!("Expected {} type arguments, got {}", shape.generics.len(), type_arguments.len());
+			messages.message(error.span_if_some(invoke_span));
 			return None;
 		}
 
@@ -587,7 +587,7 @@ pub fn validate<'a>(
 	}
 
 	if function_store.main.is_none() {
-		messages.error(message!("Missing main function"));
+		messages.message(error!("Missing main function"));
 	}
 }
 
@@ -763,8 +763,8 @@ fn create_block_types<'a>(
 				| tree::Statement::Block(..)
 				| tree::Statement::Binding(..)
 				| tree::Statement::Return(..) => {
-					messages.error(
-						message!("{} is not allowed in a root scope", statement.name_and_article())
+					messages.message(
+						error!("{} is not allowed in a root scope", statement.name_and_article())
 							.span(statement.span()),
 					);
 					continue;
@@ -893,19 +893,29 @@ fn create_block_functions<'a>(
 
 			function_store.generics.push(generics.clone());
 
-			let parsed_type = &statement.parsed_type;
-			let return_type = type_store.lookup_type(
-				messages,
-				function_store,
-				generic_usages,
-				root_layers,
-				scope.symbols,
-				&parsed_type,
-			);
+			let return_type = if let Some(parsed_type) = &statement.parsed_type {
+				let type_id = type_store.lookup_type(
+					messages,
+					function_store,
+					generic_usages,
+					root_layers,
+					scope.symbols,
+					parsed_type,
+				);
 
-			let return_type = match return_type {
-				Some(type_id) => type_id,
-				None => continue,
+				let return_type = match type_id {
+					Some(type_id) => type_id,
+					None => continue,
+				};
+
+				if return_type.is_void(type_store) {
+					let warning = warning!("`void` return type can be omitted");
+					messages.message(warning.span(parsed_type.span));
+				}
+
+				return_type
+			} else {
+				type_store.void_type_id()
 			};
 
 			let mut parameters = Vec::new();
@@ -1099,15 +1109,12 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		scope.push_symbol(Symbol { name, kind, span: Some(span) });
 	}
 
-	let type_id = scope.lookup_type(&statement.parsed_type);
+	let type_id = scope.function_store.shapes[function_shape_index].return_type;
 	let mut block = validate_block(scope, &statement.block.item, false);
-	if let Some(type_id) = type_id {
-		block.type_id = type_id;
-	}
 
-	if trace_return(context, block.type_id, &mut block) == TracedReturn::NotCovered {
-		let error = message!("Not all code paths for function `{}` return a value", statement.name.item);
-		context.error(error.span(statement.name.span));
+	if trace_return(context, type_id, &mut block) == TracedReturn::NotCovered {
+		let error = error!("Not all code paths for function `{}` return a value", statement.name.item);
+		context.message(error.span(statement.name.span));
 	}
 
 	let shape = &mut context.function_store.shapes[function_shape_index];
@@ -1175,8 +1182,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 
 		if let Some(result) = result {
 			if context.function_store.main.is_some() {
-				let message = message!("Duplicate main function, this should be impossible");
-				context.error(message.span(statement.name.span));
+				let message = error!("Duplicate main function, this should be impossible");
+				context.message(message.span(statement.name.span));
 				return;
 			}
 
@@ -1216,8 +1223,8 @@ fn trace_return<'a>(context: &mut Context<'a, '_>, return_type: TypeId, block: &
 				Some(expression) => context.type_name(expression.type_id),
 				None => context.type_name(context.type_store.void_type_id()),
 			};
-			let error = message!("Expected return type of {expected}, got {got}");
-			context.error(error.span(statement.span));
+			let error = error!("Expected return type of {expected}, got {got}");
+			context.message(error.span(statement.span));
 		}
 
 		return TracedReturn::Covered;
@@ -1242,8 +1249,8 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 			.type_store
 			.collapse_to(context.messages, explicit_type, &mut expression)?
 		{
-			context.error(
-				message!(
+			context.message(
+				error!(
 					"Const type mismatch between explicit type {} and expression type {}",
 					context.type_name(explicit_type),
 					context.type_name(expression.type_id),
@@ -1262,7 +1269,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 
 		kind => {
 			let name = kind.name_with_article();
-			context.error(message!("Cannot have {name} as a const expression").span(expression.span));
+			context.message(error!("Cannot have {name} as a const expression").span(expression.span));
 			return None;
 		}
 	};
@@ -1291,8 +1298,8 @@ fn validate_binding<'a>(
 			if !context.collapse_to(explicit_type, &mut expression)? {
 				let expected = context.type_name(explicit_type);
 				let got = context.type_name(expression.type_id);
-				let err = message!("Expected {expected} but got expression with type {got}");
-				context.error(err.span(statement.item.expression.span));
+				let err = error!("Expected {expected} but got expression with type {got}");
+				context.message(err.span(statement.item.expression.span));
 				return None;
 			}
 
@@ -1303,9 +1310,9 @@ fn validate_binding<'a>(
 	};
 
 	if type_id.is_untyped_integer(context.type_store) {
-		context.error(message!("Cannot create binding of untyped integer").span(statement.span));
+		context.message(error!("Cannot create binding of untyped integer").span(statement.span));
 	} else if type_id.is_untyped_decimal(context.type_store) {
-		context.error(message!("Cannot create binding of untyped decimal").span(statement.span));
+		context.message(error!("Cannot create binding of untyped decimal").span(statement.span));
 	}
 
 	let is_mutable = statement.item.is_mutable;
@@ -1362,8 +1369,8 @@ fn validate_expression<'a>(
 
 				_ => {
 					let name = context.type_name(type_id);
-					let message = message!("Cannot construct type {name} like a struct as it is not a struct");
-					context.error(message.span(literal.parsed_type.span));
+					let message = error!("Cannot construct type {name} like a struct as it is not a struct");
+					context.message(message.span(literal.parsed_type.span));
 					return None;
 				}
 			};
@@ -1386,17 +1393,16 @@ fn validate_expression<'a>(
 					Some(field) => field,
 
 					None => {
-						context.error(message!("Unexpected extra field initalizer").span(intializer.name.span));
+						context.message(error!("Unexpected extra field initalizer").span(intializer.name.span));
 						continue;
 					}
 				};
 
 				if field.name != intializer.name.item {
-					context.error(
-						message!(
+					context.message(
+						error!(
 							"Expected initalizer for field `{}`, got `{}` instead",
-							field.name,
-							intializer.name.item,
+							field.name, intializer.name.item,
 						)
 						.span(intializer.name.span),
 					);
@@ -1404,8 +1410,8 @@ fn validate_expression<'a>(
 				}
 
 				if !context.collapse_to(field.type_id, &mut expression)? {
-					context.error(
-						message!(
+					context.message(
+						error!(
 							"Field intializer type mismatch, expected {} but got {} instead",
 							context.type_name(field.type_id),
 							context.type_name(expression.type_id),
@@ -1429,7 +1435,7 @@ fn validate_expression<'a>(
 				SymbolKind::Function { function_shape_index } => function_shape_index,
 
 				kind => {
-					context.error(message!("Cannot call {kind}").span(call.path_segments.span));
+					context.message(error!("Cannot call {kind}").span(call.path_segments.span));
 					return None;
 				}
 			};
@@ -1471,19 +1477,19 @@ fn validate_expression<'a>(
 					.type_store
 					.collapse_to(context.messages, parameter.type_id, argument)?
 				{
-					let error = message!(
+					let error = error!(
 						"Expected argument of type {}, got {}",
 						context.type_name(parameter.type_id),
 						context.type_name(argument.type_id)
 					);
-					context.messages.error(error.span(argument.span));
+					context.messages.message(error.span(argument.span));
 					arguments_type_mismatch = true;
 				}
 			}
 
 			if arguments.len() != specialization.parameters.len() {
-				let error = message!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
-				context.error(error.span(span));
+				let error = error!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
+				context.message(error.span(span));
 				return None;
 			}
 
@@ -1529,7 +1535,7 @@ fn validate_expression<'a>(
 				}
 
 				kind => {
-					context.error(message!("Cannot read value from {kind}").span(read.path_segments.span));
+					context.message(error!("Cannot read value from {kind}").span(read.path_segments.span));
 					return None;
 				}
 			};
@@ -1582,8 +1588,8 @@ fn validate_expression<'a>(
 				.collapse_fair(context.messages, &mut left, &mut right);
 
 			let Some(collapsed) = collapsed else {
-				context.error(
-					message!("{} type mismatch", op.name())
+				context.message(
+					error!("{} type mismatch", op.name())
 						.span(span)
 						.note(note!(operation.left.span, "Left type {}", context.type_name(left.type_id)))
 						.note(note!(operation.right.span, "Right type {}", context.type_name(right.type_id))),

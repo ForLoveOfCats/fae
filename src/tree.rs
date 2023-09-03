@@ -99,7 +99,7 @@ pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
-	pub parsed_type: Node<Type<'a>>,
+	pub parsed_type: Option<Node<Type<'a>>>,
 	pub block: Node<Block<'a>>,
 }
 
