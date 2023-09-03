@@ -31,8 +31,9 @@ pub struct Module<'a> {
 }
 
 #[derive(Debug)]
-pub struct Using<'a> {
-	pub path_segments: Node<PathSegments<'a>>,
+pub struct Import<'a> {
+	pub path_segments: PathSegments<'a>,
+	pub symbol_names: Vec<Node<&'a str>>,
 }
 
 #[derive(Debug)]
@@ -249,7 +250,7 @@ pub enum Statement<'a> {
 
 	Block(Node<Block<'a>>),
 
-	Using(Node<Using<'a>>),
+	Import(Node<Import<'a>>),
 
 	Struct(Struct<'a>),
 	Function(Box<Function<'a>>),
@@ -268,7 +269,7 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(statement) => statement.span,
 			Block(statement) => statement.span,
-			Using(statement) => statement.span,
+			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
 			Const(statement) => statement.span,
@@ -283,7 +284,7 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(..) => "An expression",
 			Block(..) => "A block",
-			Using(..) => "A using statement",
+			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
 			Function(..) => "A function definition",
 			Const(..) => "A const definition",

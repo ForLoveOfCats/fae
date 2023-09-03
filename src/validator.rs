@@ -113,11 +113,11 @@ impl<'a> RootLayers<'a> {
 		RootLayers { layers: Vec::new() }
 	}
 
-	fn layer_for_module_path(&self, messages: &mut Messages, path: &PathSegments) -> Option<&RootLayer<'a>> {
-		assert!(path.len() > 0);
+	fn layer_for_module_path(&self, messages: &mut Messages, path: &[Node<&'a str>]) -> Option<&RootLayer<'a>> {
+		assert!(!path.is_empty());
 		let mut layers = &self.layers;
 
-		for (piece_index, piece) in path.segments.iter().enumerate() {
+		for (piece_index, piece) in path.iter().enumerate() {
 			let layer = match layers.iter().position(|x| x.name == piece.item) {
 				Some(index) => &layers[index],
 
@@ -160,8 +160,8 @@ impl<'a> RootLayers<'a> {
 	}
 
 	fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		assert!(!path.is_empty());
-		let layer = self.layer_for_module_path(messages, &path)?;
+		assert!(path.len() > 1);
+		let layer = self.layer_for_module_path(messages, &path.segments[..path.len() - 1])?;
 		layer.lookup_root_symbol(messages, &[*path.segments.last().unwrap()])
 	}
 }
@@ -193,8 +193,7 @@ impl<'a> Symbols<'a> {
 		SymbolsScope { initial_symbols_len: self.len(), symbols: self }
 	}
 
-	// TODO: Use named return in Fae
-	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) -> bool {
+	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
 		// TODO: Allow duplicate symbol when symbol is variable
 		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
 			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
@@ -203,10 +202,20 @@ impl<'a> Symbols<'a> {
 					.span_if_some(symbol.span)
 					.note_if_some(found.span, found.file_index, "Original symbol here"),
 			);
-			false
 		} else {
 			self.symbols.push(symbol);
-			true
+		}
+	}
+
+	fn push_imported_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>, import_span: Span) {
+		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
+			messages.error(
+				message!("Import conflicts with local symbol `{}`", found.name)
+					.span(import_span)
+					.note_if_some(found.span, found.file_index, "Original symbol here"),
+			);
+		} else {
+			self.symbols.push(symbol);
 		}
 	}
 
@@ -682,37 +691,32 @@ fn validate_root_consts<'a>(
 	}
 }
 
-//Returns imported count, TODO use named return in Fae
-#[must_use]
 fn resolve_block_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	block: &tree::Block<'a>,
-) -> usize {
-	let mut imported_count = 0;
-
+) {
 	for statement in &block.statements {
-		let using_statement = match statement {
-			tree::Statement::Using(using_statement) => using_statement,
+		let import_statement = match statement {
+			tree::Statement::Import(import_statement) => import_statement,
 			_ => continue,
 		};
+		let names = &import_statement.item.symbol_names;
 
-		let path = &using_statement.item.path_segments.item;
-		let found = match root_layers.layer_for_module_path(messages, path) {
+		let path = &import_statement.item.path_segments;
+		let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
 			Some(found) if found.symbols.is_empty() => continue,
 			Some(found) => found,
 			_ => continue,
 		};
 
-		for &symbol in found.importable_types() {
-			if symbols.push_symbol(messages, symbol) {
-				imported_count += 1;
+		for &importing in layer.importable_types() {
+			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
+				symbols.push_imported_symbol(messages, importing, name.span);
 			}
 		}
 	}
-
-	imported_count
 }
 
 fn resolve_block_non_type_imports<'a>(
@@ -722,24 +726,29 @@ fn resolve_block_non_type_imports<'a>(
 	block: &tree::Block<'a>,
 ) {
 	for statement in &block.statements {
-		let using_statement = match statement {
-			tree::Statement::Using(using_statement) => using_statement,
+		let import_statement = match statement {
+			tree::Statement::Import(import_statement) => import_statement,
 			_ => continue,
 		};
+		let names = &import_statement.item.symbol_names;
 
-		let path = &using_statement.item.path_segments.item;
-		let found = match root_layers.layer_for_module_path(messages, path) {
+		let path = &import_statement.item.path_segments;
+		let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
 			Some(found) if found.symbols.is_empty() => continue,
 			Some(found) => found,
 			_ => continue,
 		};
 
-		for &symbol in found.importable_functions() {
-			symbols.push_symbol(messages, symbol);
+		for &importing in layer.importable_functions() {
+			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
+				symbols.push_imported_symbol(messages, importing, name.span);
+			}
 		}
 
-		for &symbol in found.importable_consts() {
-			symbols.push_symbol(messages, symbol);
+		for &importing in layer.importable_consts() {
+			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
+				symbols.push_imported_symbol(messages, importing, name.span);
+			}
 		}
 	}
 }
@@ -767,7 +776,7 @@ fn create_block_types<'a>(
 					continue;
 				}
 
-				tree::Statement::Using(..)
+				tree::Statement::Import(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Function(..)
 				| tree::Statement::Const(..) => {}
@@ -984,7 +993,8 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 		context.symbols,
 		block,
 	);
-	_ = resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
+	resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
+	resolve_block_non_type_imports(context.messages, context.root_layers, context.symbols, block);
 
 	if !is_root {
 		create_block_functions(
@@ -1000,7 +1010,6 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.file_index,
 		);
 	}
-	resolve_block_non_type_imports(context.messages, context.root_layers, context.symbols, block);
 
 	if !is_root {
 		validate_block_consts(&mut context, block);
@@ -1028,7 +1037,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 
 			tree::Statement::Block(..) => unimplemented!("tree::Statement::Block"),
 
-			tree::Statement::Using(..) => {}
+			tree::Statement::Import(..) => {}
 
 			tree::Statement::Struct(..) => {}
 

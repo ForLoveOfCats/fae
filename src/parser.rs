@@ -56,10 +56,10 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 		};
 
 		match token {
-			Token { kind: TokenKind::Word, text: "using", .. } => {
-				disallow_attributes(messages, attributes, token.span, "A using statement");
-				if let Ok(statement) = parse_using_statement(messages, tokenizer) {
-					items.push(Statement::Using(statement));
+			Token { kind: TokenKind::Word, text: "import", .. } => {
+				disallow_attributes(messages, attributes, token.span, "An import statement");
+				if let Ok(statement) = parse_import_statement(messages, tokenizer) {
+					items.push(Statement::Import(statement));
 				} else {
 					consume_error_syntax(messages, tokenizer);
 				}
@@ -500,15 +500,49 @@ fn parse_generic_attribute<'a>(
 	Ok(Node::new(generic_atttribute, span))
 }
 
-fn parse_using_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Using<'a>>> {
-	let using_token = tokenizer.expect_word(messages, "using")?;
+fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Import<'a>>> {
+	let import_token = tokenizer.expect_word(messages, "import")?;
 
-	let path_segments = parse_path_segments(messages, tokenizer)?;
+	let mut segments = Vec::new();
+	let mut symbol_names = Vec::new();
+	let mut end;
+
+	loop {
+		let token = tokenizer.expect(messages, TokenKind::Word)?;
+		end = token.span;
+
+		let word = Node::from_token(token.text, token);
+
+		let peeked_kind = tokenizer.peek_kind();
+		if peeked_kind != Ok(TokenKind::DoubleColon) {
+			symbol_names.push(word);
+			break;
+		}
+
+		segments.push(word);
+		tokenizer.expect(messages, TokenKind::DoubleColon)?;
+	}
+
+	while tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+		tokenizer.expect(messages, TokenKind::Comma)?;
+
+		let token = tokenizer.expect(messages, TokenKind::Word)?;
+		end = token.span;
+
+		let word = Node::from_token(token.text, token);
+		symbol_names.push(word);
+	}
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let span = using_token.span + path_segments.span;
-	let item = Using { path_segments };
+	let span = import_token.span + end;
+	if segments.is_empty() {
+		messages.error(message!("Missing import path").span(span));
+		return Err(());
+	}
+
+	let path_segments = PathSegments { segments };
+	let item = Import { path_segments, symbol_names };
 	Ok(Node { item, span })
 }
 
@@ -517,7 +551,6 @@ fn parse_path_segments<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Node<PathSegments<'a>>> {
 	let mut segments = Vec::new();
-
 	loop {
 		let segment_token = tokenizer.expect(messages, TokenKind::Word)?;
 		check_not_reserved(messages, segment_token, "path segment")?;
@@ -781,7 +814,7 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 }
 
 fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
-	let is_reserved = matches!(token.text, "const" | "fn" | "let" | "mut" | "return" | "struct" | "using" | "generic");
+	let is_reserved = matches!(token.text, "const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic");
 
 	if is_reserved {
 		messages.error(message!("Cannot use reserved word {:?} as {use_as}", token.text).span(token.span));
