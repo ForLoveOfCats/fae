@@ -227,7 +227,7 @@ impl<'a> TypeStore<'a> {
 
 			if let Some(name) = name {
 				let kind = SymbolKind::BuiltinType { type_id };
-				let symbol = Symbol { name, kind, span: None, file_index: None };
+				let symbol = Symbol { name, kind, span: None };
 				primative_type_symbols.push(symbol);
 			}
 
@@ -573,7 +573,6 @@ impl<'a> TypeStore<'a> {
 		name: &'a str,
 		kind: UserTypeKind<'a>,
 		span: Span,
-		file_index: Option<usize>,
 		module_path: &'a [String],
 	) -> Symbol<'a> {
 		// Type entry gets added during specialization
@@ -581,7 +580,7 @@ impl<'a> TypeStore<'a> {
 		self.user_types.push(UserType { span, module_path, kind });
 
 		let kind = SymbolKind::Type { shape_index };
-		Symbol { name, kind, span: Some(span), file_index }
+		Symbol { name, kind, span: Some(span) }
 	}
 
 	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {

@@ -5,7 +5,7 @@ use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::tree::*;
 
 pub fn parse_file<'a>(messages: &mut Messages, file: &'a SourceFile) -> File<'a> {
-	let mut tokenizer = Tokenizer::new(&file.source);
+	let mut tokenizer = Tokenizer::new(file.index, &file.source);
 	let block = parse_root_block(messages, &mut tokenizer);
 
 	let module_path = &file.module_path;
@@ -135,13 +135,13 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 
 //TODO: Add function to only disallow specific attribute kinds
 fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Span, label: &str) {
-	let mut buffer = [Span::zero(); Attributes::FIELD_COUNT];
+	let mut buffer = [Span::zero(span.file_index); Attributes::FIELD_COUNT];
 	let spans = attributes.attribute_spans(&mut buffer);
 
 	if !spans.is_empty() {
 		let mut message = message!("{label} does not allow attributes").span(span);
 		for &span in spans {
-			message = message.note(note!(span, messages.current_file_index(), "Attribute here"));
+			message = message.note(note!(span, "Attribute here"));
 		}
 
 		messages.error(message);
@@ -418,6 +418,7 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 				messages.error(message!("Invalid float literal").span(Span {
 					start: first_number_token.span.start,
 					end: second_number_token.span.end,
+					file_index: tokenizer.file_index,
 				}));
 
 				return Err(());
@@ -453,7 +454,7 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 			messages.error(
 				message!("Duplicate attribute {name:?}")
 					.span(duplicate_span)
-					.note(note!(attribute.span, messages.current_file_index(), "Original here")),
+					.note(note!(attribute.span, "Original here")),
 			);
 			return Err(());
 		}

@@ -4,19 +4,25 @@ use std::ops::Add;
 pub struct Span {
 	pub start: usize,
 	pub end: usize,
+	pub file_index: usize,
 }
 
 impl Add for Span {
 	type Output = Span;
 
 	fn add(self, rhs: Self) -> Span {
-		Span { start: self.start.min(rhs.start), end: self.end.max(rhs.end) }
+		assert_eq!(self.file_index, rhs.file_index);
+		Span {
+			start: self.start.min(rhs.start),
+			end: self.end.max(rhs.end),
+			file_index: self.file_index,
+		}
 	}
 }
 
 impl Span {
-	pub fn zero() -> Span {
-		Span { start: 0, end: 0 }
+	pub fn zero(file_index: usize) -> Span {
+		Span { start: 0, end: 0, file_index }
 	}
 
 	pub fn get_line_num(&self, source: &str) -> usize {

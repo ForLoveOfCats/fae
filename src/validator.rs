@@ -73,7 +73,7 @@ impl<'a, 'b> Context<'a, 'b> {
 			ReadableKind::Mut => SymbolKind::Mut { readable_index },
 		};
 
-		self.push_symbol(Symbol { name, kind, span, file_index: Some(self.file_index) });
+		self.push_symbol(Symbol { name, kind, span });
 		readable_index
 	}
 
@@ -200,7 +200,7 @@ impl<'a> Symbols<'a> {
 			messages.error(
 				message!("Duplicate symbol `{}`", symbol.name)
 					.span_if_some(symbol.span)
-					.note_if_some(found.span, found.file_index, "Original symbol here"),
+					.note_if_some(found.span, "Original symbol here"),
 			);
 		} else {
 			self.symbols.push(symbol);
@@ -212,7 +212,7 @@ impl<'a> Symbols<'a> {
 			messages.error(
 				message!("Import conflicts with local symbol `{}`", found.name)
 					.span(import_span)
-					.note_if_some(found.span, found.file_index, "Original symbol here"),
+					.note_if_some(found.span, "Local symbol here"),
 			);
 		} else {
 			self.symbols.push(symbol);
@@ -564,10 +564,9 @@ pub fn validate<'a>(
 
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
-		messages.set_current_file_index(file_index);
 		let module_path = parsed_file.module_path;
 
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		let layer = root_layers.create_module_path(module_path);
 		symbols.duplicate(&layer.symbols);
 
 		let context = Context {
@@ -603,10 +602,8 @@ fn create_root_types<'a>(
 		assert_eq!(layer.symbols.len(), 0);
 
 		let block = &parsed_file.block;
-		let index = parsed_file.source_file.index;
-		messages.set_current_file_index(index);
+		create_block_types(messages, type_store, &mut layer.symbols, parsed_file.module_path, block, true);
 
-		create_block_types(messages, type_store, &mut layer.symbols, parsed_file.module_path, block, true, index);
 		layer.importable_types_len = layer.symbols.len();
 	}
 }
@@ -623,7 +620,6 @@ fn create_root_functions<'a>(
 	for parsed_file in parsed_files {
 		let block = &parsed_file.block;
 		let index = parsed_file.source_file.index;
-		messages.set_current_file_index(index);
 
 		//Yuck, I do not like this
 		let mut symbols = root_layers.create_module_path(&parsed_file.module_path).symbols.clone();
@@ -661,7 +657,6 @@ fn validate_root_consts<'a>(
 ) {
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
-		messages.set_current_file_index(file_index);
 		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.create_module_path(&parsed_file.module_path);
@@ -760,7 +755,6 @@ fn create_block_types<'a>(
 	module_path: &'a [String],
 	block: &tree::Block<'a>,
 	is_root: bool,
-	file_index: usize,
 ) {
 	for statement in &block.statements {
 		if is_root {
@@ -801,7 +795,7 @@ fn create_block_types<'a>(
 			let name = statement.name.item;
 			let kind = UserTypeKind::Struct { shape };
 			let span = statement.name.span;
-			let symbol = type_store.register_type(name, kind, span, Some(file_index), module_path);
+			let symbol = type_store.register_type(name, kind, span, module_path);
 			symbols.push_symbol(messages, symbol);
 		}
 	}
@@ -839,12 +833,7 @@ fn fill_block_types<'a>(
 			let scope = symbols.child_scope();
 			for (generic_index, generic) in shape.generics.iter().enumerate() {
 				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
-				let symbol = Symbol {
-					name: generic.name.item,
-					kind,
-					span: Some(generic.name.span),
-					file_index: Some(messages.current_file_index()),
-				};
+				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 				scope.symbols.push_symbol(messages, symbol);
 			}
 
@@ -898,12 +887,7 @@ fn create_block_functions<'a>(
 				generics.push(GenericParameter { name: generic, generic_type_id });
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-				let symbol = Symbol {
-					name: generic.item,
-					kind,
-					span: Some(generic.span),
-					file_index: Some(messages.current_file_index()),
-				};
+				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
 				scope.symbols.push_symbol(messages, symbol);
 			}
 
@@ -960,7 +944,7 @@ fn create_block_functions<'a>(
 			let name = statement.name.item;
 			let kind = SymbolKind::Function { function_shape_index };
 			let span = Some(statement.name.span);
-			let symbol = Symbol { name, kind, span, file_index: Some(file_index) };
+			let symbol = Symbol { name, kind, span };
 			symbols.push_symbol(messages, symbol);
 		}
 	}
@@ -975,15 +959,7 @@ fn validate_block_consts<'a>(context: &mut Context<'a, '_>, block: &'a tree::Blo
 }
 
 fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
-	create_block_types(
-		context.messages,
-		context.type_store,
-		context.symbols,
-		context.module_path,
-		block,
-		false,
-		context.file_index,
-	);
+	create_block_types(context.messages, context.type_store, context.symbols, context.module_path, block, false);
 	fill_block_types(
 		context.messages,
 		context.type_store,
@@ -1102,12 +1078,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
 	for (generic_index, generic) in generics.into_iter().enumerate() {
 		let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-		let symbol = Symbol {
-			name: generic.name.item,
-			kind,
-			span: Some(generic.name.span),
-			file_index: Some(scope.file_index),
-		};
+		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 		scope.push_symbol(symbol);
 	}
 
@@ -1125,8 +1096,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		};
 
 		let name = parameter.name.item;
-		let file_index = Some(scope.file_index);
-		scope.push_symbol(Symbol { name, kind, span: Some(span), file_index });
+		scope.push_symbol(Symbol { name, kind, span: Some(span) });
 	}
 
 	let type_id = scope.lookup_type(&statement.parsed_type);
@@ -1303,7 +1273,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 	let name = statement.item.name.item;
 	let kind = SymbolKind::Const { constant_index };
 	let span = Some(expression.span);
-	let symbol = Symbol { name, kind, span, file_index: Some(context.file_index) };
+	let symbol = Symbol { name, kind, span };
 	context.push_symbol(symbol);
 
 	Some(())
@@ -1615,18 +1585,8 @@ fn validate_expression<'a>(
 				context.error(
 					message!("{} type mismatch", op.name())
 						.span(span)
-						.note(note!(
-							operation.left.span,
-							context.file_index,
-							"Left type {}",
-							context.type_name(left.type_id)
-						))
-						.note(note!(
-							operation.right.span,
-							context.file_index,
-							"Right type {}",
-							context.type_name(right.type_id)
-						)),
+						.note(note!(operation.left.span, "Left type {}", context.type_name(left.type_id)))
+						.note(note!(operation.right.span, "Right type {}", context.type_name(right.type_id))),
 				);
 				return None;
 			};

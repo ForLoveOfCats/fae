@@ -35,7 +35,6 @@ fn main() {
 	//Parallelizable
 	let mut parsed_files = Vec::new();
 	for file in &files {
-		messages.set_current_file_index(file.index);
 		parsed_files.push(parse_file(&mut messages, file));
 	}
 

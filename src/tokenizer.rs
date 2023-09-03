@@ -103,8 +103,8 @@ pub struct Token<'a> {
 }
 
 impl<'a> Token<'a> {
-	fn new(text: &'a str, kind: TokenKind, start: usize, end: usize) -> Self {
-		Token { text, kind, span: Span { start, end } }
+	fn new(text: &'a str, kind: TokenKind, start: usize, end: usize, file_index: usize) -> Self {
+		Token { text, kind, span: Span { start, end, file_index } }
 	}
 }
 
@@ -116,6 +116,7 @@ struct PeekedInfo<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tokenizer<'a> {
+	pub file_index: usize,
 	source: &'a str,
 	bytes: &'a [u8],
 	offset: usize,
@@ -124,8 +125,9 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-	pub fn new(source: &'a str) -> Tokenizer<'a> {
+	pub fn new(file_index: usize, source: &'a str) -> Tokenizer<'a> {
 		Tokenizer {
+			file_index,
 			source,
 			bytes: source.as_bytes(),
 			offset: 0,
@@ -177,38 +179,38 @@ impl<'a> Tokenizer<'a> {
 		self.verify_not_eof(messages)?;
 
 		let token = match self.bytes[self.offset..] {
-			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1)),
+			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1, self.file_index)),
 
-			[b')', ..] => Ok(Token::new(")", CloseParen, self.offset, self.offset + 1)),
+			[b')', ..] => Ok(Token::new(")", CloseParen, self.offset, self.offset + 1, self.file_index)),
 
-			[b'{', ..] => Ok(Token::new("{", OpenBrace, self.offset, self.offset + 1)),
+			[b'{', ..] => Ok(Token::new("{", OpenBrace, self.offset, self.offset + 1, self.file_index)),
 
-			[b'}', ..] => Ok(Token::new("}", CloseBrace, self.offset, self.offset + 1)),
+			[b'}', ..] => Ok(Token::new("}", CloseBrace, self.offset, self.offset + 1, self.file_index)),
 
-			[b'[', ..] => Ok(Token::new("[", OpenBracket, self.offset, self.offset + 1)),
+			[b'[', ..] => Ok(Token::new("[", OpenBracket, self.offset, self.offset + 1, self.file_index)),
 
-			[b']', ..] => Ok(Token::new("]", CloseBracket, self.offset, self.offset + 1)),
+			[b']', ..] => Ok(Token::new("]", CloseBracket, self.offset, self.offset + 1, self.file_index)),
 
 			[b'+', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("+=", AddEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("+=", AddEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'+', ..] => Ok(Token::new("+", Add, self.offset, self.offset + 1)),
+			[b'+', ..] => Ok(Token::new("+", Add, self.offset, self.offset + 1, self.file_index)),
 
 			[b'-', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("-=", SubEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("-=", SubEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'-', ..] => Ok(Token::new("-", Sub, self.offset, self.offset + 1)),
+			[b'-', ..] => Ok(Token::new("-", Sub, self.offset, self.offset + 1, self.file_index)),
 
 			[b'*', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("*=", MulEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("*=", MulEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'*', ..] => Ok(Token::new("*", Mul, self.offset, self.offset + 1)),
+			[b'*', ..] => Ok(Token::new("*", Mul, self.offset, self.offset + 1, self.file_index)),
 
 			[b'/', b'/', ..] => {
 				self.offset += 2;
@@ -239,51 +241,51 @@ impl<'a> Tokenizer<'a> {
 
 			[b'/', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("/=", DivEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("/=", DivEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'/', ..] => Ok(Token::new("/", Div, self.offset, self.offset + 1)),
+			[b'/', ..] => Ok(Token::new("/", Div, self.offset, self.offset + 1, self.file_index)),
 
 			[b'=', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("==", CompEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("==", CompEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1)),
+			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1, self.file_index)),
 
 			[b'!', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("!=", CompNotEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("!=", CompNotEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'!', ..] => Ok(Token::new("!", Exclamation, self.offset, self.offset + 1)),
+			[b'!', ..] => Ok(Token::new("!", Exclamation, self.offset, self.offset + 1, self.file_index)),
 
 			[b'>', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new(">=", CompGreaterEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new(">=", CompGreaterEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'>', ..] => Ok(Token::new(">", CompGreater, self.offset, self.offset + 1)),
+			[b'>', ..] => Ok(Token::new(">", CompGreater, self.offset, self.offset + 1, self.file_index)),
 
 			[b'<', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("<=", CompLessEqual, self.offset - 1, self.offset + 1))
+				Ok(Token::new("<=", CompLessEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'<', ..] => Ok(Token::new("<", CompLess, self.offset, self.offset + 1)),
+			[b'<', ..] => Ok(Token::new("<", CompLess, self.offset, self.offset + 1, self.file_index)),
 
 			[b':', b':', ..] => {
 				self.offset += 1;
-				Ok(Token::new("::", DoubleColon, self.offset - 1, self.offset + 1))
+				Ok(Token::new("::", DoubleColon, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b':', ..] => Ok(Token::new(":", Colon, self.offset, self.offset + 1)),
+			[b':', ..] => Ok(Token::new(":", Colon, self.offset, self.offset + 1, self.file_index)),
 
-			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1)),
+			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1, self.file_index)),
 
-			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1)),
+			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1, self.file_index)),
 
-			[b'&', ..] => Ok(Token::new("&", Ampersand, self.offset, self.offset + 1)),
+			[b'&', ..] => Ok(Token::new("&", Ampersand, self.offset, self.offset + 1, self.file_index)),
 
 			[b'\'', ..] => {
 				let start_index = self.offset;
@@ -295,6 +297,7 @@ impl<'a> Tokenizer<'a> {
 					Codepoint,
 					start_index,
 					self.offset + 1,
+					self.file_index,
 				))
 			}
 
@@ -315,6 +318,7 @@ impl<'a> Tokenizer<'a> {
 					String,
 					start_index,
 					self.offset + 1,
+					self.file_index,
 				))
 			}
 
@@ -339,7 +343,13 @@ impl<'a> Tokenizer<'a> {
 
 				self.offset -= 1;
 
-				Ok(Token::new(&self.source[start_index..self.offset + 1], Word, start_index, self.offset + 1))
+				Ok(Token::new(
+					&self.source[start_index..self.offset + 1],
+					Word,
+					start_index,
+					self.offset + 1,
+					self.file_index,
+				))
 			}
 		};
 
@@ -367,10 +377,12 @@ impl<'a> Tokenizer<'a> {
 		let found = self.bytes[self.offset];
 		if found != expected {
 			if let Some(messages) = messages {
-				messages.error(
-					message!("Expected {:?} but found {:?}", expected as char, found as char)
-						.span(Span { start: self.offset, end: self.offset + 1 }),
-				);
+				let err = message!("Expected {:?} but found {:?}", expected as char, found as char);
+				messages.error(err.span(Span {
+					start: self.offset,
+					end: self.offset + 1,
+					file_index: self.file_index,
+				}));
 			}
 
 			return Err(());
@@ -387,7 +399,7 @@ impl<'a> Tokenizer<'a> {
 				let index = self.offset;
 				self.offset += 1;
 
-				return Ok(Some(Token::new("\n", TokenKind::Newline, index, index + 1)));
+				return Ok(Some(Token::new("\n", TokenKind::Newline, index, index + 1, self.file_index)));
 			} else if matches!(byte, b' ' | b'\t' | b'\r') {
 				self.offset += 1;
 			} else {
@@ -404,6 +416,7 @@ impl<'a> Tokenizer<'a> {
 				messages.error(message!("Unexpected end of file").span(Span {
 					start: self.source.len().saturating_sub(1),
 					end: self.source.len().saturating_sub(1),
+					file_index: self.file_index,
 				}));
 			}
 			Err(())

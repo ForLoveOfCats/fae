@@ -13,25 +13,11 @@ pub struct Messages<'a> {
 	//where each message knows what kind it is
 	any_errors: bool,
 	sources: &'a [SourceFile],
-	current_file_index: usize,
 }
 
 impl<'a> Messages<'a> {
 	pub fn new(sources: &'a [SourceFile]) -> Self {
-		Messages {
-			errors: Vec::new(),
-			any_errors: false,
-			sources,
-			current_file_index: usize::MAX,
-		}
-	}
-
-	pub fn current_file_index(&self) -> usize {
-		self.current_file_index
-	}
-
-	pub fn set_current_file_index(&mut self, file_index: usize) {
-		self.current_file_index = file_index;
+		Messages { errors: Vec::new(), any_errors: false, sources }
 	}
 
 	pub fn print_errors(&mut self, prefix: &str) {
@@ -46,18 +32,13 @@ impl<'a> Messages<'a> {
 	pub fn reset(&mut self) {
 		self.errors.clear();
 		self.any_errors = false;
-		self.current_file_index = usize::MAX;
 	}
 
 	pub fn any_errors(&self) -> bool {
 		self.any_errors
 	}
 
-	pub fn error(&mut self, mut message: Message) {
-		if message.span.is_some() {
-			message.file_index = Some(self.current_file_index);
-		}
-
+	pub fn error(&mut self, message: Message) {
 		self.errors.push(message);
 		self.any_errors = true;
 	}
@@ -65,7 +46,6 @@ impl<'a> Messages<'a> {
 
 #[derive(Debug)]
 pub struct Message {
-	file_index: Option<usize>,
 	text: String,
 	span: Option<Span>,
 	notes: Vec<Note>,
@@ -73,7 +53,7 @@ pub struct Message {
 
 impl Message {
 	pub fn new(text: String) -> Message {
-		Message { file_index: None, text, span: None, notes: Vec::new() }
+		Message { text, span: None, notes: Vec::new() }
 	}
 
 	pub fn span(mut self, span: Span) -> Message {
@@ -91,33 +71,32 @@ impl Message {
 		self
 	}
 
-	pub fn note_if_some(mut self, span: Option<Span>, file_index: Option<usize>, text: &str) -> Message {
-		if let Some(note) = Note::maybe_new(text, span, file_index) {
+	pub fn note_if_some(mut self, span: Option<Span>, text: &str) -> Message {
+		if let Some(note) = Note::maybe_new(text, span) {
 			self.notes.push(note);
 		}
 		self
 	}
 
 	fn print(&self, sources: &[SourceFile], prefix: &str) {
-		Self::print_message(sources, self.file_index, self.span, &self.text, prefix);
+		Self::print_message(sources, self.span, &self.text, prefix);
 
 		for note in &self.notes {
-			Self::print_file_message(sources, note.file_index, note.span, &note.text, "Note");
+			Self::print_file_message(sources, note.span, &note.text, "Note");
 		}
 	}
 
-	fn print_message(sources: &[SourceFile], file_index: Option<usize>, span: Option<Span>, text: &str, prefix: &str) {
+	fn print_message(sources: &[SourceFile], span: Option<Span>, text: &str, prefix: &str) {
 		if let Some(span) = span {
-			let file_index = file_index.expect("Cannot have a span without a file index");
-			Self::print_file_message(sources, file_index, span, text, prefix);
+			Self::print_file_message(sources, span, text, prefix);
 		} else {
 			eprintln!("{prefix}: {text}");
 		}
 	}
 
 	//This is a big ball of mess
-	fn print_file_message(sources: &[SourceFile], file_index: usize, span: Span, text: &str, prefix: &str) {
-		let source_file = &sources[file_index];
+	fn print_file_message(sources: &[SourceFile], span: Span, text: &str, prefix: &str) {
+		let source_file = &sources[span.file_index];
 		let path = &source_file.path;
 		let source = &source_file.source;
 
@@ -180,23 +159,22 @@ macro_rules! message {
 pub struct Note {
 	text: String,
 	span: Span,
-	file_index: usize,
 }
 
 impl Note {
-	pub fn new(span: Span, file_index: usize, text: String) -> Note {
-		Note { text, span, file_index }
+	pub fn new(span: Span, text: String) -> Note {
+		Note { text, span }
 	}
 
-	pub fn maybe_new(text: &str, span: Option<Span>, file_index: Option<usize>) -> Option<Note> {
-		Some(Note { text: text.to_owned(), span: span?, file_index: file_index? })
+	pub fn maybe_new(text: &str, span: Option<Span>) -> Option<Note> {
+		Some(Note { text: text.to_owned(), span: span? })
 	}
 }
 
 #[macro_export]
 macro_rules! note {
-	($span:expr, $file_index:expr, $($arg:tt)*) => {
-		$crate::error::Note::new($span, $file_index, format!( $($arg)* ))
+	($span:expr, $($arg:tt)*) => {
+		$crate::error::Note::new($span, format!( $($arg)* ))
 	}
 }
 

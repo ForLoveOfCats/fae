@@ -18,7 +18,6 @@ fn main(): void {
 	// TODO: Handle nested multi-line comments
 	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
-	// TODO: Put file index in Span rather than Message
 
 	sub_function()
 	let a: i32 = SUB_CONST

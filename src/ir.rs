@@ -28,7 +28,6 @@ pub struct Symbol<'a> {
 	pub name: &'a str,
 	pub kind: SymbolKind,
 	pub span: Option<Span>,
-	pub file_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy)]
