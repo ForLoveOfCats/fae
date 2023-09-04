@@ -62,12 +62,13 @@ pub fn generate_code<'a>(
 			"-funsigned-char",
 			"-Wall",
 			"-Wextra",
+			"-Werror",
 			"-Wvla",
 			"-Wshadow",
-			"-Werror",
 			"-Wno-format",
 			"-Wno-unused-variable",
 			"-Wno-unused-parameter",
+			"-Wno-unused-but-set-variable",
 			optimization_flag,
 			"-o",
 		])
@@ -400,10 +401,15 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	let left_id = generate_expression(context, &operation.left, output)?.unwrap();
 	let right_id = generate_expression(context, &operation.right, output)?.unwrap();
 
+	if operation.op == BinaryOperator::Assign {
+		write!(output, "t_{left_id} = t_{right_id};\n")?;
+		return Ok(left_id);
+	}
+
 	write!(output, "t_{left_id} = (t_{left_id}")?;
 
 	let op = match operation.op {
-		BinaryOperator::Assign => "=",
+		BinaryOperator::Assign => unreachable!(),
 		BinaryOperator::Add => "+",
 		BinaryOperator::Sub => "-",
 		BinaryOperator::Mul => "*",

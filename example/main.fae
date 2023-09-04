@@ -16,11 +16,11 @@ const GREETING = "Hello there"
 fn main() {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
-	// TODO: Validate assignment mutability
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 
 	sub_function()
-	let a: i32 = SUB_CONST
+	mut a: i32 = SUB_CONST
+	a = 44
 
 	a_before[u64](A + 5)
 	a_before[&[u8]](GREETING)
@@ -40,4 +40,3 @@ generic T
 fn b_after(arg: T): T {
 	return arg
 }
-

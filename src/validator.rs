@@ -1320,7 +1320,7 @@ fn validate_binding<'a>(
 		true => ReadableKind::Mut,
 		false => ReadableKind::Let,
 	};
-	let readable_index = context.push_readable(statement.item.name, expression.type_id, kind);
+	let readable_index = context.push_readable(statement.item.name, type_id, kind);
 
 	let name = statement.item.name.item;
 	Some(Binding { name, type_id, expression, readable_index, is_mutable })
@@ -1599,6 +1599,17 @@ fn validate_expression<'a>(
 
 			if let Some(constant_math_result) = perform_constant_math(context, &left, &right, op) {
 				return Some(constant_math_result);
+			}
+
+			if op == BinaryOperator::Assign {
+				if let ExpressionKind::Read(read) = &left.kind {
+					let readable = context.readables.get(read.readable_index)?;
+					if readable.kind != ReadableKind::Mut {
+						context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(left.span));
+					}
+				} else {
+					context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(left.span));
+				}
 			}
 
 			let type_id = match op {

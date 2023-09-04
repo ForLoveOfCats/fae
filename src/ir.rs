@@ -66,7 +66,7 @@ pub struct Readable<'a> {
 	pub kind: ReadableKind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadableKind {
 	Let,
 	Mut,
