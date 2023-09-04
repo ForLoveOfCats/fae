@@ -421,14 +421,16 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 	match &expression.kind {
 		ExpressionKind::IntegerValue(value) => {
-			let ty = match value.value().is_negative() {
-				true => "i64",
-				false => "u64",
-			};
-			write!(output, "{ty} t_{id} = {};\n", value.value())?;
+			let type_id = value.get_collapse();
+			generate_type_id(context, type_id, output)?;
+			write!(output, " t_{id} = {};\n", value.value())?;
 		}
 
-		ExpressionKind::DecimalValue(literal) => write!(output, "f64 t_{id} = {};\n", literal.value())?,
+		ExpressionKind::DecimalValue(value) => {
+			let type_id = value.get_collapse();
+			generate_type_id(context, type_id, output)?;
+			write!(output, " t_{id} = {};\n", value.value())?;
+		}
 
 		ExpressionKind::CodepointLiteral(literal) => write!(output, "u64 t_{id} = {};\n", literal.value as u32)?,
 

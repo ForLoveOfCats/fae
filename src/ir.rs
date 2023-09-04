@@ -257,15 +257,23 @@ pub enum ConstantValue<'a> {
 	StringLiteral(&'a str),
 }
 
+#[track_caller]
+fn assert_not_collapsed(collapse: Option<TypeId>) {
+	if collapse.is_some() {
+		panic!("Assertion collapse is none failed: {collapse:?}");
+	}
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct IntegerValue {
 	value: i128,
 	span: Span,
+	collapse: Option<TypeId>,
 }
 
 impl IntegerValue {
 	pub fn new(value: i128, span: Span) -> IntegerValue {
-		IntegerValue { value, span }
+		IntegerValue { value, span, collapse: None }
 	}
 
 	pub fn value(&self) -> i128 {
@@ -276,7 +284,18 @@ impl IntegerValue {
 		self.span
 	}
 
+	pub fn get_collapse(&self) -> TypeId {
+		self.collapse.unwrap()
+	}
+
+	pub fn collapse(&mut self, type_id: TypeId) {
+		assert_not_collapsed(self.collapse);
+		self.collapse = Some(type_id);
+	}
+
 	pub fn negate(&mut self, messages: &mut Messages, sign_span: Span) {
+		assert_not_collapsed(self.collapse);
+
 		let Some(value) = self.value.checked_neg() else {
 			let value = self.value;
 			let err = error!("Constant integer {value} overflows compiler representation if inverted");
@@ -289,6 +308,9 @@ impl IntegerValue {
 	}
 
 	pub fn add(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_add(other.value) else {
@@ -297,10 +319,13 @@ impl IntegerValue {
 			return None;
 		};
 
-		Some(IntegerValue { value, span })
+		Some(IntegerValue { value, span, collapse: None })
 	}
 
 	pub fn sub(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_sub(other.value) else {
@@ -309,10 +334,13 @@ impl IntegerValue {
 			return None;
 		};
 
-		Some(IntegerValue { value, span })
+		Some(IntegerValue { value, span, collapse: None })
 	}
 
 	pub fn mul(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_mul(other.value) else {
@@ -321,10 +349,13 @@ impl IntegerValue {
 			return None;
 		};
 
-		Some(IntegerValue { value, span })
+		Some(IntegerValue { value, span, collapse: None })
 	}
 
 	pub fn div(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_div(other.value) else {
@@ -333,7 +364,7 @@ impl IntegerValue {
 			return None;
 		};
 
-		Some(IntegerValue { value, span })
+		Some(IntegerValue { value, span, collapse: None })
 	}
 }
 
@@ -341,11 +372,12 @@ impl IntegerValue {
 pub struct DecimalValue {
 	value: f64,
 	span: Span,
+	collapse: Option<TypeId>,
 }
 
 impl DecimalValue {
 	pub fn new(value: f64, span: Span) -> DecimalValue {
-		DecimalValue { value, span }
+		DecimalValue { value, span, collapse: None }
 	}
 
 	pub fn value(&self) -> f64 {
@@ -356,33 +388,56 @@ impl DecimalValue {
 		self.span
 	}
 
+	pub fn get_collapse(&self) -> TypeId {
+		self.collapse.unwrap()
+	}
+
+	pub fn collapse(&mut self, type_id: TypeId) {
+		assert_not_collapsed(self.collapse);
+		self.collapse = Some(type_id);
+	}
+
 	pub fn negate(&mut self, sign_span: Span) {
+		assert_not_collapsed(self.collapse);
+
 		self.value = -self.value;
 		self.span = self.span + sign_span;
 	}
 
 	pub fn add(self, other: DecimalValue) -> DecimalValue {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 		let value = self.value + other.value;
-		DecimalValue { value, span }
+		DecimalValue { value, span, collapse: None }
 	}
 
 	pub fn sub(self, other: DecimalValue) -> DecimalValue {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 		let value = self.value - other.value;
-		DecimalValue { value, span }
+		DecimalValue { value, span, collapse: None }
 	}
 
 	pub fn mul(self, other: DecimalValue) -> DecimalValue {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 		let value = self.value * other.value;
-		DecimalValue { value, span }
+		DecimalValue { value, span, collapse: None }
 	}
 
 	pub fn div(self, other: DecimalValue) -> DecimalValue {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+
 		let span = self.span + other.span;
 		let value = self.value / other.value;
-		DecimalValue { value, span }
+		DecimalValue { value, span, collapse: None }
 	}
 }
 

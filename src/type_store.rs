@@ -385,8 +385,8 @@ impl<'a> TypeStore<'a> {
 		// constant decimal -> float of large enough
 
 		if from_integer {
-			let (value, span) = match &from.kind {
-				ExpressionKind::IntegerValue(value) => (value.value(), value.span()),
+			let (value, span, from_value) = match &mut from.kind {
+				ExpressionKind::IntegerValue(value) => (value.value(), value.span(), value),
 				kind => panic!("Collapsing from_integer with a non-IntegerValue expression: {kind:#?}"),
 			};
 
@@ -419,6 +419,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant integer -> float of large enough
+				from_value.collapse(to);
 				return Some(true);
 			}
 
@@ -458,6 +459,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant integer -> signed of large enough
+				from_value.collapse(to);
 				return Some(true);
 			}
 
@@ -478,13 +480,14 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant integer -> unsigned of large enough if not negative
+				from_value.collapse(to);
 				return Some(true);
 			}
 		}
 
 		if from_decimal {
-			let (value, span) = match &from.kind {
-				ExpressionKind::DecimalValue(value) => (value.value(), value.span()),
+			let (value, span, from_value) = match &mut from.kind {
+				ExpressionKind::DecimalValue(value) => (value.value(), value.span(), value),
 				kind => panic!("Collapsing from_decimal with a non-DecimalValue expression: {kind:#?}"),
 			};
 
@@ -505,6 +508,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant decimal -> float of large enough
+				from_value.collapse(to);
 				return Some(true);
 			}
 		}
