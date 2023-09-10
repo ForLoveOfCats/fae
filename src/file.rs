@@ -23,7 +23,7 @@ impl std::fmt::Debug for SourceFile {
 	}
 }
 
-pub fn load_all_files<P: AsRef<Path>>(path: P) -> Result<Vec<SourceFile>> {
+pub fn load_all_files(path: &Path) -> Result<Vec<SourceFile>> {
 	let mut walker = FileWalker::new(path)?;
 	let mut files = Vec::new();
 
@@ -66,7 +66,7 @@ struct FileWalker {
 }
 
 impl FileWalker {
-	fn new<P: AsRef<Path>>(path: P) -> Result<FileWalker> {
+	fn new(path: &Path) -> Result<FileWalker> {
 		let reader = read_dir(path)?;
 		let directory = Directory { name: String::new(), reader };
 		Ok(FileWalker { stack: vec![directory] })

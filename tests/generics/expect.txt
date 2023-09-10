@@ -1,0 +1,4 @@
+Validation error "./tests/mutability_failure/mutability_failure.fae", line 3, column 5: Cannot assign to immutable binding `a`
+
+  3|     a = 6
+         ^

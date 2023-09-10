@@ -1,10 +1,28 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::{file::SourceFile, span::Span};
+use crate::color::*;
+use crate::file::SourceFile;
+use crate::span::Span;
 
 pub const TABULATOR_SIZE: usize = 4;
 
 pub type ParseResult<T> = std::result::Result<T, ()>;
+
+pub trait WriteFmt {
+	fn write_fmt(&mut self, args: std::fmt::Arguments);
+}
+
+impl WriteFmt for String {
+	fn write_fmt(&mut self, args: std::fmt::Arguments) {
+		std::fmt::Write::write_fmt(self, args).unwrap()
+	}
+}
+
+impl WriteFmt for std::io::Stderr {
+	fn write_fmt(&mut self, args: std::fmt::Arguments) {
+		std::io::Write::write_fmt(self, args).unwrap()
+	}
+}
 
 #[derive(Debug)]
 pub struct Messages<'a> {
@@ -18,10 +36,12 @@ impl<'a> Messages<'a> {
 		Messages { messages: Vec::new(), any_errors: false, sources }
 	}
 
-	pub fn print_messages(&mut self, stage: &str) {
-		for message in &self.messages {
-			message.print(&self.sources, stage);
-			eprintln!();
+	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
+		for (index, message) in self.messages.iter().enumerate() {
+			message.print(output, &self.sources, stage);
+			if index < self.messages.len() - 1 {
+				writeln!(output);
+			}
 		}
 
 		self.messages.clear();
@@ -106,25 +126,32 @@ impl Message {
 		self
 	}
 
-	fn print(&self, sources: &[SourceFile], stage: &str) {
-		self.print_message(sources, stage);
+	fn print(&self, output: &mut impl WriteFmt, sources: &[SourceFile], stage: &str) {
+		self.print_message(output, sources, stage);
 
 		for note in &self.notes {
-			Self::print_file_message(sources, None, note.span, &note.text, "Note");
+			Self::print_file_message(output, sources, None, note.span, &note.text, "Note");
 		}
 	}
 
-	fn print_message(&self, sources: &[SourceFile], stage: &str) {
+	fn print_message(&self, output: &mut impl WriteFmt, sources: &[SourceFile], stage: &str) {
 		if let Some(span) = self.span {
-			Self::print_file_message(sources, Some(self.kind), span, &self.text, stage);
+			Self::print_file_message(output, sources, Some(self.kind), span, &self.text, stage);
 		} else {
 			let kind = self.kind.name();
-			eprintln!("{stage} {kind}: {}", self.text);
+			writeln!(output, "{RED}{stage} {kind}: {PURPLE}{}{RESET}", self.text);
 		}
 	}
 
 	//This is a big ball of mess
-	fn print_file_message(sources: &[SourceFile], kind: Option<MessageKind>, span: Span, text: &str, stage: &str) {
+	fn print_file_message(
+		output: &mut impl WriteFmt,
+		sources: &[SourceFile],
+		kind: Option<MessageKind>,
+		span: Span,
+		text: &str,
+		stage: &str,
+	) {
 		let source_file = &sources[span.file_index];
 		let path = &source_file.path;
 		let source = &source_file.source;
@@ -155,30 +182,30 @@ impl Message {
 
 		if let Some(kind) = kind {
 			let kind = kind.name();
-			eprint!("{stage} {kind} {:?}, line {}, column {}: ", path, line_num, column_start);
+			write!(output, "{RED}{stage} {kind}: {YELLOW}{}{RESET}, line {}: ", path.display(), line_num);
 		} else {
-			eprint!("{stage} {:?}, line {}, column {}: ", path, line_num, column_start);
+			write!(output, "{RED}{stage}: {YELLOW}{}{RESET}, line {}: ", path.display(), line_num);
 		}
-		eprintln!("{}", text);
+		writeln!(output, "{PURPLE}{}{RESET}", text);
 
 		assert_ne!(start, end);
 
 		//TODO: Handle multi-line spans
 		let gutter = format!("  {}| ", line_num);
-		eprint!("{}", gutter);
-		print_normalized_tabs(line);
-		eprintln!();
+		write!(output, "{YELLOW}{}{RESET}", gutter);
+		print_normalized_tabs(output, line);
+		writeln!(output);
 
 		let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
 		let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
-		eprint!("{}{}", gutter_spacer, whitespace);
+		write!(output, "{}{}{CYAN}", gutter_spacer, whitespace);
 
 		let column_end = calc_spaces_from_byte_offset(line, end - 1);
 		for _ in column_start..column_end + 1 {
-			eprint!("^");
+			write!(output, "^");
 		}
 
-		eprintln!();
+		writeln!(output, "{RESET}");
 	}
 }
 
@@ -249,7 +276,7 @@ pub fn calc_spaces_from_byte_offset(line: &str, offset: usize) -> usize {
 	spaces
 }
 
-pub fn print_normalized_tabs(line: &str) {
+pub fn print_normalized_tabs(output: &mut impl WriteFmt, line: &str) {
 	let mut spaces = 1_usize;
 	for car in line.chars() {
 		match car {
@@ -262,7 +289,7 @@ pub fn print_normalized_tabs(line: &str) {
 
 				let mut index = 0_usize;
 				while index < TABULATOR_SIZE - diff {
-					eprint!(" ");
+					write!(output, " ");
 					index += 1;
 				}
 
@@ -274,7 +301,7 @@ pub fn print_normalized_tabs(line: &str) {
 			}
 
 			_ => {
-				eprint!("{}", car);
+				write!(output, "{}", car);
 				spaces += UnicodeWidthChar::width(car).unwrap_or(0);
 			}
 		}

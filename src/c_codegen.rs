@@ -107,7 +107,7 @@ pub fn generate_code<'a>(
 	}
 
 	let output = String::from_utf8(output).unwrap();
-	println!("{output}");
+	// println!("{output}");
 
 	write!(stdin, "{output}").expect("Failed to write output to C compiler stdin");
 	drop(stdin);

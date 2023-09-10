@@ -106,11 +106,12 @@ impl<'a, 'b> Context<'a, 'b> {
 #[derive(Debug)]
 pub struct RootLayers<'a> {
 	layers: Vec<RootLayer<'a>>,
+	root_name: String,
 }
 
 impl<'a> RootLayers<'a> {
-	pub fn new() -> Self {
-		RootLayers { layers: Vec::new() }
+	pub fn new(root_name: String) -> Self {
+		RootLayers { layers: Vec::new(), root_name }
 	}
 
 	fn layer_for_module_path(&self, messages: &mut Messages, path: &[Node<&'a str>]) -> Option<&RootLayer<'a>> {
@@ -948,13 +949,14 @@ fn create_block_functions<'a>(
 			}
 
 			drop(scope);
-			let shape = FunctionShape::new(statement.name, module_path, file_index, generics, parameters, return_type);
+			let name = statement.name;
+			let is_main = module_path == &[root_layers.root_name.as_str()] && name.item == "main";
+			let shape = FunctionShape::new(name, module_path, file_index, is_main, generics, parameters, return_type);
 			function_store.shapes.push(shape);
 
-			let name = statement.name.item;
 			let kind = SymbolKind::Function { function_shape_index };
 			let span = Some(statement.name.span);
-			let symbol = Symbol { name, kind, span };
+			let symbol = Symbol { name: name.item, kind, span };
 			symbols.push_symbol(messages, symbol);
 		}
 	}
@@ -1182,7 +1184,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 
 		if let Some(result) = result {
 			if context.function_store.main.is_some() {
-				let message = error!("Duplicate main function, this should be impossible");
+				let message = error!("Duplicate main function");
 				context.message(message.span(statement.name.span));
 				return;
 			}

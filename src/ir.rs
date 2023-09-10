@@ -117,12 +117,11 @@ impl<'a> FunctionShape<'a> {
 		name: Node<&'a str>,
 		module_path: &'a [String],
 		file_index: usize,
+		is_main: bool,
 		generics: Vec<GenericParameter<'a>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: TypeId,
 	) -> Self {
-		let is_main = module_path == &["main"] && name.item == "main";
-
 		FunctionShape {
 			name,
 			module_path,
