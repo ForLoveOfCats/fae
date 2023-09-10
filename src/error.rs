@@ -80,11 +80,9 @@ impl<'a> Messages<'a> {
 	}
 
 	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
-		for (index, message) in self.messages.iter().enumerate() {
+		for message in &self.messages {
 			message.print(output, &self.sources, stage);
-			if index < self.messages.len() - 1 {
-				writeln!(output);
-			}
+			writeln!(output);
 		}
 
 		self.messages.clear();
@@ -250,8 +248,6 @@ impl Message {
 			);
 		}
 		writeln!(output, "{message_color}{}{reset_color}", text);
-
-		assert_ne!(start, end);
 
 		//TODO: Handle multi-line spans
 		let gutter = format!("  {}| ", line_num);

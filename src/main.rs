@@ -20,7 +20,7 @@ use project::build_project;
 
 fn main() {
 	let arg = std::env::args_os().skip(1).next();
-	if arg.as_ref().map(|a| a.as_os_str()) == Some(OsStr::new("test")) {
+	if arg.as_ref().map(|a| a.as_os_str()) == Some(OsStr::new("t")) {
 		test::run_tests();
 		return;
 	}

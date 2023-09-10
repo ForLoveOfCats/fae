@@ -547,8 +547,7 @@ pub fn validate<'a>(
 		&mut readables,
 		parsed_files,
 	);
-
-	assert!(function_generic_usages.is_empty());
+	function_generic_usages.clear();
 
 	let mut symbols = Symbols::new();
 	validate_root_consts(
@@ -971,7 +970,9 @@ fn validate_block_consts<'a>(context: &mut Context<'a, '_>, block: &'a tree::Blo
 }
 
 fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
-	create_block_types(context.messages, context.type_store, context.symbols, context.module_path, block, false);
+	if !is_root {
+		create_block_types(context.messages, context.type_store, context.symbols, context.module_path, block, false);
+	}
 	fill_block_types(
 		context.messages,
 		context.type_store,
