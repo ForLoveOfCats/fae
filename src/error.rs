@@ -1,6 +1,5 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::color::*;
 use crate::file::SourceFile;
 use crate::span::Span;
 
@@ -9,18 +8,62 @@ pub const TABULATOR_SIZE: usize = 4;
 pub type ParseResult<T> = std::result::Result<T, ()>;
 
 pub trait WriteFmt {
+	fn supports_color(&self) -> bool;
 	fn write_fmt(&mut self, args: std::fmt::Arguments);
 }
 
 impl WriteFmt for String {
+	fn supports_color(&self) -> bool {
+		false
+	}
+
 	fn write_fmt(&mut self, args: std::fmt::Arguments) {
 		std::fmt::Write::write_fmt(self, args).unwrap()
 	}
 }
 
 impl WriteFmt for std::io::Stderr {
+	fn supports_color(&self) -> bool {
+		true
+	}
+
 	fn write_fmt(&mut self, args: std::fmt::Arguments) {
 		std::io::Write::write_fmt(self, args).unwrap()
+	}
+}
+
+struct Colors {
+	label_color: &'static str,
+	path_color: &'static str,
+	message_color: &'static str,
+	gutter_color: &'static str,
+	underline_color: &'static str,
+	reset_color: &'static str,
+}
+
+impl Colors {
+	fn new(output: &impl WriteFmt) -> Colors {
+		use crate::color::*;
+
+		if output.supports_color() {
+			Colors {
+				label_color: RED,
+				path_color: YELLOW,
+				message_color: PURPLE,
+				gutter_color: YELLOW,
+				underline_color: CYAN,
+				reset_color: RESET,
+			}
+		} else {
+			Colors {
+				label_color: "",
+				path_color: "",
+				message_color: "",
+				gutter_color: "",
+				underline_color: "",
+				reset_color: "",
+			}
+		}
 	}
 }
 
@@ -139,7 +182,8 @@ impl Message {
 			Self::print_file_message(output, sources, Some(self.kind), span, &self.text, stage);
 		} else {
 			let kind = self.kind.name();
-			writeln!(output, "{RED}{stage} {kind}: {PURPLE}{}{RESET}", self.text);
+			let Colors { label_color, message_color, reset_color, .. } = Colors::new(output);
+			writeln!(output, "{label_color}{stage} {kind}: {message_color}{}{reset_color}", self.text);
 		}
 	}
 
@@ -155,6 +199,15 @@ impl Message {
 		let source_file = &sources[span.file_index];
 		let path = &source_file.path;
 		let source = &source_file.source;
+
+		let Colors {
+			label_color,
+			path_color,
+			message_color,
+			gutter_color,
+			underline_color,
+			reset_color,
+		} = Colors::new(output);
 
 		let (line, start, end) = {
 			let mut line_start = span.start;
@@ -182,30 +235,40 @@ impl Message {
 
 		if let Some(kind) = kind {
 			let kind = kind.name();
-			write!(output, "{RED}{stage} {kind}: {YELLOW}{}{RESET}, line {}: ", path.display(), line_num);
+			write!(
+				output,
+				"{label_color}{stage} {kind}: {path_color}{}{reset_color}, line {}: ",
+				path.display(),
+				line_num
+			);
 		} else {
-			write!(output, "{RED}{stage}: {YELLOW}{}{RESET}, line {}: ", path.display(), line_num);
+			write!(
+				output,
+				"{label_color}{stage}: {path_color}{}{reset_color}, line {}: ",
+				path.display(),
+				line_num
+			);
 		}
-		writeln!(output, "{PURPLE}{}{RESET}", text);
+		writeln!(output, "{message_color}{}{reset_color}", text);
 
 		assert_ne!(start, end);
 
 		//TODO: Handle multi-line spans
 		let gutter = format!("  {}| ", line_num);
-		write!(output, "{YELLOW}{}{RESET}", gutter);
+		write!(output, "{gutter_color}{}{reset_color}", gutter);
 		print_normalized_tabs(output, line);
 		writeln!(output);
 
 		let gutter_spacer: String = (0..gutter.len()).map(|_| ' ').collect();
 		let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
-		write!(output, "{}{}{CYAN}", gutter_spacer, whitespace);
+		write!(output, "{}{}{underline_color}", gutter_spacer, whitespace);
 
 		let column_end = calc_spaces_from_byte_offset(line, end - 1);
 		for _ in column_start..column_end + 1 {
 			write!(output, "^");
 		}
 
-		writeln!(output, "{RESET}");
+		writeln!(output, "{reset_color}");
 	}
 }
 
