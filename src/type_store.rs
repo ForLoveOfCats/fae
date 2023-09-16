@@ -87,6 +87,7 @@ pub enum UserTypeKind<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimativeKind {
+	AnyCollapse,
 	Void,
 
 	UntypedInteger,
@@ -109,6 +110,7 @@ pub enum PrimativeKind {
 impl PrimativeKind {
 	pub fn name(self) -> &'static str {
 		match self {
+			PrimativeKind::AnyCollapse => "any collapse",
 			PrimativeKind::Void => "void",
 			PrimativeKind::UntypedInteger => "untyped integer",
 			PrimativeKind::UntypedDecimal => "untyped decimal",
@@ -194,6 +196,7 @@ pub struct TypeStore<'a> {
 	pub user_types: Vec<UserType<'a>>,
 	pub user_type_generate_order: Vec<UserTypeSpecializationDescription>,
 
+	any_collapse_type_id: TypeId,
 	void_type_id: TypeId,
 
 	integer_type_id: TypeId,
@@ -234,6 +237,7 @@ impl<'a> TypeStore<'a> {
 			type_id
 		};
 
+		let any_collapse_type_id = push_primative(None, PrimativeKind::AnyCollapse);
 		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
 
 		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
@@ -258,6 +262,7 @@ impl<'a> TypeStore<'a> {
 			slice_descriptions: Vec::new(),
 			user_types: Vec::new(),
 			user_type_generate_order: Vec::new(),
+			any_collapse_type_id,
 			void_type_id,
 			integer_type_id,
 			decimal_type_id,
@@ -279,6 +284,10 @@ impl<'a> TypeStore<'a> {
 		type_store.string_type_id = string_type_id;
 
 		type_store
+	}
+
+	pub fn any_collapse_type_id(&self) -> TypeId {
+		self.any_collapse_type_id
 	}
 
 	pub fn void_type_id(&self) -> TypeId {
@@ -329,8 +338,15 @@ impl<'a> TypeStore<'a> {
 			return Some(a.type_id);
 		}
 
+		// if either are any collapse then collapse to the other, even if it is also any collapse
 		// if both are untyped numbers then we know they are different, collapse to the decimal
 		// if either type is an untyped number we know the other isn't, collapse to the other type
+
+		if a.type_id.entry == self.any_collapse_type_id.entry {
+			return Some(b.type_id);
+		} else if b.type_id.entry == self.any_collapse_type_id.entry {
+			return Some(a.type_id);
+		}
 
 		let a_number = a.type_id.entry == self.integer_type_id.entry || a.type_id.entry == self.decimal_type_id.entry;
 		let b_number = b.type_id.entry == self.integer_type_id.entry || b.type_id.entry == self.decimal_type_id.entry;
@@ -377,14 +393,21 @@ impl<'a> TypeStore<'a> {
 			return Some(true);
 		}
 
-		let from_integer = from.type_id.entry == self.integer_type_id.entry;
-		let to_decimal = to.entry == self.decimal_type_id.entry;
-		let from_decimal = from.type_id.entry == self.decimal_type_id.entry;
-
+		// any collapse -> anything else
 		// constant integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
 		// constant decimal -> float of large enough
 
-		if from_integer {
+		if from.type_id.entry == self.any_collapse_type_id.entry {
+			// From any collapse
+			// No need to convert anything, this only gets introduced in case of error so we know we won't codegen
+			return Some(true);
+		}
+
+		if from.type_id.entry == self.integer_type_id.entry {
+			// From integer
+
+			let to_decimal = to.entry == self.decimal_type_id.entry;
+
 			let (value, span, from_value) = match &mut from.kind {
 				ExpressionKind::IntegerValue(value) => (value.value(), value.span(), value),
 				kind => panic!("Collapsing from_integer with a non-IntegerValue expression: {kind:#?}"),
@@ -485,7 +508,9 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
-		if from_decimal {
+		if from.type_id.entry == self.decimal_type_id.entry {
+			// From decimal
+
 			let (value, span, from_value) = match &mut from.kind {
 				ExpressionKind::DecimalValue(value) => (value.value(), value.span(), value),
 				kind => panic!("Collapsing from_decimal with a non-DecimalValue expression: {kind:#?}"),

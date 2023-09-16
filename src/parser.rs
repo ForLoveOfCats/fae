@@ -371,7 +371,11 @@ fn parse_struct_initializer<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Node<StructInitializer<'a>>> {
 	let open_brace_token = tokenizer.expect(messages, TokenKind::OpenBrace)?;
-	tokenizer.expect(messages, TokenKind::Newline)?;
+
+	let multi_line = tokenizer.peek_kind() == Ok(TokenKind::Newline);
+	if multi_line {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let mut field_initializers = Vec::new();
 
@@ -384,8 +388,14 @@ fn parse_struct_initializer<'a>(
 
 		let expression = parse_expression(messages, tokenizer)?;
 
-		tokenizer.expect(messages, TokenKind::Comma)?;
-		tokenizer.expect(messages, TokenKind::Newline)?;
+		if multi_line {
+			if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+				tokenizer.expect(messages, TokenKind::Comma)?;
+			}
+			tokenizer.expect(messages, TokenKind::Newline)?;
+		} else if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
+			tokenizer.expect(messages, TokenKind::Comma)?;
+		}
 
 		field_initializers.push(FieldInitializer { name, expression });
 	}

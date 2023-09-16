@@ -11,6 +11,10 @@ pub fn run_tests() {
 	entries.sort_by_cached_key(|e| e.file_name());
 
 	for entry in entries {
+		if !entry.path().is_dir() {
+			continue;
+		}
+
 		let name = match entry.file_name().to_str() {
 			Some(name) => name.to_owned(),
 

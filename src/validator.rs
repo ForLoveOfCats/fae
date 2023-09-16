@@ -931,7 +931,7 @@ fn create_block_functions<'a>(
 
 				let type_id = match type_id {
 					Some(type_id) => type_id,
-					None => continue,
+					None => type_store.any_collapse_type_id(),
 				};
 
 				let is_mutable = parameter.item.is_mutable;

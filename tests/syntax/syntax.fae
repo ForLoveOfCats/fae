@@ -1,0 +1,27 @@
+struct MyType {
+	a: i32
+	b: f64
+}
+
+fn main() {
+	let a = "This is a string"
+	let b: &[u8] = "This is a string"
+
+	mut c = MyType { a: 5, b: 6 }
+	c = MyType { a: 5, b: 6, }
+	c = MyType {
+		a: 7,
+		b: 8,
+	}
+	c = MyType {
+		a: 7
+		b: 8
+	}
+
+	let d: u64 = generic_function[u64](54)
+}
+
+generic T
+fn generic_function(arg: T): T {
+	return arg
+}

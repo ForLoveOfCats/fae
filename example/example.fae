@@ -13,10 +13,25 @@ fn b_before(arg: T): T {
 const A = 8
 const GREETING = "Hello there"
 
+struct MyType {
+	a: i32
+	b: f64
+}
+
 fn maia() {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Handle when return expression fails to validate rather than omiting the return
+	
+	mut m = MyType { a: 5, b: 6 }
+	m = MyType {
+		a: 7,
+		b: 8,
+	}
+	m = MyType {
+		a: 7
+		b: 8
+	}
 
 	sub_function()
 	let a: i32 = SUB_CONST
