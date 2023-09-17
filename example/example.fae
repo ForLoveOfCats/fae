@@ -22,6 +22,7 @@ fn main() {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Handle when return expression fails to validate rather than omiting the return
+	// TODO: Point to binding point in note when emitting "cannot assign to immutable ___" errors
 	
 	mut m = MyType { a: 5, b: 6 }
 	m.a = 7
@@ -38,7 +39,7 @@ fn main() {
 	let a: i32 = SUB_CONST
 
 	a_before[u64](A + 5)
-	a_before[&[u8]](GREETING)
+	a_before[[u8]](GREETING)
 	a_before[f64](4.2)
 	a_before[f64](-4.2)
 

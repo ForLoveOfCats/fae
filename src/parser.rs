@@ -600,20 +600,20 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 		Token { kind: TokenKind::Ampersand, .. } => {
 			let ampersand = tokenizer.expect(messages, TokenKind::Ampersand)?;
 
-			if tokenizer.peek_kind() == Ok(TokenKind::OpenBracket) {
-				tokenizer.expect(messages, TokenKind::OpenBracket)?;
+			let inner = Box::new(parse_type(messages, tokenizer)?);
+			let span = ampersand.span + inner.span;
+			Node::new(Type::Reference(inner), span)
+		}
 
-				let inner = Box::new(parse_type(messages, tokenizer)?);
+		Token { kind: TokenKind::OpenBracket, .. } => {
+			let opening = tokenizer.expect(messages, TokenKind::OpenBracket)?;
 
-				let closing = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+			let inner = Box::new(parse_type(messages, tokenizer)?);
 
-				let span = ampersand.span + closing.span;
-				Node::new(Type::Slice(inner), span)
-			} else {
-				let inner = Box::new(parse_type(messages, tokenizer)?);
-				let span = ampersand.span + inner.span;
-				Node::new(Type::Reference(inner), span)
-			}
+			let closing = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+
+			let span = opening.span + closing.span;
+			Node::new(Type::Slice(inner), span)
 		}
 
 		_ => {

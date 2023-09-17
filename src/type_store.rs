@@ -985,8 +985,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Slice { type_id, mutable } => {
 				let inner = self.internal_type_name(function_store, module_path, type_id);
 				match mutable {
-					true => format!("&mut [{}]", inner),
-					false => format!("&[{}]", inner),
+					true => format!("[mut {}]", inner),
+					false => format!("[{}]", inner),
 				}
 			}
 
