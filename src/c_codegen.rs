@@ -203,11 +203,11 @@ fn generate_user_type(
 fn generate_slice_specialization(type_store: &TypeStore, description: SliceDescription, output: Output) -> Result<()> {
 	write!(output, "typedef struct {{ ")?;
 	generate_raw_type_id(type_store, description.sliced_type_id, output)?;
-	write!(output, " const *items; usize len; }} sl_{};\n\n", description.entry)?;
+	write!(output, " const *fi_0; i64 fi_1; }} sl_{};\n\n", description.entry)?;
 
 	write!(output, "typedef struct {{ ")?;
 	generate_raw_type_id(type_store, description.sliced_type_id, output)?;
-	write!(output, " *items; usize len; }} sl_{};\n\n", description.entry + 1)
+	write!(output, " *fi_0; i64 fi_1; }} sl_{};\n\n", description.entry + 1)
 }
 
 fn generate_function_signature<'a>(
@@ -470,7 +470,7 @@ fn generate_expression(
 			generate_type_id(context, type_id, output)?;
 			write!(output, " {id} = ")?;
 			generate_struct_construction_open(context, type_id, output)?;
-			write!(output, ".items = (u8*){:?}, .len = {}", literal.value, literal.value.len())?;
+			write!(output, ".fi_0 = (u8*){:?}, .fi_1 = {}", literal.value, literal.value.len())?;
 			generate_struct_construction_close(output)?;
 			write!(output, ";\n")?;
 		}
@@ -491,7 +491,12 @@ fn generate_expression(
 		ExpressionKind::FieldRead(field_read) => {
 			let struct_id = generate_expression(context, &field_read.base, output)?.unwrap();
 			generate_type_id(context, field_read.type_id, output)?;
-			write!(output, " *{id} = &{struct_id}.fi_{};\n", field_read.field_index)?;
+			if expression.is_mutable {
+				write!(output, " *")?;
+			} else {
+				write!(output, " const *")?;
+			}
+			write!(output, "{id} = &{struct_id}.fi_{};\n", field_read.field_index)?;
 			id.dereference = true;
 		}
 
@@ -542,9 +547,13 @@ fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output)
 			write!(output, "ty_{shape_index}_{specialization_index}")
 		}
 
-		TypeEntryKind::Pointer { type_id, .. } => {
-			write!(output, "*")?;
-			generate_raw_type_id(type_store, *type_id, output)
+		TypeEntryKind::Pointer { type_id, mutable } => {
+			generate_raw_type_id(type_store, *type_id, output)?;
+			if *mutable {
+				write!(output, " *")
+			} else {
+				write!(output, " const *")
+			}
 		}
 
 		TypeEntryKind::Slice { .. } => write!(output, "sl_{}", type_id.index()),

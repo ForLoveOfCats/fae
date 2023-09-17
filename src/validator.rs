@@ -1563,14 +1563,27 @@ fn validate_expression<'a>(
 		tree::Expression::FieldRead(field_read) => {
 			let base = validate_expression(context, &field_read.base)?;
 
-			let as_struct = base.type_id.as_struct(context.type_store);
-			let Some(specialization) = as_struct else {
+			// Dumb hack to store fields array in outer scope so a slice can be taken
+			let slice_fields;
+
+			let fields: &[Field] = if let Some(as_struct) = base.type_id.as_struct(context.type_store) {
+				&as_struct.fields
+			} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
+				slice_fields = [
+					Field {
+						name: "pointer",
+						type_id: context.type_store.pointer_to(as_slice.type_id, false),
+					},
+					Field { name: "len", type_id: context.type_store.i64_type_id() },
+				];
+				&slice_fields
+			} else {
 				let error = error!("Cannot access field on {}", base.kind.name_with_article());
 				context.message(error.span(span));
 				return None;
 			};
 
-			let mut fields = specialization.fields.iter().enumerate();
+			let mut fields = fields.iter().enumerate();
 			let Some((field_index, field)) = fields.find(|f| f.1.name == field_read.name.item) else {
 				let type_name = context.type_name(base.type_id);
 				let error = error!("No field `{}` on {}", field_read.name.item, type_name);

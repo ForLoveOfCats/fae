@@ -41,6 +41,15 @@ impl TypeId {
 		None
 	}
 
+	pub fn as_slice<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<Slice> {
+		let entry = type_store.type_entries[self.entry as usize];
+		if let TypeEntryKind::Slice(slice) = entry.kind {
+			return Some(slice);
+		}
+
+		None
+	}
+
 	pub fn index(self) -> usize {
 		self.entry as usize
 	}
@@ -166,7 +175,7 @@ impl TypeEntry {
 				}
 			}
 
-			TypeEntryKind::Pointer { type_id, .. } | TypeEntryKind::Slice { type_id, .. } => {
+			TypeEntryKind::Pointer { type_id, .. } | TypeEntryKind::Slice(Slice { type_id, .. }) => {
 				let entry = type_store.type_entries[type_id.index()];
 				entry.generic_poisoned
 			}
@@ -183,14 +192,20 @@ pub enum TypeEntryKind {
 	BuiltinType { kind: PrimativeKind },
 	UserType { shape_index: usize, specialization_index: usize },
 	Pointer { type_id: TypeId, mutable: bool },
-	Slice { type_id: TypeId, mutable: bool },
+	Slice(Slice),
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct Slice {
+	pub type_id: TypeId,
+	pub mutable: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SliceDescription {
-	pub entry: u32, // First immutable, then mutable directly after
+	pub entry: u32, // First immutable, then mutable directly following
 	pub sliced_type_id: TypeId,
 }
 
@@ -309,6 +324,10 @@ impl<'a> TypeStore<'a> {
 
 	pub fn u32_type_id(&self) -> TypeId {
 		self.u32_type_id
+	}
+
+	pub fn i64_type_id(&self) -> TypeId {
+		self.i64_type_id
 	}
 
 	pub fn integer_type_id(&self) -> TypeId {
@@ -575,7 +594,7 @@ impl<'a> TypeStore<'a> {
 		let kind = TypeEntryKind::Pointer { type_id, mutable: true };
 		self.type_entries.push(TypeEntry::new(self, kind));
 
-		let kind = TypeEntryKind::Slice { type_id, mutable: false };
+		let kind = TypeEntryKind::Slice(Slice { type_id, mutable: false });
 		let description = SliceDescription {
 			entry: self.type_entries.len() as u32,
 			sliced_type_id: type_id,
@@ -583,7 +602,7 @@ impl<'a> TypeStore<'a> {
 		self.type_entries.push(TypeEntry::new(self, kind));
 		self.slice_descriptions.push(description);
 
-		let kind = TypeEntryKind::Slice { type_id, mutable: true };
+		let kind = TypeEntryKind::Slice(Slice { type_id, mutable: true });
 		self.type_entries.push(TypeEntry::new(self, kind));
 
 		let entry = &mut self.type_entries[type_id.index()];
@@ -842,7 +861,7 @@ impl<'a> TypeStore<'a> {
 				self.pointer_to(type_id, *mutable)
 			}
 
-			TypeEntryKind::Slice { type_id, mutable } => {
+			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
 				let type_id = self.specialize_with_user_type_generics(
 					messages,
 					generic_usages,
@@ -925,7 +944,7 @@ impl<'a> TypeStore<'a> {
 				self.pointer_to(type_id, *mutable)
 			}
 
-			TypeEntryKind::Slice { type_id, mutable } => {
+			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
 				let type_id = self.specialize_with_function_generics(
 					messages,
 					generic_usages,
@@ -982,7 +1001,7 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::Slice { type_id, mutable } => {
+			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
 				let inner = self.internal_type_name(function_store, module_path, type_id);
 				match mutable {
 					true => format!("[mut {}]", inner),

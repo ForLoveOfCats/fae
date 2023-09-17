@@ -3,6 +3,8 @@ struct MyType {
 	b: f64
 }
 
+const STRING = "Hi there"
+
 fn main() {
 	let a = "This is a string"
 	let b: [u8] = "This is a string"
@@ -21,6 +23,9 @@ fn main() {
 	}
 
 	let d: u64 = generic_function[u64](54)
+
+	let ptr: &u8 = STRING.pointer
+	let len: i64 = STRING.len
 }
 
 generic T
