@@ -8,6 +8,8 @@ fn main() {
 	let b: &[u8] = "This is a string"
 
 	mut c = MyType { a: 5, b: 6 }
+	c.a = 7
+	let c_b = c.b
 	c = MyType { a: 5, b: 6, }
 	c = MyType {
 		a: 7,

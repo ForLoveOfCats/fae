@@ -28,6 +28,19 @@ impl TypeId {
 		type_store.direct_equal(self, type_store.decimal_type_id)
 	}
 
+	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
+		let entry = type_store.type_entries[self.entry as usize];
+		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+			let shape = &type_store.user_types[shape_index];
+			#[allow(irrefutable_let_patterns)] // TODO: Remove once enums are added
+			if let UserTypeKind::Struct { shape } = &shape.kind {
+				return Some(&shape.specializations[specialization_index]);
+			}
+		}
+
+		None
+	}
+
 	pub fn index(self) -> usize {
 		self.entry as usize
 	}
@@ -394,8 +407,8 @@ impl<'a> TypeStore<'a> {
 		}
 
 		// any collapse -> anything else
-		// constant integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
-		// constant decimal -> float of large enough
+		// untyped integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
+		// untyped decimal -> float of large enough
 
 		if from.type_id.entry == self.any_collapse_type_id.entry {
 			// From any collapse
@@ -404,7 +417,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		if from.type_id.entry == self.integer_type_id.entry {
-			// From integer
+			// From untyped integer
 
 			let to_decimal = to.entry == self.decimal_type_id.entry;
 
@@ -423,8 +436,9 @@ impl<'a> TypeStore<'a> {
 					return None;
 				}
 
+				let type_id = self.decimal_type_id;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
-				*from = Expression { span: from.span, type_id: self.decimal_type_id, kind };
+				*from = Expression { span: from.span, type_id, is_mutable: from.is_mutable, kind };
 				return Some(true);
 			}
 
@@ -509,7 +523,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		if from.type_id.entry == self.decimal_type_id.entry {
-			// From decimal
+			// From untyped decimal
 
 			let (value, span, from_value) = match &mut from.kind {
 				ExpressionKind::DecimalValue(value) => (value.value(), value.span(), value),

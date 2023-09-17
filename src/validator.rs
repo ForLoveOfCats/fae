@@ -1339,29 +1339,34 @@ fn validate_expression<'a>(
 		tree::Expression::Block(block) => {
 			let validated_block = validate_block(context.child_scope(), &block, false);
 			let type_id = validated_block.type_id;
-			return Some(Expression { span, type_id, kind: ExpressionKind::Block(validated_block) });
+			let kind = ExpressionKind::Block(validated_block);
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::IntegerLiteral(literal) => {
 			let value = IntegerValue::new(literal.value.item, literal.value.span);
 			let kind = ExpressionKind::IntegerValue(value);
-			return Some(Expression { span, type_id: context.type_store.integer_type_id(), kind });
+			let type_id = context.type_store.integer_type_id();
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::FloatLiteral(literal) => {
 			let value = DecimalValue::new(literal.value.item, literal.value.span);
 			let kind = ExpressionKind::DecimalValue(value);
-			return Some(Expression { span, type_id: context.type_store.decimal_type_id(), kind });
+			let type_id = context.type_store.decimal_type_id();
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::CodepointLiteral(literal) => {
 			let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
-			return Some(Expression { span, type_id: context.type_store.u32_type_id(), kind });
+			let type_id = context.type_store.u32_type_id();
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::StringLiteral(literal) => {
 			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });
-			return Some(Expression { span, type_id: context.type_store.string_type_id(), kind });
+			let type_id = context.type_store.string_type_id();
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::StructLiteral(literal) => {
@@ -1428,7 +1433,7 @@ fn validate_expression<'a>(
 			}
 
 			let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
-			return Some(Expression { span, type_id, kind });
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::Call(call) => {
@@ -1502,7 +1507,7 @@ fn validate_expression<'a>(
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
 			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
-			return Some(Expression { span, type_id: return_type, kind });
+			return Some(Expression { span, type_id: return_type, is_mutable: true, kind });
 		}
 
 		tree::Expression::Read(read) => {
@@ -1534,7 +1539,7 @@ fn validate_expression<'a>(
 						}
 					};
 
-					return Some(Expression { span, type_id, kind });
+					return Some(Expression { span, type_id, is_mutable: false, kind });
 				}
 
 				kind => {
@@ -1544,6 +1549,7 @@ fn validate_expression<'a>(
 			};
 
 			let readable = context.readables.get(readable_index)?;
+			let is_mutable = readable.kind == ReadableKind::Mut;
 			let read = Read {
 				name: readable.name,
 				type_id: readable.type_id,
@@ -1551,7 +1557,31 @@ fn validate_expression<'a>(
 			};
 
 			let kind = ExpressionKind::Read(read);
-			return Some(Expression { span, type_id: readable.type_id, kind });
+			return Some(Expression { span, type_id: readable.type_id, is_mutable, kind });
+		}
+
+		tree::Expression::FieldRead(field_read) => {
+			let base = validate_expression(context, &field_read.base)?;
+
+			let as_struct = base.type_id.as_struct(context.type_store);
+			let Some(specialization) = as_struct else {
+				let error = error!("Cannot access field on {}", base.kind.name_with_article());
+				context.message(error.span(span));
+				return None;
+			};
+
+			let mut fields = specialization.fields.iter().enumerate();
+			let Some((field_index, field)) = fields.find(|f| f.1.name == field_read.name.item) else {
+				let type_name = context.type_name(base.type_id);
+				let error = error!("No field `{}` on {}", field_read.name.item, type_name);
+				context.message(error.span(field_read.name.span));
+				return None;
+			};
+
+			let is_mutable = base.is_mutable;
+			let field_read = FieldRead { base, name: field.name, type_id: field.type_id, field_index };
+			let kind = ExpressionKind::FieldRead(Box::new(field_read));
+			return Some(Expression { span, type_id: field.type_id, is_mutable, kind });
 		}
 
 		tree::Expression::UnaryOperation(operation) => {
@@ -1578,7 +1608,7 @@ fn validate_expression<'a>(
 
 			let type_id = expression.type_id;
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
-			return Some(Expression { span, type_id, kind });
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 
 		tree::Expression::BinaryOperation(operation) => {
@@ -1610,6 +1640,10 @@ fn validate_expression<'a>(
 					if readable.kind != ReadableKind::Mut {
 						context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(left.span));
 					}
+				} else if let ExpressionKind::FieldRead(_) = &left.kind {
+					if !left.is_mutable {
+						context.message(error!("Cannot assign to field of immutable object").span(left.span));
+					}
 				} else {
 					context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(left.span));
 				}
@@ -1622,7 +1656,7 @@ fn validate_expression<'a>(
 
 			let operation = Box::new(BinaryOperation { op, left, right });
 			let kind = ExpressionKind::BinaryOperation(operation);
-			return Some(Expression { span, type_id, kind });
+			return Some(Expression { span, type_id, is_mutable: true, kind });
 		}
 	};
 }
@@ -1649,7 +1683,7 @@ fn perform_constant_math<'a>(
 
 		let kind = ExpressionKind::IntegerValue(value);
 		let type_id = context.type_store.integer_type_id();
-		return Some(Expression { span: value.span(), type_id, kind });
+		return Some(Expression { span: value.span(), type_id, is_mutable: false, kind });
 	}
 
 	if let ExpressionKind::DecimalValue(left) = left.kind {
@@ -1668,7 +1702,7 @@ fn perform_constant_math<'a>(
 
 		let kind = ExpressionKind::DecimalValue(value);
 		let type_id = context.type_store.decimal_type_id();
-		return Some(Expression { span: value.span(), type_id, kind });
+		return Some(Expression { span: value.span(), type_id, is_mutable: false, kind });
 	}
 
 	None

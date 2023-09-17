@@ -210,6 +210,7 @@ pub struct Return<'a> {
 pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
+	pub is_mutable: bool,
 	pub kind: ExpressionKind<'a>,
 }
 
@@ -224,8 +225,10 @@ pub enum ExpressionKind<'a> {
 	StringLiteral(StringLiteral<'a>),
 
 	StructLiteral(StructLiteral<'a>),
+
 	Call(Call<'a>),
 	Read(Read<'a>),
+	FieldRead(Box<FieldRead<'a>>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
@@ -242,6 +245,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::Call(_) => "a function call",
 			ExpressionKind::Read(_) => "a binding read",
+			ExpressionKind::FieldRead(_) => "a field read",
 			ExpressionKind::UnaryOperation(_) => "an unary operation",
 			ExpressionKind::BinaryOperation(_) => "a binary operation",
 		}
@@ -473,6 +477,14 @@ pub struct Read<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
 	pub readable_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldRead<'a> {
+	pub base: Expression<'a>,
+	pub name: &'a str,
+	pub type_id: TypeId,
+	pub field_index: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

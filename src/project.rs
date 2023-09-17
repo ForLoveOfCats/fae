@@ -7,7 +7,12 @@ use crate::parser::parse_file;
 use crate::type_store::TypeStore;
 use crate::validator::{validate, FunctionStore, RootLayers};
 
-pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: String) -> Option<PathBuf> {
+pub fn build_project(
+	err_output: &mut impl WriteFmt,
+	path: &Path,
+	root_name: String,
+	debug_codegen: bool,
+) -> Option<PathBuf> {
 	// Can be folded into parallel parsing, ish
 	let files = match load_all_files(path) {
 		Ok(files) => files,
@@ -43,7 +48,14 @@ pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: Str
 
 	//Not parallelizable
 	let binary_path = Path::new("./output.executable");
-	generate_code(&mut messages, &mut type_store, &mut function_store, OptimizationLevel::None, binary_path);
+	generate_code(
+		&mut messages,
+		&mut type_store,
+		&mut function_store,
+		OptimizationLevel::None,
+		binary_path,
+		debug_codegen,
+	);
 	assert!(!messages.any_errors());
 
 	Some(binary_path.to_path_buf())

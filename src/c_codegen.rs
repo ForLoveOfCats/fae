@@ -31,10 +31,26 @@ struct Context<'a, 'b> {
 }
 
 impl<'a, 'b> Context<'a, 'b> {
-	fn generate_temp_id(&mut self) -> u64 {
+	fn generate_temp_id(&mut self) -> TempId {
 		let id = self.next_temp_id;
 		self.next_temp_id += 1;
-		id
+		TempId { id, dereference: false }
+	}
+}
+
+#[derive(Debug, Copy, Clone)]
+struct TempId {
+	id: u64,
+	dereference: bool,
+}
+
+impl std::fmt::Display for TempId {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if self.dereference {
+			write!(f, "(*t_{})", self.id)
+		} else {
+			write!(f, "t_{}", self.id)
+		}
 	}
 }
 
@@ -44,6 +60,7 @@ pub fn generate_code<'a>(
 	function_store: &mut FunctionStore<'a>,
 	optimization_level: OptimizationLevel,
 	binary_path: &Path,
+	debug_codegen: bool,
 ) {
 	// Ignore failure, it's probably just because there's no file there yet
 	_ = std::fs::remove_file(binary_path);
@@ -65,6 +82,7 @@ pub fn generate_code<'a>(
 			"-Werror",
 			"-Wvla",
 			"-Wshadow",
+			"-Wcast-qual",
 			"-Wno-format",
 			"-Wno-unused-variable",
 			"-Wno-unused-parameter",
@@ -107,7 +125,9 @@ pub fn generate_code<'a>(
 	}
 
 	let output = String::from_utf8(output).unwrap();
-	// println!("{output}");
+	if debug_codegen {
+		println!("{output}");
+	}
 
 	write!(stdin, "{output}").expect("Failed to write output to C compiler stdin");
 	drop(stdin);
@@ -288,13 +308,13 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 				generate_type_id(context, binding.type_id, output)?;
 				write!(output, " ")?;
 				generate_readable_index(binding.readable_index, output)?;
-				write!(output, " = t_{id};\n")?;
+				write!(output, " = {id};\n")?;
 			}
 
 			StatementKind::Return(statement) => {
 				if let Some(expression) = &statement.expression {
 					let id = generate_expression(context, expression, output)?.unwrap();
-					write!(output, "return t_{id};\n")?;
+					write!(output, "return {id};\n")?;
 				} else {
 					write!(output, "return;\n")?;
 				}
@@ -305,7 +325,7 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 	Ok(())
 }
 
-fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<u64> {
+fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<TempId> {
 	let mut ids = Vec::new(); // Belch
 	for initalizer in &literal.field_initializers {
 		let id = generate_expression(context, &initalizer.expression, output)?.unwrap();
@@ -314,11 +334,11 @@ fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, outpu
 
 	let id = context.generate_temp_id();
 	generate_type_id(context, literal.type_id, output)?;
-	write!(output, " t_{id} = ")?;
+	write!(output, " {id} = ")?;
 
 	generate_struct_construction_open(context, literal.type_id, output)?;
 	for (index, id) in ids.into_iter().enumerate() {
-		write!(output, ".fi_{index} = t_{id}, ")?;
+		write!(output, ".fi_{index} = {id}, ")?;
 	}
 	generate_struct_construction_close(output)?;
 
@@ -326,7 +346,7 @@ fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, outpu
 	Ok(id)
 }
 
-fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<Option<u64>> {
+fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<Option<TempId>> {
 	let function_id = context.function_store.specialize_with_function_generics(
 		context.messages,
 		context.type_store,
@@ -360,12 +380,11 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let mut maybe_id = None;
 	let void = context.type_store.void_type_id();
 	if !context.type_store.direct_equal(specialization.return_type, void) {
-		let id = context.next_temp_id;
-		context.next_temp_id += 1;
-		maybe_id = Some(id);
 		let return_type = specialization.return_type;
+		let id = context.generate_temp_id();
+		maybe_id = Some(id);
 		generate_type_id(context, return_type, output)?;
-		write!(output, " t_{id} = ")?;
+		write!(output, " {id} = ")?;
 	}
 
 	generate_functon_id(function_id, output)?;
@@ -377,7 +396,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 			write!(output, ", ")?;
 		}
 		first = false;
-		write!(output, "t_{id}")?;
+		write!(output, "{id}")?;
 	}
 
 	write!(output, ");\n")?;
@@ -385,28 +404,28 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	Ok(maybe_id)
 }
 
-fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<u64> {
+fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<TempId> {
 	let id = generate_expression(context, &operation.expression, output)?.unwrap();
 
 	let op = match operation.op {
 		UnaryOperator::Negate => "-",
 	};
 
-	write!(output, "t_{id} = {op}(t_{id});\n")?;
+	write!(output, "{id} = {op}({id});\n")?;
 
 	Ok(id)
 }
 
-fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<u64> {
+fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<TempId> {
 	let left_id = generate_expression(context, &operation.left, output)?.unwrap();
 	let right_id = generate_expression(context, &operation.right, output)?.unwrap();
 
 	if operation.op == BinaryOperator::Assign {
-		write!(output, "t_{left_id} = t_{right_id};\n")?;
+		write!(output, "{left_id} = {right_id};\n")?;
 		return Ok(left_id);
 	}
 
-	write!(output, "t_{left_id} = (t_{left_id}")?;
+	write!(output, "{left_id} = ({left_id}")?;
 
 	let op = match operation.op {
 		BinaryOperator::Assign => unreachable!(),
@@ -417,33 +436,39 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	};
 	write!(output, " {} ", op)?;
 
-	write!(output, "t_{right_id});\n")?;
+	write!(output, "{right_id});\n")?;
 
 	Ok(left_id)
 }
 
-fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<u64>> {
-	let id = context.generate_temp_id();
+// Unwrapping the Option is useful when the temp ID is needed as the type system should prevent any
+// semantic cases where a the "value" of a void-returning expression is operated on
+fn generate_expression(
+	context: &mut Context,
+	expression: &Expression,
+	output: Output,
+) -> std::io::Result<Option<TempId>> {
+	let mut id = context.generate_temp_id();
 
 	match &expression.kind {
 		ExpressionKind::IntegerValue(value) => {
 			let type_id = value.get_collapse();
 			generate_type_id(context, type_id, output)?;
-			write!(output, " t_{id} = {};\n", value.value())?;
+			write!(output, " {id} = {};\n", value.value())?;
 		}
 
 		ExpressionKind::DecimalValue(value) => {
 			let type_id = value.get_collapse();
 			generate_type_id(context, type_id, output)?;
-			write!(output, " t_{id} = {};\n", value.value())?;
+			write!(output, " {id} = {};\n", value.value())?;
 		}
 
-		ExpressionKind::CodepointLiteral(literal) => write!(output, "u64 t_{id} = {};\n", literal.value as u32)?,
+		ExpressionKind::CodepointLiteral(literal) => write!(output, "u64 {id} = {};\n", literal.value as u32)?,
 
 		ExpressionKind::StringLiteral(literal) => {
 			let type_id = context.type_store.string_type_id();
 			generate_type_id(context, type_id, output)?;
-			write!(output, " t_{id} = ")?;
+			write!(output, " {id} = ")?;
 			generate_struct_construction_open(context, type_id, output)?;
 			write!(output, ".items = (u8*){:?}, .len = {}", literal.value, literal.value.len())?;
 			generate_struct_construction_close(output)?;
@@ -458,9 +483,16 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 		ExpressionKind::Read(read) => {
 			generate_type_id(context, read.type_id, output)?;
-			write!(output, " t_{id} = ")?;
+			write!(output, " {id} = ")?;
 			generate_readable_index(read.readable_index, output)?;
 			write!(output, ";\n")?;
+		}
+
+		ExpressionKind::FieldRead(field_read) => {
+			let struct_id = generate_expression(context, &field_read.base, output)?.unwrap();
+			generate_type_id(context, field_read.type_id, output)?;
+			write!(output, " *{id} = &{struct_id}.fi_{};\n", field_read.field_index)?;
+			id.dereference = true;
 		}
 
 		ExpressionKind::UnaryOperation(operation) => {

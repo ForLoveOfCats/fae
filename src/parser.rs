@@ -159,6 +159,17 @@ fn parse_expression_climb<'a>(
 ) -> ParseResult<Node<Expression<'a>>> {
 	let mut result = parse_expression_atom(messages, tokenizer)?;
 
+	while tokenizer.peek_kind() == Ok(TokenKind::Period) {
+		tokenizer.expect(messages, TokenKind::Period)?;
+
+		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
+		let name = Node::from_token(name_token.text, name_token);
+
+		let span = result.span + name.span;
+		let field_read = Box::new(FieldRead { base: result, name });
+		result = Node::new(Expression::FieldRead(field_read), span);
+	}
+
 	while let Some(operator) = tokenizer.peek().ok().and_then(|token| token_to_operator(token)) {
 		let precedence = operator.item.precedence();
 		if precedence < min_precedence {

@@ -240,6 +240,12 @@ pub struct Read<'a> {
 }
 
 #[derive(Debug)]
+pub struct FieldRead<'a> {
+	pub base: Node<Expression<'a>>,
+	pub name: Node<&'a str>,
+}
+
+#[derive(Debug)]
 pub struct Return<'a> {
 	pub expression: Option<Node<Expression<'a>>>,
 }
@@ -313,6 +319,7 @@ pub enum Expression<'a> {
 
 	Call(Call<'a>),
 	Read(Read<'a>),
+	FieldRead(Box<FieldRead<'a>>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),

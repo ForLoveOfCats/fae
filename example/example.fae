@@ -18,12 +18,13 @@ struct MyType {
 	b: f64
 }
 
-fn maia() {
+fn main() {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
 	// TODO: Handle when return expression fails to validate rather than omiting the return
 	
 	mut m = MyType { a: 5, b: 6 }
+	m.a = 7
 	m = MyType {
 		a: 7,
 		b: 8,
@@ -35,7 +36,6 @@ fn maia() {
 
 	sub_function()
 	let a: i32 = SUB_CONST
-	asfsdf = 44
 
 	a_before[u64](A + 5)
 	a_before[&[u8]](GREETING)
