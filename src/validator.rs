@@ -1312,7 +1312,9 @@ fn validate_binding<'a>(
 		_ => expression.type_id,
 	};
 
-	if type_id.is_untyped_integer(context.type_store) {
+	if type_id.is_void(context.type_store) {
+		context.message(error!("Cannot create binding of `void`").span(statement.span));
+	} else if type_id.is_untyped_integer(context.type_store) {
 		context.message(error!("Cannot create binding of untyped integer").span(statement.span));
 	} else if type_id.is_untyped_decimal(context.type_store) {
 		context.message(error!("Cannot create binding of untyped decimal").span(statement.span));
