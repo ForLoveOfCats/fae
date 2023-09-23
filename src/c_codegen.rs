@@ -120,8 +120,7 @@ pub fn generate_code<'a>(
 	let main = function_store.main.unwrap();
 	let mut function_generate_queue = vec![main];
 	while let Some(function) = function_generate_queue.pop() {
-		generate_function(messages, type_store, function_store, &mut function_generate_queue, function, &mut output)
-			.unwrap();
+		generate_function(messages, type_store, function_store, &mut function_generate_queue, function, &mut output).unwrap();
 	}
 
 	let output = String::from_utf8(output).unwrap();
@@ -168,11 +167,7 @@ fn forward_declare_user_type(
 	Ok(())
 }
 
-fn generate_user_type(
-	type_store: &TypeStore,
-	description: UserTypeSpecializationDescription,
-	output: Output,
-) -> Result<()> {
+fn generate_user_type(type_store: &TypeStore, description: UserTypeSpecializationDescription, output: Output) -> Result<()> {
 	let user_type = &type_store.user_types[description.shape_index];
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
@@ -443,11 +438,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 
 // Unwrapping the Option is useful when the temp ID is needed as the type system should prevent any
 // semantic cases where a the "value" of a void-returning expression is operated on
-fn generate_expression(
-	context: &mut Context,
-	expression: &Expression,
-	output: Output,
-) -> std::io::Result<Option<TempId>> {
+fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<TempId>> {
 	let mut id = context.generate_temp_id();
 
 	match &expression.kind {

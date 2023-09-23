@@ -211,10 +211,7 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 	Some(Node::new(operator, token.span))
 }
 
-fn parse_expression_atom<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Expression<'a>>> {
+fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let peeked = tokenizer.peek()?;
 
 	match peeked.kind {
@@ -317,8 +314,7 @@ fn parse_expression_atom<'a>(
 
 		_ => {
 			messages.message(
-				error!("Unexpected token {:?} while attempting to parse expression atom", peeked.text)
-					.span(peeked.span),
+				error!("Unexpected token {:?} while attempting to parse expression atom", peeked.text).span(peeked.span),
 			);
 			Err(())
 		}
@@ -354,10 +350,7 @@ fn parse_type_arguments<'a>(
 	Ok(Some(Node::new(types, span)))
 }
 
-fn parse_arguments<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Vec<Node<Expression<'a>>>>> {
+fn parse_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Vec<Node<Expression<'a>>>>> {
 	let open_paren_token = tokenizer.expect(messages, TokenKind::OpenParen)?;
 
 	let mut expressions = Vec::new();
@@ -568,10 +561,7 @@ fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 	Ok(Node { item, span })
 }
 
-fn parse_path_segments<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<PathSegments<'a>>> {
+fn parse_path_segments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<PathSegments<'a>>> {
 	let mut segments = Vec::new();
 	loop {
 		let segment_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -678,10 +668,7 @@ fn parse_function_declaration<'a>(
 	Ok(Function { generics, name, parameters, parsed_type, block })
 }
 
-fn parse_parameters<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Vec<Node<Parameter<'a>>>> {
+fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<Parameter<'a>>>> {
 	tokenizer.expect(messages, TokenKind::OpenParen)?;
 
 	let mut parameters = Vec::new();
@@ -785,10 +772,7 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	Ok(Node { item, span })
 }
 
-fn parse_binding_statement<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<Binding<'a>>> {
+fn parse_binding_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Binding<'a>>> {
 	let is_mutable;
 	let keyword_token = if let Ok(Token { text: "mut", .. }) = tokenizer.peek() {
 		is_mutable = true;
@@ -893,9 +877,7 @@ fn consume_error_syntax(messages: &mut Messages, tokenizer: &mut Tokenizer) {
 			_ => {}
 		}
 
-		tokenizer
-			.next_optional_messages(&mut None)
-			.expect("This should never fail");
+		tokenizer.next_optional_messages(&mut None).expect("This should never fail");
 	}
 
 	//Reached end of file while unbalanced

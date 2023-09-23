@@ -1,7 +1,5 @@
 use crate::error::Messages;
-use crate::ir::{
-	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind,
-};
+use crate::ir::{DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
@@ -360,12 +358,7 @@ impl<'a> TypeStore<'a> {
 		a.entry == b.entry
 	}
 
-	pub fn collapse_fair(
-		&self,
-		messages: &mut Messages<'a>,
-		a: &mut Expression<'a>,
-		b: &mut Expression<'a>,
-	) -> Option<TypeId> {
+	pub fn collapse_fair(&self, messages: &mut Messages<'a>, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Option<TypeId> {
 		if a.type_id.entry == b.type_id.entry {
 			return Some(a.type_id);
 		}
@@ -498,8 +491,7 @@ impl<'a> TypeStore<'a> {
 					let min_value = -i128::pow(2, bit_count - 1);
 					if value < min_value {
 						messages.message(
-							error!("Constant integer {value} is too small to be represented as an `i{bit_count}`")
-								.span(span),
+							error!("Constant integer {value} is too small to be represented as an `i{bit_count}`").span(span),
 						);
 						return None;
 					}
@@ -507,8 +499,7 @@ impl<'a> TypeStore<'a> {
 					let max_value = i128::pow(2, bit_count - 1) - 1;
 					if value > max_value {
 						messages.message(
-							error!("Constant integer {value} is too large to be represented as an `i{bit_count}`")
-								.span(span),
+							error!("Constant integer {value} is too large to be represented as an `i{bit_count}`").span(span),
 						);
 						return None;
 					}
@@ -559,7 +550,9 @@ impl<'a> TypeStore<'a> {
 				if bit_count == 32 {
 					let cast = value as f32 as f64;
 					if cast != value {
-						let err = error!("Constant decimal {value} cannot be represented as an `f{bit_count}` without a loss in precision");
+						let err = error!(
+							"Constant decimal {value} cannot be represented as an `f{bit_count}` without a loss in precision"
+						);
 						messages.message(err.span(span));
 						return None;
 					}
@@ -628,13 +621,7 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn register_type(
-		&mut self,
-		name: &'a str,
-		kind: UserTypeKind<'a>,
-		span: Span,
-		module_path: &'a [String],
-	) -> Symbol<'a> {
+	pub fn register_type(&mut self, name: &'a str, kind: UserTypeKind<'a>, span: Span, module_path: &'a [String]) -> Symbol<'a> {
 		// Type entry gets added during specialization
 		let shape_index = self.user_types.len();
 		self.user_types.push(UserType { span, module_path, kind });
@@ -754,9 +741,7 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
-		let type_arguments_generic_poisoned = type_arguments
-			.iter()
-			.any(|id| self.type_entries[id.index()].generic_poisoned);
+		let type_arguments_generic_poisoned = type_arguments.iter().any(|id| self.type_entries[id.index()].generic_poisoned);
 
 		let mut fields = Vec::with_capacity(shape.fields.len());
 		for field in &shape.fields {
@@ -764,13 +749,8 @@ impl<'a> TypeStore<'a> {
 		}
 
 		for field in &mut fields {
-			field.type_id = self.specialize_with_user_type_generics(
-				messages,
-				generic_usages,
-				shape_index,
-				&type_arguments,
-				field.type_id,
-			);
+			field.type_id =
+				self.specialize_with_user_type_generics(messages, generic_usages, shape_index, &type_arguments, field.type_id);
 		}
 
 		let user_type = &mut self.user_types[shape_index];
@@ -815,9 +795,10 @@ impl<'a> TypeStore<'a> {
 				match &mut shape.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &mut shape.specializations[*specialization_index];
-						let any_user_type_generic = specialization.type_arguments.iter().any(|t| {
-							matches!(self.type_entries[t.index()].kind, TypeEntryKind::UserTypeGeneric { .. })
-						});
+						let any_user_type_generic = specialization
+							.type_arguments
+							.iter()
+							.any(|t| matches!(self.type_entries[t.index()].kind, TypeEntryKind::UserTypeGeneric { .. }));
 
 						if !any_user_type_generic {
 							return type_id;
@@ -851,24 +832,14 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::Pointer { type_id, mutable } => {
-				let type_id = self.specialize_with_user_type_generics(
-					messages,
-					generic_usages,
-					type_shape_index,
-					type_arguments,
-					*type_id,
-				);
+				let type_id =
+					self.specialize_with_user_type_generics(messages, generic_usages, type_shape_index, type_arguments, *type_id);
 				self.pointer_to(type_id, *mutable)
 			}
 
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
-				let type_id = self.specialize_with_user_type_generics(
-					messages,
-					generic_usages,
-					type_shape_index,
-					type_arguments,
-					*type_id,
-				);
+				let type_id =
+					self.specialize_with_user_type_generics(messages, generic_usages, type_shape_index, type_arguments, *type_id);
 				self.slice_of(type_id, *mutable)
 			}
 
@@ -898,9 +869,10 @@ impl<'a> TypeStore<'a> {
 				match &mut shape.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &mut shape.specializations[*specialization_index];
-						let any_function_generic = specialization.type_arguments.iter().any(|t| {
-							matches!(self.type_entries[t.index()].kind, TypeEntryKind::FunctionGeneric { .. })
-						});
+						let any_function_generic = specialization
+							.type_arguments
+							.iter()
+							.any(|t| matches!(self.type_entries[t.index()].kind, TypeEntryKind::FunctionGeneric { .. }));
 
 						if !any_function_generic {
 							return type_id;
@@ -969,12 +941,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	// TODO: Use module path to have or not have paths for local types?
-	fn internal_type_name(
-		&self,
-		function_store: &FunctionStore,
-		_module_path: &'a [String],
-		type_id: TypeId,
-	) -> String {
+	fn internal_type_name(&self, function_store: &FunctionStore, _module_path: &'a [String], type_id: TypeId) -> String {
 		match self.type_entries[type_id.index()].kind {
 			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 

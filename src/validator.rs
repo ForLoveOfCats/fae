@@ -94,8 +94,7 @@ impl<'a, 'b> Context<'a, 'b> {
 	}
 
 	fn type_name(&self, type_id: TypeId) -> String {
-		self.type_store
-			.type_name(self.function_store, self.module_path, type_id)
+		self.type_store.type_name(self.function_store, self.module_path, type_id)
 	}
 
 	fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
@@ -450,13 +449,7 @@ impl<'a> FunctionStore<'a> {
 
 				match generic_usage.kind {
 					GenericUsageKind::UserType { shape_index } => {
-						type_store.get_or_add_shape_specialization(
-							messages,
-							generic_usages,
-							shape_index,
-							None,
-							type_arguments,
-						);
+						type_store.get_or_add_shape_specialization(messages, generic_usages, shape_index, None, type_arguments);
 					}
 
 					GenericUsageKind::Function { function_shape_index } => {
@@ -765,8 +758,7 @@ fn create_block_types<'a>(
 				| tree::Statement::Binding(..)
 				| tree::Statement::Return(..) => {
 					messages.message(
-						error!("{} is not allowed in a root scope", statement.name_and_article())
-							.span(statement.span()),
+						error!("{} is not allowed in a root scope", statement.name_and_article()).span(statement.span()),
 					);
 					continue;
 				}
@@ -896,14 +888,8 @@ fn create_block_functions<'a>(
 			function_store.generics.push(generics.clone());
 
 			let return_type = if let Some(parsed_type) = &statement.parsed_type {
-				let type_id = type_store.lookup_type(
-					messages,
-					function_store,
-					generic_usages,
-					root_layers,
-					scope.symbols,
-					parsed_type,
-				);
+				let type_id =
+					type_store.lookup_type(messages, function_store, generic_usages, root_layers, scope.symbols, parsed_type);
 
 				let return_type = match type_id {
 					Some(type_id) => type_id,
@@ -1291,10 +1277,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 	Some(())
 }
 
-fn validate_binding<'a>(
-	context: &mut Context<'a, '_>,
-	statement: &'a tree::Node<tree::Binding<'a>>,
-) -> Option<Binding<'a>> {
+fn validate_binding<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
 	let mut expression = validate_expression(context, &statement.item.expression)?;
 
 	let type_id = match &statement.item.parsed_type {
@@ -1413,11 +1396,8 @@ fn validate_expression<'a>(
 
 				if field.name != intializer.name.item {
 					context.message(
-						error!(
-							"Expected initalizer for field `{}`, got `{}` instead",
-							field.name, intializer.name.item,
-						)
-						.span(intializer.name.span),
+						error!("Expected initalizer for field `{}`, got `{}` instead", field.name, intializer.name.item,)
+							.span(intializer.name.span),
 					);
 					continue;
 				}
@@ -1634,9 +1614,7 @@ fn validate_expression<'a>(
 
 			let mut left = validate_expression(context, &operation.left)?;
 			let mut right = validate_expression(context, &operation.right)?;
-			let collapsed = context
-				.type_store
-				.collapse_fair(context.messages, &mut left, &mut right);
+			let collapsed = context.type_store.collapse_fair(context.messages, &mut left, &mut right);
 
 			let Some(collapsed) = collapsed else {
 				context.message(
