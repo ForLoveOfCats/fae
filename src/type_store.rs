@@ -41,7 +41,7 @@ impl TypeId {
 		None
 	}
 
-	pub fn as_slice<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<Slice> {
+	pub fn as_slice(self, type_store: &TypeStore) -> Option<Slice> {
 		let entry = type_store.type_entries[self.entry as usize];
 		if let TypeEntryKind::Slice(slice) = entry.kind {
 			return Some(slice);
@@ -445,7 +445,7 @@ impl<'a> TypeStore<'a> {
 				kind => panic!("Collapsing from_integer with a non-IntegerValue expression: {kind:#?}"),
 			};
 
-			const MAX_F23_INTEGER: i128 = 1_6777_215; // 2^24
+			const MAX_F23_INTEGER: i128 = 16_777_215; // 2^24
 			const MAX_F64_INTEGER: i128 = 9_007_199_254_740_992; // 2^53
 
 			if to_decimal {
@@ -663,12 +663,12 @@ impl<'a> TypeStore<'a> {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, &inner)?;
+				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, inner)?;
 				return Some(self.pointer_to(id, false)); // TODO: Parse mutability
 			}
 
 			tree::Type::Slice(inner) => {
-				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, &inner)?;
+				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, inner)?;
 				return Some(self.slice_of(id, false)); // TODO: Parse mutability
 			}
 
@@ -714,7 +714,7 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(type_arguments.len());
 		for argument in type_arguments {
-			let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, &argument)?;
+			let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, argument)?;
 			type_args.push(id);
 		}
 
@@ -968,7 +968,13 @@ impl<'a> TypeStore<'a> {
 		format!("`{}`", self.internal_type_name(function_store, module_path, type_id))
 	}
 
-	fn internal_type_name(&self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
+	// TODO: Use module path to have or not have paths for local types?
+	fn internal_type_name(
+		&self,
+		function_store: &FunctionStore,
+		_module_path: &'a [String],
+		type_id: TypeId,
+	) -> String {
 		match self.type_entries[type_id.index()].kind {
 			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 
@@ -984,7 +990,7 @@ impl<'a> TypeStore<'a> {
 						let type_arguments = specialization
 							.type_arguments
 							.iter()
-							.map(|a| self.internal_type_name(function_store, module_path, *a))
+							.map(|a| self.internal_type_name(function_store, _module_path, *a))
 							.collect::<Vec<_>>()
 							.join(", ");
 
@@ -994,7 +1000,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::Pointer { type_id, mutable } => {
-				let inner = self.internal_type_name(function_store, module_path, type_id);
+				let inner = self.internal_type_name(function_store, _module_path, type_id);
 				match mutable {
 					true => format!("&mut {}", inner),
 					false => format!("&{}", inner),
@@ -1002,7 +1008,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
-				let inner = self.internal_type_name(function_store, module_path, type_id);
+				let inner = self.internal_type_name(function_store, _module_path, type_id);
 				match mutable {
 					true => format!("[mut {}]", inner),
 					false => format!("[{}]", inner),

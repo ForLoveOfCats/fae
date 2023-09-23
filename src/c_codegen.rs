@@ -71,7 +71,7 @@ pub fn generate_code<'a>(
 	};
 
 	let mut cc = Command::new(CC)
-		.args(&[
+		.args([
 			"-x",
 			"c",
 			"-std=c11",
@@ -139,7 +139,7 @@ pub fn generate_code<'a>(
 }
 
 fn generate_initial_output(output: Output) -> Result<()> {
-	write!(output, "{}\n", include_str!("./initial_output.c"))
+	writeln!(output, "{}", include_str!("./initial_output.c"))
 }
 
 fn forward_declare_user_type(
@@ -161,7 +161,7 @@ fn forward_declare_user_type(
 
 			write!(output, " ")?;
 			generate_raw_type_id(type_store, specialization.type_id, output)?;
-			write!(output, ";\n\n")?;
+			writeln!(output, ";\n")?;
 		}
 	}
 
@@ -184,16 +184,16 @@ fn generate_user_type(
 
 			write!(output, "typedef struct ")?;
 			generate_raw_type_id(type_store, specialization.type_id, output)?;
-			write!(output, " {{\n")?;
+			writeln!(output, " {{")?;
 
 			for (index, field) in specialization.fields.iter().enumerate() {
 				generate_raw_type_id(type_store, field.type_id, output)?;
-				write!(output, " fi_{index};\n")?;
+				writeln!(output, " fi_{index};")?;
 			}
 
 			write!(output, "}} ")?;
 			generate_raw_type_id(type_store, specialization.type_id, output)?;
-			write!(output, ";\n\n")?;
+			writeln!(output, ";\n")?;
 		}
 	}
 
@@ -203,11 +203,11 @@ fn generate_user_type(
 fn generate_slice_specialization(type_store: &TypeStore, description: SliceDescription, output: Output) -> Result<()> {
 	write!(output, "typedef struct {{ ")?;
 	generate_raw_type_id(type_store, description.sliced_type_id, output)?;
-	write!(output, " const *fi_0; i64 fi_1; }} sl_{};\n\n", description.entry)?;
+	writeln!(output, " const *fi_0; i64 fi_1; }} sl_{};\n", description.entry)?;
 
 	write!(output, "typedef struct {{ ")?;
 	generate_raw_type_id(type_store, description.sliced_type_id, output)?;
-	write!(output, " *fi_0; i64 fi_1; }} sl_{};\n\n", description.entry + 1)
+	writeln!(output, " *fi_0; i64 fi_1; }} sl_{};\n", description.entry + 1)
 }
 
 fn generate_function_signature<'a>(
@@ -257,7 +257,7 @@ fn generate_function<'a>(
 	let shape = &mut function_store.shapes[function_id.function_shape_index];
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
-	assert_eq!(specialization.been_generated, false);
+	assert!(!specialization.been_generated);
 	specialization.been_generated = true;
 
 	let shape = &function_store.shapes[function_id.function_shape_index];
@@ -271,7 +271,7 @@ fn generate_function<'a>(
 	}
 
 	generate_function_signature(type_store, function_store, function_id, output)?;
-	write!(output, "{{\n")?;
+	writeln!(output, "{{")?;
 
 	let block = shape.block.clone();
 	let type_arguments = specialization.type_arguments.clone();
@@ -288,7 +288,7 @@ fn generate_function<'a>(
 
 	generate_block(&mut context, block.as_ref().unwrap(), output)?;
 
-	write!(output, "}}\n\n")
+	writeln!(output, "}}\n")
 }
 
 fn generate_block(context: &mut Context, block: &Block, output: Output) -> Result<()> {
@@ -308,15 +308,15 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 				generate_type_id(context, binding.type_id, output)?;
 				write!(output, " ")?;
 				generate_readable_index(binding.readable_index, output)?;
-				write!(output, " = {id};\n")?;
+				writeln!(output, " = {id};")?;
 			}
 
 			StatementKind::Return(statement) => {
 				if let Some(expression) = &statement.expression {
 					let id = generate_expression(context, expression, output)?.unwrap();
-					write!(output, "return {id};\n")?;
+					writeln!(output, "return {id};")?;
 				} else {
-					write!(output, "return;\n")?;
+					writeln!(output, "return;")?;
 				}
 			}
 		}
@@ -342,7 +342,7 @@ fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, outpu
 	}
 	generate_struct_construction_close(output)?;
 
-	write!(output, ";\n")?;
+	writeln!(output, ";")?;
 	Ok(id)
 }
 
@@ -371,7 +371,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 		}
 
 		generate_function_signature(context.type_store, context.function_store, function_id, output)?;
-		write!(output, ";\n")?;
+		writeln!(output, ";")?;
 	}
 
 	let shape = &context.function_store.shapes[function_id.function_shape_index];
@@ -399,7 +399,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 		write!(output, "{id}")?;
 	}
 
-	write!(output, ");\n")?;
+	writeln!(output, ");")?;
 
 	Ok(maybe_id)
 }
@@ -411,7 +411,7 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 		UnaryOperator::Negate => "-",
 	};
 
-	write!(output, "{id} = {op}({id});\n")?;
+	writeln!(output, "{id} = {op}({id});")?;
 
 	Ok(id)
 }
@@ -421,7 +421,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	let right_id = generate_expression(context, &operation.right, output)?.unwrap();
 
 	if operation.op == BinaryOperator::Assign {
-		write!(output, "{left_id} = {right_id};\n")?;
+		writeln!(output, "{left_id} = {right_id};")?;
 		return Ok(left_id);
 	}
 
@@ -436,7 +436,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	};
 	write!(output, " {} ", op)?;
 
-	write!(output, "{right_id});\n")?;
+	writeln!(output, "{right_id});")?;
 
 	Ok(left_id)
 }
@@ -454,16 +454,16 @@ fn generate_expression(
 		ExpressionKind::IntegerValue(value) => {
 			let type_id = value.get_collapse();
 			generate_type_id(context, type_id, output)?;
-			write!(output, " {id} = {};\n", value.value())?;
+			writeln!(output, " {id} = {};", value.value())?;
 		}
 
 		ExpressionKind::DecimalValue(value) => {
 			let type_id = value.get_collapse();
 			generate_type_id(context, type_id, output)?;
-			write!(output, " {id} = {};\n", value.value())?;
+			writeln!(output, " {id} = {};", value.value())?;
 		}
 
-		ExpressionKind::CodepointLiteral(literal) => write!(output, "u64 {id} = {};\n", literal.value as u32)?,
+		ExpressionKind::CodepointLiteral(literal) => writeln!(output, "u64 {id} = {};", literal.value as u32)?,
 
 		ExpressionKind::StringLiteral(literal) => {
 			let type_id = context.type_store.string_type_id();
@@ -472,11 +472,11 @@ fn generate_expression(
 			generate_struct_construction_open(context, type_id, output)?;
 			write!(output, ".fi_0 = (u8*){:?}, .fi_1 = {}", literal.value, literal.value.len())?;
 			generate_struct_construction_close(output)?;
-			write!(output, ";\n")?;
+			writeln!(output, ";")?;
 		}
 
 		ExpressionKind::StructLiteral(literal) => {
-			return generate_struct_literal(context, literal, output).map(|id| Some(id));
+			return generate_struct_literal(context, literal, output).map(Some);
 		}
 
 		ExpressionKind::Call(call) => return generate_call(context, call, output),
@@ -485,7 +485,7 @@ fn generate_expression(
 			generate_type_id(context, read.type_id, output)?;
 			write!(output, " {id} = ")?;
 			generate_readable_index(read.readable_index, output)?;
-			write!(output, ";\n")?;
+			writeln!(output, ";")?;
 		}
 
 		ExpressionKind::FieldRead(field_read) => {
@@ -496,16 +496,16 @@ fn generate_expression(
 			} else {
 				write!(output, " const *")?;
 			}
-			write!(output, "{id} = &{struct_id}.fi_{};\n", field_read.field_index)?;
+			writeln!(output, "{id} = &{struct_id}.fi_{};", field_read.field_index)?;
 			id.dereference = true;
 		}
 
 		ExpressionKind::UnaryOperation(operation) => {
-			return generate_unary_operation(context, operation, output).map(|id| Some(id));
+			return generate_unary_operation(context, operation, output).map(Some);
 		}
 
 		ExpressionKind::BinaryOperation(operation) => {
-			return generate_binary_operation(context, operation, output).map(|id| Some(id));
+			return generate_binary_operation(context, operation, output).map(Some);
 		}
 
 		kind => unimplemented!("expression {kind:?}"),

@@ -37,21 +37,21 @@ impl<'a, 'b> Context<'a, 'b> {
 	fn child_scope<'s>(&'s mut self) -> Context<'a, 's> {
 		Context {
 			file_index: self.file_index,
-			module_path: &*self.module_path,
+			module_path: self.module_path,
 
-			messages: &mut *self.messages,
+			messages: self.messages,
 
-			type_store: &mut *self.type_store,
-			function_store: &mut *self.function_store,
-			function_generic_usages: &mut *self.function_generic_usages,
+			type_store: self.type_store,
+			function_store: self.function_store,
+			function_generic_usages: self.function_generic_usages,
 
-			root_layers: &*self.root_layers,
+			root_layers: self.root_layers,
 
-			constants: &mut *self.constants,
-			readables: &mut *self.readables,
+			constants: self.constants,
+			readables: self.readables,
 
 			initial_symbols_len: self.symbols.len(),
-			symbols: &mut *self.symbols,
+			symbols: self.symbols,
 		}
 	}
 
@@ -138,7 +138,7 @@ impl<'a> RootLayers<'a> {
 	}
 
 	fn create_module_path(&mut self, path: &'a [String]) -> &mut RootLayer<'a> {
-		assert!(path.len() > 0);
+		assert!(!path.is_empty());
 		let mut layers = &mut self.layers;
 
 		for (piece_index, piece) in path.iter().enumerate() {
@@ -358,7 +358,7 @@ impl<'a> FunctionStore<'a> {
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
-			if type_store.type_arguments_direct_equal(&existing.type_arguments, &type_arguments) {
+			if type_store.type_arguments_direct_equal(&existing.type_arguments, type_arguments) {
 				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
 			}
 		}
@@ -598,7 +598,7 @@ fn create_root_types<'a>(
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		let layer = root_layers.create_module_path(parsed_file.module_path);
 		assert_eq!(layer.symbols.len(), 0);
 
 		let block = &parsed_file.block;
@@ -622,7 +622,7 @@ fn create_root_functions<'a>(
 		let index = parsed_file.source_file.index;
 
 		//Yuck, I do not like this
-		let mut symbols = root_layers.create_module_path(&parsed_file.module_path).symbols.clone();
+		let mut symbols = root_layers.create_module_path(parsed_file.module_path).symbols.clone();
 		let old_symbols_len = symbols.len();
 
 		create_block_functions(
@@ -638,12 +638,13 @@ fn create_root_functions<'a>(
 			index,
 		);
 
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		let layer = root_layers.create_module_path(parsed_file.module_path);
 		layer.importable_functions_len = symbols.len() - old_symbols_len;
 		layer.symbols = symbols;
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_root_consts<'a>(
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
@@ -659,7 +660,7 @@ fn validate_root_consts<'a>(
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
 
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		let layer = root_layers.create_module_path(parsed_file.module_path);
 		symbols.duplicate(&layer.symbols);
 		let old_symbols_len = symbols.len();
 
@@ -680,7 +681,7 @@ fn validate_root_consts<'a>(
 		validate_block_consts(&mut context, &parsed_file.block);
 		std::mem::forget(context);
 
-		let layer = root_layers.create_module_path(&parsed_file.module_path);
+		let layer = root_layers.create_module_path(parsed_file.module_path);
 		layer.importable_consts_len = symbols.len() - old_symbols_len;
 		layer.symbols.duplicate(symbols);
 	}
@@ -864,6 +865,7 @@ fn fill_block_types<'a>(
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_block_functions<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
@@ -949,7 +951,7 @@ fn create_block_functions<'a>(
 
 			drop(scope);
 			let name = statement.name;
-			let is_main = module_path == &[root_layers.root_name.as_str()] && name.item == "main";
+			let is_main = module_path == [root_layers.root_name.as_str()] && name.item == "main";
 			let shape = FunctionShape::new(name, module_path, file_index, is_main, generics, parameters, return_type);
 			function_store.shapes.push(shape);
 
@@ -1014,7 +1016,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
 			tree::Statement::Expression(statement) => {
-				let expression = match validate_expression(&mut context, &statement) {
+				let expression = match validate_expression(&mut context, statement) {
 					Some(expression) => expression,
 					None => continue,
 				};
@@ -1089,7 +1091,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
-	for (generic_index, generic) in generics.into_iter().enumerate() {
+	for (generic_index, generic) in generics.iter().enumerate() {
 		let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 		scope.push_symbol(symbol);
@@ -1242,7 +1244,7 @@ fn trace_return<'a>(context: &mut Context<'a, '_>, return_type: TypeId, block: &
 
 fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<()> {
 	let explicit_type = match &statement.item.parsed_type {
-		Some(parsed_type) => context.lookup_type(&parsed_type),
+		Some(parsed_type) => context.lookup_type(parsed_type),
 		None => None,
 	};
 
@@ -1297,7 +1299,7 @@ fn validate_binding<'a>(
 
 	let type_id = match &statement.item.parsed_type {
 		Some(parsed_type) => {
-			let explicit_type = context.lookup_type(&parsed_type)?;
+			let explicit_type = context.lookup_type(parsed_type)?;
 			if !context.collapse_to(explicit_type, &mut expression)? {
 				let expected = context.type_name(explicit_type);
 				let got = context.type_name(expression.type_id);
@@ -1331,6 +1333,7 @@ fn validate_binding<'a>(
 	Some(Binding { name, type_id, expression, readable_index, is_mutable })
 }
 
+#[allow(clippy::needless_return)]
 fn validate_expression<'a>(
 	context: &mut Context<'a, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
@@ -1339,7 +1342,7 @@ fn validate_expression<'a>(
 
 	match &expression.item {
 		tree::Expression::Block(block) => {
-			let validated_block = validate_block(context.child_scope(), &block, false);
+			let validated_block = validate_block(context.child_scope(), block, false);
 			let type_id = validated_block.type_id;
 			let kind = ExpressionKind::Block(validated_block);
 			return Some(Expression { span, type_id, is_mutable: true, kind });
@@ -1452,7 +1455,7 @@ fn validate_expression<'a>(
 
 			let mut type_arguments = Vec::new();
 			for type_argument in &call.type_arguments {
-				let type_id = context.lookup_type(&type_argument)?;
+				let type_id = context.lookup_type(type_argument)?;
 				type_arguments.push(type_id);
 			}
 

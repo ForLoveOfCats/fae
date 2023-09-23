@@ -170,7 +170,7 @@ fn parse_expression_climb<'a>(
 		result = Node::new(Expression::FieldRead(field_read), span);
 	}
 
-	while let Some(operator) = tokenizer.peek().ok().and_then(|token| token_to_operator(token)) {
+	while let Some(operator) = tokenizer.peek().ok().and_then(token_to_operator) {
 		let precedence = operator.item.precedence();
 		if precedence < min_precedence {
 			break;
@@ -448,20 +448,20 @@ fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> P
 
 		let span = first_number_token.span + second_number_token.span;
 		return Ok(Node::new(Expression::FloatLiteral(FloatLiteral { value: Node::new(value, span) }), span));
-	} else {
-		let value = match first_number_token.text.parse::<i128>() {
-			Ok(value) => value,
-
-			Err(_) => {
-				messages.message(error!("Invalid integer literal").span(first_number_token.span));
-				return Err(());
-			}
-		};
-
-		let value = Node::from_token(value, first_number_token);
-		let expression = Expression::IntegerLiteral(IntegerLiteral { value });
-		return Ok(Node::from_token(expression, first_number_token));
 	}
+
+	let value = match first_number_token.text.parse::<i128>() {
+		Ok(value) => value,
+
+		Err(_) => {
+			messages.message(error!("Invalid integer literal").span(first_number_token.span));
+			return Err(());
+		}
+	};
+
+	let value = Node::from_token(value, first_number_token);
+	let expression = Expression::IntegerLiteral(IntegerLiteral { value });
+	Ok(Node::from_token(expression, first_number_token))
 }
 
 fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Attributes<'a>> {

@@ -19,8 +19,8 @@ use std::{ffi::OsStr, path::Path};
 use project::build_project;
 
 fn main() {
-	let arg = std::env::args_os().skip(1).next();
-	if arg.as_ref().map(|a| a.as_os_str()) == Some(OsStr::new("t")) {
+	let arg = std::env::args_os().nth(1);
+	if arg.as_deref() == Some(OsStr::new("t")) {
 		test::run_tests();
 		return;
 	}
@@ -32,7 +32,7 @@ fn main() {
 		return;
 	};
 
-	let status = std::process::Command::new(&binary_path)
+	let status = std::process::Command::new(binary_path)
 		.spawn()
 		.expect("Failed to launch resulting binary")
 		.wait();

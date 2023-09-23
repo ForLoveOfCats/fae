@@ -81,7 +81,7 @@ impl<'a> Messages<'a> {
 
 	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
 		for message in &self.messages {
-			message.print(output, &self.sources, stage);
+			message.print(output, self.sources, stage);
 			writeln!(output);
 		}
 
