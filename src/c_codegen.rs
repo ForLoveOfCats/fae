@@ -25,7 +25,7 @@ struct Context<'a, 'b> {
 	type_store: &'b mut TypeStore<'a>,
 	function_store: &'b mut FunctionStore<'a>,
 	function_generate_queue: &'b mut Vec<FunctionId>,
-	function_type_arguments: &'b [TypeId],
+	function_type_arguments: &'b TypeArguments,
 	function_id: FunctionId,
 	next_temp_id: u64,
 }
@@ -258,7 +258,7 @@ fn generate_function<'a>(
 	let shape = &function_store.shapes[function_id.function_shape_index];
 	let specialization = &shape.specializations[function_id.specialization_index];
 
-	for type_argument in &specialization.type_arguments {
+	for type_argument in specialization.type_arguments.ids() {
 		let entry = &type_store.type_entries[type_argument.index()];
 		if entry.generic_poisoned {
 			return Ok(());
@@ -374,7 +374,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 
 	let mut maybe_id = None;
 	let void = context.type_store.void_type_id();
-	if !context.type_store.direct_equal(specialization.return_type, void) {
+	if !context.type_store.direct_match(specialization.return_type, void) {
 		let return_type = specialization.return_type;
 		let id = context.generate_temp_id();
 		maybe_id = Some(id);

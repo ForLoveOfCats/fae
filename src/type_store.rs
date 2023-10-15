@@ -1,5 +1,5 @@
 use crate::error::Messages;
-use crate::ir::{DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, GenericUsageKind, Symbol, SymbolKind};
+use crate::ir::{DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, Symbol, SymbolKind, TypeArguments};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
@@ -15,15 +15,15 @@ impl TypeId {
 	}
 
 	pub fn is_void(self, type_store: &TypeStore) -> bool {
-		type_store.direct_equal(self, type_store.void_type_id)
+		type_store.direct_match(self, type_store.void_type_id)
 	}
 
 	pub fn is_untyped_integer(self, type_store: &TypeStore) -> bool {
-		type_store.direct_equal(self, type_store.integer_type_id)
+		type_store.direct_match(self, type_store.integer_type_id)
 	}
 
 	pub fn is_untyped_decimal(self, type_store: &TypeStore) -> bool {
-		type_store.direct_equal(self, type_store.decimal_type_id)
+		type_store.direct_match(self, type_store.decimal_type_id)
 	}
 
 	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
@@ -340,22 +340,22 @@ impl<'a> TypeStore<'a> {
 		self.string_type_id
 	}
 
-	pub fn type_arguments_direct_equal(&self, a: &[TypeId], b: &[TypeId]) -> bool {
+	pub fn direct_match(&self, a: TypeId, b: TypeId) -> bool {
+		a.entry == b.entry
+	}
+
+	pub fn type_list_direct_match(&self, a: &[TypeId], b: &[TypeId]) -> bool {
 		if a.len() != b.len() {
 			return false;
 		}
 
 		for (a, b) in a.iter().zip(b.iter()) {
-			if !self.direct_equal(*a, *b) {
+			if !self.direct_match(*a, *b) {
 				return false;
 			}
 		}
 
 		true
-	}
-
-	pub fn direct_equal(&self, a: TypeId, b: TypeId) -> bool {
-		a.entry == b.entry
 	}
 
 	pub fn collapse_fair(&self, messages: &mut Messages<'a>, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Option<TypeId> {
@@ -689,7 +689,7 @@ impl<'a> TypeStore<'a> {
 
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
 				let generics = &function_store.generics[function_shape_index];
-				let generic = &generics[generic_index];
+				let generic = &generics.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
 
@@ -736,7 +736,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		for existing in &shape.specializations {
-			if self.type_arguments_direct_equal(&existing.type_arguments, &type_arguments) {
+			if self.type_list_direct_match(&existing.type_arguments, &type_arguments) {
 				return Some(existing.type_id);
 			}
 		}
@@ -767,8 +767,7 @@ impl<'a> TypeStore<'a> {
 		self.type_entries.push(entry);
 
 		if type_arguments_generic_poisoned {
-			let kind = GenericUsageKind::UserType { shape_index };
-			let usage = GenericUsage { type_arguments, kind };
+			let usage = GenericUsage::UserType { type_arguments, shape_index };
 			generic_usages.push(usage)
 		}
 
@@ -857,7 +856,7 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages,
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
-		function_type_arguments: &[TypeId],
+		function_type_arguments: &TypeArguments,
 		type_id: TypeId,
 	) -> TypeId {
 		let entry = self.type_entries[type_id.index()];
@@ -886,7 +885,7 @@ impl<'a> TypeStore<'a> {
 
 								TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
 									assert_eq!(function_shape_index, *shape_index);
-									new_struct_type_arguments.push(function_type_arguments[*generic_index]);
+									new_struct_type_arguments.push(function_type_arguments.ids()[*generic_index]);
 								}
 
 								_ => new_struct_type_arguments.push(struct_type_argument),
@@ -931,7 +930,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
 				assert_eq!(function_shape_index, *shape_index);
-				function_type_arguments[*generic_index]
+				function_type_arguments.ids()[*generic_index]
 			}
 		}
 	}
@@ -984,7 +983,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
 				let shape = &function_store.shapes[function_shape_index];
-				let generic = &shape.generics[generic_index];
+				let generic = &shape.generics.parameters()[generic_index];
 				generic.name.item.to_owned()
 			}
 

@@ -4,6 +4,7 @@ use crate::error::Messages;
 use crate::span::Span;
 use crate::tree::{BinaryOperator, Node};
 use crate::type_store::*;
+use crate::validator::FunctionStore;
 
 /*
  * The current structure of the IR utilizes nested `Box`-es and `Vec`-es which is rather inefficient
@@ -79,15 +80,100 @@ pub struct GenericParameter<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct GenericUsage {
-	pub type_arguments: Vec<TypeId>,
-	pub kind: GenericUsageKind,
+pub struct GenericParameters<'a> {
+	parameters: Vec<GenericParameter<'a>>,
+	explicit_len: usize,
+	implicit_len: usize,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum GenericUsageKind {
-	UserType { shape_index: usize },
-	Function { function_shape_index: usize },
+impl<'a> GenericParameters<'a> {
+	pub fn new_from_explicit(explicit: Vec<GenericParameter<'a>>) -> Self {
+		let explicit_len = explicit.len();
+		GenericParameters { parameters: explicit, explicit_len, implicit_len: 0 }
+	}
+
+	pub fn push_implicit(&mut self, implict: GenericParameter<'a>) {
+		self.parameters.push(implict);
+		self.implicit_len += 1;
+	}
+
+	pub fn parameters(&self) -> &[GenericParameter<'a>] {
+		&self.parameters
+	}
+
+	pub fn explicit_len(&self) -> usize {
+		self.explicit_len
+	}
+
+	pub fn implicit_len(&self) -> usize {
+		self.implicit_len
+	}
+}
+
+#[derive(Debug, Clone)]
+pub enum GenericUsage {
+	UserType { type_arguments: Vec<TypeId>, shape_index: usize },
+	Function { type_arguments: TypeArguments, function_shape_index: usize },
+}
+
+impl GenericUsage {
+	pub fn apply_specialization<'a>(
+		&self,
+		messages: &mut Messages<'a>,
+		type_store: &mut TypeStore<'a>,
+		function_store: &mut FunctionStore<'a>,
+		generic_usages: &mut Vec<GenericUsage>,
+		function_shape_index: usize,
+		function_type_arguments: &TypeArguments,
+		invoke_span: Option<Span>,
+	) {
+		match self {
+			GenericUsage::UserType { type_arguments, shape_index } => {
+				let mut specialized_type_arguments = Vec::with_capacity(type_arguments.len());
+				for &type_argument in type_arguments {
+					let type_id = type_store.specialize_with_function_generics(
+						messages,
+						generic_usages,
+						function_shape_index,
+						function_type_arguments,
+						type_argument,
+					);
+					specialized_type_arguments.push(type_id);
+				}
+
+				type_store.get_or_add_shape_specialization(
+					messages,
+					generic_usages,
+					*shape_index,
+					None,
+					specialized_type_arguments,
+				);
+			}
+
+			GenericUsage::Function {
+				type_arguments,
+				function_shape_index: usage_function_shape_index,
+			} => {
+				let mut type_arguments = type_arguments.clone();
+				type_arguments.specialize_with_function_generics(
+					messages,
+					type_store,
+					generic_usages,
+					function_shape_index,
+					function_type_arguments,
+				);
+
+				function_store.get_or_add_specialization(
+					messages,
+					type_store,
+					generic_usages,
+					*usage_function_shape_index,
+					invoke_span,
+					type_arguments,
+				);
+			}
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +183,7 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
-	pub generics: Vec<GenericParameter<'a>>,
+	pub generics: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: TypeId,
 	pub block: Option<Rc<Block<'a>>>,
@@ -118,7 +204,7 @@ impl<'a> FunctionShape<'a> {
 		module_path: &'a [String],
 		file_index: usize,
 		is_main: bool,
-		generics: Vec<GenericParameter<'a>>,
+		generics: GenericParameters<'a>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: TypeId,
 	) -> Self {
@@ -146,8 +232,84 @@ pub struct ParameterShape<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypeArguments {
+	ids: Vec<TypeId>,
+	explicit_len: usize,
+	implicit_len: usize,
+}
+
+impl TypeArguments {
+	pub fn new_from_explicit(explicit: Vec<TypeId>) -> TypeArguments {
+		let explicit_len = explicit.len();
+		TypeArguments { ids: explicit, explicit_len, implicit_len: 0 }
+	}
+
+	pub fn push_implicit(&mut self, implict: TypeId) {
+		self.ids.push(implict);
+		self.implicit_len += 1;
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.ids.is_empty()
+	}
+
+	pub fn explicit_len(&self) -> usize {
+		self.explicit_len
+	}
+
+	pub fn implicit_len(&self) -> usize {
+		self.implicit_len
+	}
+
+	pub fn ids(&self) -> &[TypeId] {
+		&self.ids
+	}
+
+	pub fn matches(&self, other: &TypeArguments, type_store: &TypeStore) -> bool {
+		if self.implicit_len != other.implicit_len || self.explicit_len != other.explicit_len {
+			return false;
+		}
+
+		for (index, &implicit) in self.ids[..self.implicit_len].iter().enumerate() {
+			if !type_store.direct_match(implicit, other.ids[index]) {
+				return false;
+			}
+		}
+
+		for (index, &explicit) in self.ids[self.implicit_len..].iter().enumerate() {
+			if !type_store.direct_match(explicit, other.ids[index]) {
+				return false;
+			}
+		}
+
+		true
+	}
+
+	pub fn specialize_with_function_generics(
+		&mut self,
+		messages: &mut Messages,
+		type_store: &mut TypeStore,
+		generic_usages: &mut Vec<GenericUsage>,
+		function_shape_index: usize,
+		function_type_arguments: &TypeArguments,
+	) {
+		for original_id in &mut self.ids {
+			let new_id = type_store.specialize_with_function_generics(
+				messages,
+				generic_usages,
+				function_shape_index,
+				&function_type_arguments,
+				*original_id,
+			);
+
+			*original_id = new_id;
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
 pub struct Function<'a> {
-	pub type_arguments: Vec<TypeId>,
+	pub type_arguments: TypeArguments,
 	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
 	pub been_queued: bool,

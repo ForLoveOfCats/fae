@@ -339,7 +339,7 @@ pub struct FunctionStore<'a> {
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
-	pub generics: Vec<Vec<GenericParameter<'a>>>,
+	pub generics: Vec<GenericParameters<'a>>,
 
 	pub main: Option<FunctionId>,
 }
@@ -353,11 +353,11 @@ impl<'a> FunctionStore<'a> {
 		&self,
 		type_store: &TypeStore<'a>,
 		function_shape_index: usize,
-		type_arguments: &[TypeId],
+		type_arguments: &TypeArguments,
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
-			if type_store.type_arguments_direct_equal(&existing.type_arguments, type_arguments) {
+			if existing.type_arguments.matches(type_arguments, type_store) {
 				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
 			}
 		}
@@ -365,18 +365,30 @@ impl<'a> FunctionStore<'a> {
 		None
 	}
 
-	fn get_or_add_specialization(
+	pub fn get_or_add_specialization(
 		&mut self,
-		messages: &mut Messages,
+		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: Vec<TypeId>,
+		type_arguments: TypeArguments,
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
-		if shape.generics.len() != type_arguments.len() {
-			let error = error!("Expected {} type arguments, got {}", shape.generics.len(), type_arguments.len());
+
+		if shape.generics.explicit_len() != type_arguments.explicit_len() {
+			let expected = shape.generics.explicit_len();
+			let got = type_arguments.explicit_len();
+			let error = error!("Expected {expected} type arguments, got {got}");
+			messages.message(error.span_if_some(invoke_span));
+			return None;
+		}
+
+		// TODO: Should this be an ICE instead?
+		if shape.generics.implicit_len() != type_arguments.implicit_len() {
+			let expected = shape.generics.implicit_len();
+			let got = type_arguments.implicit_len();
+			let error = error!("Expected {expected} implicit type arguments, got {got}");
 			messages.message(error.span_if_some(invoke_span));
 			return None;
 		}
@@ -387,6 +399,7 @@ impl<'a> FunctionStore<'a> {
 
 		let shape = &mut self.shapes[function_shape_index];
 		let type_arguments_generic_poisoned = type_arguments
+			.ids()
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
 
@@ -427,42 +440,21 @@ impl<'a> FunctionStore<'a> {
 		shape.specializations.push(concrete);
 
 		if type_arguments_generic_poisoned {
-			let kind = GenericUsageKind::Function { function_shape_index };
-			let usage = GenericUsage { type_arguments, kind };
+			let usage = GenericUsage::Function { type_arguments, function_shape_index };
 			generic_usages.push(usage)
 		} else {
 			let function_type_arguments = type_arguments;
 
 			for generic_usage in shape.generic_usages.clone() {
-				let mut type_arguments = Vec::with_capacity(generic_usage.type_arguments.len());
-				for &type_argument in &generic_usage.type_arguments {
-					let type_id = type_store.specialize_with_function_generics(
-						messages,
-						generic_usages,
-						function_shape_index,
-						&function_type_arguments,
-						type_argument,
-					);
-
-					type_arguments.push(type_id);
-				}
-
-				match generic_usage.kind {
-					GenericUsageKind::UserType { shape_index } => {
-						type_store.get_or_add_shape_specialization(messages, generic_usages, shape_index, None, type_arguments);
-					}
-
-					GenericUsageKind::Function { function_shape_index } => {
-						self.get_or_add_specialization(
-							messages,
-							type_store,
-							generic_usages,
-							function_shape_index,
-							invoke_span,
-							type_arguments,
-						);
-					}
-				}
+				generic_usage.apply_specialization(
+					messages,
+					type_store,
+					self,
+					generic_usages,
+					function_shape_index,
+					&function_type_arguments,
+					invoke_span,
+				);
 			}
 		}
 
@@ -475,7 +467,7 @@ impl<'a> FunctionStore<'a> {
 		type_store: &mut TypeStore<'a>,
 		function_id: FunctionId,
 		caller_shape_index: usize,
-		caller_type_arguments: &[TypeId],
+		caller_type_arguments: &TypeArguments,
 	) -> FunctionId {
 		let shape = &self.shapes[function_id.function_shape_index];
 		let specialization = &shape.specializations[function_id.specialization_index];
@@ -485,26 +477,23 @@ impl<'a> FunctionStore<'a> {
 
 		let generic_poisoned = specialization
 			.type_arguments
+			.ids()
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
 		if !generic_poisoned {
 			return function_id;
 		}
 
-		let mut type_arguments = Vec::with_capacity(specialization.type_arguments.len());
+		// let mut type_arguments = Vec::with_capacity(specialization.type_arguments.len());
 		let mut generic_usages = Vec::new();
-		for &type_argument in &specialization.type_arguments {
-			let type_id = type_store.specialize_with_function_generics(
-				messages,
-				&mut generic_usages,
-				caller_shape_index,
-				caller_type_arguments,
-				type_argument,
-			);
-
-			assert!(generic_usages.is_empty());
-			type_arguments.push(type_id);
-		}
+		let mut type_arguments = specialization.type_arguments.clone();
+		type_arguments.specialize_with_function_generics(
+			messages,
+			type_store,
+			&mut generic_usages,
+			caller_shape_index,
+			caller_type_arguments,
+		);
 
 		let result = self
 			.get_specialization(type_store, function_id.function_shape_index, &type_arguments)
@@ -875,15 +864,18 @@ fn create_block_functions<'a>(
 			let scope = symbols.child_scope();
 			let function_shape_index = function_store.shapes.len();
 
-			let mut generics = Vec::new();
+			let mut explicit_generics = Vec::new();
 			for (generic_index, &generic) in statement.generics.iter().enumerate() {
 				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-				generics.push(GenericParameter { name: generic, generic_type_id });
+				explicit_generics.push(GenericParameter { name: generic, generic_type_id });
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
 				scope.symbols.push_symbol(messages, symbol);
 			}
+
+			let generics = GenericParameters::new_from_explicit(explicit_generics);
+			// TODO: Add implicit generic parameters
 
 			function_store.generics.push(generics.clone());
 
@@ -1077,7 +1069,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
-	for (generic_index, generic) in generics.iter().enumerate() {
+	for (generic_index, generic) in generics.parameters().iter().enumerate() {
 		let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 		scope.push_symbol(symbol);
@@ -1112,47 +1104,21 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	assert!(shape.block.is_none());
 	shape.block = Some(Rc::new(block));
 
-	let generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
+	let mut generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
 	context.function_generic_usages.truncate(initial_generic_usages_len);
 
 	if !generic_usages.is_empty() && !shape.specializations.is_empty() {
 		for specialization in shape.specializations.clone() {
-			for generic_usage in &generic_usages {
-				let mut type_arguments = Vec::with_capacity(generic_usage.type_arguments.len());
-				for &type_argument in &generic_usage.type_arguments {
-					let type_id = context.type_store.specialize_with_function_generics(
-						context.messages,
-						&mut Vec::new(),
-						function_shape_index,
-						&specialization.type_arguments,
-						type_argument,
-					);
-
-					type_arguments.push(type_id);
-				}
-
-				match generic_usage.kind {
-					GenericUsageKind::UserType { shape_index } => {
-						context.type_store.get_or_add_shape_specialization(
-							context.messages,
-							context.function_generic_usages,
-							shape_index,
-							None,
-							type_arguments,
-						);
-					}
-
-					GenericUsageKind::Function { function_shape_index } => {
-						context.function_store.get_or_add_specialization(
-							context.messages,
-							context.type_store,
-							context.function_generic_usages,
-							function_shape_index,
-							None,
-							type_arguments,
-						);
-					}
-				}
+			for generic_usage in generic_usages.clone().iter() {
+				generic_usage.apply_specialization(
+					context.messages,
+					context.type_store,
+					context.function_store,
+					&mut generic_usages,
+					function_shape_index,
+					&specialization.type_arguments,
+					None,
+				);
 			}
 		}
 	}
@@ -1168,7 +1134,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 			context.function_generic_usages,
 			function_shape_index,
 			None,
-			Vec::new(),
+			TypeArguments::new_from_explicit(Vec::new()),
 		);
 
 		if let Some(result) = result {
@@ -1433,11 +1399,14 @@ fn validate_expression<'a>(
 				}
 			};
 
-			let mut type_arguments = Vec::new();
+			let mut explicit_arguments = Vec::new();
 			for type_argument in &call.type_arguments {
 				let type_id = context.lookup_type(type_argument)?;
-				type_arguments.push(type_id);
+				explicit_arguments.push(type_id);
 			}
+
+			let type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
+			// TODO: Add implicit arguments
 
 			let results = context.function_store.get_or_add_specialization(
 				context.messages,
