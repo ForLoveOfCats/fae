@@ -663,7 +663,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		assert!(!path_segments.item.segments.is_empty());
-		let symbol = symbols.lookup_symbol(messages, root_layers, self, &path_segments.item)?;
+		let symbol = symbols.lookup_symbol(messages, root_layers, self, 0, &path_segments.item)?;
 
 		let shape_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_id } => {

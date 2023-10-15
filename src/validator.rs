@@ -24,6 +24,7 @@ pub struct Context<'a, 'b> {
 	readables: &'b mut Readables<'a>,
 
 	initial_symbols_len: usize,
+	function_initial_symbols_len: usize,
 	symbols: &'b mut Symbols<'a>,
 }
 
@@ -51,6 +52,7 @@ impl<'a, 'b> Context<'a, 'b> {
 			readables: self.readables,
 
 			initial_symbols_len: self.symbols.len(),
+			function_initial_symbols_len: self.function_initial_symbols_len,
 			symbols: self.symbols,
 		}
 	}
@@ -60,7 +62,8 @@ impl<'a, 'b> Context<'a, 'b> {
 	}
 
 	fn push_symbol(&mut self, symbol: Symbol<'a>) {
-		self.symbols.push_symbol(self.messages, symbol);
+		self.symbols
+			.push_symbol(self.messages, self.function_initial_symbols_len, symbol);
 	}
 
 	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
@@ -79,7 +82,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
 	fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
 		self.symbols
-			.lookup_symbol(self.messages, self.root_layers, self.type_store, path)
+			.lookup_symbol(self.messages, self.root_layers, self.type_store, self.function_initial_symbols_len, path)
 	}
 
 	fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
@@ -193,9 +196,9 @@ impl<'a> Symbols<'a> {
 		SymbolsScope { initial_symbols_len: self.len(), symbols: self }
 	}
 
-	fn push_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>) {
+	fn push_symbol(&mut self, messages: &mut Messages, function_initial_symbol_len: usize, symbol: Symbol<'a>) {
 		// TODO: Allow duplicate symbol when symbol is variable
-		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
+		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
 			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 			messages.message(
 				error!("Duplicate symbol `{}`", symbol.name)
@@ -207,8 +210,14 @@ impl<'a> Symbols<'a> {
 		}
 	}
 
-	fn push_imported_symbol(&mut self, messages: &mut Messages, symbol: Symbol<'a>, import_span: Span) {
-		if let Some(found) = self.symbols.iter().rev().find(|s| s.name == symbol.name) {
+	fn push_imported_symbol(
+		&mut self,
+		messages: &mut Messages,
+		function_initial_symbol_len: usize,
+		symbol: Symbol<'a>,
+		import_span: Span,
+	) {
+		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
 			messages.message(
 				error!("Import conflicts with local symbol `{}`", found.name)
 					.span(import_span)
@@ -219,11 +228,36 @@ impl<'a> Symbols<'a> {
 		}
 	}
 
+	fn find_local_symbol_matching_name(&self, function_initial_symbol_len: usize, name: &str) -> Option<Symbol<'a>> {
+		let mut index = self.symbols.len();
+		for &symbol in self.symbols.iter().rev() {
+			index -= 1;
+
+			if symbol.name == name {
+				if index < function_initial_symbol_len {
+					match symbol.kind {
+						SymbolKind::Function { .. }
+						| SymbolKind::Type { .. }
+						| SymbolKind::Const { .. }
+						| SymbolKind::BuiltinType { .. } => {}
+
+						_ => break,
+					}
+				}
+
+				return Some(symbol);
+			}
+		}
+
+		None
+	}
+
 	pub fn lookup_symbol(
 		&self,
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
 		type_store: &TypeStore<'a>,
+		function_initial_symbol_len: usize,
 		path: &PathSegments<'a>,
 	) -> Option<Symbol<'a>> {
 		assert!(!path.is_empty());
@@ -236,7 +270,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			if let Some(&found) = self.symbols.iter().rev().find(|symbol| symbol.name == name) {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, name) {
 				return Some(found);
 			}
 
@@ -562,6 +596,7 @@ pub fn validate<'a>(
 			constants: &mut constants,
 			readables: &mut readables,
 			initial_symbols_len: symbols.len(),
+			function_initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
 		};
 
@@ -584,7 +619,7 @@ fn create_root_types<'a>(
 		assert_eq!(layer.symbols.len(), 0);
 
 		let block = &parsed_file.block;
-		create_block_types(messages, type_store, &mut layer.symbols, parsed_file.module_path, block, true);
+		create_block_types(messages, type_store, &mut layer.symbols, 0, parsed_file.module_path, block, true);
 
 		layer.importable_types_len = layer.symbols.len();
 	}
@@ -615,6 +650,7 @@ fn create_root_functions<'a>(
 			root_layers,
 			readables,
 			&mut symbols,
+			0,
 			parsed_file.module_path,
 			block,
 			index,
@@ -657,6 +693,7 @@ fn validate_root_consts<'a>(
 			constants,
 			readables,
 			initial_symbols_len: symbols.len(),
+			function_initial_symbols_len: symbols.len(),
 			symbols,
 		};
 
@@ -673,6 +710,7 @@ fn resolve_block_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
 	block: &tree::Block<'a>,
 ) {
 	for statement in &block.statements {
@@ -691,7 +729,7 @@ fn resolve_block_type_imports<'a>(
 
 		for &importing in layer.importable_types() {
 			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, importing, name.span);
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, name.span);
 			}
 		}
 	}
@@ -701,6 +739,7 @@ fn resolve_block_non_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
 	block: &tree::Block<'a>,
 ) {
 	for statement in &block.statements {
@@ -719,13 +758,13 @@ fn resolve_block_non_type_imports<'a>(
 
 		for &importing in layer.importable_functions() {
 			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, importing, name.span);
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, name.span);
 			}
 		}
 
 		for &importing in layer.importable_consts() {
 			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, importing, name.span);
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, name.span);
 			}
 		}
 	}
@@ -735,6 +774,7 @@ fn create_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
 	module_path: &'a [String],
 	block: &tree::Block<'a>,
 	is_root: bool,
@@ -778,7 +818,7 @@ fn create_block_types<'a>(
 			let kind = UserTypeKind::Struct { shape };
 			let span = statement.name.span;
 			let symbol = type_store.register_type(name, kind, span, module_path);
-			symbols.push_symbol(messages, symbol);
+			symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 		}
 	}
 }
@@ -790,6 +830,7 @@ fn fill_block_types<'a>(
 	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
 	block: &tree::Block<'a>,
 ) {
 	for statement in &block.statements {
@@ -816,7 +857,7 @@ fn fill_block_types<'a>(
 			for (generic_index, generic) in shape.generics.iter().enumerate() {
 				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
 				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-				scope.symbols.push_symbol(messages, symbol);
+				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
 			for field in &statement.fields {
@@ -855,6 +896,7 @@ fn create_block_functions<'a>(
 	root_layers: &RootLayers<'a>,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
 	module_path: &'a [String],
 	block: &'a tree::Block<'a>,
 	file_index: usize,
@@ -871,7 +913,7 @@ fn create_block_functions<'a>(
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
-				scope.symbols.push_symbol(messages, symbol);
+				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
 			let generics = GenericParameters::new_from_explicit(explicit_generics);
@@ -936,7 +978,7 @@ fn create_block_functions<'a>(
 			let kind = SymbolKind::Function { function_shape_index };
 			let span = Some(statement.name.span);
 			let symbol = Symbol { name: name.item, kind, span };
-			symbols.push_symbol(messages, symbol);
+			symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 		}
 	}
 }
@@ -951,7 +993,15 @@ fn validate_block_consts<'a>(context: &mut Context<'a, '_>, block: &'a tree::Blo
 
 fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
 	if !is_root {
-		create_block_types(context.messages, context.type_store, context.symbols, context.module_path, block, false);
+		create_block_types(
+			context.messages,
+			context.type_store,
+			context.symbols,
+			context.function_initial_symbols_len,
+			context.module_path,
+			block,
+			false,
+		);
 	}
 	fill_block_types(
 		context.messages,
@@ -960,10 +1010,23 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 		context.function_generic_usages,
 		context.root_layers,
 		context.symbols,
+		context.function_initial_symbols_len,
 		block,
 	);
-	resolve_block_type_imports(context.messages, context.root_layers, context.symbols, block);
-	resolve_block_non_type_imports(context.messages, context.root_layers, context.symbols, block);
+	resolve_block_type_imports(
+		context.messages,
+		context.root_layers,
+		context.symbols,
+		context.function_initial_symbols_len,
+		block,
+	);
+	resolve_block_non_type_imports(
+		context.messages,
+		context.root_layers,
+		context.symbols,
+		context.function_initial_symbols_len,
+		block,
+	);
 
 	if !is_root {
 		create_block_functions(
@@ -974,6 +1037,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.root_layers,
 			context.readables,
 			context.symbols,
+			context.function_initial_symbols_len,
 			context.module_path,
 			block,
 			context.file_index,
@@ -1066,6 +1130,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 	};
 
 	let mut scope = context.child_scope();
+	scope.function_initial_symbols_len = scope.symbols.len();
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
