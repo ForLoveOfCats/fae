@@ -92,6 +92,7 @@ impl<'a, 'b> Context<'a, 'b> {
 			self.function_generic_usages,
 			self.root_layers,
 			self.symbols,
+			self.function_initial_symbols_len,
 			parsed_type,
 		)
 	}
@@ -650,7 +651,6 @@ fn create_root_functions<'a>(
 			root_layers,
 			readables,
 			&mut symbols,
-			0,
 			parsed_file.module_path,
 			block,
 			index,
@@ -867,6 +867,7 @@ fn fill_block_types<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
+					function_initial_symbols_len,
 					&field.parsed_type,
 				) {
 					Some(type_id) => type_id,
@@ -896,7 +897,6 @@ fn create_block_functions<'a>(
 	root_layers: &RootLayers<'a>,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
 	module_path: &'a [String],
 	block: &'a tree::Block<'a>,
 	file_index: usize,
@@ -904,6 +904,7 @@ fn create_block_functions<'a>(
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
 			let scope = symbols.child_scope();
+			let function_initial_symbols_len = scope.symbols.len();
 			let function_shape_index = function_store.shapes.len();
 
 			let mut explicit_generics = Vec::new();
@@ -922,8 +923,15 @@ fn create_block_functions<'a>(
 			function_store.generics.push(generics.clone());
 
 			let return_type = if let Some(parsed_type) = &statement.parsed_type {
-				let type_id =
-					type_store.lookup_type(messages, function_store, generic_usages, root_layers, scope.symbols, parsed_type);
+				let type_id = type_store.lookup_type(
+					messages,
+					function_store,
+					generic_usages,
+					root_layers,
+					scope.symbols,
+					function_initial_symbols_len,
+					parsed_type,
+				);
 
 				let return_type = match type_id {
 					Some(type_id) => type_id,
@@ -948,6 +956,7 @@ fn create_block_functions<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
+					function_initial_symbols_len,
 					&parameter.item.parsed_type,
 				);
 
@@ -1037,7 +1046,6 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.root_layers,
 			context.readables,
 			context.symbols,
-			context.function_initial_symbols_len,
 			context.module_path,
 			block,
 			context.file_index,

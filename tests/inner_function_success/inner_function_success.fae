@@ -1,0 +1,27 @@
+fn main() {
+	let a: f64 = outer_i32(3)
+	let b: u64 = outer_generic[u64](7)
+}
+
+
+fn outer_i32(arg: i32): f64 {
+	let a = "Hi"
+
+	fn inner(arg: i32): f64 {
+		let a = "Hello"
+		return 3.2
+	}
+
+	return inner(arg + 1)
+}
+
+
+generic T
+fn outer_generic(arg: T): T {
+	generic T
+	fn inner(arg: T): T {
+		return arg
+	}
+
+	return inner[T](arg)
+}

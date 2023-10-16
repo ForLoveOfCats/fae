@@ -644,18 +644,35 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
+		function_initial_symbols_len: usize,
 		parsed_type: &Node<tree::Type<'a>>,
 	) -> Option<TypeId> {
 		let (path_segments, type_arguments) = match &parsed_type.item {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Reference(inner) => {
-				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, inner)?;
+				let id = self.lookup_type(
+					messages,
+					function_store,
+					generic_usages,
+					root_layers,
+					symbols,
+					function_initial_symbols_len,
+					inner,
+				)?;
 				return Some(self.pointer_to(id, false)); // TODO: Parse mutability
 			}
 
 			tree::Type::Slice(inner) => {
-				let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, inner)?;
+				let id = self.lookup_type(
+					messages,
+					function_store,
+					generic_usages,
+					root_layers,
+					symbols,
+					function_initial_symbols_len,
+					inner,
+				)?;
 				return Some(self.slice_of(id, false)); // TODO: Parse mutability
 			}
 
@@ -663,7 +680,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		assert!(!path_segments.item.segments.is_empty());
-		let symbol = symbols.lookup_symbol(messages, root_layers, self, 0, &path_segments.item)?;
+		let symbol = symbols.lookup_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
 
 		let shape_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_id } => {
@@ -701,7 +718,15 @@ impl<'a> TypeStore<'a> {
 
 		let mut type_args = Vec::with_capacity(type_arguments.len());
 		for argument in type_arguments {
-			let id = self.lookup_type(messages, function_store, generic_usages, root_layers, symbols, argument)?;
+			let id = self.lookup_type(
+				messages,
+				function_store,
+				generic_usages,
+				root_layers,
+				symbols,
+				function_initial_symbols_len,
+				argument,
+			)?;
 			type_args.push(id);
 		}
 
