@@ -8,7 +8,7 @@ use crate::tree::{self, BinaryOperator, PathSegments};
 use crate::type_store::*;
 
 #[derive(Debug)]
-pub struct Context<'a, 'b> {
+pub struct Context<'a, 'b, 'c> {
 	file_index: usize,
 	module_path: &'a [String],
 
@@ -26,16 +26,18 @@ pub struct Context<'a, 'b> {
 	initial_symbols_len: usize,
 	function_initial_symbols_len: usize,
 	symbols: &'b mut Symbols<'a>,
+
+	generic_parameters: &'c GenericParameters<'a>,
 }
 
-impl<'a, 'b> Drop for Context<'a, 'b> {
+impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
 	fn drop(&mut self) {
 		self.symbols.symbols.truncate(self.initial_symbols_len);
 	}
 }
 
-impl<'a, 'b> Context<'a, 'b> {
-	fn child_scope<'s>(&'s mut self) -> Context<'a, 's> {
+impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
+	fn child_scope<'s>(&'s mut self) -> Context<'a, 's, 'c> {
 		Context {
 			file_index: self.file_index,
 			module_path: self.module_path,
@@ -54,6 +56,35 @@ impl<'a, 'b> Context<'a, 'b> {
 			initial_symbols_len: self.symbols.len(),
 			function_initial_symbols_len: self.function_initial_symbols_len,
 			symbols: self.symbols,
+
+			generic_parameters: self.generic_parameters,
+		}
+	}
+
+	fn child_scope_with_generic_parameters<'s, 't>(
+		&'s mut self,
+		generic_parameters: &'t GenericParameters<'a>,
+	) -> Context<'a, 's, 't> {
+		Context {
+			file_index: self.file_index,
+			module_path: self.module_path,
+
+			messages: self.messages,
+
+			type_store: self.type_store,
+			function_store: self.function_store,
+			function_generic_usages: self.function_generic_usages,
+
+			root_layers: self.root_layers,
+
+			constants: self.constants,
+			readables: self.readables,
+
+			initial_symbols_len: self.symbols.len(),
+			function_initial_symbols_len: self.function_initial_symbols_len,
+			symbols: self.symbols,
+
+			generic_parameters,
 		}
 	}
 
@@ -586,6 +617,7 @@ pub fn validate<'a>(
 		let layer = root_layers.create_module_path(module_path);
 		symbols.duplicate(&layer.symbols);
 
+		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let context = Context {
 			file_index,
 			module_path,
@@ -599,6 +631,7 @@ pub fn validate<'a>(
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
+			generic_parameters: &blank_generic_parameters,
 		};
 
 		validate_block(context, &parsed_file.block, true);
@@ -652,6 +685,7 @@ fn create_root_functions<'a>(
 			readables,
 			&mut symbols,
 			parsed_file.module_path,
+			&GenericParameters::new_from_explicit(Vec::new()),
 			block,
 			index,
 		);
@@ -682,6 +716,7 @@ fn validate_root_consts<'a>(
 		symbols.duplicate(&layer.symbols);
 		let old_symbols_len = symbols.len();
 
+		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut context = Context {
 			file_index,
 			module_path,
@@ -695,6 +730,7 @@ fn validate_root_consts<'a>(
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
 			symbols,
+			generic_parameters: &blank_generic_parameters,
 		};
 
 		validate_block_consts(&mut context, &parsed_file.block);
@@ -898,6 +934,7 @@ fn create_block_functions<'a>(
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &'a tree::Block<'a>,
 	file_index: usize,
 ) {
@@ -917,8 +954,19 @@ fn create_block_functions<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			let generics = GenericParameters::new_from_explicit(explicit_generics);
-			// TODO: Add implicit generic parameters
+			let explicit_generics_len = explicit_generics.len();
+			let mut generics = GenericParameters::new_from_explicit(explicit_generics);
+			for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+				let generic_index = explicit_generics_len + index;
+				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
+				let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+				generics.push_implicit(parameter);
+
+				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
+				let span = Some(parent_parameter.name.span);
+				let symbol = Symbol { name: parent_parameter.name.item, kind, span };
+				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+			}
 
 			function_store.generics.push(generics.clone());
 
@@ -992,7 +1040,7 @@ fn create_block_functions<'a>(
 	}
 }
 
-fn validate_block_consts<'a>(context: &mut Context<'a, '_>, block: &'a tree::Block<'a>) {
+fn validate_block_consts<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {
 	for statement in &block.statements {
 		if let tree::Statement::Const(statement) = statement {
 			validate_const(context, statement);
@@ -1000,7 +1048,7 @@ fn validate_block_consts<'a>(context: &mut Context<'a, '_>, block: &'a tree::Blo
 	}
 }
 
-fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
+fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'a>, is_root: bool) -> Block<'a> {
 	if !is_root {
 		create_block_types(
 			context.messages,
@@ -1047,6 +1095,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 			context.readables,
 			context.symbols,
 			context.module_path,
+			context.generic_parameters,
 			block,
 			context.file_index,
 		);
@@ -1123,7 +1172,7 @@ fn validate_block<'a>(mut context: Context<'a, '_>, block: &'a tree::Block<'a>, 
 	Block { type_id, statements }
 }
 
-fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Function<'a>) {
+fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>) {
 	let function_shape_index = context.symbols.symbols.iter().rev().find_map(|symbol| {
 		if let SymbolKind::Function { function_shape_index: shape_index } = symbol.kind {
 			if symbol.name == statement.name.item {
@@ -1137,11 +1186,11 @@ fn validate_function<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Fun
 		return;
 	};
 
-	let mut scope = context.child_scope();
+	let generics = context.function_store.shapes[function_shape_index].generics.clone();
+	let mut scope = context.child_scope_with_generic_parameters(&generics);
 	scope.function_initial_symbols_len = scope.symbols.len();
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
-	let generics = &scope.function_store.shapes[function_shape_index].generics.clone();
 	for (generic_index, generic) in generics.parameters().iter().enumerate() {
 		let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
@@ -1232,7 +1281,7 @@ enum TracedReturn {
 
 // TODO: Update once flow control gets added
 // See https://github.com/ForLoveOfCats/Mountain/blob/OriginalC/compiler/validator.c#L1007
-fn trace_return<'a>(context: &mut Context<'a, '_>, return_type: TypeId, block: &mut Block<'a>) -> TracedReturn {
+fn trace_return<'a>(context: &mut Context<'a, '_, '_>, return_type: TypeId, block: &mut Block<'a>) -> TracedReturn {
 	for statement in &mut block.statements {
 		let StatementKind::Return(statement) = &mut statement.kind else {
 			continue;
@@ -1267,7 +1316,7 @@ fn trace_return<'a>(context: &mut Context<'a, '_>, return_type: TypeId, block: &
 	TracedReturn::NotCovered
 }
 
-fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<()> {
+fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<()> {
 	let explicit_type = match &statement.item.parsed_type {
 		Some(parsed_type) => context.lookup_type(parsed_type),
 		None => None,
@@ -1316,7 +1365,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<t
 	Some(())
 }
 
-fn validate_binding<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
+fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
 	let mut expression = validate_expression(context, &statement.item.expression)?;
 
 	let type_id = match &statement.item.parsed_type {
@@ -1357,7 +1406,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_>, statement: &'a tree::Node
 
 #[allow(clippy::needless_return)]
 fn validate_expression<'a>(
-	context: &mut Context<'a, '_>,
+	context: &mut Context<'a, '_, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
 ) -> Option<Expression<'a>> {
 	let span = expression.span;
@@ -1478,8 +1527,15 @@ fn validate_expression<'a>(
 				explicit_arguments.push(type_id);
 			}
 
-			let type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-			// TODO: Add implicit arguments
+			let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
+			let shape = &context.function_store.shapes[function_shape_index];
+			if shape.generics.implicit_len() != 0 {
+				// The only functions with implicit generic parameters are inner functions, and if we have it
+				// in scope then that means it must be somewhere within ourselves or our function parent chain
+				for parameter in context.generic_parameters.parameters() {
+					type_arguments.push_implicit(parameter.generic_type_id);
+				}
+			}
 
 			let results = context.function_store.get_or_add_specialization(
 				context.messages,
@@ -1700,7 +1756,7 @@ fn validate_expression<'a>(
 }
 
 fn perform_constant_math<'a>(
-	context: &mut Context<'a, '_>,
+	context: &mut Context<'a, '_, '_>,
 	left: &Expression,
 	right: &Expression,
 	op: BinaryOperator,
