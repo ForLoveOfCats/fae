@@ -458,7 +458,7 @@ impl<'a> TypeStore<'a> {
 
 				let type_id = self.decimal_type_id;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
-				*from = Expression { span: from.span, type_id, is_mutable: from.is_mutable, kind };
+				*from = Expression { span: from.span, type_id, mutable: from.mutable, kind };
 				return Some(true);
 			}
 

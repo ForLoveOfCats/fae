@@ -501,7 +501,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 		ExpressionKind::FieldRead(field_read) => {
 			let struct_id = generate_expression(context, &field_read.base, output)?.unwrap();
 			generate_type_id(context, field_read.type_id, output)?;
-			if expression.is_mutable {
+			if expression.mutable {
 				write!(output, " *")?;
 			} else {
 				write!(output, " const *")?;

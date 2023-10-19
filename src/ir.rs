@@ -376,12 +376,25 @@ pub struct Return<'a> {
 pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
-	pub is_mutable: bool,
+	pub mutable: bool,
 	pub kind: ExpressionKind<'a>,
+}
+
+impl<'a> Expression<'a> {
+	pub fn any_collapse(type_store: &TypeStore<'a>, span: Span) -> Self {
+		Expression {
+			span,
+			type_id: type_store.any_collapse_type_id(),
+			mutable: true, // TODO: Think about this harder?
+			kind: ExpressionKind::AnyCollapse,
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind<'a> {
+	AnyCollapse,
+
 	Block(Block<'a>),
 
 	IntegerValue(IntegerValue),
@@ -403,6 +416,7 @@ pub enum ExpressionKind<'a> {
 impl<'a> ExpressionKind<'a> {
 	pub fn name_with_article(&self) -> &'static str {
 		match self {
+			ExpressionKind::AnyCollapse => unreachable!(),
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",
 			ExpressionKind::DecimalValue(_) => "an untyped decimal",

@@ -1159,11 +1159,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
 			tree::Statement::Expression(statement) => {
-				let expression = match validate_expression(&mut context, statement) {
-					Some(expression) => expression,
-					None => continue,
-				};
-
+				let expression = validate_expression(&mut context, statement);
 				let type_id = expression.type_id;
 				let kind = StatementKind::Expression(expression);
 				statements.push(Statement { type_id, kind });
@@ -1197,7 +1193,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 					None => statement.span,
 				};
 
-				let expression = expression.and_then(|expression| validate_expression(&mut context, expression));
+				let expression = expression.map(|expression| validate_expression(&mut context, expression));
 				let type_id = match &expression {
 					Some(expression) => expression.type_id,
 					None => context.type_store.void_type_id(),
@@ -1376,7 +1372,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 		None => None,
 	};
 
-	let mut expression = validate_expression(context, &statement.item.expression)?;
+	let mut expression = validate_expression(context, &statement.item.expression);
 	if let Some(explicit_type) = explicit_type {
 		if !context
 			.type_store
@@ -1420,7 +1416,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 }
 
 fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
-	let mut expression = validate_expression(context, &statement.item.expression)?;
+	let mut expression = validate_expression(context, &statement.item.expression);
 
 	let type_id = match &statement.item.parsed_type {
 		Some(parsed_type) => {
@@ -1462,7 +1458,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 fn validate_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
-) -> Option<Expression<'a>> {
+) -> Expression<'a> {
 	let span = expression.span;
 
 	match &expression.item {
@@ -1470,37 +1466,41 @@ fn validate_expression<'a>(
 			let validated_block = validate_block(context.child_scope(), block, false);
 			let type_id = validated_block.type_id;
 			let kind = ExpressionKind::Block(validated_block);
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::IntegerLiteral(literal) => {
 			let value = IntegerValue::new(literal.value.item, literal.value.span);
 			let kind = ExpressionKind::IntegerValue(value);
 			let type_id = context.type_store.integer_type_id();
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::FloatLiteral(literal) => {
 			let value = DecimalValue::new(literal.value.item, literal.value.span);
 			let kind = ExpressionKind::DecimalValue(value);
 			let type_id = context.type_store.decimal_type_id();
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::CodepointLiteral(literal) => {
 			let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
 			let type_id = context.type_store.u32_type_id();
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::StringLiteral(literal) => {
 			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });
 			let type_id = context.type_store.string_type_id();
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::StructLiteral(literal) => {
-			let type_id = context.lookup_type(&literal.parsed_type)?;
+			let type_id = match context.lookup_type(&literal.parsed_type) {
+				Some(type_id) => type_id,
+				None => return Expression::any_collapse(context.type_store, span),
+			};
+
 			let type_entry = &context.type_store.type_entries[type_id.index()];
 			let (shape_index, specialization_index) = match &type_entry.kind {
 				TypeEntryKind::UserType { shape_index, specialization_index } => (*shape_index, *specialization_index),
@@ -1509,7 +1509,7 @@ fn validate_expression<'a>(
 					let name = context.type_name(type_id);
 					let message = error!("Cannot construct type {name} like a struct as it is not a struct");
 					context.message(message.span(literal.parsed_type.span));
-					return None;
+					return Expression::any_collapse(context.type_store, span);
 				}
 			};
 
@@ -1525,7 +1525,7 @@ fn validate_expression<'a>(
 			let mut field_initializers = Vec::new();
 
 			for intializer in &literal.initializer.item.field_initializers {
-				let mut expression = validate_expression(context, &intializer.expression)?;
+				let mut expression = validate_expression(context, &intializer.expression);
 
 				let field = match fields.next() {
 					Some(field) => field,
@@ -1544,7 +1544,7 @@ fn validate_expression<'a>(
 					continue;
 				}
 
-				if !context.collapse_to(field.type_id, &mut expression)? {
+				if !context.collapse_to(field.type_id, &mut expression).unwrap_or(true) {
 					context.message(
 						error!(
 							"Field intializer type mismatch, expected {} but got {} instead",
@@ -1560,25 +1560,37 @@ fn validate_expression<'a>(
 			}
 
 			let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::Call(call) => {
-			let symbol = context.lookup_symbol(&call.path_segments.item)?;
+			let symbol = match context.lookup_symbol(&call.path_segments.item) {
+				Some(symbol) => symbol,
+				None => return Expression::any_collapse(context.type_store, span),
+			};
+
 			let name = symbol.name;
 			let function_shape_index = match symbol.kind {
 				SymbolKind::Function { function_shape_index } => function_shape_index,
 
 				kind => {
 					context.message(error!("Cannot call {kind}").span(call.path_segments.span));
-					return None;
+					return Expression::any_collapse(context.type_store, span);
 				}
 			};
 
+			let mut type_argument_lookup_errored = false;
 			let mut explicit_arguments = Vec::new();
 			for type_argument in &call.type_arguments {
-				let type_id = context.lookup_type(type_argument)?;
-				explicit_arguments.push(type_id);
+				if let Some(type_id) = context.lookup_type(type_argument) {
+					explicit_arguments.push(type_id);
+				} else {
+					type_argument_lookup_errored = true;
+				}
+			}
+
+			if type_argument_lookup_errored {
+				return Expression::any_collapse(context.type_store, span);
 			}
 
 			let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
@@ -1598,13 +1610,15 @@ fn validate_expression<'a>(
 				function_shape_index,
 				Some(span),
 				type_arguments,
-			)?;
-			let FunctionSpecializationResult { specialization_index, return_type } = results;
+			);
+			let FunctionSpecializationResult { specialization_index, return_type } = match results {
+				Some(results) => results,
+				None => return Expression::any_collapse(context.type_store, span),
+			};
 
-			let mut arguments = Vec::new();
+			let mut arguments = Vec::with_capacity(call.arguments.len());
 			for argument in &call.arguments {
-				let expression = validate_expression(context, argument)?;
-				arguments.push(expression);
+				arguments.push(validate_expression(context, argument));
 			}
 
 			let shape = &context.function_store.shapes[function_shape_index];
@@ -1618,10 +1632,8 @@ fn validate_expression<'a>(
 					None => break,
 				};
 
-				if !context
-					.type_store
-					.collapse_to(context.messages, parameter.type_id, argument)?
-				{
+				let collapsed = context.type_store.collapse_to(context.messages, parameter.type_id, argument);
+				if !collapsed.unwrap_or(true) {
 					let error = error!(
 						"Expected argument of type {}, got {}",
 						context.type_name(parameter.type_id),
@@ -1635,20 +1647,24 @@ fn validate_expression<'a>(
 			if arguments.len() != specialization.parameters.len() {
 				let error = error!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
 				context.message(error.span(span));
-				return None;
+				return Expression::any_collapse(context.type_store, span);
 			}
 
 			if arguments_type_mismatch {
-				return None;
+				return Expression::any_collapse(context.type_store, span);
 			}
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
 			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
-			return Some(Expression { span, type_id: return_type, is_mutable: true, kind });
+			return Expression { span, type_id: return_type, mutable: true, kind };
 		}
 
 		tree::Expression::Read(read) => {
-			let symbol = context.lookup_symbol(&read.path_segments.item)?;
+			let symbol = match context.lookup_symbol(&read.path_segments.item) {
+				Some(symbol) => symbol,
+				None => return Expression::any_collapse(context.type_store, span),
+			};
+
 			let readable_index = match symbol.kind {
 				SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
 
@@ -1676,16 +1692,20 @@ fn validate_expression<'a>(
 						}
 					};
 
-					return Some(Expression { span, type_id, is_mutable: false, kind });
+					return Expression { span, type_id, mutable: false, kind };
 				}
 
 				kind => {
 					context.message(error!("Cannot read value from {kind}").span(read.path_segments.span));
-					return None;
+					return Expression::any_collapse(context.type_store, span);
 				}
 			};
 
-			let readable = context.readables.get(readable_index)?;
+			let readable = match context.readables.get(readable_index) {
+				Some(readable) => readable,
+				None => return Expression::any_collapse(context.type_store, span),
+			};
+
 			let is_mutable = readable.kind == ReadableKind::Mut;
 			let read = Read {
 				name: readable.name,
@@ -1694,11 +1714,11 @@ fn validate_expression<'a>(
 			};
 
 			let kind = ExpressionKind::Read(read);
-			return Some(Expression { span, type_id: readable.type_id, is_mutable, kind });
+			return Expression { span, type_id: readable.type_id, mutable: is_mutable, kind };
 		}
 
 		tree::Expression::FieldRead(field_read) => {
-			let base = validate_expression(context, &field_read.base)?;
+			let base = validate_expression(context, &field_read.base);
 
 			// Dumb hack to store fields array in outer scope so a slice can be taken
 			let slice_fields;
@@ -1717,7 +1737,7 @@ fn validate_expression<'a>(
 			} else {
 				let error = error!("Cannot access field on {}", base.kind.name_with_article());
 				context.message(error.span(span));
-				return None;
+				return Expression::any_collapse(context.type_store, span);
 			};
 
 			let mut fields = fields.iter().enumerate();
@@ -1725,13 +1745,13 @@ fn validate_expression<'a>(
 				let type_name = context.type_name(base.type_id);
 				let error = error!("No field `{}` on {}", field_read.name.item, type_name);
 				context.message(error.span(field_read.name.span));
-				return None;
+				return Expression::any_collapse(context.type_store, span);
 			};
 
-			let is_mutable = base.is_mutable;
+			let mutable = base.mutable;
 			let field_read = FieldRead { base, name: field.name, type_id: field.type_id, field_index };
 			let kind = ExpressionKind::FieldRead(Box::new(field_read));
-			return Some(Expression { span, type_id: field.type_id, is_mutable, kind });
+			return Expression { span, type_id: field.type_id, mutable, kind };
 		}
 
 		tree::Expression::UnaryOperation(operation) => {
@@ -1739,18 +1759,18 @@ fn validate_expression<'a>(
 				tree::UnaryOperator::Negate => UnaryOperator::Negate,
 			};
 
-			let mut expression = validate_expression(context, &operation.expression)?;
+			let mut expression = validate_expression(context, &operation.expression);
 			match (op, &mut expression.kind) {
 				(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
 					value.negate(context.messages, span);
 					expression.span = expression.span + span;
-					return Some(expression);
+					return expression;
 				}
 
 				(UnaryOperator::Negate, ExpressionKind::DecimalValue(value)) => {
 					value.negate(span);
 					expression.span = expression.span + span;
-					return Some(expression);
+					return expression;
 				}
 
 				_ => {}
@@ -1758,14 +1778,14 @@ fn validate_expression<'a>(
 
 			let type_id = expression.type_id;
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		tree::Expression::BinaryOperation(operation) => {
 			let op = operation.op.item;
 
-			let mut left = validate_expression(context, &operation.left)?;
-			let mut right = validate_expression(context, &operation.right)?;
+			let mut left = validate_expression(context, &operation.left);
+			let mut right = validate_expression(context, &operation.right);
 			let collapsed = context.type_store.collapse_fair(context.messages, &mut left, &mut right);
 
 			let Some(collapsed) = collapsed else {
@@ -1775,21 +1795,25 @@ fn validate_expression<'a>(
 						.note(note!(operation.left.span, "Left type {}", context.type_name(left.type_id)))
 						.note(note!(operation.right.span, "Right type {}", context.type_name(right.type_id))),
 				);
-				return None;
+				return Expression::any_collapse(context.type_store, span);
 			};
 
 			if let Some(constant_math_result) = perform_constant_math(context, &left, &right, op) {
-				return Some(constant_math_result);
+				return constant_math_result;
 			}
 
 			if op == BinaryOperator::Assign {
 				if let ExpressionKind::Read(read) = &left.kind {
-					let readable = context.readables.get(read.readable_index)?;
+					let readable = match context.readables.get(read.readable_index) {
+						Some(readable) => readable,
+						None => return Expression::any_collapse(context.type_store, span),
+					};
+
 					if readable.kind != ReadableKind::Mut {
 						context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(left.span));
 					}
 				} else if let ExpressionKind::FieldRead(_) = &left.kind {
-					if !left.is_mutable {
+					if !left.mutable {
 						context.message(error!("Cannot assign to field of immutable object").span(left.span));
 					}
 				} else {
@@ -1804,7 +1828,7 @@ fn validate_expression<'a>(
 
 			let operation = Box::new(BinaryOperation { op, left, right });
 			let kind = ExpressionKind::BinaryOperation(operation);
-			return Some(Expression { span, type_id, is_mutable: true, kind });
+			return Expression { span, type_id, mutable: true, kind };
 		}
 	};
 }
@@ -1831,7 +1855,7 @@ fn perform_constant_math<'a>(
 
 		let kind = ExpressionKind::IntegerValue(value);
 		let type_id = context.type_store.integer_type_id();
-		return Some(Expression { span: value.span(), type_id, is_mutable: false, kind });
+		return Some(Expression { span: value.span(), type_id, mutable: false, kind });
 	}
 
 	if let ExpressionKind::DecimalValue(left) = left.kind {
@@ -1850,7 +1874,7 @@ fn perform_constant_math<'a>(
 
 		let kind = ExpressionKind::DecimalValue(value);
 		let type_id = context.type_store.decimal_type_id();
-		return Some(Expression { span: value.span(), type_id, is_mutable: false, kind });
+		return Some(Expression { span: value.span(), type_id, mutable: false, kind });
 	}
 
 	None

@@ -1,0 +1,41 @@
+fn main() {
+	let a: f64 = outer_i32(3)
+	let b: u64 = outer_generic[u64](7)
+	let c: i32 = outer_generic[i32](-9)
+	let d: f64 = outer_generic[f64](4.2)
+	let e: i8 = multi_nested_generic[f32, i8](3.5, -8)
+}
+
+fn outer_i32(arg: i32): f64 {
+	let a = "Hi"
+
+	fn inner(arg: i32): i32 {
+		let a = "Hello"
+		return arg
+	}
+
+	return inner(arg + 1)
+}
+
+
+generic T
+fn outer_generic(arg: T): T {
+	fn inner(arg: T): T {
+		return arg
+	}
+
+	return inner(arg)
+}
+
+generic T, E
+fn multi_nested_generic(a: T, b: E): E {
+	fn level_one(a: E, b: T): E {
+		fn level_two(a: E): E {
+			return outer_generic[E](a)
+		}
+
+		return level_two[E](a)
+	}
+
+	return level_one(b, 4)
+}
