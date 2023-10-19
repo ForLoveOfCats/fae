@@ -123,6 +123,8 @@ pub enum PrimativeKind {
 	U32,
 	U64,
 
+	USize,
+
 	F32,
 	F64,
 }
@@ -142,6 +144,7 @@ impl PrimativeKind {
 			PrimativeKind::U16 => "u16",
 			PrimativeKind::U32 => "u32",
 			PrimativeKind::U64 => "u64",
+			PrimativeKind::USize => "usize",
 			PrimativeKind::F32 => "f32",
 			PrimativeKind::F64 => "f64",
 		}
@@ -228,15 +231,17 @@ pub struct TypeStore<'a> {
 	integer_type_id: TypeId,
 	decimal_type_id: TypeId,
 
+	i8_type_id: TypeId,
+	i16_type_id: TypeId,
+	i32_type_id: TypeId,
+	i64_type_id: TypeId,
+
 	u8_type_id: TypeId,
 	u16_type_id: TypeId,
 	u32_type_id: TypeId,
 	u64_type_id: TypeId,
 
-	i8_type_id: TypeId,
-	i16_type_id: TypeId,
-	i32_type_id: TypeId,
-	i64_type_id: TypeId,
+	usize_type_id: TypeId,
 
 	f32_type_id: TypeId,
 	f64_type_id: TypeId,
@@ -279,6 +284,8 @@ impl<'a> TypeStore<'a> {
 		let u32_type_id = push_primative(Some("u32"), PrimativeKind::U32);
 		let u64_type_id = push_primative(Some("u64"), PrimativeKind::U64);
 
+		let usize_type_id = push_primative(Some("usize"), PrimativeKind::USize);
+
 		let f32_type_id = push_primative(Some("f32"), PrimativeKind::F32);
 		let f64_type_id = push_primative(Some("f64"), PrimativeKind::F64);
 
@@ -292,14 +299,15 @@ impl<'a> TypeStore<'a> {
 			void_type_id,
 			integer_type_id,
 			decimal_type_id,
-			u8_type_id,
-			u16_type_id,
-			u32_type_id,
-			u64_type_id,
 			i8_type_id,
 			i16_type_id,
 			i32_type_id,
 			i64_type_id,
+			u8_type_id,
+			u16_type_id,
+			u32_type_id,
+			u64_type_id,
+			usize_type_id,
 			f32_type_id,
 			f64_type_id,
 			string_type_id: TypeId { entry: 0 },
@@ -483,6 +491,8 @@ impl<'a> TypeStore<'a> {
 				e if e == self.u32_type_id.entry => (false, true, 32),
 				e if e == self.u64_type_id.entry => (false, true, 64),
 
+				e if e == self.usize_type_id.entry => (false, true, 64),
+
 				_ => (false, false, 0),
 			};
 
@@ -650,7 +660,7 @@ impl<'a> TypeStore<'a> {
 		let (path_segments, type_arguments) = match &parsed_type.item {
 			tree::Type::Void => return Some(self.void_type_id),
 
-			tree::Type::Reference(inner) => {
+			tree::Type::Pointer { pointee, mutable } => {
 				let id = self.lookup_type(
 					messages,
 					function_store,
@@ -658,9 +668,9 @@ impl<'a> TypeStore<'a> {
 					root_layers,
 					symbols,
 					function_initial_symbols_len,
-					inner,
+					pointee,
 				)?;
-				return Some(self.pointer_to(id, false)); // TODO: Parse mutability
+				return Some(self.pointer_to(id, *mutable)); // TODO: Parse mutability
 			}
 
 			tree::Type::Slice(inner) => {

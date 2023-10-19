@@ -14,6 +14,7 @@ pub struct Context<'a, 'b, 'c> {
 
 	messages: &'b mut Messages<'a>,
 
+	c_include_store: &'b mut CIncludeStore<'a>,
 	type_store: &'b mut TypeStore<'a>,
 	function_store: &'b mut FunctionStore<'a>,
 	function_generic_usages: &'b mut Vec<GenericUsage>,
@@ -44,6 +45,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			messages: self.messages,
 
+			c_include_store: self.c_include_store,
 			type_store: self.type_store,
 			function_store: self.function_store,
 			function_generic_usages: self.function_generic_usages,
@@ -71,6 +73,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			messages: self.messages,
 
+			c_include_store: self.c_include_store,
 			type_store: self.type_store,
 			function_store: self.function_store,
 			function_generic_usages: self.function_generic_usages,
@@ -400,6 +403,31 @@ impl<'a> RootLayer<'a> {
 }
 
 #[derive(Debug)]
+pub struct CIncludeStore<'a> {
+	pub includes: Vec<CInclude<'a>>,
+}
+
+impl<'a> CIncludeStore<'a> {
+	pub fn new() -> Self {
+		CIncludeStore { includes: Vec::new() }
+	}
+
+	fn push_system(&mut self, include: &'a str) {
+		let include = CInclude::System(include);
+		if self.includes.contains(&include) {
+			return;
+		}
+
+		self.includes.push(include);
+	}
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CInclude<'a> {
+	System(&'a str),
+}
+
+#[derive(Debug)]
 pub struct FunctionStore<'a> {
 	pub shapes: Vec<FunctionShape<'a>>,
 
@@ -576,6 +604,7 @@ impl<'a> FunctionStore<'a> {
 pub fn validate<'a>(
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
+	c_include_store: &mut CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &'a [tree::File<'a>],
@@ -601,6 +630,7 @@ pub fn validate<'a>(
 	validate_root_consts(
 		messages,
 		root_layers,
+		c_include_store,
 		type_store,
 		function_store,
 		&mut function_generic_usages,
@@ -622,6 +652,7 @@ pub fn validate<'a>(
 			file_index,
 			module_path,
 			messages,
+			c_include_store,
 			type_store,
 			function_store,
 			function_generic_usages: &mut function_generic_usages,
@@ -700,6 +731,7 @@ fn create_root_functions<'a>(
 fn validate_root_consts<'a>(
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
+	c_include_store: &mut CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
@@ -721,6 +753,7 @@ fn validate_root_consts<'a>(
 			file_index,
 			module_path,
 			messages,
+			c_include_store,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -831,7 +864,8 @@ fn create_block_types<'a>(
 				tree::Statement::Import(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Function(..)
-				| tree::Statement::Const(..) => {}
+				| tree::Statement::Const(..)
+				| tree::Statement::CIncludeSystem(..) => {}
 			}
 		}
 
@@ -1027,9 +1061,19 @@ fn create_block_functions<'a>(
 			}
 
 			drop(scope);
+
 			let name = statement.name;
 			let is_main = module_path == [root_layers.root_name.as_str()] && name.item == "main";
-			let shape = FunctionShape::new(name, module_path, file_index, is_main, generics, parameters, return_type);
+			let shape = FunctionShape::new(
+				name,
+				module_path,
+				file_index,
+				is_main,
+				generics,
+				statement.extern_name,
+				parameters,
+				return_type,
+			);
 			function_store.shapes.push(shape);
 
 			let kind = SymbolKind::Function { function_shape_index };
@@ -1163,6 +1207,10 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				let kind = StatementKind::Return(boxed_return);
 				statements.push(Statement { type_id, kind })
 			}
+
+			tree::Statement::CIncludeSystem(statement) => {
+				context.c_include_store.push_system(statement.item);
+			}
 		}
 	}
 
@@ -1185,6 +1233,11 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	let Some(function_shape_index) = function_shape_index else {
 		return;
 	};
+
+	if context.function_store.shapes[function_shape_index].extern_name.is_some() {
+		// Note: Signature has already been checked in `create_block_functions`
+		return;
+	}
 
 	let generics = context.function_store.shapes[function_shape_index].generics.clone();
 	let mut scope = context.child_scope_with_generic_parameters(&generics);
@@ -1215,7 +1268,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	}
 
 	let type_id = scope.function_store.shapes[function_shape_index].return_type;
-	let mut block = validate_block(scope, &statement.block.item, false);
+	let block = statement.block.as_ref().unwrap();
+	let mut block = validate_block(scope, &block.item, false);
 
 	if trace_return(context, type_id, &mut block) == TracedReturn::NotCovered {
 		let error = error!("Not all code paths for function `{}` return a value", statement.name.item);

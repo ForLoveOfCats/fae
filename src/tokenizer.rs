@@ -140,6 +140,7 @@ impl<'a> Tokenizer<'a> {
 		self.source
 	}
 
+	// TODO: Add `peek_word`
 	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked {
 			return Ok(peeked.token);

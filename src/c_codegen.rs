@@ -6,7 +6,7 @@ use crate::error::Messages;
 use crate::ir::*;
 use crate::tree::BinaryOperator;
 use crate::type_store::*;
-use crate::validator::FunctionStore;
+use crate::validator::{CInclude, CIncludeStore, FunctionStore};
 
 const CC: &str = "clang";
 
@@ -56,6 +56,7 @@ impl std::fmt::Display for TempId {
 
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
+	c_include_store: &CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	optimization_level: OptimizationLevel,
@@ -105,6 +106,10 @@ pub fn generate_code<'a>(
 
 	generate_initial_output(&mut output).unwrap();
 
+	for include in &c_include_store.includes {
+		generate_include(include, &mut output).unwrap();
+	}
+
 	for &description in &type_store.user_type_generate_order {
 		forward_declare_user_type(type_store, description, &mut output).unwrap();
 	}
@@ -139,6 +144,12 @@ pub fn generate_code<'a>(
 
 fn generate_initial_output(output: Output) -> Result<()> {
 	writeln!(output, "{}", include_str!("./initial_output.c"))
+}
+
+fn generate_include(include: &CInclude, output: Output) -> Result<()> {
+	match include {
+		CInclude::System(include) => writeln!(output, "#include \"{}\"\n", include),
+	}
 }
 
 fn forward_declare_user_type(
@@ -212,6 +223,7 @@ fn generate_function_signature<'a>(
 	output: Output,
 ) -> Result<()> {
 	let shape = &function_store.shapes[function_id.function_shape_index];
+	assert!(shape.extern_name.is_none(), "{:?}", shape.extern_name);
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	generate_raw_type_id(type_store, specialization.return_type, output)?;
@@ -250,6 +262,7 @@ fn generate_function<'a>(
 	output: Output,
 ) -> Result<()> {
 	let shape = &mut function_store.shapes[function_id.function_shape_index];
+	assert!(shape.extern_name.is_none(), "{:?}", shape.extern_name);
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
 	assert!(!specialization.been_generated);
@@ -359,7 +372,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let shape = &mut context.function_store.shapes[function_id.function_shape_index];
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
-	if !specialization.been_generated {
+	if !specialization.been_generated && shape.extern_name.is_none() {
 		if !specialization.been_queued {
 			specialization.been_queued = true;
 			context.function_generate_queue.push(function_id);
@@ -382,7 +395,13 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 		write!(output, " {id} = ")?;
 	}
 
-	generate_functon_id(function_id, output)?;
+	let shape = &context.function_store.shapes[function_id.function_shape_index];
+	if let Some(extern_name) = shape.extern_name {
+		write!(output, "{}", extern_name.item)?;
+	} else {
+		generate_functon_id(function_id, output)?;
+	}
+
 	write!(output, "(")?;
 
 	let mut first = true;

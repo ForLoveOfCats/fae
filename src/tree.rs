@@ -42,15 +42,21 @@ pub struct GenericAttribute<'a> {
 }
 
 #[derive(Debug)]
+pub struct ExternAttribute<'a> {
+	pub name: &'a str,
+}
+
+#[derive(Debug)]
 pub struct Attributes<'a> {
 	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
+	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 }
 
 impl<'a> Attributes<'a> {
-	pub const FIELD_COUNT: usize = 1;
+	pub const FIELD_COUNT: usize = 2;
 
 	pub fn blank() -> Self {
-		Attributes { generic_attribute: None }
+		Attributes { generic_attribute: None, extern_attribute: None }
 	}
 
 	pub fn attribute_spans<'b>(&self, buffer: &'b mut [Span]) -> &'b [Span] {
@@ -63,6 +69,7 @@ impl<'a> Attributes<'a> {
 
 		let mut index = 0;
 		push_potential_span(&self.generic_attribute, buffer, &mut index);
+		push_potential_span(&self.extern_attribute, buffer, &mut index);
 
 		&buffer[0..index]
 	}
@@ -72,7 +79,10 @@ impl<'a> Attributes<'a> {
 pub enum Type<'a> {
 	Void,
 
-	Reference(Box<Node<Type<'a>>>),
+	Pointer {
+		pointee: Box<Node<Type<'a>>>,
+		mutable: bool,
+	},
 	Slice(Box<Node<Type<'a>>>),
 
 	Path {
@@ -97,10 +107,11 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
+	pub extern_name: Option<Node<&'a str>>,
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
 	pub parsed_type: Option<Node<Type<'a>>>,
-	pub block: Node<Block<'a>>,
+	pub block: Option<Node<Block<'a>>>,
 }
 
 #[derive(Debug)]
@@ -265,6 +276,8 @@ pub enum Statement<'a> {
 	Binding(Box<Node<Binding<'a>>>),
 
 	Return(Box<Node<Return<'a>>>),
+
+	CIncludeSystem(Node<&'a str>),
 }
 
 impl<'a> Statement<'a> {
@@ -281,6 +294,7 @@ impl<'a> Statement<'a> {
 			Const(statement) => statement.span,
 			Binding(statement) => statement.span,
 			Return(statement) => statement.span,
+			CIncludeSystem(statement) => statement.span,
 		}
 	}
 
@@ -296,6 +310,7 @@ impl<'a> Statement<'a> {
 			Const(..) => "A const definition",
 			Binding(..) => "A binding definition",
 			Return(..) => "A return statement",
+			CIncludeSystem(..) => "A C include statement",
 		}
 	}
 }

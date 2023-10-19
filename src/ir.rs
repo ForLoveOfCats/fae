@@ -183,6 +183,8 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
+	pub extern_name: Option<Node<&'a str>>,
+
 	pub generics: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape<'a>>,
 	pub return_type: TypeId,
@@ -205,6 +207,7 @@ impl<'a> FunctionShape<'a> {
 		file_index: usize,
 		is_main: bool,
 		generics: GenericParameters<'a>,
+		extern_name: Option<Node<&'a str>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: TypeId,
 	) -> Self {
@@ -213,6 +216,7 @@ impl<'a> FunctionShape<'a> {
 			module_path,
 			file_index,
 			is_main,
+			extern_name,
 			generics,
 			parameters,
 			return_type,

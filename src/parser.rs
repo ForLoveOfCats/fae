@@ -119,6 +119,15 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 
 			Token { kind: TokenKind::CloseBrace, .. } => break,
 
+			Token { kind: TokenKind::Word, text: "#c_include_system", .. } => {
+				disallow_attributes(messages, attributes, token.span, "A C include");
+				if let Ok(statement) = parse_c_include_system(messages, tokenizer) {
+					items.push(Statement::CIncludeSystem(statement));
+				} else {
+					consume_error_syntax(messages, tokenizer);
+				}
+			}
+
 			_ => {
 				disallow_attributes(messages, attributes, token.span, "An expression");
 				if let Ok(expression) = parse_expression(messages, tokenizer) {
@@ -485,6 +494,11 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 				attributes.generic_attribute = Some(parse_generic_attribute(messages, tokenizer)?);
 			}
 
+			"extern" => {
+				check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
+				attributes.extern_attribute = Some(parse_extern_attribute(messages, tokenizer)?);
+			}
+
 			_ => break,
 		}
 	}
@@ -513,6 +527,17 @@ fn parse_generic_attribute<'a>(
 	let span = generic_token.span + names.last().as_ref().unwrap().span;
 	let generic_atttribute = GenericAttribute { names };
 	Ok(Node::new(generic_atttribute, span))
+}
+
+fn parse_extern_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<ExternAttribute<'a>>> {
+	let generic_token = tokenizer.expect_word(messages, "extern")?;
+
+	let name_token = tokenizer.expect(messages, TokenKind::String)?;
+	tokenizer.expect(messages, TokenKind::Newline)?;
+
+	let span = generic_token.span + name_token.span;
+	let extern_atttribute = ExternAttribute { name: name_token.text };
+	Ok(Node::new(extern_atttribute, span))
 }
 
 fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Import<'a>>> {
@@ -590,9 +615,16 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 		Token { kind: TokenKind::Ampersand, .. } => {
 			let ampersand = tokenizer.expect(messages, TokenKind::Ampersand)?;
 
-			let inner = Box::new(parse_type(messages, tokenizer)?);
-			let span = ampersand.span + inner.span;
-			Node::new(Type::Reference(inner), span)
+			let mutable = if matches!(tokenizer.peek(), Ok(Token { kind: TokenKind::Word, text: "mut", .. })) {
+				tokenizer.expect_word(messages, "mut")?;
+				true
+			} else {
+				false
+			};
+
+			let pointee = Box::new(parse_type(messages, tokenizer)?);
+			let span = ampersand.span + pointee.span;
+			Node::new(Type::Pointer { pointee, mutable }, span)
 		}
 
 		Token { kind: TokenKind::OpenBracket, .. } => {
@@ -643,9 +675,20 @@ fn parse_function_declaration<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
 ) -> ParseResult<Function<'a>> {
+	if attributes.extern_attribute.is_some() {
+		if let Some(generics) = &attributes.generic_attribute {
+			messages.message(error!("Extern function may not have generics").span(generics.span));
+		}
+	}
+
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
 		None => Vec::new(),
+	};
+
+	let extern_name = match &attributes.extern_attribute {
+		Some(n) => Some(Node::new(n.item.name, n.span)),
+		None => None,
 	};
 
 	tokenizer.expect_word(messages, "fn")?;
@@ -663,9 +706,13 @@ fn parse_function_declaration<'a>(
 		None
 	};
 
-	let block = parse_block(messages, tokenizer)?;
+	let block = if attributes.extern_attribute.is_some() {
+		None
+	} else {
+		Some(parse_block(messages, tokenizer)?)
+	};
 
-	Ok(Function { generics, name, parameters, parsed_type, block })
+	Ok(Function { generics, extern_name, name, parameters, parsed_type, block })
 }
 
 fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<Parameter<'a>>>> {
@@ -832,6 +879,12 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 	} else {
 		Ok(())
 	}
+}
+
+fn parse_c_include_system<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<&'a str>> {
+	tokenizer.expect_word(messages, "#c_include_system")?;
+	let string = tokenizer.expect(messages, TokenKind::String)?;
+	Ok(Node::new(string.text.trim(), string.span))
 }
 
 fn reached_close_paren(tokenizer: &mut Tokenizer) -> bool {
