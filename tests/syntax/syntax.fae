@@ -22,6 +22,10 @@ fn main() {
 		b: 8
 	}
 
+	{
+		c.b = 55
+	}
+
 	let d: u64 = generic_function[u64](54)
 
 	let ptr: &u8 = STRING.pointer

@@ -308,8 +308,9 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 			}
 
 			StatementKind::Block(block) => {
-				// Probably wrong?
+				writeln!(output, "{{")?;
 				generate_block(context, block, output)?;
+				writeln!(output, "}}")?;
 			}
 
 			StatementKind::Binding(binding) => {

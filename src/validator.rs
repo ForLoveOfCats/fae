@@ -1165,7 +1165,13 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				statements.push(Statement { type_id, kind });
 			}
 
-			tree::Statement::Block(..) => unimplemented!("tree::Statement::Block"),
+			tree::Statement::Block(statement) => {
+				let scope = context.child_scope();
+				let block = validate_block(scope, &statement.item, false);
+				let type_id = block.type_id;
+				let kind = StatementKind::Block(block);
+				statements.push(Statement { type_id, kind })
+			}
 
 			tree::Statement::Import(..) => {}
 

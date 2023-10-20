@@ -35,6 +35,10 @@ fn main() {
 		a: 7
 		b: 8
 	}
+	
+	{
+		m.b = 55
+	}
 
 	sub_function()
 	let a: i32 = SUB_CONST
