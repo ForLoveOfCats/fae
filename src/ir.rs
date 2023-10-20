@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::rc::Rc;
 
 use crate::error::Messages;
@@ -432,12 +433,12 @@ impl<'a> ExpressionKind<'a> {
 	}
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum ConstantValue<'a> {
 	IntegerValue(i128),
 	DecimalValue(f64),
 	CodepointLiteral(char),
-	StringLiteral(&'a str),
+	StringLiteral(Cow<'a, str>),
 }
 
 #[track_caller]
@@ -631,7 +632,7 @@ pub struct CodepointLiteral {
 
 #[derive(Debug, Clone)]
 pub struct StringLiteral<'a> {
-	pub value: &'a str,
+	pub value: Cow<'a, str>,
 }
 
 #[derive(Debug, Clone)]

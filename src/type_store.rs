@@ -14,6 +14,10 @@ impl TypeId {
 		TypeId { entry }
 	}
 
+	pub fn is_any_collapse(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.any_collapse_type_id)
+	}
+
 	pub fn is_void(self, type_store: &TypeStore) -> bool {
 		type_store.direct_match(self, type_store.void_type_id)
 	}

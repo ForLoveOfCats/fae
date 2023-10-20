@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::file::SourceFile;
 use crate::span::Span;
 use crate::tokenizer::Token;
@@ -153,7 +155,7 @@ pub struct CodepointLiteral {
 
 #[derive(Debug)]
 pub struct StringLiteral<'a> {
-	pub value: Node<&'a str>,
+	pub value: Node<Cow<'a, str>>,
 }
 
 #[derive(Debug)]

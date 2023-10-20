@@ -308,7 +308,11 @@ impl<'a> Tokenizer<'a> {
 					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
-					//TODO: Handle escaped double-quote
+					if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
+						self.offset += 1;
+						continue;
+					}
+
 					if self.bytes[self.offset] == b'\"' {
 						break;
 					}

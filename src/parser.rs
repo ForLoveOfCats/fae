@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::error::{Messages, ParseResult};
 use crate::file::SourceFile;
 use crate::span::Span;
@@ -238,8 +240,8 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 
 		TokenKind::String => {
 			let string_token = tokenizer.expect(messages, TokenKind::String)?;
-			let value = Node::from_token(string_token.text, string_token);
-
+			let text = parse_string_contents(string_token.text);
+			let value = Node::from_token(text, string_token);
 			Ok(Node::from_token(Expression::StringLiteral(StringLiteral { value }), string_token))
 		}
 
@@ -327,6 +329,59 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 			);
 			Err(())
 		}
+	}
+}
+
+fn parse_string_contents<'a>(string: &'a str) -> Cow<'a, str> {
+	let mut allocated = String::new();
+
+	let mut index = 0;
+	let mut last_extend_index = 0;
+	while index < string.len() {
+		let mut escape = "";
+		match string[index..].as_bytes() {
+			[b'\\', b'n', ..] => escape = "\n",
+			[b'\\', b'\\', ..] => escape = "\\",
+			[b'\\', b'"', ..] => escape = "\"",
+			[b'\\', b'0', ..] => escape = "\0",
+			_ => {}
+		}
+
+		if !escape.is_empty() {
+			allocated.push_str(&string[last_extend_index..index]);
+			last_extend_index = index + 2;
+			index += 1;
+			allocated.push_str(escape);
+		}
+
+		index += 1;
+	}
+
+	if !allocated.is_empty() {
+		allocated.push_str(&string[last_extend_index..]);
+		return Cow::Owned(allocated);
+	}
+
+	Cow::Borrowed(string)
+}
+
+// TODO: Replace with in-language test once stdout printing is in
+#[test]
+fn test_parse_string() {
+	let cases = [
+		(r"hello there", "hello there"),
+		(r"hello\nthere", "hello\nthere"),
+		(r"\nthere", "\nthere"),
+		(r"\n", "\n"),
+		(r"hello\n", "hello\n"),
+		(r"\nhello\n", "\nhello\n"),
+		(r"\\hel\\lo\\", "\\hel\\lo\\"),
+		(r"hello\0there", "hello\0there"),
+	];
+
+	for (index, (process, expected)) in cases.iter().enumerate() {
+		let processed = parse_string_contents(process);
+		assert!(processed == *expected, "expected {expected}, got {processed}, index {index}");
 	}
 }
 

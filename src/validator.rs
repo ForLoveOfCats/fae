@@ -1393,7 +1393,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	let value = match &expression.kind {
 		ExpressionKind::IntegerValue(value) => ConstantValue::IntegerValue(value.value()),
 		ExpressionKind::DecimalValue(value) => ConstantValue::DecimalValue(value.value()),
-		ExpressionKind::StringLiteral(literal) => ConstantValue::StringLiteral(literal.value),
+		ExpressionKind::StringLiteral(literal) => ConstantValue::StringLiteral(literal.value.clone()),
 		ExpressionKind::CodepointLiteral(literal) => ConstantValue::CodepointLiteral(literal.value),
 
 		kind => {
@@ -1490,7 +1490,7 @@ fn validate_expression<'a>(
 		}
 
 		tree::Expression::StringLiteral(literal) => {
-			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item });
+			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item.clone() });
 			let type_id = context.type_store.string_type_id();
 			return Expression { span, type_id, mutable: true, kind };
 		}
@@ -1669,25 +1669,25 @@ fn validate_expression<'a>(
 				SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
 
 				SymbolKind::Const { constant_index } => {
-					let constant = context.constants[constant_index];
+					let constant = &context.constants[constant_index];
 					let (kind, type_id) = match constant {
 						ConstantValue::IntegerValue(value) => {
-							let kind = ExpressionKind::IntegerValue(IntegerValue::new(value, span));
+							let kind = ExpressionKind::IntegerValue(IntegerValue::new(*value, span));
 							(kind, context.type_store.integer_type_id())
 						}
 
 						ConstantValue::DecimalValue(value) => {
-							let kind = ExpressionKind::DecimalValue(DecimalValue::new(value, span));
+							let kind = ExpressionKind::DecimalValue(DecimalValue::new(*value, span));
 							(kind, context.type_store.decimal_type_id())
 						}
 
 						ConstantValue::CodepointLiteral(value) => {
-							let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value });
+							let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: *value });
 							(kind, context.type_store.u32_type_id())
 						}
 
 						ConstantValue::StringLiteral(value) => {
-							let kind = ExpressionKind::StringLiteral(StringLiteral { value });
+							let kind = ExpressionKind::StringLiteral(StringLiteral { value: value.clone() });
 							(kind, context.type_store.string_type_id())
 						}
 					};
@@ -1719,6 +1719,9 @@ fn validate_expression<'a>(
 
 		tree::Expression::FieldRead(field_read) => {
 			let base = validate_expression(context, &field_read.base);
+			if base.type_id.is_any_collapse(context.type_store) {
+				return Expression::any_collapse(context.type_store, span);
+			}
 
 			// Dumb hack to store fields array in outer scope so a slice can be taken
 			let slice_fields;

@@ -84,6 +84,7 @@ pub fn generate_code<'a>(
 			"-Wvla",
 			"-Wshadow",
 			"-Wcast-qual",
+			"-Wno-pointer-sign",
 			"-Wno-format",
 			"-Wno-unused-variable",
 			"-Wno-unused-parameter",
