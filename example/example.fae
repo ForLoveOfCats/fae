@@ -23,9 +23,8 @@ struct MyType {
 fn main() {
 	// TODO: Better display multi-line spans
 	// TODO: Handle nested multi-line comments
-	// TODO: Handle when return expression fails to validate rather than omiting the return
 	// TODO: Point to binding point in note when emitting "cannot assign to immutable ___" errors
-	
+
 	mut m = MyType { a: 5, b: 6 }
 	m.a = 7
 	m = MyType {
