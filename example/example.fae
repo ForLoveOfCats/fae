@@ -1,3 +1,5 @@
+import fae::stdout::print_string, print_i64, print_newline
+
 import folder::module::SUB_CONST, sub_function
 
 generic T
@@ -17,33 +19,6 @@ struct MyType {
 	a: i32
 	b: f64
 }
-
-#c_include_system "stdio.h"
-
-extern "printf"
-fn c_printf_str(format: &u8, len: i64, str: &u8)
-
-fn print_string(text: [u8]) {
-	c_printf_str("%.*s\0".pointer, text.len, text.pointer)
-}
-
-extern "printf"
-fn c_printf_i64(format: &u8, arg: i64)
-
-fn print_i64(arg: i64) {
-	c_printf_i64("%ld\0".pointer, arg)
-}
-
-/*
-extern "printf"
-fn c_printf_pointer(format: &u8, arg: usize)
-
-generic T
-fn print_pointer(arg: &T) {
-	// TODO: Add casts
-	c_printf_pointer("%ld\0".pointer, arg)
-}
-*/
 
 fn main() {
 	// TODO: Better display multi-line spans
@@ -75,7 +50,7 @@ fn main() {
 
 	print_string("\"Hello world!\"\n")
 	print_i64(-42)
-	print_string("\n")
+	print_newline()
 }
 
 generic T

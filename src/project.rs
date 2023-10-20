@@ -9,13 +9,15 @@ use crate::validator::{validate, CIncludeStore, FunctionStore, RootLayers};
 
 pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: String, debug_codegen: bool) -> Option<PathBuf> {
 	// Can be folded into parallel parsing, ish
-	let files = match load_all_files(path) {
-		Ok(files) => files,
-		Err(err) => {
-			eprintln!("Error loading source files: {}", err);
-			return None;
-		}
-	};
+	let mut files = Vec::new();
+	if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
+		eprintln!("Error loading standard library files: {}", err);
+		return None;
+	}
+	if let Err(err) = load_all_files(path, &mut files) {
+		eprintln!("Error loading source files: {}", err);
+		return None;
+	}
 
 	let mut messages = Messages::new(&files);
 

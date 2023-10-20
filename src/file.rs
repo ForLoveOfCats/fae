@@ -23,9 +23,8 @@ impl std::fmt::Debug for SourceFile {
 	}
 }
 
-pub fn load_all_files(path: &Path) -> Result<Vec<SourceFile>> {
+pub fn load_all_files(path: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
 	let mut walker = FileWalker::new(path)?;
-	let mut files = Vec::new();
 
 	loop {
 		let walked_file = match walker.next_file() {
@@ -46,7 +45,7 @@ pub fn load_all_files(path: &Path) -> Result<Vec<SourceFile>> {
 		files.push(SourceFile { source, path, module_path, index });
 	}
 
-	Ok(files)
+	Ok(())
 }
 
 #[derive(Debug)]
