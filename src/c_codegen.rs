@@ -495,9 +495,15 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 		ExpressionKind::Read(read) => {
 			generate_type_id(context, read.type_id, output)?;
-			write!(output, " {id} = ")?;
+			if expression.mutable {
+				write!(output, " *")?;
+			} else {
+				write!(output, " const *")?;
+			}
+			write!(output, " {id} = &")?;
 			generate_readable_index(read.readable_index, output)?;
 			writeln!(output, ";")?;
+			id.dereference = true;
 		}
 
 		ExpressionKind::FieldRead(field_read) => {

@@ -1712,7 +1712,7 @@ fn validate_expression<'a>(
 				None => return Expression::any_collapse(context.type_store, span),
 			};
 
-			let is_mutable = readable.kind == ReadableKind::Mut;
+			let mutable = readable.kind == ReadableKind::Mut;
 			let read = Read {
 				name: readable.name,
 				type_id: readable.type_id,
@@ -1720,7 +1720,7 @@ fn validate_expression<'a>(
 			};
 
 			let kind = ExpressionKind::Read(read);
-			return Expression { span, type_id: readable.type_id, mutable: is_mutable, kind };
+			return Expression { span, type_id: readable.type_id, mutable, kind };
 		}
 
 		tree::Expression::FieldRead(field_read) => {
