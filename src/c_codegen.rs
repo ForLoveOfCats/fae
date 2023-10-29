@@ -9,10 +9,19 @@ use crate::type_store::*;
 use crate::validator::{CInclude, CIncludeStore, FunctionStore};
 
 const CC: &str = "clang";
+const DEBUG_SOURCE_DUMP_PATH: &str = "./output.c";
 
 type Result<T> = std::io::Result<T>;
 // type Output<'a> = &'a mut std::process::ChildStdin;
 type Output<'a> = &'a mut Vec<u8>;
+
+#[allow(dead_code)]
+#[derive(PartialEq, Eq)]
+pub enum DebugCodegen {
+	No,
+	Yes,
+	OnFailure,
+}
 
 #[allow(unused)]
 pub enum OptimizationLevel {
@@ -61,7 +70,7 @@ pub fn generate_code<'a>(
 	function_store: &mut FunctionStore<'a>,
 	optimization_level: OptimizationLevel,
 	binary_path: &Path,
-	debug_codegen: bool,
+	debug_codegen: DebugCodegen,
 ) {
 	// Ignore failure, it's probably just because there's no file there yet
 	_ = std::fs::remove_file(binary_path);
@@ -130,17 +139,28 @@ pub fn generate_code<'a>(
 	}
 
 	let output = String::from_utf8(output).unwrap();
-	if debug_codegen {
-		println!("{output}");
+	if debug_codegen == DebugCodegen::Yes {
+		dump_codegen(&output);
 	}
 
 	write!(stdin, "{output}").expect("Failed to write output to C compiler stdin");
 	drop(stdin);
 
 	if !cc.wait().unwrap().success() {
+		if debug_codegen == DebugCodegen::OnFailure {
+			dump_codegen(&output);
+		}
+
 		println!("{}", std::io::read_to_string(stderr).expect("Failed to read C compiler stderr"));
 		panic!("C Compiler failed");
 	}
+
+	_ = std::fs::remove_file(DEBUG_SOURCE_DUMP_PATH);
+}
+
+fn dump_codegen(output: &str) {
+	std::fs::write(DEBUG_SOURCE_DUMP_PATH, output).unwrap();
+	println!("{output}");
 }
 
 fn generate_initial_output(output: Output) -> Result<()> {

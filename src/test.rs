@@ -1,5 +1,6 @@
 use std::fs::read_dir;
 
+use crate::c_codegen::DebugCodegen;
 use crate::color::*;
 use crate::project::build_project;
 
@@ -33,7 +34,7 @@ pub fn run_tests() {
 		let expected = std::fs::read_to_string(entry.path().join("expect.txt")).ok();
 		let mut error_output = String::new();
 
-		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone(), false) else {
+		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone(), DebugCodegen::OnFailure) else {
 			if let Some(expected) = &expected {
 				if error_output.trim_end() == expected.trim_end() {
 					successes += 1;

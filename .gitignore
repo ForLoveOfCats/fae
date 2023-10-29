@@ -1,3 +1,4 @@
 .DS_Store
 /target
+output.c
 output.executable

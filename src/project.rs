@@ -1,13 +1,18 @@
 use std::path::{Path, PathBuf};
 
-use crate::c_codegen::{generate_code, OptimizationLevel};
+use crate::c_codegen::{generate_code, DebugCodegen, OptimizationLevel};
 use crate::error::{Messages, WriteFmt};
 use crate::file::load_all_files;
 use crate::parser::parse_file;
 use crate::type_store::TypeStore;
 use crate::validator::{validate, CIncludeStore, FunctionStore, RootLayers};
 
-pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: String, debug_codegen: bool) -> Option<PathBuf> {
+pub fn build_project(
+	err_output: &mut impl WriteFmt,
+	path: &Path,
+	root_name: String,
+	debug_codegen: DebugCodegen,
+) -> Option<PathBuf> {
 	// Can be folded into parallel parsing, ish
 	let mut files = Vec::new();
 	if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {

@@ -16,6 +16,7 @@ mod validator;
 
 use std::{ffi::OsStr, path::Path};
 
+use c_codegen::DebugCodegen;
 use project::build_project;
 
 fn main() {
@@ -28,7 +29,7 @@ fn main() {
 	let mut stderr = std::io::stderr();
 	let project_path = Path::new("./example");
 	let root_name = "example".to_owned();
-	let Some(binary_path) = build_project(&mut stderr, project_path, root_name, true) else {
+	let Some(binary_path) = build_project(&mut stderr, project_path, root_name, DebugCodegen::Yes) else {
 		return;
 	};
 
