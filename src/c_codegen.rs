@@ -15,6 +15,18 @@ type Result<T> = std::io::Result<T>;
 // type Output<'a> = &'a mut std::process::ChildStdin;
 type Output<'a> = &'a mut Vec<u8>;
 
+macro_rules! annotate_comment {
+	($output:ident, $($arg:tt)*) => {
+		writeln!($output, "// {}", format_args!( $($arg)* ))
+	}
+}
+
+// macro_rules! annotate_comment {
+// 	($($arg:tt)*) => {
+// 		Result::Ok(())
+// 	}
+// }
+
 #[allow(dead_code)]
 #[derive(PartialEq, Eq)]
 pub enum DebugCodegen {
@@ -63,6 +75,27 @@ impl std::fmt::Display for TempId {
 	}
 }
 
+#[derive(Debug, Copy, Clone)]
+enum Step {
+	Temp { temp_id: TempId },
+	Readable { readable_index: usize },
+	ConstantInteger(i128),
+	ConstantDecimal(f64),
+	ConstantCodepoint(char),
+}
+
+impl std::fmt::Display for Step {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Step::Temp { temp_id } => temp_id.fmt(f),
+			Step::Readable { readable_index } => write!(f, "re_{}", readable_index),
+			Step::ConstantInteger(integer) => write!(f, "{}", integer),
+			Step::ConstantDecimal(decimal) => write!(f, "{}", decimal),
+			Step::ConstantCodepoint(codepoint) => write!(f, "{}", *codepoint as u32),
+		}
+	}
+}
+
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
 	c_include_store: &CIncludeStore<'a>,
@@ -93,6 +126,8 @@ pub fn generate_code<'a>(
 			"-Wvla",
 			"-Wshadow",
 			"-Wcast-qual",
+			"-Wconversion",
+			"-Wwrite-strings",
 			"-Wno-pointer-sign",
 			"-Wno-format",
 			"-Wno-unused-variable",
@@ -154,8 +189,6 @@ pub fn generate_code<'a>(
 		println!("{}", std::io::read_to_string(stderr).expect("Failed to read C compiler stderr"));
 		panic!("C Compiler failed");
 	}
-
-	_ = std::fs::remove_file(DEBUG_SOURCE_DUMP_PATH);
 }
 
 fn dump_codegen(output: &str) {
@@ -299,8 +332,25 @@ fn generate_function<'a>(
 		}
 	}
 
+	// Belch
+	annotate_comment!(
+		output,
+		"fn {}[{}][{}]",
+		shape.name.item,
+		specialization.type_arguments.ids()[..specialization.type_arguments.implicit_len()]
+			.iter()
+			.map(|id| type_store.internal_type_name(function_store, &[], *id))
+			.collect::<Vec<_>>()
+			.join(", "),
+		specialization.type_arguments.ids()[specialization.type_arguments.implicit_len()..]
+			.iter()
+			.map(|id| type_store.internal_type_name(function_store, &[], *id))
+			.collect::<Vec<_>>()
+			.join(", ")
+	)?;
+
 	generate_function_signature(type_store, function_store, function_id, output)?;
-	writeln!(output, "{{")?;
+	writeln!(output, " {{")?;
 
 	let block = shape.block.clone();
 	let type_arguments = specialization.type_arguments.clone();
@@ -336,7 +386,11 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 			StatementKind::Binding(binding) => {
 				let id = generate_expression(context, &binding.expression, output)?.unwrap();
 				generate_type_id(context, binding.type_id, output)?;
-				write!(output, " ")?;
+				if binding.is_mutable {
+					write!(output, " ")?;
+				} else {
+					write!(output, " const ")?;
+				}
 				generate_readable_index(binding.readable_index, output)?;
 				writeln!(output, " = {id};")?;
 			}
@@ -355,28 +409,28 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 	Ok(())
 }
 
-fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<TempId> {
-	let mut ids = Vec::new(); // Belch
+fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<Step> {
+	let mut temp_ids = Vec::new(); // Belch
 	for initalizer in &literal.field_initializers {
 		let id = generate_expression(context, &initalizer.expression, output)?.unwrap();
-		ids.push(id);
+		temp_ids.push(id);
 	}
 
-	let id = context.generate_temp_id();
+	let temp_id = context.generate_temp_id();
 	generate_type_id(context, literal.type_id, output)?;
-	write!(output, " {id} = ")?;
+	write!(output, " {temp_id} = ")?;
 
 	generate_struct_construction_open(context, literal.type_id, output)?;
-	for (index, id) in ids.into_iter().enumerate() {
+	for (index, id) in temp_ids.into_iter().enumerate() {
 		write!(output, ".fi_{index} = {id}, ")?;
 	}
 	generate_struct_construction_close(output)?;
 
 	writeln!(output, ";")?;
-	Ok(id)
+	Ok(Step::Temp { temp_id })
 }
 
-fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<Option<TempId>> {
+fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<Option<Step>> {
 	let function_id = context.function_store.specialize_with_function_generics(
 		context.messages,
 		context.type_store,
@@ -437,10 +491,10 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 
 	writeln!(output, ");")?;
 
-	Ok(maybe_id)
+	Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }))
 }
 
-fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<TempId> {
+fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<Step> {
 	let id = generate_expression(context, &operation.expression, output)?.unwrap();
 
 	let op = match operation.op {
@@ -452,16 +506,27 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 	Ok(id)
 }
 
-fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<TempId> {
-	let left_id = generate_expression(context, &operation.left, output)?.unwrap();
-	let right_id = generate_expression(context, &operation.right, output)?.unwrap();
-
+fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<Step> {
 	if operation.op == BinaryOperator::Assign {
-		writeln!(output, "{left_id} = {right_id};")?;
-		return Ok(left_id);
+		if let ExpressionKind::Read(read) = &operation.left.kind {
+			let right_step = generate_expression(context, &operation.right, output)?.unwrap();
+			generate_readable_index(read.readable_index, output)?;
+			writeln!(output, " = {right_step};")?;
+			return Ok(Step::Readable { readable_index: read.readable_index });
+		}
 	}
 
-	write!(output, "{left_id} = ({left_id}")?;
+	let left_step = generate_expression(context, &operation.left, output)?.unwrap();
+	let right_step = generate_expression(context, &operation.right, output)?.unwrap();
+
+	if operation.op == BinaryOperator::Assign {
+		writeln!(output, "{left_step} = {right_step};")?;
+		return Ok(left_step);
+	}
+
+	let temp_id = context.generate_temp_id();
+	generate_type_id(context, operation.left.type_id, output)?;
+	write!(output, " {temp_id} = ({left_step}")?;
 
 	let op = match operation.op {
 		BinaryOperator::Assign => unreachable!(),
@@ -472,37 +537,35 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	};
 	write!(output, " {} ", op)?;
 
-	writeln!(output, "{right_id});")?;
+	writeln!(output, "{right_step});")?;
 
-	Ok(left_id)
+	Ok(Step::Temp { temp_id })
 }
 
 // Unwrapping the Option is useful when the temp ID is needed as the type system should prevent any
 // semantic cases where a the "value" of a void-returning expression is operated on
-fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<TempId>> {
-	let mut id = context.generate_temp_id();
+fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<Step>> {
+	let mut temp_id = context.generate_temp_id();
 
 	match &expression.kind {
 		ExpressionKind::IntegerValue(value) => {
-			let type_id = value.get_collapse();
-			generate_type_id(context, type_id, output)?;
-			writeln!(output, " {id} = {};", value.value())?;
+			return Ok(Some(Step::ConstantInteger(value.value())));
 		}
 
 		ExpressionKind::DecimalValue(value) => {
-			let type_id = value.get_collapse();
-			generate_type_id(context, type_id, output)?;
-			writeln!(output, " {id} = {};", value.value())?;
+			return Ok(Some(Step::ConstantDecimal(value.value())));
 		}
 
-		ExpressionKind::CodepointLiteral(literal) => writeln!(output, "u64 {id} = {};", literal.value as u32)?,
+		ExpressionKind::CodepointLiteral(literal) => {
+			return Ok(Some(Step::ConstantCodepoint(literal.value)));
+		}
 
 		ExpressionKind::StringLiteral(literal) => {
 			let type_id = context.type_store.string_type_id();
 			generate_type_id(context, type_id, output)?;
-			write!(output, " {id} = ")?;
+			write!(output, " {temp_id} = ")?;
 			generate_struct_construction_open(context, type_id, output)?;
-			write!(output, ".fi_0 = (u8*){:?}, .fi_1 = {}", literal.value, literal.value.len())?;
+			write!(output, ".fi_0 = (u8 const*){:?}, .fi_1 = {}", literal.value, literal.value.len())?;
 			generate_struct_construction_close(output)?;
 			writeln!(output, ";")?;
 		}
@@ -520,22 +583,22 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 			} else {
 				write!(output, " const *")?;
 			}
-			write!(output, " {id} = &")?;
+			write!(output, " {temp_id} = &")?;
 			generate_readable_index(read.readable_index, output)?;
 			writeln!(output, ";")?;
-			id.dereference = true;
+			temp_id.dereference = true;
 		}
 
 		ExpressionKind::FieldRead(field_read) => {
-			let struct_id = generate_expression(context, &field_read.base, output)?.unwrap();
+			let struct_step = generate_expression(context, &field_read.base, output)?.unwrap();
 			generate_type_id(context, field_read.type_id, output)?;
 			if expression.mutable {
 				write!(output, " *")?;
 			} else {
 				write!(output, " const *")?;
 			}
-			writeln!(output, "{id} = &{struct_id}.fi_{};", field_read.field_index)?;
-			id.dereference = true;
+			writeln!(output, "{temp_id} = &{struct_step}.fi_{};", field_read.field_index)?;
+			temp_id.dereference = true;
 		}
 
 		ExpressionKind::UnaryOperation(operation) => {
@@ -549,7 +612,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 		kind => unimplemented!("expression {kind:?}"),
 	}
 
-	Ok(Some(id))
+	Ok(Some(Step::Temp { temp_id }))
 }
 
 fn generate_struct_construction_open(context: &mut Context, type_id: TypeId, output: Output) -> Result<()> {

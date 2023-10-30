@@ -979,7 +979,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	// TODO: Use module path to have or not have paths for local types?
-	fn internal_type_name(&self, function_store: &FunctionStore, _module_path: &'a [String], type_id: TypeId) -> String {
+	pub fn internal_type_name(&self, function_store: &FunctionStore, _module_path: &'a [String], type_id: TypeId) -> String {
 		match self.type_entries[type_id.index()].kind {
 			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 

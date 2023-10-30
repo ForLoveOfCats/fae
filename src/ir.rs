@@ -468,10 +468,6 @@ impl IntegerValue {
 		self.span
 	}
 
-	pub fn get_collapse(&self) -> TypeId {
-		self.collapse.unwrap()
-	}
-
 	pub fn collapse(&mut self, type_id: TypeId) {
 		assert_not_collapsed(self.collapse);
 		self.collapse = Some(type_id);
@@ -570,10 +566,6 @@ impl DecimalValue {
 
 	pub fn span(&self) -> Span {
 		self.span
-	}
-
-	pub fn get_collapse(&self) -> TypeId {
-		self.collapse.unwrap()
 	}
 
 	pub fn collapse(&mut self, type_id: TypeId) {
