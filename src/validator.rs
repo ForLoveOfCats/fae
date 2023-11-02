@@ -727,7 +727,6 @@ fn create_root_functions<'a>(
 	}
 }
 
-#[allow(clippy::too_many_arguments)]
 fn validate_root_consts<'a>(
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
@@ -958,7 +957,6 @@ fn fill_block_types<'a>(
 	}
 }
 
-#[allow(clippy::too_many_arguments)]
 fn create_block_functions<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
@@ -1460,7 +1458,6 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	Some(Binding { name, type_id, expression, readable_index, is_mutable })
 }
 
-#[allow(clippy::needless_return)]
 fn validate_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,

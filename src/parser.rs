@@ -332,7 +332,7 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 	}
 }
 
-fn parse_string_contents<'a>(string: &'a str) -> Cow<'a, str> {
+fn parse_string_contents(string: &str) -> Cow<str> {
 	let mut allocated = String::new();
 
 	let mut index = 0;

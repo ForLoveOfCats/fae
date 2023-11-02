@@ -303,7 +303,7 @@ impl TypeArguments {
 				messages,
 				generic_usages,
 				function_shape_index,
-				&function_type_arguments,
+				function_type_arguments,
 				*original_id,
 			);
 
