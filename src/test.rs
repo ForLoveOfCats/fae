@@ -4,7 +4,7 @@ use crate::c_codegen::DebugCodegen;
 use crate::color::*;
 use crate::project::build_project;
 
-pub fn run_tests() {
+pub fn run_tests(args: Vec<String>) {
 	let mut successes: u64 = 0;
 	let mut failures = Vec::new();
 
@@ -16,14 +16,18 @@ pub fn run_tests() {
 			continue;
 		}
 
-		let name = match entry.file_name().to_str() {
-			Some(name) => name.to_owned(),
+		let name = match entry.file_name().into_string() {
+			Ok(name) => name,
 
-			None => {
+			Err(..) => {
 				eprintln!("\nTest {:?} has an invalid name", entry.file_name());
 				std::process::exit(-1);
 			}
 		};
+
+		if !args.is_empty() && !args.iter().any(|arg| name.contains(arg)) {
+			continue;
+		}
 
 		let message = format!("  Building test {name}");
 		let line = "─".repeat(message.len());

@@ -20,9 +20,10 @@ use c_codegen::DebugCodegen;
 use project::build_project;
 
 fn main() {
-	let arg = std::env::args_os().nth(1);
-	if arg.as_deref() == Some(OsStr::new("t")) {
-		test::run_tests();
+	let mut args = std::env::args_os().skip(1);
+	if args.next().as_deref() == Some(OsStr::new("t")) {
+		let args = args.map(|s| s.to_str().expect("test name arguments must be valid Unicode").to_owned());
+		test::run_tests(args.collect());
 		return;
 	}
 
