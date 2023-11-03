@@ -1221,10 +1221,15 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 }
 
 fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>) {
+	if statement.extern_name.is_some() {
+		// Note: Signature has already been checked in `create_block_functions`
+		return;
+	}
+
 	let function_shape_index = context.symbols.symbols.iter().rev().find_map(|symbol| {
-		if let SymbolKind::Function { function_shape_index: shape_index } = symbol.kind {
+		if let SymbolKind::Function { function_shape_index } = symbol.kind {
 			if symbol.name == statement.name.item {
-				return Some(shape_index);
+				return Some(function_shape_index);
 			}
 		}
 		None
@@ -1233,11 +1238,6 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	let Some(function_shape_index) = function_shape_index else {
 		return;
 	};
-
-	if context.function_store.shapes[function_shape_index].extern_name.is_some() {
-		// Note: Signature has already been checked in `create_block_functions`
-		return;
-	}
 
 	let generics = context.function_store.shapes[function_shape_index].generics.clone();
 	let mut scope = context.child_scope_with_generic_parameters(&generics);
