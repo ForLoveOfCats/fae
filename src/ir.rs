@@ -676,4 +676,5 @@ pub struct BinaryOperation<'a> {
 	pub op: BinaryOperator,
 	pub left: Expression<'a>,
 	pub right: Expression<'a>,
+	pub type_id: TypeId,
 }

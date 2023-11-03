@@ -1832,7 +1832,7 @@ fn validate_expression<'a>(
 				_ => collapsed,
 			};
 
-			let operation = Box::new(BinaryOperation { op, left, right });
+			let operation = Box::new(BinaryOperation { op, left, right, type_id });
 			let kind = ExpressionKind::BinaryOperation(operation);
 			return Expression { span, type_id, mutable: true, kind };
 		}
@@ -1848,7 +1848,8 @@ fn perform_constant_math<'a>(
 	if let ExpressionKind::IntegerValue(left) = left.kind {
 		let right = match &right.kind {
 			ExpressionKind::IntegerValue(right) => *right,
-			kind => unreachable!("{kind:?}"),
+			ExpressionKind::DecimalValue(..) => unreachable!(),
+			_ => return None,
 		};
 
 		let value = match op {
@@ -1867,7 +1868,8 @@ fn perform_constant_math<'a>(
 	if let ExpressionKind::DecimalValue(left) = left.kind {
 		let right = match &right.kind {
 			ExpressionKind::DecimalValue(right) => *right,
-			kind => unreachable!("{kind:?}"),
+			ExpressionKind::IntegerValue(..) => unreachable!(),
+			_ => return None,
 		};
 
 		let value = match op {

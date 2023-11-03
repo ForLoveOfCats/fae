@@ -193,7 +193,7 @@ pub fn generate_code<'a>(
 
 fn dump_codegen(output: &str) {
 	std::fs::write(DEBUG_SOURCE_DUMP_PATH, output).unwrap();
-	println!("{output}");
+	println!("\n{output}");
 }
 
 fn generate_initial_output(output: Output) -> Result<()> {
@@ -525,7 +525,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	}
 
 	let temp_id = context.generate_temp_id();
-	generate_type_id(context, operation.left.type_id, output)?;
+	generate_type_id(context, operation.type_id, output)?;
 	write!(output, " {temp_id} = ({left_step}")?;
 
 	let op = match operation.op {
@@ -642,6 +642,10 @@ fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> R
 fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result<()> {
 	let entry = &type_store.type_entries[type_id.index()];
 	match &entry.kind {
+		TypeEntryKind::BuiltinType {
+			kind: PrimativeKind::AnyCollapse | PrimativeKind::UntypedInteger | PrimativeKind::UntypedDecimal,
+		} => unreachable!("cannot generate type id of kind: {:?}", entry.kind),
+
 		TypeEntryKind::BuiltinType { kind } => write!(output, "{}", kind.name()),
 
 		TypeEntryKind::UserType { shape_index, specialization_index } => {

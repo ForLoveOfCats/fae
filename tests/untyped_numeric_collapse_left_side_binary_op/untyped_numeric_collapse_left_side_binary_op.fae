@@ -1,0 +1,12 @@
+fn returns_int(): i32 {
+	return 4
+}
+
+fn returns_float(): f32 {
+	return 8
+}
+
+fn main() {
+	let a = 5 + returns_int()
+	let b = 10 - returns_float()
+}
