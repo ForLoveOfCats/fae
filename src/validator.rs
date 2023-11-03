@@ -1465,383 +1465,415 @@ fn validate_expression<'a>(
 	let span = expression.span;
 
 	match &expression.item {
-		tree::Expression::Block(block) => {
-			let validated_block = validate_block(context.child_scope(), block, false);
-			let type_id = validated_block.type_id;
-			let kind = ExpressionKind::Block(validated_block);
-			return Expression { span, type_id, mutable: true, kind };
+		tree::Expression::Block(block) => validate_block_expression(context, block, span),
+		tree::Expression::IntegerLiteral(literal) => validate_integer_literal(context, literal, span),
+		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
+		tree::Expression::CodepointLiteral(literal) => validate_codepoint_literal(context, literal, span),
+		tree::Expression::StringLiteral(literal) => validate_string_literal(context, literal, span),
+		tree::Expression::StructLiteral(literal) => validate_struct_literal(context, literal, span),
+		tree::Expression::Call(call) => validate_call(context, call, span),
+		tree::Expression::Read(read) => validate_read(context, read, span),
+		tree::Expression::FieldRead(field_read) => validate_field_read(context, field_read, span),
+		tree::Expression::UnaryOperation(operation) => validate_unary_operation(context, operation, span),
+		tree::Expression::BinaryOperation(operation) => validate_binary_operation(context, operation, span),
+	}
+}
+
+fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>, span: Span) -> Expression<'a> {
+	let validated_block = validate_block(context.child_scope(), block, false);
+	let type_id = validated_block.type_id;
+	let kind = ExpressionKind::Block(validated_block);
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::IntegerLiteral, span: Span) -> Expression<'a> {
+	let value = IntegerValue::new(literal.value.item, literal.value.span);
+	let kind = ExpressionKind::IntegerValue(value);
+	let type_id = context.type_store.integer_type_id();
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_float_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::FloatLiteral, span: Span) -> Expression<'a> {
+	let value = DecimalValue::new(literal.value.item, literal.value.span);
+	let kind = ExpressionKind::DecimalValue(value);
+	let type_id = context.type_store.decimal_type_id();
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_codepoint_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &tree::CodepointLiteral,
+	span: Span,
+) -> Expression<'a> {
+	let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
+	let type_id = context.type_store.u32_type_id();
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_string_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &tree::StringLiteral<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item.clone() });
+	let type_id = context.type_store.string_type_id();
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_struct_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &'a tree::StructLiteral<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let type_id = match context.lookup_type(&literal.parsed_type) {
+		Some(type_id) => type_id,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
+
+	let type_entry = &context.type_store.type_entries[type_id.index()];
+	let (shape_index, specialization_index) = match &type_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (*shape_index, *specialization_index),
+
+		_ => {
+			let name = context.type_name(type_id);
+			let message = error!("Cannot construct type {name} like a struct as it is not a struct");
+			context.message(message.span(literal.parsed_type.span));
+			return Expression::any_collapse(context.type_store, span);
 		}
+	};
 
-		tree::Expression::IntegerLiteral(literal) => {
-			let value = IntegerValue::new(literal.value.item, literal.value.span);
-			let kind = ExpressionKind::IntegerValue(value);
-			let type_id = context.type_store.integer_type_id();
-			return Expression { span, type_id, mutable: true, kind };
-		}
+	let user_type = &mut context.type_store.user_types[shape_index];
+	let shape = match &mut user_type.kind {
+		UserTypeKind::Struct { shape } => shape,
+	};
 
-		tree::Expression::FloatLiteral(literal) => {
-			let value = DecimalValue::new(literal.value.item, literal.value.span);
-			let kind = ExpressionKind::DecimalValue(value);
-			let type_id = context.type_store.decimal_type_id();
-			return Expression { span, type_id, mutable: true, kind };
-		}
+	// Hate this clone
+	let fields = shape.specializations[specialization_index].fields.clone();
+	let mut fields = fields.iter();
 
-		tree::Expression::CodepointLiteral(literal) => {
-			let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
-			let type_id = context.type_store.u32_type_id();
-			return Expression { span, type_id, mutable: true, kind };
-		}
+	let mut field_initializers = Vec::new();
 
-		tree::Expression::StringLiteral(literal) => {
-			let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item.clone() });
-			let type_id = context.type_store.string_type_id();
-			return Expression { span, type_id, mutable: true, kind };
-		}
+	for intializer in &literal.initializer.item.field_initializers {
+		let mut expression = validate_expression(context, &intializer.expression);
 
-		tree::Expression::StructLiteral(literal) => {
-			let type_id = match context.lookup_type(&literal.parsed_type) {
-				Some(type_id) => type_id,
-				None => return Expression::any_collapse(context.type_store, span),
-			};
+		let field = match fields.next() {
+			Some(field) => field,
 
-			let type_entry = &context.type_store.type_entries[type_id.index()];
-			let (shape_index, specialization_index) = match &type_entry.kind {
-				TypeEntryKind::UserType { shape_index, specialization_index } => (*shape_index, *specialization_index),
-
-				_ => {
-					let name = context.type_name(type_id);
-					let message = error!("Cannot construct type {name} like a struct as it is not a struct");
-					context.message(message.span(literal.parsed_type.span));
-					return Expression::any_collapse(context.type_store, span);
-				}
-			};
-
-			let user_type = &mut context.type_store.user_types[shape_index];
-			let shape = match &mut user_type.kind {
-				UserTypeKind::Struct { shape } => shape,
-			};
-
-			// Hate this clone
-			let fields = shape.specializations[specialization_index].fields.clone();
-			let mut fields = fields.iter();
-
-			let mut field_initializers = Vec::new();
-
-			for intializer in &literal.initializer.item.field_initializers {
-				let mut expression = validate_expression(context, &intializer.expression);
-
-				let field = match fields.next() {
-					Some(field) => field,
-
-					None => {
-						context.message(error!("Unexpected extra field initalizer").span(intializer.name.span));
-						continue;
-					}
-				};
-
-				if field.name != intializer.name.item {
-					context.message(
-						error!("Expected initalizer for field `{}`, got `{}` instead", field.name, intializer.name.item,)
-							.span(intializer.name.span),
-					);
-					continue;
-				}
-
-				if !context.collapse_to(field.type_id, &mut expression).unwrap_or(true) {
-					context.message(
-						error!(
-							"Field intializer type mismatch, expected {} but got {} instead",
-							context.type_name(field.type_id),
-							context.type_name(expression.type_id),
-						)
-						.span(intializer.name.span + expression.span),
-					);
-					continue;
-				}
-
-				field_initializers.push(FieldInitializer { expression });
+			None => {
+				context.message(error!("Unexpected extra field initalizer").span(intializer.name.span));
+				continue;
 			}
+		};
 
-			let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
-			return Expression { span, type_id, mutable: true, kind };
-		}
-
-		tree::Expression::Call(call) => {
-			let symbol = match context.lookup_symbol(&call.path_segments.item) {
-				Some(symbol) => symbol,
-				None => return Expression::any_collapse(context.type_store, span),
-			};
-
-			let name = symbol.name;
-			let function_shape_index = match symbol.kind {
-				SymbolKind::Function { function_shape_index } => function_shape_index,
-
-				kind => {
-					context.message(error!("Cannot call {kind}").span(call.path_segments.span));
-					return Expression::any_collapse(context.type_store, span);
-				}
-			};
-
-			let mut type_argument_lookup_errored = false;
-			let mut explicit_arguments = Vec::new();
-			for type_argument in &call.type_arguments {
-				if let Some(type_id) = context.lookup_type(type_argument) {
-					explicit_arguments.push(type_id);
-				} else {
-					type_argument_lookup_errored = true;
-				}
-			}
-
-			if type_argument_lookup_errored {
-				return Expression::any_collapse(context.type_store, span);
-			}
-
-			let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-			let shape = &context.function_store.shapes[function_shape_index];
-			if shape.generics.implicit_len() != 0 {
-				// The only functions with implicit generic parameters are inner functions, and if we have it
-				// in scope then that means it must be somewhere within ourselves or our function parent chain
-				for parameter in context.generic_parameters.parameters() {
-					type_arguments.push_implicit(parameter.generic_type_id);
-				}
-			}
-
-			let results = context.function_store.get_or_add_specialization(
-				context.messages,
-				context.type_store,
-				context.function_generic_usages,
-				function_shape_index,
-				Some(span),
-				type_arguments,
+		if field.name != intializer.name.item {
+			context.message(
+				error!("Expected initalizer for field `{}`, got `{}` instead", field.name, intializer.name.item,)
+					.span(intializer.name.span),
 			);
-			let FunctionSpecializationResult { specialization_index, return_type } = match results {
-				Some(results) => results,
-				None => return Expression::any_collapse(context.type_store, span),
-			};
-
-			let mut arguments = Vec::with_capacity(call.arguments.len());
-			for argument in &call.arguments {
-				arguments.push(validate_expression(context, argument));
-			}
-
-			let shape = &context.function_store.shapes[function_shape_index];
-			let specialization = &shape.specializations[specialization_index];
-
-			// Don't bail immediately with type mismatch, we want to check every argument and the argument count
-			let mut arguments_type_mismatch = false;
-			for (index, argument) in arguments.iter_mut().enumerate() {
-				let parameter = match specialization.parameters.get(index) {
-					Some(parameter) => parameter,
-					None => break,
-				};
-
-				let collapsed = context.type_store.collapse_to(context.messages, parameter.type_id, argument);
-				if !collapsed.unwrap_or(true) {
-					let error = error!(
-						"Expected argument of type {}, got {}",
-						context.type_name(parameter.type_id),
-						context.type_name(argument.type_id)
-					);
-					context.messages.message(error.span(argument.span));
-					arguments_type_mismatch = true;
-				}
-			}
-
-			if arguments.len() != specialization.parameters.len() {
-				let error = error!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
-			}
-
-			if arguments_type_mismatch {
-				return Expression::any_collapse(context.type_store, span);
-			}
-
-			let function_id = FunctionId { function_shape_index, specialization_index };
-			let kind = ExpressionKind::Call(Call { name, function_id, arguments });
-			return Expression { span, type_id: return_type, mutable: true, kind };
+			continue;
 		}
 
-		tree::Expression::Read(read) => {
-			let symbol = match context.lookup_symbol(&read.path_segments.item) {
-				Some(symbol) => symbol,
-				None => return Expression::any_collapse(context.type_store, span),
-			};
+		if !context.collapse_to(field.type_id, &mut expression).unwrap_or(true) {
+			context.message(
+				error!(
+					"Field intializer type mismatch, expected {} but got {} instead",
+					context.type_name(field.type_id),
+					context.type_name(expression.type_id),
+				)
+				.span(intializer.name.span + expression.span),
+			);
+			continue;
+		}
 
-			let readable_index = match symbol.kind {
-				SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
+		field_initializers.push(FieldInitializer { expression });
+	}
 
-				SymbolKind::Const { constant_index } => {
-					let constant = &context.constants[constant_index];
-					let (kind, type_id) = match constant {
-						ConstantValue::IntegerValue(value) => {
-							let kind = ExpressionKind::IntegerValue(IntegerValue::new(*value, span));
-							(kind, context.type_store.integer_type_id())
-						}
+	let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
+	Expression { span, type_id, mutable: true, kind }
+}
 
-						ConstantValue::DecimalValue(value) => {
-							let kind = ExpressionKind::DecimalValue(DecimalValue::new(*value, span));
-							(kind, context.type_store.decimal_type_id())
-						}
+fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>, span: Span) -> Expression<'a> {
+	let symbol = match context.lookup_symbol(&call.path_segments.item) {
+		Some(symbol) => symbol,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
 
-						ConstantValue::CodepointLiteral(value) => {
-							let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: *value });
-							(kind, context.type_store.u32_type_id())
-						}
+	let name = symbol.name;
+	let function_shape_index = match symbol.kind {
+		SymbolKind::Function { function_shape_index } => function_shape_index,
 
-						ConstantValue::StringLiteral(value) => {
-							let kind = ExpressionKind::StringLiteral(StringLiteral { value: value.clone() });
-							(kind, context.type_store.string_type_id())
-						}
-					};
+		kind => {
+			context.message(error!("Cannot call {kind}").span(call.path_segments.span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
 
-					return Expression { span, type_id, mutable: false, kind };
+	let mut type_argument_lookup_errored = false;
+	let mut explicit_arguments = Vec::new();
+	for type_argument in &call.type_arguments {
+		if let Some(type_id) = context.lookup_type(type_argument) {
+			explicit_arguments.push(type_id);
+		} else {
+			type_argument_lookup_errored = true;
+		}
+	}
+
+	if type_argument_lookup_errored {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
+	let shape = &context.function_store.shapes[function_shape_index];
+	if shape.generics.implicit_len() != 0 {
+		// The only functions with implicit generic parameters are inner functions, and if we have it
+		// in scope then that means it must be somewhere within ourselves or our function parent chain
+		for parameter in context.generic_parameters.parameters() {
+			type_arguments.push_implicit(parameter.generic_type_id);
+		}
+	}
+
+	let results = context.function_store.get_or_add_specialization(
+		context.messages,
+		context.type_store,
+		context.function_generic_usages,
+		function_shape_index,
+		Some(span),
+		type_arguments,
+	);
+	let FunctionSpecializationResult { specialization_index, return_type } = match results {
+		Some(results) => results,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
+
+	let mut arguments = Vec::with_capacity(call.arguments.len());
+	for argument in &call.arguments {
+		arguments.push(validate_expression(context, argument));
+	}
+
+	let shape = &context.function_store.shapes[function_shape_index];
+	let specialization = &shape.specializations[specialization_index];
+
+	// Don't bail immediately with type mismatch, we want to check every argument and the argument count
+	let mut arguments_type_mismatch = false;
+	for (index, argument) in arguments.iter_mut().enumerate() {
+		let parameter = match specialization.parameters.get(index) {
+			Some(parameter) => parameter,
+			None => break,
+		};
+
+		let collapsed = context.type_store.collapse_to(context.messages, parameter.type_id, argument);
+		if !collapsed.unwrap_or(true) {
+			let error = error!(
+				"Expected argument of type {}, got {}",
+				context.type_name(parameter.type_id),
+				context.type_name(argument.type_id)
+			);
+			context.messages.message(error.span(argument.span));
+			arguments_type_mismatch = true;
+		}
+	}
+
+	if arguments.len() != specialization.parameters.len() {
+		let error = error!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
+		context.message(error.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	if arguments_type_mismatch {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	let function_id = FunctionId { function_shape_index, specialization_index };
+	let kind = ExpressionKind::Call(Call { name, function_id, arguments });
+	Expression { span, type_id: return_type, mutable: true, kind }
+}
+
+fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, span: Span) -> Expression<'a> {
+	let symbol = match context.lookup_symbol(&read.path_segments.item) {
+		Some(symbol) => symbol,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
+
+	let readable_index = match symbol.kind {
+		SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
+
+		SymbolKind::Const { constant_index } => {
+			let constant = &context.constants[constant_index];
+			let (kind, type_id) = match constant {
+				ConstantValue::IntegerValue(value) => {
+					let kind = ExpressionKind::IntegerValue(IntegerValue::new(*value, span));
+					(kind, context.type_store.integer_type_id())
 				}
 
-				kind => {
-					context.message(error!("Cannot read value from {kind}").span(read.path_segments.span));
-					return Expression::any_collapse(context.type_store, span);
+				ConstantValue::DecimalValue(value) => {
+					let kind = ExpressionKind::DecimalValue(DecimalValue::new(*value, span));
+					(kind, context.type_store.decimal_type_id())
+				}
+
+				ConstantValue::CodepointLiteral(value) => {
+					let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: *value });
+					(kind, context.type_store.u32_type_id())
+				}
+
+				ConstantValue::StringLiteral(value) => {
+					let kind = ExpressionKind::StringLiteral(StringLiteral { value: value.clone() });
+					(kind, context.type_store.string_type_id())
 				}
 			};
 
-			let readable = match context.readables.get(readable_index) {
+			return Expression { span, type_id, mutable: false, kind };
+		}
+
+		kind => {
+			context.message(error!("Cannot read value from {kind}").span(read.path_segments.span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let readable = match context.readables.get(readable_index) {
+		Some(readable) => readable,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
+
+	let mutable = readable.kind == ReadableKind::Mut;
+	let read = Read {
+		name: readable.name,
+		type_id: readable.type_id,
+		readable_index,
+	};
+
+	let kind = ExpressionKind::Read(read);
+	Expression { span, type_id: readable.type_id, mutable, kind }
+}
+
+fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tree::FieldRead<'a>, span: Span) -> Expression<'a> {
+	let base = validate_expression(context, &field_read.base);
+	if base.type_id.is_any_collapse(context.type_store) {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	// Dumb hack to store fields array in outer scope so a slice can be taken
+	let slice_fields;
+
+	let fields: &[Field] = if let Some(as_struct) = base.type_id.as_struct(context.type_store) {
+		&as_struct.fields
+	} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
+		slice_fields = [
+			Field {
+				name: "pointer",
+				type_id: context.type_store.pointer_to(as_slice.type_id, false),
+			},
+			Field { name: "len", type_id: context.type_store.i64_type_id() },
+		];
+		&slice_fields
+	} else {
+		let error = error!("Cannot access field on {}", base.kind.name_with_article());
+		context.message(error.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let mut fields = fields.iter().enumerate();
+	let Some((field_index, field)) = fields.find(|f| f.1.name == field_read.name.item) else {
+		let type_name = context.type_name(base.type_id);
+		let error = error!("No field `{}` on {}", field_read.name.item, type_name);
+		context.message(error.span(field_read.name.span));
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let mutable = base.mutable;
+	let field_read = FieldRead { base, name: field.name, type_id: field.type_id, field_index };
+	let kind = ExpressionKind::FieldRead(Box::new(field_read));
+	Expression { span, type_id: field.type_id, mutable, kind }
+}
+
+fn validate_unary_operation<'a>(
+	context: &mut Context<'a, '_, '_>,
+	operation: &'a tree::UnaryOperation<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let op = match operation.op.item {
+		tree::UnaryOperator::Negate => UnaryOperator::Negate,
+	};
+
+	let mut expression = validate_expression(context, &operation.expression);
+	match (op, &mut expression.kind) {
+		(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
+			value.negate(context.messages, span);
+			expression.span = expression.span + span;
+			return expression;
+		}
+
+		(UnaryOperator::Negate, ExpressionKind::DecimalValue(value)) => {
+			value.negate(span);
+			expression.span = expression.span + span;
+			return expression;
+		}
+
+		_ => {}
+	}
+
+	let type_id = expression.type_id;
+	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_binary_operation<'a>(
+	context: &mut Context<'a, '_, '_>,
+	operation: &'a tree::BinaryOperation<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let op = operation.op.item;
+
+	let mut left = validate_expression(context, &operation.left);
+	let mut right = validate_expression(context, &operation.right);
+	let collapsed = context.type_store.collapse_fair(context.messages, &mut left, &mut right);
+
+	let Some(collapsed) = collapsed else {
+		context.message(
+			error!("{} type mismatch", op.name())
+				.span(span)
+				.note(note!(operation.left.span, "Left type {}", context.type_name(left.type_id)))
+				.note(note!(operation.right.span, "Right type {}", context.type_name(right.type_id))),
+		);
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	if let Some(constant_math_result) = perform_constant_math(context, &left, &right, op) {
+		return constant_math_result;
+	}
+
+	if op == BinaryOperator::Assign {
+		if let ExpressionKind::Read(read) = &left.kind {
+			let readable = match context.readables.get(read.readable_index) {
 				Some(readable) => readable,
 				None => return Expression::any_collapse(context.type_store, span),
 			};
 
-			let mutable = readable.kind == ReadableKind::Mut;
-			let read = Read {
-				name: readable.name,
-				type_id: readable.type_id,
-				readable_index,
-			};
+			if readable.kind != ReadableKind::Mut {
+				context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(left.span));
+			}
+		} else if let ExpressionKind::FieldRead(_) = &left.kind {
+			if !left.mutable {
+				context.message(error!("Cannot assign to field of immutable object").span(left.span));
+			}
+		} else {
+			context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(left.span));
+		}
+	}
 
-			let kind = ExpressionKind::Read(read);
-			return Expression { span, type_id: readable.type_id, mutable, kind };
+	let type_id = match op {
+		BinaryOperator::Assign => context.type_store.void_type_id(),
+
+		_ if matches!(left.kind, ExpressionKind::AnyCollapse) || matches!(right.kind, ExpressionKind::AnyCollapse) => {
+			context.type_store.any_collapse_type_id()
 		}
 
-		tree::Expression::FieldRead(field_read) => {
-			let base = validate_expression(context, &field_read.base);
-			if base.type_id.is_any_collapse(context.type_store) {
-				return Expression::any_collapse(context.type_store, span);
-			}
-
-			// Dumb hack to store fields array in outer scope so a slice can be taken
-			let slice_fields;
-
-			let fields: &[Field] = if let Some(as_struct) = base.type_id.as_struct(context.type_store) {
-				&as_struct.fields
-			} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
-				slice_fields = [
-					Field {
-						name: "pointer",
-						type_id: context.type_store.pointer_to(as_slice.type_id, false),
-					},
-					Field { name: "len", type_id: context.type_store.i64_type_id() },
-				];
-				&slice_fields
-			} else {
-				let error = error!("Cannot access field on {}", base.kind.name_with_article());
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
-			};
-
-			let mut fields = fields.iter().enumerate();
-			let Some((field_index, field)) = fields.find(|f| f.1.name == field_read.name.item) else {
-				let type_name = context.type_name(base.type_id);
-				let error = error!("No field `{}` on {}", field_read.name.item, type_name);
-				context.message(error.span(field_read.name.span));
-				return Expression::any_collapse(context.type_store, span);
-			};
-
-			let mutable = base.mutable;
-			let field_read = FieldRead { base, name: field.name, type_id: field.type_id, field_index };
-			let kind = ExpressionKind::FieldRead(Box::new(field_read));
-			return Expression { span, type_id: field.type_id, mutable, kind };
-		}
-
-		tree::Expression::UnaryOperation(operation) => {
-			let op = match operation.op.item {
-				tree::UnaryOperator::Negate => UnaryOperator::Negate,
-			};
-
-			let mut expression = validate_expression(context, &operation.expression);
-			match (op, &mut expression.kind) {
-				(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
-					value.negate(context.messages, span);
-					expression.span = expression.span + span;
-					return expression;
-				}
-
-				(UnaryOperator::Negate, ExpressionKind::DecimalValue(value)) => {
-					value.negate(span);
-					expression.span = expression.span + span;
-					return expression;
-				}
-
-				_ => {}
-			}
-
-			let type_id = expression.type_id;
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
-			return Expression { span, type_id, mutable: true, kind };
-		}
-
-		tree::Expression::BinaryOperation(operation) => {
-			let op = operation.op.item;
-
-			let mut left = validate_expression(context, &operation.left);
-			let mut right = validate_expression(context, &operation.right);
-			let collapsed = context.type_store.collapse_fair(context.messages, &mut left, &mut right);
-
-			let Some(collapsed) = collapsed else {
-				context.message(
-					error!("{} type mismatch", op.name())
-						.span(span)
-						.note(note!(operation.left.span, "Left type {}", context.type_name(left.type_id)))
-						.note(note!(operation.right.span, "Right type {}", context.type_name(right.type_id))),
-				);
-				return Expression::any_collapse(context.type_store, span);
-			};
-
-			if let Some(constant_math_result) = perform_constant_math(context, &left, &right, op) {
-				return constant_math_result;
-			}
-
-			if op == BinaryOperator::Assign {
-				if let ExpressionKind::Read(read) = &left.kind {
-					let readable = match context.readables.get(read.readable_index) {
-						Some(readable) => readable,
-						None => return Expression::any_collapse(context.type_store, span),
-					};
-
-					if readable.kind != ReadableKind::Mut {
-						context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(left.span));
-					}
-				} else if let ExpressionKind::FieldRead(_) = &left.kind {
-					if !left.mutable {
-						context.message(error!("Cannot assign to field of immutable object").span(left.span));
-					}
-				} else {
-					context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(left.span));
-				}
-			}
-
-			let type_id = match op {
-				BinaryOperator::Assign => context.type_store.void_type_id(),
-
-				_ if matches!(left.kind, ExpressionKind::AnyCollapse) || matches!(right.kind, ExpressionKind::AnyCollapse) => {
-					context.type_store.any_collapse_type_id()
-				}
-
-				_ => collapsed,
-			};
-
-			let operation = Box::new(BinaryOperation { op, left, right, type_id });
-			let kind = ExpressionKind::BinaryOperation(operation);
-			return Expression { span, type_id, mutable: true, kind };
-		}
+		_ => collapsed,
 	};
+
+	let operation = Box::new(BinaryOperation { op, left, right, type_id });
+	let kind = ExpressionKind::BinaryOperation(operation);
+	Expression { span, type_id, mutable: true, kind }
 }
 
 fn perform_constant_math<'a>(
