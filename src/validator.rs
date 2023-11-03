@@ -1829,6 +1829,11 @@ fn validate_expression<'a>(
 
 			let type_id = match op {
 				BinaryOperator::Assign => context.type_store.void_type_id(),
+
+				_ if matches!(left.kind, ExpressionKind::AnyCollapse) || matches!(right.kind, ExpressionKind::AnyCollapse) => {
+					context.type_store.any_collapse_type_id()
+				}
+
 				_ => collapsed,
 			};
 
