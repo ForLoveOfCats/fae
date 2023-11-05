@@ -164,7 +164,7 @@ pub fn generate_code<'a>(
 	}
 
 	for &description in &type_store.user_type_generate_order {
-		generate_user_type(type_store, description, &mut output).unwrap();
+		generate_user_type(type_store, function_store, description, &mut output).unwrap();
 	}
 
 	let main = function_store.main.unwrap();
@@ -232,7 +232,12 @@ fn forward_declare_user_type(
 	Ok(())
 }
 
-fn generate_user_type(type_store: &TypeStore, description: UserTypeSpecializationDescription, output: Output) -> Result<()> {
+fn generate_user_type(
+	type_store: &TypeStore,
+	function_store: &FunctionStore,
+	description: UserTypeSpecializationDescription,
+	output: Output,
+) -> Result<()> {
 	let user_type = &type_store.user_types[description.shape_index];
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
@@ -241,6 +246,18 @@ fn generate_user_type(type_store: &TypeStore, description: UserTypeSpecializatio
 			if entry.generic_poisoned {
 				return Ok(());
 			}
+
+			annotate_comment!(
+				output,
+				"struct {}[{}]",
+				shape.name,
+				specialization
+					.type_arguments
+					.iter()
+					.map(|id| type_store.internal_type_name(function_store, &[], *id))
+					.collect::<Vec<_>>()
+					.join(", ")
+			)?;
 
 			write!(output, "typedef struct ")?;
 			generate_raw_type_id(type_store, specialization.type_id, output)?;

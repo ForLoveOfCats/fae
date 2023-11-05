@@ -674,7 +674,7 @@ impl<'a> TypeStore<'a> {
 					function_initial_symbols_len,
 					pointee,
 				)?;
-				return Some(self.pointer_to(id, *mutable)); // TODO: Parse mutability
+				return Some(self.pointer_to(id, *mutable));
 			}
 
 			tree::Type::Slice(inner) => {
@@ -744,8 +744,8 @@ impl<'a> TypeStore<'a> {
 			type_args.push(id);
 		}
 
-		let invoke_span = self.user_types[shape_index].span;
-		self.get_or_add_shape_specialization(messages, generic_usages, shape_index, Some(invoke_span), type_args)
+		let invoke_span = Some(parsed_type.span);
+		self.get_or_add_shape_specialization(messages, generic_usages, shape_index, invoke_span, type_args)
 	}
 
 	pub fn get_or_add_shape_specialization(

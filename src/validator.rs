@@ -613,6 +613,7 @@ pub fn validate<'a>(
 	let mut constants = Vec::new();
 
 	create_root_types(messages, type_store, root_layers, parsed_files);
+	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
 	let mut readables = Readables::new();
 	create_root_functions(
@@ -687,6 +688,36 @@ fn create_root_types<'a>(
 		create_block_types(messages, type_store, &mut layer.symbols, 0, parsed_file.module_path, block, true);
 
 		layer.importable_types_len = layer.symbols.len();
+	}
+}
+
+fn fill_root_types<'a>(
+	messages: &mut Messages,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	root_layers: &mut RootLayers<'a>,
+	parsed_files: &[tree::File<'a>],
+) {
+	for parsed_file in parsed_files {
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let mut symbols = layer.symbols.clone(); // Belch
+
+		// This is definitely wrong
+		let mut generic_usages = Vec::new();
+
+		fill_block_types(
+			messages,
+			type_store,
+			function_store,
+			&mut generic_usages,
+			root_layers,
+			&mut symbols,
+			0,
+			&parsed_file.block,
+		);
+
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		layer.symbols = symbols;
 	}
 }
 
@@ -872,7 +903,7 @@ fn create_block_types<'a>(
 			//Start off with no fields, they will be added during the next pre-pass
 			//so that all types exist in order to populate field types
 
-			let shape_index = symbols.len();
+			let shape_index = type_store.user_types.len();
 			let mut generics = Vec::new();
 			for (generic_index, &generic) in statement.generics.iter().enumerate() {
 				let entry = type_store.type_entries.len() as u32;
@@ -940,7 +971,7 @@ fn fill_block_types<'a>(
 					&field.parsed_type,
 				) {
 					Some(type_id) => type_id,
-					None => return,
+					None => type_store.any_collapse_type_id(),
 				};
 
 				let field_shape = FieldShape { name: field.name.item, field_type };
@@ -1101,17 +1132,18 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			block,
 			false,
 		);
+		fill_block_types(
+			context.messages,
+			context.type_store,
+			context.function_store,
+			context.function_generic_usages,
+			context.root_layers,
+			context.symbols,
+			context.function_initial_symbols_len,
+			block,
+		);
 	}
-	fill_block_types(
-		context.messages,
-		context.type_store,
-		context.function_store,
-		context.function_generic_usages,
-		context.root_layers,
-		context.symbols,
-		context.function_initial_symbols_len,
-		block,
-	);
+
 	resolve_block_type_imports(
 		context.messages,
 		context.root_layers,
