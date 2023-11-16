@@ -128,6 +128,7 @@ pub fn generate_code<'a>(
 			"-Wcast-qual",
 			"-Wconversion",
 			"-Wwrite-strings",
+			// "-Wmissing-field-initializers",
 			"-Wno-pointer-sign",
 			"-Wno-format",
 			"-Wno-unused-variable",
@@ -438,8 +439,8 @@ fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, outpu
 	write!(output, " {temp_id} = ")?;
 
 	generate_struct_construction_open(context, literal.type_id, output)?;
-	for (index, id) in temp_ids.into_iter().enumerate() {
-		write!(output, ".fi_{index} = {id}, ")?;
+	for step in temp_ids.into_iter() {
+		write!(output, "{step}, ")?;
 	}
 	generate_struct_construction_close(output)?;
 

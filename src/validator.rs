@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::rc::Rc;
 
 use crate::error::*;
@@ -354,10 +355,9 @@ pub struct RootLayer<'a> {
 	name: &'a str,
 	children: Vec<RootLayer<'a>>,
 	symbols: Symbols<'a>,
-	importable_types_len: usize,
-	imported_types_len: usize,
-	importable_functions_len: usize,
-	importable_consts_len: usize,
+	importable_types_range: Range<usize>,
+	importable_functions_range: Range<usize>,
+	importable_consts_range: Range<usize>,
 }
 
 impl<'a> RootLayer<'a> {
@@ -366,10 +366,9 @@ impl<'a> RootLayer<'a> {
 			name,
 			children: Vec::new(),
 			symbols: Symbols::new(),
-			importable_types_len: 0,
-			imported_types_len: 0,
-			importable_functions_len: 0,
-			importable_consts_len: 0,
+			importable_types_range: 0..0,
+			importable_functions_range: 0..0,
+			importable_consts_range: 0..0,
 		}
 	}
 
@@ -387,18 +386,15 @@ impl<'a> RootLayer<'a> {
 	}
 
 	fn importable_types(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[0..self.importable_types_len]
+		&self.symbols.symbols[self.importable_types_range.clone()]
 	}
 
 	fn importable_functions(&self) -> &[Symbol<'a>] {
-		let types_len = self.importable_types_len + self.imported_types_len;
-		&self.symbols.symbols[types_len..types_len + self.importable_functions_len]
+		&self.symbols.symbols[self.importable_functions_range.clone()]
 	}
 
 	fn importable_consts(&self) -> &[Symbol<'a>] {
-		let types_len = self.importable_types_len + self.imported_types_len;
-		let start = types_len + self.importable_functions_len;
-		&self.symbols.symbols[start..start + self.importable_consts_len]
+		&self.symbols.symbols[self.importable_consts_range.clone()]
 	}
 }
 
@@ -613,6 +609,7 @@ pub fn validate<'a>(
 	let mut constants = Vec::new();
 
 	create_root_types(messages, type_store, root_layers, parsed_files);
+	resolve_root_type_imports(messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
 	let mut readables = Readables::new();
@@ -687,7 +684,19 @@ fn create_root_types<'a>(
 		let block = &parsed_file.block;
 		create_block_types(messages, type_store, &mut layer.symbols, 0, parsed_file.module_path, block, true);
 
-		layer.importable_types_len = layer.symbols.len();
+		layer.importable_types_range = 0..layer.symbols.len();
+	}
+}
+
+fn resolve_root_type_imports<'a>(messages: &mut Messages, root_layers: &mut RootLayers<'a>, parsed_files: &[tree::File<'a>]) {
+	for parsed_file in parsed_files {
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let mut symbols = layer.symbols.clone(); // Belch
+
+		let block = &parsed_file.block;
+		resolve_block_type_imports(messages, root_layers, &mut symbols, 0, block);
+
+		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
 }
 
@@ -753,7 +762,7 @@ fn create_root_functions<'a>(
 		);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_functions_len = symbols.len() - old_symbols_len;
+		layer.importable_functions_range = old_symbols_len..symbols.len();
 		layer.symbols = symbols;
 	}
 }
@@ -800,7 +809,7 @@ fn validate_root_consts<'a>(
 		std::mem::forget(context);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_consts_len = symbols.len() - old_symbols_len;
+		layer.importable_consts_range = old_symbols_len..symbols.len();
 		layer.symbols.duplicate(symbols);
 	}
 }
@@ -949,7 +958,7 @@ fn fill_block_types<'a>(
 				})
 				.unwrap();
 
-			let shape = match &type_store.user_types[shape_index].kind {
+			let shape = match &mut type_store.user_types[shape_index].kind {
 				UserTypeKind::Struct { shape } => shape,
 			};
 
@@ -960,6 +969,7 @@ fn fill_block_types<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
+			let mut fields = Vec::with_capacity(statement.fields.len());
 			for field in &statement.fields {
 				let field_type = match type_store.lookup_type(
 					messages,
@@ -977,13 +987,57 @@ fn fill_block_types<'a>(
 				let field_shape = FieldShape { name: field.name.item, field_type };
 				let span = field.name.span + field.parsed_type.span;
 				let node = tree::Node::new(field_shape, span);
-
-				let user_type = &mut type_store.user_types[shape_index];
-				match &mut user_type.kind {
-					UserTypeKind::Struct { shape } => shape.fields.push(node),
-					// _ => unreachable!("{:?}", user_type.kind),
-				};
+				fields.push(node);
 			}
+
+			match &mut type_store.user_types[shape_index].kind {
+				UserTypeKind::Struct { shape } => {
+					shape.fields = fields;
+
+					if !shape.specializations.is_empty() {
+						fill_pre_existing_user_type_specializations(messages, type_store, generic_usages, shape_index);
+					}
+				}
+			}
+		}
+	}
+}
+
+fn fill_pre_existing_user_type_specializations<'a>(
+	messages: &mut Messages,
+	type_store: &mut TypeStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	shape_index: usize,
+) {
+	let shape = match &mut type_store.user_types[shape_index].kind {
+		UserTypeKind::Struct { shape } => shape,
+	};
+
+	let mut fields = Vec::with_capacity(shape.fields.len());
+	for field in &shape.fields {
+		fields.push(Field { name: field.item.name, type_id: field.item.field_type });
+	}
+
+	let mut specializations = shape.specializations.clone(); // Belch
+	for specialization in &mut specializations {
+		let mut fields = fields.clone();
+		for field in &mut fields {
+			field.type_id = type_store.specialize_with_user_type_generics(
+				messages,
+				generic_usages,
+				shape_index,
+				&specialization.type_arguments,
+				field.type_id,
+			);
+		}
+
+		assert_eq!(specialization.fields.len(), 0);
+		specialization.fields = fields;
+	}
+
+	match &mut type_store.user_types[shape_index].kind {
+		UserTypeKind::Struct { shape } => {
+			shape.specializations = specializations;
 		}
 	}
 }
@@ -1132,6 +1186,15 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			block,
 			false,
 		);
+
+		resolve_block_type_imports(
+			context.messages,
+			context.root_layers,
+			context.symbols,
+			context.function_initial_symbols_len,
+			block,
+		);
+
 		fill_block_types(
 			context.messages,
 			context.type_store,
@@ -1144,13 +1207,6 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 	}
 
-	resolve_block_type_imports(
-		context.messages,
-		context.root_layers,
-		context.symbols,
-		context.function_initial_symbols_len,
-		block,
-	);
 	resolve_block_non_type_imports(
 		context.messages,
 		context.root_layers,
@@ -1602,22 +1658,40 @@ fn validate_struct_literal<'a>(
 				error!("Expected initalizer for field `{}`, got `{}` instead", field.name, intializer.name.item,)
 					.span(intializer.name.span),
 			);
-			continue;
 		}
 
 		if !context.collapse_to(field.type_id, &mut expression).unwrap_or(true) {
-			context.message(
-				error!(
-					"Field intializer type mismatch, expected {} but got {} instead",
-					context.type_name(field.type_id),
-					context.type_name(expression.type_id),
-				)
-				.span(intializer.name.span + expression.span),
-			);
-			continue;
+			// Avoids a silly error message when something happend in the field definition, causing it to
+			// have `AnyCollapse` as its type, leading to an "Expected `AnyCollapse` got `_`" error
+			if !field.type_id.is_any_collapse(context.type_store) {
+				context.message(
+					error!(
+						"Field intializer type mismatch, expected {} but got {} instead",
+						context.type_name(field.type_id),
+						context.type_name(expression.type_id),
+					)
+					.span(intializer.name.span + expression.span),
+				);
+			}
 		}
 
 		field_initializers.push(FieldInitializer { expression });
+	}
+
+	let user_type = &context.type_store.user_types[shape_index];
+	let shape = match &user_type.kind {
+		UserTypeKind::Struct { shape } => shape,
+	};
+	let specialization = &shape.specializations[specialization_index];
+	if field_initializers.len() < specialization.fields.len() {
+		context.message(
+			error!(
+				"Too few field initializers, expected {}, but only found {}",
+				specialization.fields.len(),
+				field_initializers.len(),
+			)
+			.span(literal.initializer.span),
+		);
 	}
 
 	let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });

@@ -1,0 +1,9 @@
+import other::B
+
+struct A {
+	field: B
+}
+
+fn main() {
+	let a = A { field: B { field: 5 } }
+}

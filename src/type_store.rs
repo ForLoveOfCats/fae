@@ -84,7 +84,7 @@ pub struct FieldShape<'a> {
 	pub field_type: TypeId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Struct<'a> {
 	pub type_id: TypeId,
 	pub type_arguments: Vec<TypeId>,
