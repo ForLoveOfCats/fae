@@ -1,0 +1,17 @@
+struct A {
+	field_a: B
+}
+
+struct B {
+	field_b: A
+}
+
+fn main() {
+	let a = A {
+		field_a: B {
+			field_b: A {
+				field_a: 4
+			}
+		}
+	}
+}

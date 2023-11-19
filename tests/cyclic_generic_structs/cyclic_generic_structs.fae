@@ -1,0 +1,18 @@
+generic T
+struct A {
+	field_a: T
+}
+
+struct B {
+	field_b: A[B]
+}
+
+fn main() {
+	let a = A[B] {
+		field_a: B {
+			field_b: A[B] {
+				field_a: 4
+			}
+		}
+	}
+}

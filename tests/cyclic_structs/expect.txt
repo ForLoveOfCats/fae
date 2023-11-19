@@ -1,0 +1,13 @@
+Validation error: ./tests/cyclic_structs/cyclic_structs.fae, line 5: Cyclic user type `B`
+  5| struct B {
+            ^
+Note: ./tests/cyclic_structs/cyclic_structs.fae, line 6: Via field `field_b` in `B`
+  6|     field_b: A
+         ^^^^^^^^^^
+Note: ./tests/cyclic_structs/cyclic_structs.fae, line 2: Via field `field_a` in `A`
+  2|     field_a: B
+         ^^^^^^^^^^
+
+Validation error: ./tests/cyclic_structs/cyclic_structs.fae, line 13: Field intializer type mismatch, expected `B` but got `untyped integer` instead
+  13|                 field_a: 4
+                      ^^^^^^^^^^

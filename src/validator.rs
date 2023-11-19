@@ -701,7 +701,7 @@ fn resolve_root_type_imports<'a>(messages: &mut Messages, root_layers: &mut Root
 }
 
 fn fill_root_types<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	root_layers: &mut RootLayers<'a>,
@@ -711,7 +711,7 @@ fn fill_root_types<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
 
-		// This is definitely wrong
+		// TODO: This is definitely wrong
 		let mut generic_usages = Vec::new();
 
 		fill_block_types(
@@ -721,6 +721,7 @@ fn fill_root_types<'a>(
 			&mut generic_usages,
 			root_layers,
 			&mut symbols,
+			parsed_file.module_path,
 			0,
 			&parsed_file.block,
 		);
@@ -933,12 +934,13 @@ fn create_block_types<'a>(
 }
 
 fn fill_block_types<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
 	function_initial_symbols_len: usize,
 	block: &tree::Block<'a>,
 ) {
@@ -993,9 +995,17 @@ fn fill_block_types<'a>(
 			match &mut type_store.user_types[shape_index].kind {
 				UserTypeKind::Struct { shape } => {
 					shape.fields = fields;
+					shape.been_filled = true;
 
 					if !shape.specializations.is_empty() {
-						fill_pre_existing_user_type_specializations(messages, type_store, generic_usages, shape_index);
+						fill_pre_existing_user_type_specializations(
+							messages,
+							type_store,
+							function_store,
+							generic_usages,
+							module_path,
+							shape_index,
+						);
 					}
 				}
 			}
@@ -1004,22 +1014,31 @@ fn fill_block_types<'a>(
 }
 
 fn fill_pre_existing_user_type_specializations<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	module_path: &'a [String],
 	shape_index: usize,
 ) {
-	let shape = match &mut type_store.user_types[shape_index].kind {
+	let user_type = &mut type_store.user_types[shape_index];
+	let span = user_type.span;
+	let shape = match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
 	};
 
 	let mut fields = Vec::with_capacity(shape.fields.len());
 	for field in &shape.fields {
-		fields.push(Field { name: field.item.name, type_id: field.item.field_type });
+		fields.push(Field {
+			span: Some(field.span),
+			name: field.item.name,
+			type_id: field.item.field_type,
+		});
 	}
 
 	let mut specializations = shape.specializations.clone(); // Belch
 	for specialization in &mut specializations {
+		let mut size = Some(0);
 		let mut fields = fields.clone();
 		for field in &mut fields {
 			field.type_id = type_store.specialize_with_user_type_generics(
@@ -1029,15 +1048,44 @@ fn fill_pre_existing_user_type_specializations<'a>(
 				&specialization.type_arguments,
 				field.type_id,
 			);
+
+			if let Some(field_size) = type_store.type_size(field.type_id) {
+				if let Some(size) = &mut size {
+					*size += field_size;
+				}
+			} else {
+				size = None;
+			}
 		}
 
 		assert_eq!(specialization.fields.len(), 0);
 		specialization.fields = fields;
+		assert_eq!(specialization.size, None);
+		specialization.size = size;
 	}
 
 	match &mut type_store.user_types[shape_index].kind {
 		UserTypeKind::Struct { shape } => {
 			shape.specializations = specializations;
+		}
+	}
+
+	// TODO: Apparently this only needs to be checked here, not also in get_or_add_specialization?
+	match &type_store.user_types[shape_index].kind {
+		UserTypeKind::Struct { shape } => {
+			for specialization in &shape.specializations {
+				if specialization.size.is_none() {
+					let generic_poisoned = specialization
+						.type_arguments
+						.iter()
+						.any(|id| type_store.type_entries[id.index()].generic_poisoned);
+
+					if !generic_poisoned {
+						let type_id = specialization.type_id;
+						type_store.report_cyclic_user_type(messages, function_store, module_path, type_id, span);
+					}
+				}
+			}
 		}
 	}
 }
@@ -1202,6 +1250,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.function_generic_usages,
 			context.root_layers,
 			context.symbols,
+			context.module_path,
 			context.function_initial_symbols_len,
 			block,
 		);
@@ -1866,10 +1915,15 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 	} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
 		slice_fields = [
 			Field {
+				span: None,
 				name: "pointer",
 				type_id: context.type_store.pointer_to(as_slice.type_id, false),
 			},
-			Field { name: "len", type_id: context.type_store.i64_type_id() },
+			Field {
+				span: None,
+				name: "len",
+				type_id: context.type_store.i64_type_id(),
+			},
 		];
 		&slice_fields
 	} else {

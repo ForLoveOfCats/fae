@@ -1,10 +1,2 @@
-struct A {
-	field: B
-}
-
-struct B {
-	field: A
-}
-
 fn main() {
 }
