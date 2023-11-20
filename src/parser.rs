@@ -826,22 +826,25 @@ fn parse_struct_declaration<'a>(
 	let name = Node::from_token(struct_name_token.text, struct_name_token);
 
 	tokenizer.expect(messages, TokenKind::OpenBrace)?;
-	tokenizer.expect(messages, TokenKind::Newline)?;
 
 	let mut fields = Vec::new();
 
-	while !reached_close_brace(tokenizer) {
-		let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
-		check_not_reserved(messages, field_name_token, "struct field")?;
-		let name = Node::from_token(field_name_token.text, field_name_token);
-
-		tokenizer.expect(messages, TokenKind::Colon)?;
-
-		let parsed_type = parse_type(messages, tokenizer)?;
-
-		fields.push(Field { name, parsed_type });
-
+	if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 		tokenizer.expect(messages, TokenKind::Newline)?;
+
+		while !reached_close_brace(tokenizer) {
+			let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
+			check_not_reserved(messages, field_name_token, "struct field")?;
+			let name = Node::from_token(field_name_token.text, field_name_token);
+
+			tokenizer.expect(messages, TokenKind::Colon)?;
+
+			let parsed_type = parse_type(messages, tokenizer)?;
+
+			fields.push(Field { name, parsed_type });
+
+			tokenizer.expect(messages, TokenKind::Newline)?;
+		}
 	}
 
 	tokenizer.expect(messages, TokenKind::CloseBrace)?;

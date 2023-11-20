@@ -1075,12 +1075,7 @@ fn fill_pre_existing_user_type_specializations<'a>(
 		UserTypeKind::Struct { shape } => {
 			for specialization in &shape.specializations {
 				if specialization.size.is_none() {
-					let generic_poisoned = specialization
-						.type_arguments
-						.iter()
-						.any(|id| type_store.type_entries[id.index()].generic_poisoned);
-
-					if !generic_poisoned {
+					if !type_store.type_entries[specialization.type_id.index()].generic_poisoned {
 						let type_id = specialization.type_id;
 						type_store.report_cyclic_user_type(messages, function_store, module_path, type_id, span);
 					}

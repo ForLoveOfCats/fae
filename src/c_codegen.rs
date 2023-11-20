@@ -128,7 +128,6 @@ pub fn generate_code<'a>(
 			"-Wcast-qual",
 			"-Wconversion",
 			"-Wwrite-strings",
-			// "-Wmissing-field-initializers",
 			"-Wno-pointer-sign",
 			"-Wno-format",
 			"-Wno-unused-variable",
@@ -248,6 +247,10 @@ fn generate_user_type(
 				return Ok(());
 			}
 
+			if specialization.size.unwrap() <= 0 {
+				return Ok(());
+			}
+
 			annotate_comment!(
 				output,
 				"struct {}[{}]",
@@ -265,6 +268,10 @@ fn generate_user_type(
 			writeln!(output, " {{")?;
 
 			for (index, field) in specialization.fields.iter().enumerate() {
+				if type_store.type_size(field.type_id).unwrap() <= 0 {
+					continue;
+				}
+
 				generate_raw_type_id(type_store, field.type_id, output)?;
 				writeln!(output, " fi_{index};")?;
 			}
@@ -298,8 +305,12 @@ fn generate_function_signature<'a>(
 	assert!(shape.extern_name.is_none(), "{:?}", shape.extern_name);
 	let specialization = &shape.specializations[function_id.specialization_index];
 
-	generate_raw_type_id(type_store, specialization.return_type, output)?;
-	write!(output, " ")?;
+	if type_store.type_size(specialization.return_type).unwrap() > 0 {
+		generate_raw_type_id(type_store, specialization.return_type, output)?;
+		write!(output, " ")?;
+	} else {
+		write!(output, "void ")?;
+	}
 
 	if shape.is_main {
 		write!(output, "fae_main")?;
@@ -311,6 +322,10 @@ fn generate_function_signature<'a>(
 
 	let mut first = true;
 	for parameter in &specialization.parameters {
+		if type_store.type_size(parameter.type_id).unwrap() <= 0 {
+			continue;
+		}
+
 		if !first {
 			write!(output, ", ")?;
 		}
@@ -319,9 +334,11 @@ fn generate_function_signature<'a>(
 		write!(output, " ")?;
 		generate_readable_index(parameter.readable_index, output)?;
 	}
-	if specialization.parameters.is_empty() {
+
+	if first {
 		write!(output, "void")?;
 	}
+
 	write!(output, ")")
 }
 
@@ -402,21 +419,31 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 			}
 
 			StatementKind::Binding(binding) => {
-				let id = generate_expression(context, &binding.expression, output)?.unwrap();
-				generate_type_id(context, binding.type_id, output)?;
+				let Some(step) = generate_expression(context, &binding.expression, output)? else {
+					continue;
+				};
+
+				if let Some(result) = generate_type_id(context, binding.type_id, output) {
+					result?;
+				} else {
+					continue;
+				}
+
 				if binding.is_mutable {
 					write!(output, " ")?;
 				} else {
 					write!(output, " const ")?;
 				}
+
 				generate_readable_index(binding.readable_index, output)?;
-				writeln!(output, " = {id};")?;
+				writeln!(output, " = {step};")?;
 			}
 
 			StatementKind::Return(statement) => {
 				if let Some(expression) = &statement.expression {
-					let id = generate_expression(context, expression, output)?.unwrap();
-					writeln!(output, "return {id};")?;
+					if let Some(step) = generate_expression(context, expression, output)? {
+						writeln!(output, "return {step};")?;
+					}
 				} else {
 					writeln!(output, "return;")?;
 				}
@@ -427,25 +454,30 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 	Ok(())
 }
 
-fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<Step> {
-	let mut temp_ids = Vec::new(); // Belch
+fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<Option<Step>> {
+	let mut field_steps = Vec::new(); // Belch
 	for initalizer in &literal.field_initializers {
-		let id = generate_expression(context, &initalizer.expression, output)?.unwrap();
-		temp_ids.push(id);
+		if let Some(step) = generate_expression(context, &initalizer.expression, output)? {
+			field_steps.push(step);
+		}
 	}
 
+	if let Some(result) = generate_type_id(context, literal.type_id, output) {
+		result?;
+	} else {
+		return Ok(None);
+	}
 	let temp_id = context.generate_temp_id();
-	generate_type_id(context, literal.type_id, output)?;
 	write!(output, " {temp_id} = ")?;
 
 	generate_struct_construction_open(context, literal.type_id, output)?;
-	for step in temp_ids.into_iter() {
-		write!(output, "{step}, ")?;
+	for field_step in field_steps.into_iter() {
+		write!(output, "{field_step}, ")?;
 	}
 	generate_struct_construction_close(output)?;
 
 	writeln!(output, ";")?;
-	Ok(Step::Temp { temp_id })
+	Ok(Some(Step::Temp { temp_id }))
 }
 
 fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<Option<Step>> {
@@ -457,10 +489,11 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 		context.function_type_arguments,
 	);
 
-	let mut ids = Vec::new(); // Belch
+	let mut steps = Vec::new(); // Belch
 	for argument in &call.arguments {
-		let id = generate_expression(context, argument, output)?.unwrap();
-		ids.push(id);
+		if let Some(step) = generate_expression(context, argument, output)? {
+			steps.push(step);
+		}
 	}
 
 	let shape = &mut context.function_store.shapes[function_id.function_shape_index];
@@ -485,8 +518,10 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 		let return_type = specialization.return_type;
 		let id = context.generate_temp_id();
 		maybe_id = Some(id);
-		generate_type_id(context, return_type, output)?;
-		write!(output, " {id} = ")?;
+		if let Some(result) = generate_type_id(context, return_type, output) {
+			result?;
+			write!(output, " {id} = ")?;
+		}
 	}
 
 	let shape = &context.function_store.shapes[function_id.function_shape_index];
@@ -499,12 +534,12 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	write!(output, "(")?;
 
 	let mut first = true;
-	for id in ids {
+	for step in steps {
 		if !first {
 			write!(output, ", ")?;
 		}
 		first = false;
-		write!(output, "{id}")?;
+		write!(output, "{step}")?;
 	}
 
 	writeln!(output, ");")?;
@@ -512,38 +547,59 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }))
 }
 
-fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<Step> {
-	let id = generate_expression(context, &operation.expression, output)?.unwrap();
+fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<Option<Step>> {
+	let Some(step) = generate_expression(context, &operation.expression, output)? else {
+		return Ok(None);
+	};
 
 	let op = match operation.op {
 		UnaryOperator::Negate => "-",
 	};
 
-	writeln!(output, "{id} = {op}({id});")?;
+	// TODO: This almost certainly doesn't respect mutability
+	writeln!(output, "{step} = {op}({step});")?;
 
-	Ok(id)
+	Ok(Some(step))
 }
 
-fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<Step> {
+fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<Option<Step>> {
 	if operation.op == BinaryOperator::Assign {
 		if let ExpressionKind::Read(read) = &operation.left.kind {
-			let right_step = generate_expression(context, &operation.right, output)?.unwrap();
+			let Some(right_step) = generate_expression(context, &operation.right, output)? else {
+				return Ok(None);
+			};
+
+			if context.type_store.type_size(read.type_id).unwrap() <= 0 {
+				return Ok(None);
+			}
+
 			generate_readable_index(read.readable_index, output)?;
 			writeln!(output, " = {right_step};")?;
-			return Ok(Step::Readable { readable_index: read.readable_index });
+			return Ok(Some(Step::Readable { readable_index: read.readable_index }));
 		}
 	}
 
-	let left_step = generate_expression(context, &operation.left, output)?.unwrap();
-	let right_step = generate_expression(context, &operation.right, output)?.unwrap();
+	let left_step = generate_expression(context, &operation.left, output)?;
+	let right_step = generate_expression(context, &operation.right, output)?;
+
+	let Some(left_step) = left_step else {
+		return Ok(None);
+	};
+	let Some(right_step) = right_step else {
+		return Ok(None);
+	};
 
 	if operation.op == BinaryOperator::Assign {
 		writeln!(output, "{left_step} = {right_step};")?;
-		return Ok(left_step);
+		return Ok(Some(left_step));
 	}
 
+	if let Some(result) = generate_type_id(context, operation.type_id, output) {
+		result?;
+	} else {
+		return Ok(None);
+	}
 	let temp_id = context.generate_temp_id();
-	generate_type_id(context, operation.type_id, output)?;
 	write!(output, " {temp_id} = ({left_step}")?;
 
 	let op = match operation.op {
@@ -557,11 +613,9 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 
 	writeln!(output, "{right_step});")?;
 
-	Ok(Step::Temp { temp_id })
+	Ok(Some(Step::Temp { temp_id }))
 }
 
-// Unwrapping the Option is useful when the temp ID is needed as the type system should prevent any
-// semantic cases where a the "value" of a void-returning expression is operated on
 fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<Step>> {
 	let mut temp_id = context.generate_temp_id();
 
@@ -580,7 +634,11 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 		ExpressionKind::StringLiteral(literal) => {
 			let type_id = context.type_store.string_type_id();
-			generate_type_id(context, type_id, output)?;
+			if let Some(result) = generate_type_id(context, type_id, output) {
+				result?;
+			} else {
+				return Ok(None);
+			}
 			write!(output, " {temp_id} = ")?;
 			generate_struct_construction_open(context, type_id, output)?;
 			write!(output, ".fi_0 = (u8 const*){:?}, .fi_1 = {}", literal.value, literal.value.len())?;
@@ -589,18 +647,24 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 		}
 
 		ExpressionKind::StructLiteral(literal) => {
-			return generate_struct_literal(context, literal, output).map(Some);
+			return generate_struct_literal(context, literal, output);
 		}
 
 		ExpressionKind::Call(call) => return generate_call(context, call, output),
 
 		ExpressionKind::Read(read) => {
-			generate_type_id(context, read.type_id, output)?;
+			if let Some(result) = generate_type_id(context, read.type_id, output) {
+				result?;
+			} else {
+				return Ok(None);
+			}
+
 			if expression.mutable {
 				write!(output, " *")?;
 			} else {
 				write!(output, " const *")?;
 			}
+
 			write!(output, " {temp_id} = &")?;
 			generate_readable_index(read.readable_index, output)?;
 			writeln!(output, ";")?;
@@ -608,23 +672,32 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 		}
 
 		ExpressionKind::FieldRead(field_read) => {
-			let struct_step = generate_expression(context, &field_read.base, output)?.unwrap();
-			generate_type_id(context, field_read.type_id, output)?;
+			let Some(struct_step) = generate_expression(context, &field_read.base, output)? else {
+				return Ok(None);
+			};
+
+			if let Some(result) = generate_type_id(context, field_read.type_id, output) {
+				result?;
+			} else {
+				return Ok(None);
+			}
+
 			if expression.mutable {
 				write!(output, " *")?;
 			} else {
 				write!(output, " const *")?;
 			}
+
 			writeln!(output, "{temp_id} = &{struct_step}.fi_{};", field_read.field_index)?;
 			temp_id.dereference = true;
 		}
 
 		ExpressionKind::UnaryOperation(operation) => {
-			return generate_unary_operation(context, operation, output).map(Some);
+			return generate_unary_operation(context, operation, output);
 		}
 
 		ExpressionKind::BinaryOperation(operation) => {
-			return generate_binary_operation(context, operation, output).map(Some);
+			return generate_binary_operation(context, operation, output);
 		}
 
 		kind => unimplemented!("expression {kind:?}"),
@@ -635,7 +708,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 fn generate_struct_construction_open(context: &mut Context, type_id: TypeId, output: Output) -> Result<()> {
 	write!(output, "((")?;
-	generate_type_id(context, type_id, output)?;
+	generate_type_id(context, type_id, output).unwrap()?;
 	write!(output, ") {{ ")
 }
 
@@ -643,7 +716,7 @@ fn generate_struct_construction_close(output: Output) -> Result<()> {
 	write!(output, " }})")
 }
 
-fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> Result<()> {
+fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> Option<Result<()>> {
 	let mut generic_usages = Vec::new();
 	let type_id = context.type_store.specialize_with_function_generics(
 		context.messages,
@@ -654,7 +727,11 @@ fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> R
 	);
 	assert_eq!(generic_usages.len(), 0);
 
-	generate_raw_type_id(context.type_store, type_id, output)
+	if context.type_store.type_size(type_id).unwrap() <= 0 {
+		return None;
+	}
+
+	Some(generate_raw_type_id(context.type_store, type_id, output))
 }
 
 fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result<()> {

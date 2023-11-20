@@ -3,6 +3,11 @@ struct MyType {
 	b: f64
 }
 
+struct EmptyA {
+}
+
+struct EmptyB {}
+
 const STRING = "Hi there"
 
 fn main() {

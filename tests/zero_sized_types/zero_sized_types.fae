@@ -1,0 +1,27 @@
+struct A {}
+
+struct ContainsA {
+	a: A
+}
+
+struct ContainsMultiple {
+	first: ContainsA
+	second: i32
+}
+
+fn func_a(a: A): A {
+	return a
+}
+
+fn func_b(c: ContainsMultiple): ContainsA {
+	let contains = c.first
+	return contains
+}
+
+fn main() {
+	mut a: A = A {}
+	mut b = ContainsA { a: a }
+	b = func_b(ContainsMultiple { first: b, second: -3 })
+	b.a = A {}
+	a = b.a
+}
