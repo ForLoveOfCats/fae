@@ -1,5 +1,5 @@
 import import_struct::A
 
 struct B {
-	field: i32
+	field: u16
 }

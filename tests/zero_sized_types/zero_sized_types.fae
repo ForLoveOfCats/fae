@@ -1,3 +1,5 @@
+import fae::stdout::print_i32
+
 struct A {}
 
 struct ContainsA {
@@ -21,7 +23,9 @@ fn func_b(c: ContainsMultiple): ContainsA {
 fn main() {
 	mut a: A = A {}
 	mut b = ContainsA { a: a }
-	b = func_b(ContainsMultiple { first: b, second: -3 })
+	let multiple = ContainsMultiple { first: b, second: -3 }
+	b = func_b(multiple)
 	b.a = A {}
 	a = b.a
+	print_i32(multiple.second)
 }

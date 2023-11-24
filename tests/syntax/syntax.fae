@@ -1,3 +1,5 @@
+import fae::stdout::print_string
+
 struct MyType {
 	a: i32
 	b: f64
@@ -35,6 +37,7 @@ fn main() {
 
 	let ptr: &u8 = STRING.pointer
 	let len: i64 = STRING.len
+	print_string(STRING)
 }
 
 generic T

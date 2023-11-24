@@ -940,10 +940,11 @@ impl<'a> TypeStore<'a> {
 
 		let specialization_index = shape.specializations.len();
 		let type_id = TypeId { entry: self.type_entries.len() as u32 };
+		let been_filled = shape.been_filled;
 		let specialization = Struct {
 			type_id,
 			type_arguments: type_arguments.clone(),
-			been_filled: shape.been_filled,
+			been_filled,
 			fields,
 			size: None,
 		};
@@ -957,13 +958,11 @@ impl<'a> TypeStore<'a> {
 			generic_usages.push(usage)
 		}
 
-		// let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-		// self.user_type_generate_order.push(description);
-
+		// TODO: This may not be necessary
 		let chain = self.find_user_type_dependency_chain(type_id, type_id);
 		if let Some(chain) = chain {
 			report_cyclic_user_type(messages, self, function_store, module_path, type_id, chain, span);
-		} else {
+		} else if been_filled {
 			self.type_size(type_id);
 		}
 

@@ -1,3 +1,5 @@
+import fae::stdout::print_u16
+
 import other::B
 
 struct A {
@@ -6,4 +8,5 @@ struct A {
 
 fn main() {
 	let a = A { field: B { field: 5 } }
+	print_u16(a.field.field)
 }

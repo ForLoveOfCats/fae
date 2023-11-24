@@ -1,4 +1,5 @@
 use std::fs::read_dir;
+use std::io::{stderr, Write};
 
 use crate::c_codegen::DebugCodegen;
 use crate::color::*;
@@ -35,12 +36,14 @@ pub fn run_tests(args: Vec<String>) {
 		eprintln!("{CYAN}{message}{RESET}");
 		eprintln!("└{line}┘");
 
-		let expected = std::fs::read_to_string(entry.path().join("expect.txt")).ok();
+		let expected_error = std::fs::read_to_string(entry.path().join("error.txt")).ok();
+		let expected_stdout = std::fs::read_to_string(entry.path().join("stdout.txt")).ok();
+		let expected_stderr = std::fs::read_to_string(entry.path().join("stderr.txt")).ok();
 		let mut error_output = String::new();
 
 		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone(), DebugCodegen::OnFailure) else {
-			if let Some(expected) = &expected {
-				if error_output.trim_end() == expected.trim_end() {
+			if let Some(expected_error) = &expected_error {
+				if error_output.trim_end() == expected_error.trim_end() {
 					successes += 1;
 					continue;
 				}
@@ -53,23 +56,51 @@ pub fn run_tests(args: Vec<String>) {
 			continue;
 		};
 
-		if expected.is_some() {
+		if expected_error.is_some() {
 			eprintln!("{RED}Compiler test harness: Expected error messages but got none{RESET}");
 			failures.push(name);
 			continue;
 		}
 
-		let status = std::process::Command::new(&binary_path)
-			.spawn()
-			.expect("Failed to launch test binary, this is probably an internal bug")
-			.wait();
+		let output = std::process::Command::new(&binary_path)
+			.output()
+			.expect("Failed to launch test binary, this is probably an internal bug");
 
-		if !matches!(status, Ok(status) if status.success()) {
+		if !output.status.success() {
 			eprintln!("{RED}Test {name:?} ended with failure exit code{RESET}");
 			failures.push(name);
-		} else {
-			successes += 1;
+			continue;
 		}
+
+		if let Some(expected_stdout) = expected_stdout {
+			if output.stdout != expected_stdout.as_bytes() {
+				stderr().lock().write_all(&output.stdout).unwrap();
+				eprintln!("\n{RED}Compiler test harness: Got different stdout than expected{RESET}\n");
+				failures.push(name);
+				continue;
+			}
+		} else if !output.stdout.is_empty() {
+			stderr().lock().write_all(&output.stdout).unwrap();
+			eprintln!("\n{RED}Compiler test harness: Got stdout but didn't expect any{RESET}\n");
+			failures.push(name);
+			continue;
+		}
+
+		if let Some(expected_stderr) = expected_stderr {
+			if output.stderr != expected_stderr.as_bytes() {
+				stderr().lock().write_all(&output.stderr).unwrap();
+				eprintln!("\n{RED}Compiler test harness: Got different stderr than expected{RESET}\n");
+				failures.push(name);
+				continue;
+			}
+		} else if !output.stderr.is_empty() {
+			stderr().lock().write_all(&output.stderr).unwrap();
+			eprintln!("\n{RED}Compiler test harness: Got stderr but didn't expect any{RESET}\n");
+			failures.push(name);
+			continue;
+		}
+
+		successes += 1;
 	}
 
 	let success = format!("  Ran {successes} test(s) successfully");

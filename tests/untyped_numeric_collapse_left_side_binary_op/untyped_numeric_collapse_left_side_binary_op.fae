@@ -1,3 +1,5 @@
+import fae::stdout::print_i32, print_f32, print_newline
+
 fn returns_int(): i32 {
 	return 4
 }
@@ -9,4 +11,9 @@ fn returns_float(): f32 {
 fn main() {
 	let a = 5 + returns_int()
 	let b = 10 - returns_float()
+
+	print_i32(a)
+	print_newline()
+	print_f32(b)
+	print_newline()
 }
