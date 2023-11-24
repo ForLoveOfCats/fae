@@ -45,6 +45,7 @@ struct Context<'a, 'b> {
 	messages: &'b mut Messages<'a>,
 	type_store: &'b mut TypeStore<'a>,
 	function_store: &'b mut FunctionStore<'a>,
+	module_path: &'a [String],
 	function_generate_queue: &'b mut Vec<FunctionId>,
 	function_type_arguments: &'b TypeArguments,
 	function_id: FunctionId,
@@ -163,7 +164,8 @@ pub fn generate_code<'a>(
 		generate_slice_specialization(type_store, description, &mut output).unwrap();
 	}
 
-	for &description in &type_store.user_type_generate_order {
+	// Belch
+	for description in type_store.user_type_generate_order.clone() {
 		generate_user_type(type_store, function_store, description, &mut output).unwrap();
 	}
 
@@ -233,13 +235,12 @@ fn forward_declare_user_type(
 }
 
 fn generate_user_type(
-	type_store: &TypeStore,
+	type_store: &mut TypeStore,
 	function_store: &FunctionStore,
 	description: UserTypeSpecializationDescription,
 	output: Output,
 ) -> Result<()> {
-	let user_type = &type_store.user_types[description.shape_index];
-	match &user_type.kind {
+	match &type_store.user_types[description.shape_index].kind {
 		UserTypeKind::Struct { shape } => {
 			let specialization = &shape.specializations[description.specialization_index];
 			let entry = &type_store.type_entries[specialization.type_id.index()];
@@ -247,10 +248,16 @@ fn generate_user_type(
 				return Ok(());
 			}
 
-			if specialization.size.unwrap() <= 0 {
+			if type_store.type_size(specialization.type_id) <= 0 {
 				return Ok(());
 			}
+		}
+	}
 
+	let user_type = &type_store.user_types[description.shape_index];
+	match &user_type.kind {
+		UserTypeKind::Struct { shape } => {
+			let specialization = &shape.specializations[description.specialization_index];
 			annotate_comment!(
 				output,
 				"struct {}[{}]",
@@ -264,20 +271,23 @@ fn generate_user_type(
 			)?;
 
 			write!(output, "typedef struct ")?;
-			generate_raw_type_id(type_store, specialization.type_id, output)?;
+			let type_id = specialization.type_id;
+			generate_raw_type_id(type_store, type_id, output)?;
 			writeln!(output, " {{")?;
 
-			for (index, field) in specialization.fields.iter().enumerate() {
-				if type_store.type_size(field.type_id).unwrap() <= 0 {
+			// Belch
+			let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
+			for (index, type_id) in field_types.into_iter().enumerate() {
+				if type_store.type_size(type_id) <= 0 {
 					continue;
 				}
 
-				generate_raw_type_id(type_store, field.type_id, output)?;
+				generate_raw_type_id(type_store, type_id, output)?;
 				writeln!(output, " fi_{index};")?;
 			}
 
 			write!(output, "}} ")?;
-			generate_raw_type_id(type_store, specialization.type_id, output)?;
+			generate_raw_type_id(type_store, type_id, output)?;
 			writeln!(output, ";\n")?;
 		}
 	}
@@ -305,7 +315,7 @@ fn generate_function_signature<'a>(
 	assert!(shape.extern_name.is_none(), "{:?}", shape.extern_name);
 	let specialization = &shape.specializations[function_id.specialization_index];
 
-	if type_store.type_size(specialization.return_type).unwrap() > 0 {
+	if type_store.type_size(specialization.return_type) > 0 {
 		generate_raw_type_id(type_store, specialization.return_type, output)?;
 		write!(output, " ")?;
 	} else {
@@ -322,7 +332,7 @@ fn generate_function_signature<'a>(
 
 	let mut first = true;
 	for parameter in &specialization.parameters {
-		if type_store.type_size(parameter.type_id).unwrap() <= 0 {
+		if type_store.type_size(parameter.type_id) <= 0 {
 			continue;
 		}
 
@@ -388,12 +398,14 @@ fn generate_function<'a>(
 	writeln!(output, " {{")?;
 
 	let block = shape.block.clone();
+	let module_path = shape.module_path;
 	let type_arguments = specialization.type_arguments.clone();
 
 	let mut context = Context {
 		messages,
 		type_store,
 		function_store,
+		module_path,
 		function_type_arguments: &type_arguments,
 		function_id,
 		function_generate_queue,
@@ -569,7 +581,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 				return Ok(None);
 			};
 
-			if context.type_store.type_size(read.type_id).unwrap() <= 0 {
+			if context.type_store.type_size(read.type_id) <= 0 {
 				return Ok(None);
 			}
 
@@ -720,6 +732,8 @@ fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> O
 	let mut generic_usages = Vec::new();
 	let type_id = context.type_store.specialize_with_function_generics(
 		context.messages,
+		context.function_store,
+		context.module_path,
 		&mut generic_usages,
 		context.function_id.function_shape_index,
 		context.function_type_arguments,
@@ -727,7 +741,7 @@ fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> O
 	);
 	assert_eq!(generic_usages.len(), 0);
 
-	if context.type_store.type_size(type_id).unwrap() <= 0 {
+	if context.type_store.type_size(type_id) <= 0 {
 		return None;
 	}
 

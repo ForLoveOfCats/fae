@@ -2,7 +2,7 @@ use crate::error::Messages;
 use crate::ir::{DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, Symbol, SymbolKind, TypeArguments};
 use crate::span::Span;
 use crate::tree::{self, Node};
-use crate::validator::{FunctionStore, RootLayers, Symbols};
+use crate::validator::{report_cyclic_user_type, FunctionStore, RootLayers, Symbols};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TypeId {
@@ -90,6 +90,7 @@ pub struct FieldShape<'a> {
 pub struct Struct<'a> {
 	pub type_id: TypeId,
 	pub type_arguments: Vec<TypeId>,
+	pub been_filled: bool,
 	pub fields: Vec<Field<'a>>,
 	pub size: Option<usize>,
 }
@@ -682,54 +683,51 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn type_size(&self, type_id: TypeId) -> Option<usize> {
-		let entry = self.type_entries[type_id.index()];
-		match entry.kind {
-			TypeEntryKind::BuiltinType { kind } => Some(kind.size()),
+	pub fn type_size(&mut self, type_id: TypeId) -> usize {
+		match self.type_entries[type_id.index()].kind {
+			TypeEntryKind::BuiltinType { kind } => kind.size(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let user_type = &self.user_types[shape_index];
-				match &user_type.kind {
-					UserTypeKind::Struct { shape } => shape.specializations[specialization_index].size,
+				let calculated_size = match &self.user_types[shape_index].kind {
+					UserTypeKind::Struct { shape } => {
+						let specialization = &shape.specializations[specialization_index];
+						if let Some(size) = specialization.size {
+							return size;
+						}
+
+						// Belch
+						let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
+
+						let mut size = 0;
+						for type_id in field_types {
+							size += self.type_size(type_id);
+						}
+
+						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+						self.user_type_generate_order.push(description);
+
+						size
+					}
+				};
+
+				match &mut self.user_types[shape_index].kind {
+					UserTypeKind::Struct { shape } => shape.specializations[specialization_index].size = Some(calculated_size),
 				}
+
+				calculated_size
 			}
 
-			TypeEntryKind::Pointer { .. } => Some(8),
+			TypeEntryKind::Pointer { .. } => 8,
 
-			TypeEntryKind::Slice(_) => Some(16),
+			TypeEntryKind::Slice(_) => 16,
 
-			TypeEntryKind::UserTypeGeneric { .. } => None,
-
-			TypeEntryKind::FunctionGeneric { .. } => None,
+			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
+			TypeEntryKind::UserTypeGeneric { .. } => 0,
+			TypeEntryKind::FunctionGeneric { .. } => 0,
 		}
 	}
 
-	pub fn report_cyclic_user_type(
-		&self,
-		messages: &mut Messages<'a>,
-		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
-		type_id: TypeId,
-		invoke_span: Span,
-	) {
-		let chain = self
-			.find_user_type_dependency_chain(type_id, type_id)
-			.expect("Not actually a cyclic user type if no dependency chain");
-
-		let mut error = error!("Cyclic user type {}", self.type_name(function_store, module_path, type_id)).span(invoke_span);
-		for link in chain {
-			error = error.note(note!(
-				link.field_span,
-				"Via field `{}` in {}",
-				link.field_name,
-				self.type_name(function_store, module_path, link.user_type)
-			));
-		}
-
-		messages.message(error);
-	}
-
-	fn find_user_type_dependency_chain(&self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
+	pub fn find_user_type_dependency_chain(&self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
 		let entry = self.type_entries[from.index()];
 		let (shape_index, specialization_index) = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
@@ -770,8 +768,9 @@ impl<'a> TypeStore<'a> {
 
 	pub fn lookup_type(
 		&mut self,
-		messages: &mut Messages,
-		function_store: &mut FunctionStore,
+		messages: &mut Messages<'a>,
+		function_store: &mut FunctionStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
@@ -785,6 +784,7 @@ impl<'a> TypeStore<'a> {
 				let id = self.lookup_type(
 					messages,
 					function_store,
+					module_path,
 					generic_usages,
 					root_layers,
 					symbols,
@@ -798,6 +798,7 @@ impl<'a> TypeStore<'a> {
 				let id = self.lookup_type(
 					messages,
 					function_store,
+					module_path,
 					generic_usages,
 					root_layers,
 					symbols,
@@ -852,6 +853,7 @@ impl<'a> TypeStore<'a> {
 			let id = self.lookup_type(
 				messages,
 				function_store,
+				module_path,
 				generic_usages,
 				root_layers,
 				symbols,
@@ -862,18 +864,29 @@ impl<'a> TypeStore<'a> {
 		}
 
 		let invoke_span = Some(parsed_type.span);
-		self.get_or_add_shape_specialization(messages, generic_usages, shape_index, invoke_span, type_args)
+		self.get_or_add_shape_specialization(
+			messages,
+			function_store,
+			module_path,
+			generic_usages,
+			shape_index,
+			invoke_span,
+			type_args,
+		)
 	}
 
 	pub fn get_or_add_shape_specialization(
 		&mut self,
-		messages: &mut Messages,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
 		type_arguments: Vec<TypeId>,
 	) -> Option<TypeId> {
 		let user_type = &self.user_types[shape_index];
+		let span = user_type.span;
 		let shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 		};
@@ -908,18 +921,16 @@ impl<'a> TypeStore<'a> {
 			});
 		}
 
-		let mut size = Some(0);
 		for field in &mut fields {
-			field.type_id =
-				self.specialize_with_user_type_generics(messages, generic_usages, shape_index, &type_arguments, field.type_id);
-
-			if let Some(field_size) = self.type_size(field.type_id) {
-				if let Some(size) = &mut size {
-					*size += field_size;
-				}
-			} else {
-				size = None;
-			}
+			field.type_id = self.specialize_with_user_type_generics(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				shape_index,
+				&type_arguments,
+				field.type_id,
+			);
 		}
 
 		let user_type = &mut self.user_types[shape_index];
@@ -929,12 +940,12 @@ impl<'a> TypeStore<'a> {
 
 		let specialization_index = shape.specializations.len();
 		let type_id = TypeId { entry: self.type_entries.len() as u32 };
-		let size = if shape.been_filled { size } else { None };
 		let specialization = Struct {
 			type_id,
 			type_arguments: type_arguments.clone(),
+			been_filled: shape.been_filled,
 			fields,
-			size,
+			size: None,
 		};
 		shape.specializations.push(specialization);
 
@@ -946,15 +957,24 @@ impl<'a> TypeStore<'a> {
 			generic_usages.push(usage)
 		}
 
-		let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-		self.user_type_generate_order.push(description);
+		// let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+		// self.user_type_generate_order.push(description);
+
+		let chain = self.find_user_type_dependency_chain(type_id, type_id);
+		if let Some(chain) = chain {
+			report_cyclic_user_type(messages, self, function_store, module_path, type_id, chain, span);
+		} else {
+			self.type_size(type_id);
+		}
 
 		Some(type_id)
 	}
 
 	pub fn specialize_with_user_type_generics(
 		&mut self,
-		messages: &mut Messages,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		type_shape_index: usize,
 		type_arguments: &[TypeId],
@@ -995,6 +1015,8 @@ impl<'a> TypeStore<'a> {
 
 						self.get_or_add_shape_specialization(
 							messages,
+							function_store,
+							module_path,
 							generic_usages,
 							*shape_index,
 							None,
@@ -1006,14 +1028,28 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::Pointer { type_id, mutable } => {
-				let type_id =
-					self.specialize_with_user_type_generics(messages, generic_usages, type_shape_index, type_arguments, *type_id);
+				let type_id = self.specialize_with_user_type_generics(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					type_shape_index,
+					type_arguments,
+					*type_id,
+				);
 				self.pointer_to(type_id, *mutable)
 			}
 
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
-				let type_id =
-					self.specialize_with_user_type_generics(messages, generic_usages, type_shape_index, type_arguments, *type_id);
+				let type_id = self.specialize_with_user_type_generics(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					type_shape_index,
+					type_arguments,
+					*type_id,
+				);
 				self.slice_of(type_id, *mutable)
 			}
 
@@ -1028,7 +1064,9 @@ impl<'a> TypeStore<'a> {
 
 	pub fn specialize_with_function_generics(
 		&mut self,
-		messages: &mut Messages,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
@@ -1069,6 +1107,8 @@ impl<'a> TypeStore<'a> {
 
 						self.get_or_add_shape_specialization(
 							messages,
+							function_store,
+							module_path,
 							generic_usages,
 							*shape_index,
 							None,
@@ -1082,6 +1122,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Pointer { type_id, mutable } => {
 				let type_id = self.specialize_with_function_generics(
 					messages,
+					function_store,
+					module_path,
 					generic_usages,
 					function_shape_index,
 					function_type_arguments,
@@ -1093,6 +1135,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
 				let type_id = self.specialize_with_function_generics(
 					messages,
+					function_store,
+					module_path,
 					generic_usages,
 					function_shape_index,
 					function_type_arguments,

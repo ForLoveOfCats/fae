@@ -123,6 +123,7 @@ impl GenericUsage {
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &mut FunctionStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
@@ -134,6 +135,8 @@ impl GenericUsage {
 				for &type_argument in type_arguments {
 					let type_id = type_store.specialize_with_function_generics(
 						messages,
+						function_store,
+						module_path,
 						generic_usages,
 						function_shape_index,
 						function_type_arguments,
@@ -144,6 +147,8 @@ impl GenericUsage {
 
 				type_store.get_or_add_shape_specialization(
 					messages,
+					function_store,
+					module_path,
 					generic_usages,
 					*shape_index,
 					None,
@@ -159,6 +164,8 @@ impl GenericUsage {
 				type_arguments.specialize_with_function_generics(
 					messages,
 					type_store,
+					function_store,
+					module_path,
 					generic_usages,
 					function_shape_index,
 					function_type_arguments,
@@ -167,6 +174,7 @@ impl GenericUsage {
 				function_store.get_or_add_specialization(
 					messages,
 					type_store,
+					module_path,
 					generic_usages,
 					*usage_function_shape_index,
 					invoke_span,
@@ -290,10 +298,12 @@ impl TypeArguments {
 		true
 	}
 
-	pub fn specialize_with_function_generics(
+	pub fn specialize_with_function_generics<'a>(
 		&mut self,
-		messages: &mut Messages,
-		type_store: &mut TypeStore,
+		messages: &mut Messages<'a>,
+		type_store: &mut TypeStore<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
@@ -301,6 +311,8 @@ impl TypeArguments {
 		for original_id in &mut self.ids {
 			let new_id = type_store.specialize_with_function_generics(
 				messages,
+				function_store,
+				module_path,
 				generic_usages,
 				function_shape_index,
 				function_type_arguments,

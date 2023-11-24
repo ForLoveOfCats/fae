@@ -124,6 +124,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		self.type_store.lookup_type(
 			self.messages,
 			self.function_store,
+			self.module_path,
 			self.function_generic_usages,
 			self.root_layers,
 			self.symbols,
@@ -459,6 +460,7 @@ impl<'a> FunctionStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		invoke_span: Option<Span>,
@@ -487,7 +489,7 @@ impl<'a> FunctionStore<'a> {
 			return Some(result);
 		}
 
-		let shape = &mut self.shapes[function_shape_index];
+		let shape = &self.shapes[function_shape_index];
 		let type_arguments_generic_poisoned = type_arguments
 			.ids()
 			.iter()
@@ -499,6 +501,8 @@ impl<'a> FunctionStore<'a> {
 			.map(|parameter| {
 				let type_id = type_store.specialize_with_function_generics(
 					messages,
+					self,
+					module_path,
 					generic_usages,
 					function_shape_index,
 					&type_arguments,
@@ -513,6 +517,8 @@ impl<'a> FunctionStore<'a> {
 
 		let return_type = type_store.specialize_with_function_generics(
 			messages,
+			self,
+			module_path,
 			generic_usages,
 			function_shape_index,
 			&type_arguments,
@@ -527,6 +533,7 @@ impl<'a> FunctionStore<'a> {
 			been_queued: false,
 			been_generated: false,
 		};
+		let shape = &mut self.shapes[function_shape_index];
 		shape.specializations.push(concrete);
 
 		if type_arguments_generic_poisoned {
@@ -540,6 +547,7 @@ impl<'a> FunctionStore<'a> {
 					messages,
 					type_store,
 					self,
+					module_path,
 					generic_usages,
 					function_shape_index,
 					&function_type_arguments,
@@ -574,12 +582,13 @@ impl<'a> FunctionStore<'a> {
 			return function_id;
 		}
 
-		// let mut type_arguments = Vec::with_capacity(specialization.type_arguments.len());
 		let mut generic_usages = Vec::new();
 		let mut type_arguments = specialization.type_arguments.clone();
 		type_arguments.specialize_with_function_generics(
 			messages,
 			type_store,
+			self,
+			shape.module_path,
 			&mut generic_usages,
 			caller_shape_index,
 			caller_type_arguments,
@@ -976,6 +985,7 @@ fn fill_block_types<'a>(
 				let field_type = match type_store.lookup_type(
 					messages,
 					function_store,
+					module_path,
 					generic_usages,
 					root_layers,
 					scope.symbols,
@@ -1038,30 +1048,23 @@ fn fill_pre_existing_user_type_specializations<'a>(
 
 	let mut specializations = shape.specializations.clone(); // Belch
 	for specialization in &mut specializations {
-		let mut size = Some(0);
 		let mut fields = fields.clone();
 		for field in &mut fields {
 			field.type_id = type_store.specialize_with_user_type_generics(
 				messages,
+				function_store,
+				module_path,
 				generic_usages,
 				shape_index,
 				&specialization.type_arguments,
 				field.type_id,
 			);
-
-			if let Some(field_size) = type_store.type_size(field.type_id) {
-				if let Some(size) = &mut size {
-					*size += field_size;
-				}
-			} else {
-				size = None;
-			}
 		}
 
+		assert!(!specialization.been_filled);
+		specialization.been_filled;
 		assert_eq!(specialization.fields.len(), 0);
 		specialization.fields = fields;
-		assert_eq!(specialization.size, None);
-		specialization.size = size;
 	}
 
 	match &mut type_store.user_types[shape_index].kind {
@@ -1070,23 +1073,54 @@ fn fill_pre_existing_user_type_specializations<'a>(
 		}
 	}
 
-	// TODO: Apparently this only needs to be checked here, not also in get_or_add_specialization?
+	let mut type_ids = Vec::new();
 	match &type_store.user_types[shape_index].kind {
 		UserTypeKind::Struct { shape } => {
+			type_ids.reserve(shape.specializations.len());
+
 			for specialization in &shape.specializations {
-				if specialization.size.is_none() {
-					if !type_store.type_entries[specialization.type_id.index()].generic_poisoned {
-						let type_id = specialization.type_id;
-						type_store.report_cyclic_user_type(messages, function_store, module_path, type_id, span);
-					}
+				let type_id = specialization.type_id;
+				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
+				if let Some(chain) = chain {
+					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
+				} else {
+					type_ids.push(type_id);
 				}
 			}
 		}
 	}
+
+	for type_id in type_ids {
+		type_store.type_size(type_id);
+	}
+}
+
+pub fn report_cyclic_user_type<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
+	type_id: TypeId,
+	chain: Vec<UserTypeChainLink<'a>>,
+	invoke_span: Span,
+) {
+	let name = type_store.type_name(function_store, module_path, type_id);
+	let mut error = error!("Cyclic user type {}", name).span(invoke_span);
+
+	for link in chain {
+		error = error.note(note!(
+			link.field_span,
+			"Via field `{}` in {}",
+			link.field_name,
+			type_store.type_name(function_store, module_path, link.user_type)
+		));
+	}
+
+	messages.message(error);
 }
 
 fn create_block_functions<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
@@ -1134,6 +1168,7 @@ fn create_block_functions<'a>(
 				let type_id = type_store.lookup_type(
 					messages,
 					function_store,
+					module_path,
 					generic_usages,
 					root_layers,
 					scope.symbols,
@@ -1161,6 +1196,7 @@ fn create_block_functions<'a>(
 				let type_id = type_store.lookup_type(
 					messages,
 					function_store,
+					module_path,
 					generic_usages,
 					root_layers,
 					scope.symbols,
@@ -1422,6 +1458,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 					context.messages,
 					context.type_store,
 					context.function_store,
+					context.module_path,
 					&mut generic_usages,
 					function_shape_index,
 					&specialization.type_arguments,
@@ -1439,6 +1476,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		let result = context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
+			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
 			None,
@@ -1785,6 +1823,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	let results = context.function_store.get_or_add_specialization(
 		context.messages,
 		context.type_store,
+		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
 		Some(span),

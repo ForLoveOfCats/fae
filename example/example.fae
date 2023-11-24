@@ -1,2 +1,13 @@
+import fae::stdout::print_i32
+
+struct A {}
+
+struct B {
+	a: A
+	b: i32
+}
+
 fn main() {
+	let a = B { a: A {}, b: 3 }
+	print_i32(a.b)
 }

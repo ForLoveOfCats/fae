@@ -1,0 +1,17 @@
+struct A1 {
+	a_field: B1
+}
+
+struct B1 {
+	b_field: &A1
+}
+
+struct A2 {
+	a_field: &B2
+}
+
+struct B2 {
+	b_field: A2
+}
+
+fn main() {}
