@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::error::Messages;
 use crate::span::Span;
-use crate::tree::{BinaryOperator, Node};
+use crate::tree::{BinaryOperator, ExternAttribute, Node};
 use crate::type_store::*;
 use crate::validator::FunctionStore;
 
@@ -192,7 +192,7 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
-	pub extern_name: Option<Node<&'a str>>,
+	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 
 	pub generics: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape<'a>>,
@@ -216,7 +216,7 @@ impl<'a> FunctionShape<'a> {
 		file_index: usize,
 		is_main: bool,
 		generics: GenericParameters<'a>,
-		extern_name: Option<Node<&'a str>>,
+		extern_attribute: Option<Node<ExternAttribute<'a>>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: TypeId,
 	) -> Self {
@@ -225,7 +225,7 @@ impl<'a> FunctionShape<'a> {
 			module_path,
 			file_index,
 			is_main,
-			extern_name,
+			extern_attribute,
 			generics,
 			parameters,
 			return_type,
@@ -276,6 +276,10 @@ impl TypeArguments {
 
 	pub fn ids(&self) -> &[TypeId] {
 		&self.ids
+	}
+
+	pub fn explicit_ids(&self) -> &[TypeId] {
+		&self.ids[0..self.explicit_len]
 	}
 
 	pub fn matches(&self, other: &TypeArguments, type_store: &TypeStore) -> bool {
@@ -429,7 +433,7 @@ pub enum ExpressionKind<'a> {
 impl<'a> ExpressionKind<'a> {
 	pub fn name_with_article(&self) -> &'static str {
 		match self {
-			ExpressionKind::AnyCollapse => unreachable!(),
+			ExpressionKind::AnyCollapse => "an AnyCollapse",
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",
 			ExpressionKind::DecimalValue(_) => "an untyped decimal",

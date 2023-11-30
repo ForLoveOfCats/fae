@@ -10,26 +10,26 @@ use crate::type_store::*;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
-	file_index: usize,
-	module_path: &'a [String],
+	pub file_index: usize,
+	pub module_path: &'a [String],
 
-	messages: &'b mut Messages<'a>,
+	pub messages: &'b mut Messages<'a>,
 
-	c_include_store: &'b mut CIncludeStore<'a>,
-	type_store: &'b mut TypeStore<'a>,
-	function_store: &'b mut FunctionStore<'a>,
-	function_generic_usages: &'b mut Vec<GenericUsage>,
+	pub c_include_store: &'b mut CIncludeStore<'a>,
+	pub type_store: &'b mut TypeStore<'a>,
+	pub function_store: &'b mut FunctionStore<'a>,
+	pub function_generic_usages: &'b mut Vec<GenericUsage>,
 
-	root_layers: &'b RootLayers<'a>,
+	pub root_layers: &'b RootLayers<'a>,
 
-	constants: &'b mut Vec<ConstantValue<'a>>,
-	readables: &'b mut Readables<'a>,
+	pub constants: &'b mut Vec<ConstantValue<'a>>,
+	pub readables: &'b mut Readables<'a>,
 
-	initial_symbols_len: usize,
-	function_initial_symbols_len: usize,
-	symbols: &'b mut Symbols<'a>,
+	pub initial_symbols_len: usize,
+	pub function_initial_symbols_len: usize,
+	pub symbols: &'b mut Symbols<'a>,
 
-	generic_parameters: &'c GenericParameters<'a>,
+	pub generic_parameters: &'c GenericParameters<'a>,
 }
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
@@ -92,16 +92,16 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		}
 	}
 
-	fn message(&mut self, message: Message) {
+	pub fn message(&mut self, message: Message) {
 		self.messages.message(message);
 	}
 
-	fn push_symbol(&mut self, symbol: Symbol<'a>) {
+	pub fn push_symbol(&mut self, symbol: Symbol<'a>) {
 		self.symbols
 			.push_symbol(self.messages, self.function_initial_symbols_len, symbol);
 	}
 
-	fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
+	pub fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
 		let readable_index = self.readables.push(name.item, type_id, kind);
 
 		let span = Some(name.span);
@@ -115,12 +115,12 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		readable_index
 	}
 
-	fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
+	pub fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
 		self.symbols
 			.lookup_symbol(self.messages, self.root_layers, self.type_store, self.function_initial_symbols_len, path)
 	}
 
-	fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
+	pub fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
 		self.type_store.lookup_type(
 			self.messages,
 			self.function_store,
@@ -133,11 +133,11 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		)
 	}
 
-	fn type_name(&self, type_id: TypeId) -> String {
+	pub fn type_name(&self, type_id: TypeId) -> String {
 		self.type_store.type_name(self.function_store, self.module_path, type_id)
 	}
 
-	fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
+	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
 		self.type_store.collapse_to(self.messages, to, from)
 	}
 }
@@ -252,13 +252,13 @@ impl<'a> Symbols<'a> {
 		messages: &mut Messages,
 		function_initial_symbol_len: usize,
 		symbol: Symbol<'a>,
-		import_span: Span,
+		import_span: Option<Span>,
 	) {
 		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
 			messages.message(
-				error!("Import conflicts with local symbol `{}`", found.name)
-					.span(import_span)
-					.note_if_some(found.span, "Local symbol here"),
+				error!("Import conflicts with existing symbol `{}`", found.name)
+					.span_if_some(import_span)
+					.note_if_some(found.span, "Existing symbol here"),
 			);
 		} else {
 			self.symbols.push(symbol);
@@ -702,8 +702,9 @@ fn resolve_root_type_imports<'a>(messages: &mut Messages, root_layers: &mut Root
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
 
+		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
-		resolve_block_type_imports(messages, root_layers, &mut symbols, 0, block);
+		resolve_block_type_imports(messages, root_layers, &mut symbols, module_path, 0, block, true);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
@@ -828,62 +829,119 @@ fn resolve_block_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
 	function_initial_symbols_len: usize,
 	block: &tree::Block<'a>,
+	is_root: bool,
 ) {
+	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+		let path = PathSegments {
+			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
+		};
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
+	}
+
 	for statement in &block.statements {
 		let import_statement = match statement {
 			tree::Statement::Import(import_statement) => import_statement,
 			_ => continue,
 		};
-		let names = &import_statement.item.symbol_names;
 
 		let path = &import_statement.item.path_segments;
-		let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
-			Some(found) if found.symbols.is_empty() => continue,
-			Some(found) => found,
-			_ => continue,
-		};
-
-		for &importing in layer.importable_types() {
-			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, name.span);
-			}
-		}
+		let names = Some(import_statement.item.symbol_names.as_slice());
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, path, names);
 	}
 }
 
-fn resolve_block_non_type_imports<'a>(
+fn resolve_import_for_block_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_symbols_len: usize,
-	block: &tree::Block<'a>,
+	path: &PathSegments<'a>,
+	names: Option<&[Node<&'a str>]>,
 ) {
+	let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
+		Some(found) if found.symbols.is_empty() => return,
+		Some(found) => found,
+		_ => return,
+	};
+
+	if let Some(names) = names {
+		for &importing in layer.importable_types() {
+			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
+			}
+		}
+	} else {
+		for &importing in layer.importable_types() {
+			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		}
+	}
+}
+
+// TODO: This function and its sibling below have terrible names, fix that
+fn resolve_block_non_type_imports<'a>(
+	messages: &mut Messages,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_len: usize,
+	block: &tree::Block<'a>,
+	is_root: bool,
+) {
+	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+		let path = PathSegments {
+			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
+		};
+		resolve_import_for_non_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
+	}
+
 	for statement in &block.statements {
 		let import_statement = match statement {
 			tree::Statement::Import(import_statement) => import_statement,
 			_ => continue,
 		};
-		let names = &import_statement.item.symbol_names;
 
 		let path = &import_statement.item.path_segments;
-		let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
-			Some(found) if found.symbols.is_empty() => continue,
-			Some(found) => found,
-			_ => continue,
-		};
+		let names = Some(import_statement.item.symbol_names.as_slice());
+		resolve_import_for_non_block_types(messages, root_layers, symbols, function_initial_symbols_len, path, names);
+	}
+}
 
+fn resolve_import_for_non_block_types<'a>(
+	messages: &mut Messages,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
+	path: &PathSegments<'a>,
+	names: Option<&[Node<&'a str>]>,
+) {
+	let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
+		Some(found) if found.symbols.is_empty() => return,
+		Some(found) => found,
+		_ => return,
+	};
+
+	if let Some(names) = names {
 		for &importing in layer.importable_functions() {
 			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, name.span);
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
 			}
 		}
 
 		for &importing in layer.importable_consts() {
 			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, name.span);
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
 			}
+		}
+	} else {
+		for &importing in layer.importable_functions() {
+			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		}
+
+		for &importing in layer.importable_consts() {
+			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
 		}
 	}
 }
@@ -1091,11 +1149,11 @@ fn fill_pre_existing_user_type_specializations<'a>(
 	}
 
 	for type_id in type_ids {
-		type_store.type_size(type_id);
+		type_store.type_layout(type_id);
 	}
 }
 
-pub fn report_cyclic_user_type<'a>(
+fn report_cyclic_user_type<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
@@ -1232,7 +1290,7 @@ fn create_block_functions<'a>(
 				file_index,
 				is_main,
 				generics,
-				statement.extern_name,
+				statement.extern_attribute,
 				parameters,
 				return_type,
 			);
@@ -1263,15 +1321,17 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.function_initial_symbols_len,
 			context.module_path,
 			block,
-			false,
+			is_root,
 		);
 
 		resolve_block_type_imports(
 			context.messages,
 			context.root_layers,
 			context.symbols,
+			context.module_path,
 			context.function_initial_symbols_len,
 			block,
+			is_root,
 		);
 
 		fill_block_types(
@@ -1291,8 +1351,10 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		context.messages,
 		context.root_layers,
 		context.symbols,
+		context.module_path,
 		context.function_initial_symbols_len,
 		block,
+		is_root,
 	);
 
 	if !is_root {
@@ -1389,7 +1451,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 }
 
 fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>) {
-	if statement.extern_name.is_some() {
+	if statement.extern_attribute.is_some() {
 		// Note: Signature has already been checked in `create_block_functions`
 		return;
 	}
@@ -1628,7 +1690,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	Some(Binding { name, type_id, expression, readable_index, is_mutable })
 }
 
-fn validate_expression<'a>(
+pub fn validate_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
 ) -> Expression<'a> {

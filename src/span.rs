@@ -21,8 +21,8 @@ impl Add for Span {
 }
 
 impl Span {
-	pub fn zero(file_index: usize) -> Span {
-		Span { start: 0, end: 0, file_index }
+	pub fn unusable() -> Span {
+		Span { start: usize::MAX, end: usize::MAX, file_index: usize::MAX }
 	}
 
 	pub fn get_line_num(&self, source: &str) -> usize {

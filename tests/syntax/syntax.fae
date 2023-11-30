@@ -2,7 +2,9 @@ import fae::stdout::print_string
 
 struct MyType {
 	a: i32
+	//commented_a: T
 	b: f64
+	//commented_b: T
 }
 
 struct EmptyA {

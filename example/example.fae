@@ -1,4 +1,4 @@
-import fae::stdout::print_i32
+import fae::stdout::print_i32, print_newline
 
 struct A {}
 
@@ -10,4 +10,5 @@ struct B {
 fn main() {
 	let a = B { a: A {}, b: 3 }
 	print_i32(a.b)
+	print_newline()
 }

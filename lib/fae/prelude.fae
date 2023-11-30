@@ -1,0 +1,7 @@
+extern intrinsic
+generic T
+fn size_of(): i64
+
+extern intrinsic
+generic T
+fn alignment_of(): i64

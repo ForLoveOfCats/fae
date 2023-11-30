@@ -2,7 +2,7 @@ use crate::error::Messages;
 use crate::ir::{DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, Symbol, SymbolKind, TypeArguments};
 use crate::span::Span;
 use crate::tree::{self, Node};
-use crate::validator::{report_cyclic_user_type, FunctionStore, RootLayers, Symbols};
+use crate::validator::{FunctionStore, RootLayers, Symbols};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TypeId {
@@ -57,6 +57,12 @@ impl TypeId {
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Layout {
+	pub size: i64,
+	pub alignment: i64,
+}
+
 #[derive(Debug)]
 pub struct StructShape<'a> {
 	pub name: &'a str,
@@ -92,7 +98,7 @@ pub struct Struct<'a> {
 	pub type_arguments: Vec<TypeId>,
 	pub been_filled: bool,
 	pub fields: Vec<Field<'a>>,
-	pub size: Option<usize>,
+	pub layout: Option<Layout>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -166,23 +172,23 @@ impl PrimativeKind {
 		}
 	}
 
-	pub fn size(self) -> usize {
+	pub fn layout(self) -> Layout {
 		match self {
-			PrimativeKind::AnyCollapse => 0,
-			PrimativeKind::Void => 0,
+			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0 },
+			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
-			PrimativeKind::I8 => 1,
-			PrimativeKind::I16 => 2,
-			PrimativeKind::I32 => 4,
-			PrimativeKind::I64 => 8,
-			PrimativeKind::U8 => 1,
-			PrimativeKind::U16 => 2,
-			PrimativeKind::U32 => 4,
-			PrimativeKind::U64 => 8,
-			PrimativeKind::USize => 8,
-			PrimativeKind::F32 => 4,
-			PrimativeKind::F64 => 8,
+			PrimativeKind::I8 => Layout { size: 1, alignment: 1 },
+			PrimativeKind::I16 => Layout { size: 2, alignment: 2 },
+			PrimativeKind::I32 => Layout { size: 4, alignment: 4 },
+			PrimativeKind::I64 => Layout { size: 8, alignment: 8 },
+			PrimativeKind::U8 => Layout { size: 1, alignment: 1 },
+			PrimativeKind::U16 => Layout { size: 2, alignment: 2 },
+			PrimativeKind::U32 => Layout { size: 4, alignment: 4 },
+			PrimativeKind::U64 => Layout { size: 8, alignment: 8 },
+			PrimativeKind::USize => Layout { size: 8, alignment: 8 },
+			PrimativeKind::F32 => Layout { size: 4, alignment: 4 },
+			PrimativeKind::F64 => Layout { size: 8, alignment: 8 },
 		}
 	}
 }
@@ -683,47 +689,62 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn type_size(&mut self, type_id: TypeId) -> usize {
+	pub fn type_layout(&mut self, type_id: TypeId) -> Layout {
 		match self.type_entries[type_id.index()].kind {
-			TypeEntryKind::BuiltinType { kind } => kind.size(),
+			TypeEntryKind::BuiltinType { kind } => kind.layout(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let calculated_size = match &self.user_types[shape_index].kind {
+				let calculated_layout = match &self.user_types[shape_index].kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[specialization_index];
-						if let Some(size) = specialization.size {
-							return size;
+						if let Some(layout) = specialization.layout {
+							return layout;
 						}
 
 						// Belch
 						let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
 
 						let mut size = 0;
+						let mut max_field_alignment = 0;
+
 						for type_id in field_types {
-							size += self.type_size(type_id);
+							let field_layout = self.type_layout(type_id);
+
+							if field_layout.alignment != 0 {
+								size += size % field_layout.alignment;
+							}
+
+							size += field_layout.size;
+							max_field_alignment = max_field_alignment.max(field_layout.alignment);
+						}
+
+						if size != 0 && size % max_field_alignment != 0 {
+							size = (size / max_field_alignment) * max_field_alignment + max_field_alignment;
 						}
 
 						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
 						self.user_type_generate_order.push(description);
 
-						size
+						Layout { size, alignment: max_field_alignment }
 					}
 				};
 
 				match &mut self.user_types[shape_index].kind {
-					UserTypeKind::Struct { shape } => shape.specializations[specialization_index].size = Some(calculated_size),
+					UserTypeKind::Struct { shape } => {
+						shape.specializations[specialization_index].layout = Some(calculated_layout)
+					}
 				}
 
-				calculated_size
+				calculated_layout
 			}
 
-			TypeEntryKind::Pointer { .. } => 8,
+			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
 
-			TypeEntryKind::Slice(_) => 16,
+			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 16 },
 
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
-			TypeEntryKind::UserTypeGeneric { .. } => 0,
-			TypeEntryKind::FunctionGeneric { .. } => 0,
+			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0 },
+			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 0 },
 		}
 	}
 
@@ -886,7 +907,6 @@ impl<'a> TypeStore<'a> {
 		type_arguments: Vec<TypeId>,
 	) -> Option<TypeId> {
 		let user_type = &self.user_types[shape_index];
-		let span = user_type.span;
 		let shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 		};
@@ -946,7 +966,7 @@ impl<'a> TypeStore<'a> {
 			type_arguments: type_arguments.clone(),
 			been_filled,
 			fields,
-			size: None,
+			layout: None,
 		};
 		shape.specializations.push(specialization);
 
@@ -958,12 +978,8 @@ impl<'a> TypeStore<'a> {
 			generic_usages.push(usage)
 		}
 
-		// TODO: This may not be necessary
-		let chain = self.find_user_type_dependency_chain(type_id, type_id);
-		if let Some(chain) = chain {
-			report_cyclic_user_type(messages, self, function_store, module_path, type_id, chain, span);
-		} else if been_filled {
-			self.type_size(type_id);
+		if been_filled {
+			self.type_layout(type_id);
 		}
 
 		Some(type_id)

@@ -248,7 +248,7 @@ fn generate_user_type(
 				return Ok(());
 			}
 
-			if type_store.type_size(specialization.type_id) <= 0 {
+			if type_store.type_layout(specialization.type_id).size <= 0 {
 				return Ok(());
 			}
 		}
@@ -278,7 +278,7 @@ fn generate_user_type(
 			// Belch
 			let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
 			for (index, type_id) in field_types.into_iter().enumerate() {
-				if type_store.type_size(type_id) <= 0 {
+				if type_store.type_layout(type_id).size <= 0 {
 					continue;
 				}
 
@@ -312,10 +312,10 @@ fn generate_function_signature<'a>(
 	output: Output,
 ) -> Result<()> {
 	let shape = &function_store.shapes[function_id.function_shape_index];
-	assert!(shape.extern_name.is_none(), "{:?}", shape.extern_name);
+	assert!(shape.extern_attribute.is_none(), "{:?}", shape.extern_attribute);
 	let specialization = &shape.specializations[function_id.specialization_index];
 
-	if type_store.type_size(specialization.return_type) > 0 {
+	if type_store.type_layout(specialization.return_type).size > 0 {
 		generate_raw_type_id(type_store, specialization.return_type, output)?;
 		write!(output, " ")?;
 	} else {
@@ -332,7 +332,7 @@ fn generate_function_signature<'a>(
 
 	let mut first = true;
 	for parameter in &specialization.parameters {
-		if type_store.type_size(parameter.type_id) <= 0 {
+		if type_store.type_layout(parameter.type_id).size <= 0 {
 			continue;
 		}
 
@@ -361,7 +361,7 @@ fn generate_function<'a>(
 	output: Output,
 ) -> Result<()> {
 	let shape = &mut function_store.shapes[function_id.function_shape_index];
-	assert!(shape.extern_name.is_none(), "{:?}", shape.extern_name);
+	assert!(shape.extern_attribute.is_none(), "{:?}", shape.extern_attribute);
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
 	assert!(!specialization.been_generated);
@@ -511,7 +511,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let shape = &mut context.function_store.shapes[function_id.function_shape_index];
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
-	if !specialization.been_generated && shape.extern_name.is_none() {
+	if !specialization.been_generated && shape.extern_attribute.is_none() {
 		if !specialization.been_queued {
 			specialization.been_queued = true;
 			context.function_generate_queue.push(function_id);
@@ -537,8 +537,16 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	}
 
 	let shape = &context.function_store.shapes[function_id.function_shape_index];
-	if let Some(extern_name) = shape.extern_name {
-		write!(output, "{}", extern_name.item)?;
+	if let Some(extern_attribute) = shape.extern_attribute {
+		match extern_attribute.item {
+			crate::tree::ExternAttribute::Name(name) => write!(output, "{name}")?,
+
+			crate::tree::ExternAttribute::Intrinsic => {
+				generate_intrinsic(context, call, function_id, output)?;
+				writeln!(output, ";")?;
+				return Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }));
+			}
+		}
 	} else {
 		generate_functon_id(function_id, output)?;
 	}
@@ -557,6 +565,29 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	writeln!(output, ");")?;
 
 	Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }))
+}
+
+fn generate_intrinsic(context: &mut Context, call: &Call, function_id: FunctionId, output: Output) -> Result<()> {
+	let shape = &mut context.function_store.shapes[function_id.function_shape_index];
+	let specialization = &mut shape.specializations[function_id.specialization_index];
+
+	match call.name {
+		"size_of" => {
+			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			let type_id = specialization.type_arguments.explicit_ids()[0];
+			let size = context.type_store.type_layout(type_id).size;
+			write!(output, "{size}")
+		}
+
+		"alignment_of" => {
+			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			let type_id = specialization.type_arguments.explicit_ids()[0];
+			let alignment = context.type_store.type_layout(type_id).alignment;
+			write!(output, "{alignment}")
+		}
+
+		_ => unimplemented!(),
+	}
 }
 
 fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<Option<Step>> {
@@ -581,7 +612,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 				return Ok(None);
 			};
 
-			if context.type_store.type_size(read.type_id) <= 0 {
+			if context.type_store.type_layout(read.type_id).size <= 0 {
 				return Ok(None);
 			}
 
@@ -741,7 +772,7 @@ fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> O
 	);
 	assert_eq!(generic_usages.len(), 0);
 
-	if context.type_store.type_size(type_id) <= 0 {
+	if context.type_store.type_layout(type_id).size <= 0 {
 		return None;
 	}
 

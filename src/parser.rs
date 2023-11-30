@@ -146,7 +146,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 
 //TODO: Add function to only disallow specific attribute kinds
 fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Span, label: &str) {
-	let mut buffer = [Span::zero(span.file_index); Attributes::FIELD_COUNT];
+	let mut buffer = [Span::unusable(); Attributes::FIELD_COUNT];
 	let spans = attributes.attribute_spans(&mut buffer);
 
 	if !spans.is_empty() {
@@ -585,14 +585,20 @@ fn parse_generic_attribute<'a>(
 }
 
 fn parse_extern_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<ExternAttribute<'a>>> {
-	let generic_token = tokenizer.expect_word(messages, "extern")?;
+	let extern_token = tokenizer.expect_word(messages, "extern")?;
 
-	let name_token = tokenizer.expect(messages, TokenKind::String)?;
+	let (name_span, attribute) = if tokenizer.peek_kind() == Ok(TokenKind::Word) {
+		let token = tokenizer.expect_word(messages, "intrinsic")?;
+		(token.span, ExternAttribute::Intrinsic)
+	} else {
+		let token = tokenizer.expect(messages, TokenKind::String)?;
+		(token.span, ExternAttribute::Name(token.text))
+	};
+
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let span = generic_token.span + name_token.span;
-	let extern_atttribute = ExternAttribute { name: name_token.text };
-	Ok(Node::new(extern_atttribute, span))
+	let span = extern_token.span + name_span;
+	Ok(Node::new(attribute, span))
 }
 
 fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Import<'a>>> {
@@ -730,21 +736,11 @@ fn parse_function_declaration<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
 ) -> ParseResult<Function<'a>> {
-	if attributes.extern_attribute.is_some() {
-		if let Some(generics) = &attributes.generic_attribute {
-			messages.message(error!("Extern function may not have generics").span(generics.span));
-		}
-	}
-
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
 		None => Vec::new(),
 	};
-
-	let extern_name = match &attributes.extern_attribute {
-		Some(n) => Some(Node::new(n.item.name, n.span)),
-		None => None,
-	};
+	let extern_attribute = attributes.extern_attribute;
 
 	tokenizer.expect_word(messages, "fn")?;
 
@@ -767,7 +763,14 @@ fn parse_function_declaration<'a>(
 		Some(parse_block(messages, tokenizer)?)
 	};
 
-	Ok(Function { generics, extern_name, name, parameters, parsed_type, block })
+	Ok(Function {
+		generics,
+		extern_attribute,
+		name,
+		parameters,
+		parsed_type,
+		block,
+	})
 }
 
 fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<Parameter<'a>>>> {
@@ -830,7 +833,9 @@ fn parse_struct_declaration<'a>(
 	let mut fields = Vec::new();
 
 	if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
-		tokenizer.expect(messages, TokenKind::Newline)?;
+		while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+			tokenizer.expect(messages, TokenKind::Newline)?;
+		}
 
 		while !reached_close_brace(tokenizer) {
 			let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -843,7 +848,9 @@ fn parse_struct_declaration<'a>(
 
 			fields.push(Field { name, parsed_type });
 
-			tokenizer.expect(messages, TokenKind::Newline)?;
+			while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+				tokenizer.expect(messages, TokenKind::Newline)?;
+			}
 		}
 	}
 

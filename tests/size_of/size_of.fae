@@ -1,0 +1,61 @@
+import fae::stdout::print_i64, print_newline
+
+struct Empty {}
+
+struct ContainsEmpty {
+	a: Empty
+	b: i32
+	c: Empty
+}
+
+struct MultipleFields {
+	a: i32
+	b: u8
+	c: u64
+	d: u8
+}
+
+struct Nested {
+	a: MultipleFields
+	b: u8
+}
+
+generic T
+fn generic_func() {
+	print_i64(size_of[T]())
+}
+
+fn main() {
+	print_i64(size_of[u32]()) // 4
+	print_newline()
+
+	print_i64(size_of[u64]()) // 8
+	print_newline()
+
+	print_i64(size_of[i8]()) // 1
+	print_newline()
+
+	print_i64(size_of[f32]()) // 4
+	print_newline()
+
+	print_i64(size_of[Empty]()) // 0
+	print_newline()
+
+	print_i64(size_of[ContainsEmpty]()) // 4
+	print_newline()
+
+	print_i64(size_of[MultipleFields]()) // 24
+	print_newline()
+
+	print_i64(size_of[Nested]()) // 32
+	print_newline()
+
+	generic_func[u8]() // 1
+	print_newline()
+
+	generic_func[i64]() // 8
+	print_newline()
+
+	generic_func[u16]() // 2
+	print_newline()
+}

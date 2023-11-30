@@ -43,9 +43,10 @@ pub struct GenericAttribute<'a> {
 	pub names: Vec<Node<&'a str>>,
 }
 
-#[derive(Debug)]
-pub struct ExternAttribute<'a> {
-	pub name: &'a str,
+#[derive(Debug, Clone, Copy)]
+pub enum ExternAttribute<'a> {
+	Name(&'a str),
+	Intrinsic,
 }
 
 #[derive(Debug)]
@@ -109,7 +110,7 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
-	pub extern_name: Option<Node<&'a str>>,
+	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
 	pub parsed_type: Option<Node<Type<'a>>>,
