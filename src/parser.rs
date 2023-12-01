@@ -132,7 +132,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 
 			_ => {
 				disallow_attributes(messages, attributes, token.span, "An expression");
-				if let Ok(expression) = parse_expression(messages, tokenizer) {
+				if let Ok(expression) = parse_expression(messages, tokenizer, true) {
 					items.push(Statement::Expression(expression));
 				} else {
 					consume_error_syntax(messages, tokenizer);
@@ -159,16 +159,21 @@ fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Sp
 	}
 }
 
-fn parse_expression<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
-	parse_expression_climb(messages, tokenizer, 0)
+fn parse_expression<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	allow_struct_literal: bool,
+) -> ParseResult<Node<Expression<'a>>> {
+	parse_expression_climb(messages, tokenizer, allow_struct_literal, 0)
 }
 
 fn parse_expression_climb<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
+	allow_struct_literal: bool,
 	min_precedence: u32,
 ) -> ParseResult<Node<Expression<'a>>> {
-	let mut result = parse_expression_atom(messages, tokenizer)?;
+	let mut result = parse_expression_atom(messages, tokenizer, allow_struct_literal)?;
 
 	while tokenizer.peek_kind() == Ok(TokenKind::Period) {
 		tokenizer.expect(messages, TokenKind::Period)?;
@@ -195,7 +200,7 @@ fn parse_expression_climb<'a>(
 			Associativity::Right => precedence,
 		};
 
-		let right = parse_expression_climb(messages, tokenizer, next_min_precedence)?;
+		let right = parse_expression_climb(messages, tokenizer, allow_struct_literal, next_min_precedence)?;
 		let left_span = result.span;
 		let right_span = right.span;
 
@@ -222,7 +227,11 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 	Some(Node::new(operator, token.span))
 }
 
-fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
+fn parse_expression_atom<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	allow_struct_literal: bool,
+) -> ParseResult<Node<Expression<'a>>> {
 	let peeked = tokenizer.peek()?;
 
 	match peeked.kind {
@@ -230,7 +239,7 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 			let token = tokenizer.expect(messages, TokenKind::Sub)?;
 			let op = Node::new(UnaryOperator::Negate, token.span);
 
-			let expression = parse_expression(messages, tokenizer)?;
+			let expression = parse_expression(messages, tokenizer, allow_struct_literal)?;
 
 			let span = token.span + expression.span;
 			let negate = Box::new(UnaryOperation { op, expression });
@@ -256,6 +265,22 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 		}
 
 		TokenKind::Word => {
+			match peeked.text {
+				"if" => return parse_if(messages, tokenizer),
+
+				"true" => {
+					tokenizer.next(messages)?;
+					return Ok(Node::new(Expression::BooleanLiteral(true), peeked.span));
+				}
+
+				"false" => {
+					tokenizer.next(messages)?;
+					return Ok(Node::new(Expression::BooleanLiteral(false), peeked.span));
+				}
+
+				_ => {}
+			}
+
 			if peeked.text.as_bytes()[0].is_ascii_digit() {
 				return parse_number(messages, tokenizer);
 			}
@@ -279,7 +304,7 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 				return Ok(Node::new(Expression::Call(call), span));
 			}
 
-			if is_struct_literal {
+			if is_struct_literal && allow_struct_literal {
 				let type_span = match &type_arguments {
 					Some(type_arguments) => path_segments.span + type_arguments.span,
 					None => path_segments.span,
@@ -309,7 +334,8 @@ fn parse_expression_atom<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 
 		TokenKind::OpenParen => {
 			tokenizer.expect(messages, TokenKind::OpenParen)?;
-			let expression = parse_expression(messages, tokenizer)?;
+			// Regardless of if parent parsing context disallowed struct literals, we override that within parenthesis
+			let expression = parse_expression(messages, tokenizer, true)?;
 			tokenizer.expect(messages, TokenKind::CloseParen)?;
 			Ok(expression)
 		}
@@ -385,6 +411,18 @@ fn test_parse_string() {
 	}
 }
 
+fn parse_if<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
+	let if_token = tokenizer.expect_word(messages, "if")?;
+
+	let condition = parse_expression(messages, tokenizer, false)?;
+	let body = parse_expression(messages, tokenizer, true)?;
+
+	let span = if_token.span + body.span;
+	let value = If { condition, body };
+	let expression = Expression::If(Box::new(value));
+	Ok(Node::new(expression, span))
+}
+
 // Holy return type batman
 // TODO: Do something about this
 fn parse_type_arguments<'a>(
@@ -419,7 +457,7 @@ fn parse_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 
 	let mut expressions = Vec::new();
 	while !reached_close_paren(tokenizer) {
-		expressions.push(parse_expression(messages, tokenizer)?);
+		expressions.push(parse_expression(messages, tokenizer, true)?);
 
 		if reached_close_paren(tokenizer) {
 			break;
@@ -454,7 +492,7 @@ fn parse_struct_initializer<'a>(
 
 		tokenizer.expect(messages, TokenKind::Colon)?;
 
-		let expression = parse_expression(messages, tokenizer)?;
+		let expression = parse_expression(messages, tokenizer, true)?;
 
 		if multi_line {
 			if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
@@ -875,7 +913,7 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 
 	tokenizer.expect(messages, TokenKind::Equal)?;
 
-	let expression = parse_expression(messages, tokenizer)?;
+	let expression = parse_expression(messages, tokenizer, true)?;
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
@@ -907,7 +945,7 @@ fn parse_binding_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenize
 
 	tokenizer.expect(messages, TokenKind::Equal)?;
 
-	let expression = parse_expression(messages, tokenizer)?;
+	let expression = parse_expression(messages, tokenizer, true)?;
 
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
@@ -921,7 +959,7 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 
 	let expression = match tokenizer.peek_kind() {
 		Ok(TokenKind::Newline) => None,
-		_ => Some(parse_expression(messages, tokenizer)?),
+		_ => Some(parse_expression(messages, tokenizer, true)?),
 	};
 
 	tokenizer.expect(messages, TokenKind::Newline)?;

@@ -324,12 +324,20 @@ pub struct Block<'a> {
 }
 
 #[derive(Debug)]
+pub struct If<'a> {
+	pub condition: Node<Expression<'a>>,
+	pub body: Node<Expression<'a>>,
+}
+
+#[derive(Debug)]
 pub enum Expression<'a> {
 	Block(Block<'a>),
+	If(Box<If<'a>>),
 
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
 
+	BooleanLiteral(bool),
 	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 

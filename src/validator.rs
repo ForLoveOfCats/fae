@@ -1698,8 +1698,10 @@ pub fn validate_expression<'a>(
 
 	match &expression.item {
 		tree::Expression::Block(block) => validate_block_expression(context, block, span),
+		tree::Expression::If(if_expression) => validate_if_expression(context, if_expression, span),
 		tree::Expression::IntegerLiteral(literal) => validate_integer_literal(context, literal, span),
 		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
+		tree::Expression::BooleanLiteral(literal) => validate_bool_literal(context, *literal, span),
 		tree::Expression::CodepointLiteral(literal) => validate_codepoint_literal(context, literal, span),
 		tree::Expression::StringLiteral(literal) => validate_string_literal(context, literal, span),
 		tree::Expression::StructLiteral(literal) => validate_struct_literal(context, literal, span),
@@ -1718,6 +1720,14 @@ fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a t
 	Expression { span, type_id, mutable: true, kind }
 }
 
+fn validate_if_expression<'a>(context: &mut Context<'a, '_, '_>, if_expression: &'a tree::If<'a>, span: Span) -> Expression<'a> {
+	let condition = validate_expression(context, &if_expression.condition);
+	let body = validate_expression(context, &if_expression.body);
+	let type_id = body.type_id; // TODO: Wrong, needs else-if/else
+	let kind = ExpressionKind::If(Box::new(If { type_id, condition, body }));
+	Expression { span, type_id, mutable: true, kind }
+}
+
 fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::IntegerLiteral, span: Span) -> Expression<'a> {
 	let value = IntegerValue::new(literal.value.item, literal.value.span);
 	let kind = ExpressionKind::IntegerValue(value);
@@ -1729,6 +1739,12 @@ fn validate_float_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree:
 	let value = DecimalValue::new(literal.value.item, literal.value.span);
 	let kind = ExpressionKind::DecimalValue(value);
 	let type_id = context.type_store.decimal_type_id();
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_bool_literal<'a>(context: &mut Context<'a, '_, '_>, literal: bool, span: Span) -> Expression<'a> {
+	let type_id = context.type_store.bool_type_id();
+	let kind = ExpressionKind::BooleanLiteral(literal);
 	Expression { span, type_id, mutable: true, kind }
 }
 

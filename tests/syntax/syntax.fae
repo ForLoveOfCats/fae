@@ -1,4 +1,4 @@
-import fae::stdout::print_string
+import fae::stdout::print_string, print_newline
 
 struct MyType {
 	a: i32
@@ -11,6 +11,10 @@ struct EmptyA {
 }
 
 struct EmptyB {}
+
+struct HasBool {
+	field: bool
+}
 
 const STRING = "Hi there"
 
@@ -35,11 +39,28 @@ fn main() {
 		c.b = 55
 	}
 
+	if true {
+		print_string("In true if\n")
+	}
+
+	if false {
+		print_string("In false if\n")
+	}
+
+	if (HasBool { field: true }.field) {
+		print_string("In struct true if\n")
+	}
+	
+	if (HasBool { field: false }.field) {
+		print_string("In struct false if\n")
+	}
+
 	let d: u64 = generic_function[u64](54)
 
 	let ptr: &u8 = STRING.pointer
 	let len: i64 = STRING.len
 	print_string(STRING)
+	print_newline()
 }
 
 generic T

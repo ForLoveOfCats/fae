@@ -1,6 +1,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef uint8_t bool;
+#define true 1
+#define false 0
+
 typedef size_t usize;
 
 typedef uint64_t u64;

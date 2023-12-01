@@ -16,6 +16,16 @@ fn print_newline() {
 }
 
 
+fn print_bool(arg: bool) {
+	mut as_text = "false"
+	if arg {
+		as_text = "true"
+	}
+
+	print_string(as_text)
+}
+
+
 extern "printf"
 fn c_printf_i8(format: &u8, arg: i8)
 

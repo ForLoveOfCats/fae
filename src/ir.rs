@@ -358,6 +358,13 @@ pub struct Block<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct If<'a> {
+	pub type_id: TypeId, // TODO: Meaningless until else-if/else have been added
+	pub condition: Expression<'a>,
+	pub body: Expression<'a>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Statement<'a> {
 	pub type_id: TypeId,
 	pub kind: StatementKind<'a>,
@@ -413,10 +420,12 @@ pub enum ExpressionKind<'a> {
 	AnyCollapse,
 
 	Block(Block<'a>),
+	If(Box<If<'a>>),
 
 	IntegerValue(IntegerValue),
 	DecimalValue(DecimalValue),
 
+	BooleanLiteral(bool),
 	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
@@ -435,8 +444,10 @@ impl<'a> ExpressionKind<'a> {
 		match self {
 			ExpressionKind::AnyCollapse => "an AnyCollapse",
 			ExpressionKind::Block(_) => "a block",
+			ExpressionKind::If(_) => "a if expression",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",
 			ExpressionKind::DecimalValue(_) => "an untyped decimal",
+			ExpressionKind::BooleanLiteral(_) => "a boolean literal",
 			ExpressionKind::CodepointLiteral(_) => "a codepoint literal",
 			ExpressionKind::StringLiteral(_) => "a string literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",

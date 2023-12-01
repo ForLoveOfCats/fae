@@ -135,6 +135,8 @@ pub enum PrimativeKind {
 	UntypedInteger,
 	UntypedDecimal,
 
+	Bool,
+
 	I8,
 	I16,
 	I32,
@@ -158,6 +160,7 @@ impl PrimativeKind {
 			PrimativeKind::Void => "void",
 			PrimativeKind::UntypedInteger => "untyped integer",
 			PrimativeKind::UntypedDecimal => "untyped decimal",
+			PrimativeKind::Bool => "bool",
 			PrimativeKind::I8 => "i8",
 			PrimativeKind::I16 => "i16",
 			PrimativeKind::I32 => "i32",
@@ -178,6 +181,7 @@ impl PrimativeKind {
 			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
+			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
 			PrimativeKind::I8 => Layout { size: 1, alignment: 1 },
 			PrimativeKind::I16 => Layout { size: 2, alignment: 2 },
 			PrimativeKind::I32 => Layout { size: 4, alignment: 4 },
@@ -273,6 +277,8 @@ pub struct TypeStore<'a> {
 	integer_type_id: TypeId,
 	decimal_type_id: TypeId,
 
+	bool_type_id: TypeId,
+
 	i8_type_id: TypeId,
 	i16_type_id: TypeId,
 	i32_type_id: TypeId,
@@ -316,6 +322,8 @@ impl<'a> TypeStore<'a> {
 		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
 		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
 
+		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
+
 		let i8_type_id = push_primative(Some("i8"), PrimativeKind::I8);
 		let i16_type_id = push_primative(Some("i16"), PrimativeKind::I16);
 		let i32_type_id = push_primative(Some("i32"), PrimativeKind::I32);
@@ -341,6 +349,7 @@ impl<'a> TypeStore<'a> {
 			void_type_id,
 			integer_type_id,
 			decimal_type_id,
+			bool_type_id,
 			i8_type_id,
 			i16_type_id,
 			i32_type_id,
@@ -370,20 +379,24 @@ impl<'a> TypeStore<'a> {
 		self.void_type_id
 	}
 
-	pub fn u32_type_id(&self) -> TypeId {
-		self.u32_type_id
-	}
-
-	pub fn i64_type_id(&self) -> TypeId {
-		self.i64_type_id
-	}
-
 	pub fn integer_type_id(&self) -> TypeId {
 		self.integer_type_id
 	}
 
 	pub fn decimal_type_id(&self) -> TypeId {
 		self.decimal_type_id
+	}
+
+	pub fn bool_type_id(&self) -> TypeId {
+		self.bool_type_id
+	}
+
+	pub fn u32_type_id(&self) -> TypeId {
+		self.u32_type_id
+	}
+
+	pub fn i64_type_id(&self) -> TypeId {
+		self.i64_type_id
 	}
 
 	pub fn string_type_id(&self) -> TypeId {

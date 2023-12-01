@@ -82,6 +82,7 @@ enum Step {
 	Readable { readable_index: usize },
 	ConstantInteger(i128),
 	ConstantDecimal(f64),
+	ConstantBool(bool),
 	ConstantCodepoint(char),
 }
 
@@ -92,6 +93,7 @@ impl std::fmt::Display for Step {
 			Step::Readable { readable_index } => write!(f, "re_{}", readable_index),
 			Step::ConstantInteger(integer) => write!(f, "{}", integer),
 			Step::ConstantDecimal(decimal) => write!(f, "{}", decimal),
+			Step::ConstantBool(literal) => write!(f, "{}", literal),
 			Step::ConstantCodepoint(codepoint) => write!(f, "{}", *codepoint as u32),
 		}
 	}
@@ -663,12 +665,33 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 	let mut temp_id = context.generate_temp_id();
 
 	match &expression.kind {
+		ExpressionKind::Block(block) => {
+			generate_block(context, block, output)?;
+			return Ok(None); // TODO: Fix when actual block expression
+		}
+
+		ExpressionKind::If(if_expression) => {
+			let Some(condition_step) = generate_expression(context, &if_expression.condition, output)? else {
+				return Ok(None);
+			};
+
+			writeln!(output, "if ({condition_step}) {{")?;
+			generate_expression(context, &if_expression.body, output)?;
+			writeln!(output, "}}")?;
+
+			return Ok(None); // TODO: Fix when actual if expression
+		}
+
 		ExpressionKind::IntegerValue(value) => {
 			return Ok(Some(Step::ConstantInteger(value.value())));
 		}
 
 		ExpressionKind::DecimalValue(value) => {
 			return Ok(Some(Step::ConstantDecimal(value.value())));
+		}
+
+		ExpressionKind::BooleanLiteral(literal) => {
+			return Ok(Some(Step::ConstantBool(*literal)));
 		}
 
 		ExpressionKind::CodepointLiteral(literal) => {
@@ -743,7 +766,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 			return generate_binary_operation(context, operation, output);
 		}
 
-		kind => unimplemented!("expression {kind:?}"),
+		ExpressionKind::AnyCollapse => unreachable!(),
 	}
 
 	Ok(Some(Step::Temp { temp_id }))
