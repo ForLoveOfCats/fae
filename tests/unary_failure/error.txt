@@ -1,0 +1,15 @@
+Validation error: ./tests/unary_failure/unary_failure.fae, line 2: Cannot invert `untyped integer` as it is not a boolean
+  2|     let a = 5.!
+                 ^^^
+
+Validation error: ./tests/unary_failure/unary_failure.fae, line 3: Cannot invert `[u8]` as it is not a boolean
+  3|     let b = "hi".!
+                 ^^^^^^
+
+Validation error: ./tests/unary_failure/unary_failure.fae, line 4: Cannot negate `[u8]` as it is not a numeric type
+  4|     let c = -"hi"
+                 ^^^^^
+
+Validation error: ./tests/unary_failure/unary_failure.fae, line 5: Cannot negate `bool` as it is not a numeric type
+  5|     let d = -true
+                 ^^^^^

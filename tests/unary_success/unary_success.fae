@@ -1,0 +1,34 @@
+import fae::stdout::print_i32, print_u64, print_f32, print_f64, print_bool, print_newline
+
+generic T
+fn identity(arg: T): T {
+	return arg
+}
+
+fn main() {
+	let a: i32 = -5
+	print_i32(a)
+	print_newline()
+
+	let b: u64 = --5
+	print_u64(b)
+	print_newline()
+
+	let c: f64 = -4.2
+	print_f64(c)
+	print_newline()
+
+	let d: f32 = --4.5
+	print_f32(d)
+	print_newline()
+
+	print_i32(--identity[i32](2))
+	print_newline()
+
+	let e = false.!
+	print_bool(e)
+	print_newline()
+
+	print_bool(false.!.!)
+	print_newline()
+}

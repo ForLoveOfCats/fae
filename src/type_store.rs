@@ -30,6 +30,11 @@ impl TypeId {
 		type_store.direct_match(self, type_store.decimal_type_id)
 	}
 
+	pub fn is_numeric(self, type_store: &TypeStore) -> bool {
+		let range = type_store.integer_type_id.entry..=type_store.f64_type_id.entry;
+		range.contains(&self.entry) || self.is_any_collapse(type_store)
+	}
+
 	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
 		let entry = type_store.type_entries[self.entry as usize];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
@@ -274,10 +279,10 @@ pub struct TypeStore<'a> {
 	any_collapse_type_id: TypeId,
 	void_type_id: TypeId,
 
+	bool_type_id: TypeId,
+
 	integer_type_id: TypeId,
 	decimal_type_id: TypeId,
-
-	bool_type_id: TypeId,
 
 	i8_type_id: TypeId,
 	i16_type_id: TypeId,
@@ -319,10 +324,11 @@ impl<'a> TypeStore<'a> {
 		let any_collapse_type_id = push_primative(None, PrimativeKind::AnyCollapse);
 		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
 
+		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
+
+		// NOTE: These numeric type ids must all be generated together for the `is_numeric` range check
 		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
 		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
-
-		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
 
 		let i8_type_id = push_primative(Some("i8"), PrimativeKind::I8);
 		let i16_type_id = push_primative(Some("i16"), PrimativeKind::I16);
@@ -379,16 +385,16 @@ impl<'a> TypeStore<'a> {
 		self.void_type_id
 	}
 
+	pub fn bool_type_id(&self) -> TypeId {
+		self.bool_type_id
+	}
+
 	pub fn integer_type_id(&self) -> TypeId {
 		self.integer_type_id
 	}
 
 	pub fn decimal_type_id(&self) -> TypeId {
 		self.decimal_type_id
-	}
-
-	pub fn bool_type_id(&self) -> TypeId {
-		self.bool_type_id
 	}
 
 	pub fn u32_type_id(&self) -> TypeId {

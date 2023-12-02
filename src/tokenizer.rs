@@ -7,6 +7,7 @@ pub enum TokenKind {
 	Newline,
 
 	Word,
+	Number,
 	String,
 	Codepoint,
 
@@ -52,6 +53,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::Newline => "newline",
 
 			TokenKind::Word => "word",
+			TokenKind::Number => "number",
 			TokenKind::String => "string literal",
 			TokenKind::Codepoint => "codepoint literal",
 
@@ -136,10 +138,6 @@ impl<'a> Tokenizer<'a> {
 		}
 	}
 
-	pub fn source(&self) -> &str {
-		self.source
-	}
-
 	// TODO: Add `peek_word`
 	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
 		if let Some(peeked) = self.peeked {
@@ -147,7 +145,7 @@ impl<'a> Tokenizer<'a> {
 		}
 
 		let mut local = *self;
-		let peeked = local.next_optional_messages(&mut None);
+		let peeked = local.next_with_optional_messages(&mut None);
 
 		if let Ok(peeked) = peeked {
 			self.peeked = Some(PeekedInfo { token: peeked, byte_index: local.offset });
@@ -161,10 +159,10 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
-		self.next_optional_messages(&mut Some(messages))
+		self.next_with_optional_messages(&mut Some(messages))
 	}
 
-	pub fn next_optional_messages(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<Token<'a>> {
+	pub fn next_with_optional_messages(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<Token<'a>> {
 		use TokenKind::*;
 
 		if let Some(peeked) = self.peeked.take() {
@@ -223,7 +221,7 @@ impl<'a> Tokenizer<'a> {
 					self.offset += 1;
 				}
 
-				return self.next_optional_messages(messages);
+				return self.next_with_optional_messages(messages);
 			}
 
 			[b'/', b'*', ..] => {
@@ -237,7 +235,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				return self.next_optional_messages(messages);
+				return self.next_with_optional_messages(messages);
 			}
 
 			[b'/', b'=', ..] => {
@@ -332,16 +330,47 @@ impl<'a> Tokenizer<'a> {
 				loop {
 					self.offset += 1;
 
-					if self.offset >= self.source.len()
-						|| matches!(
-							self.bytes[self.offset],
-							b' ' | b'\t'
-								| b'\n' | b'\r' | b'(' | b')' | b'{'
-								| b'}' | b'[' | b']' | b'+' | b'-'
-								| b'*' | b'/' | b'=' | b'>' | b'<'
-								| b':' | b';' | b'.' | b',' | b'\''
-								| b'"' | b'!' | b'&' | b'|'
-						) {
+					if self.offset >= self.source.len() {
+						break;
+					}
+
+					if matches!(
+						self.bytes[self.offset],
+						b' ' | b'\t'
+							| b'\n' | b'\r' | b'(' | b')'
+							| b'{' | b'}' | b'[' | b']' | b'+'
+							| b'-' | b'*' | b'/' | b'=' | b'>'
+							| b'<' | b':' | b';' | b'.' | b','
+							| b'\'' | b'"' | b'!' | b'&' | b'|'
+					) {
+						let is_numeral = self.bytes[start_index].is_ascii_digit();
+						let on_period = self.bytes[self.offset] == b'.';
+						let has_next = self.offset + 1 < self.source.len();
+						if is_numeral && on_period && has_next && self.bytes[self.offset + 1].is_ascii_digit() {
+							loop {
+								self.offset += 1;
+								if self.offset >= self.source.len() || !self.bytes[self.offset].is_ascii_digit() {
+									break;
+								}
+							}
+
+							return Ok(Token::new(
+								&self.source[start_index..self.offset],
+								Number,
+								start_index,
+								self.offset,
+								self.file_index,
+							));
+						} else if is_numeral {
+							return Ok(Token::new(
+								&self.source[start_index..self.offset],
+								Number,
+								start_index,
+								self.offset,
+								self.file_index,
+							));
+						}
+
 						break;
 					}
 				}

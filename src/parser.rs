@@ -173,17 +173,10 @@ fn parse_expression_climb<'a>(
 	allow_struct_literal: bool,
 	min_precedence: u32,
 ) -> ParseResult<Node<Expression<'a>>> {
-	let mut result = parse_expression_atom(messages, tokenizer, allow_struct_literal)?;
+	let mut atom = parse_expression_atom(messages, tokenizer, allow_struct_literal)?;
 
 	while tokenizer.peek_kind() == Ok(TokenKind::Period) {
-		tokenizer.expect(messages, TokenKind::Period)?;
-
-		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
-		let name = Node::from_token(name_token.text, name_token);
-
-		let span = result.span + name.span;
-		let field_read = Box::new(FieldRead { base: result, name });
-		result = Node::new(Expression::FieldRead(field_read), span);
+		atom = parse_following_period(messages, tokenizer, atom)?;
 	}
 
 	while let Some(operator) = tokenizer.peek().ok().and_then(token_to_operator) {
@@ -201,17 +194,17 @@ fn parse_expression_climb<'a>(
 		};
 
 		let right = parse_expression_climb(messages, tokenizer, allow_struct_literal, next_min_precedence)?;
-		let left_span = result.span;
+		let left_span = atom.span;
 		let right_span = right.span;
 
-		let binary_operation = BinaryOperation { op: operator, right, left: result };
+		let binary_operation = BinaryOperation { op: operator, right, left: atom };
 		let boxed = Box::new(binary_operation);
 		let expression = Expression::BinaryOperation(boxed);
 
-		result = Node::new(expression, left_span + right_span);
+		atom = Node::new(expression, left_span + right_span);
 	}
 
-	Ok(result)
+	Ok(atom)
 }
 
 fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
@@ -264,6 +257,10 @@ fn parse_expression_atom<'a>(
 			))
 		}
 
+		TokenKind::Number => {
+			return parse_number(messages, tokenizer);
+		}
+
 		TokenKind::Word => {
 			match peeked.text {
 				"if" => return parse_if(messages, tokenizer),
@@ -279,10 +276,6 @@ fn parse_expression_atom<'a>(
 				}
 
 				_ => {}
-			}
-
-			if peeked.text.as_bytes()[0].is_ascii_digit() {
-				return parse_number(messages, tokenizer);
 			}
 
 			let path_segments = parse_path_segments(messages, tokenizer)?;
@@ -356,6 +349,31 @@ fn parse_expression_atom<'a>(
 			Err(())
 		}
 	}
+}
+
+fn parse_following_period<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	atom: Node<Expression<'a>>,
+) -> ParseResult<Node<Expression<'a>>> {
+	tokenizer.expect(messages, TokenKind::Period)?;
+
+	if tokenizer.peek_kind() == Ok(TokenKind::Exclamation) {
+		let exclamation = tokenizer.expect(messages, TokenKind::Exclamation)?;
+		let span = atom.span + exclamation.span;
+
+		let op = Node::new(UnaryOperator::Invert, exclamation.span);
+		let operation = UnaryOperation { op, expression: atom };
+		let expression = Expression::UnaryOperation(Box::new(operation));
+		return Ok(Node::new(expression, span));
+	}
+
+	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
+	let name = Node::from_token(name_token.text, name_token);
+
+	let span = atom.span + name.span;
+	let field_read = Box::new(FieldRead { base: atom, name });
+	return Ok(Node::new(Expression::FieldRead(field_read), span));
 }
 
 fn parse_string_contents(string: &str) -> Cow<str> {
@@ -515,48 +533,37 @@ fn parse_struct_initializer<'a>(
 }
 
 fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
-	let first_number_token = tokenizer.expect(messages, TokenKind::Word)?;
+	let number_token = tokenizer.expect(messages, TokenKind::Number)?;
+	let has_period = number_token.text.as_bytes().contains(&b'.');
+	let span = number_token.span;
 
-	let followed_by_period = tokenizer
-		.peek()
-		.map(|peeked| peeked.kind == TokenKind::Period)
-		.unwrap_or(false);
-
-	if followed_by_period {
-		tokenizer.expect(messages, TokenKind::Period)?;
-		let second_number_token = tokenizer.expect(messages, TokenKind::Word)?;
-
-		let combined_text = &tokenizer.source()[first_number_token.span.start..second_number_token.span.end];
-
-		let value = match combined_text.parse::<f64>() {
+	let expression = if has_period {
+		let value = match number_token.text.parse::<f64>() {
 			Ok(value) => value,
-			Err(_) => {
-				messages.message(error!("Invalid float literal").span(Span {
-					start: first_number_token.span.start,
-					end: second_number_token.span.end,
-					file_index: tokenizer.file_index,
-				}));
 
+			Err(_) => {
+				messages.message(error!("Invalid float literal").span(span));
 				return Err(());
 			}
 		};
 
-		let span = first_number_token.span + second_number_token.span;
-		return Ok(Node::new(Expression::FloatLiteral(FloatLiteral { value: Node::new(value, span) }), span));
-	}
+		let literal = FloatLiteral { value: Node::new(value, span) };
+		Expression::FloatLiteral(literal)
+	} else {
+		let value = match number_token.text.parse::<i128>() {
+			Ok(value) => value,
 
-	let value = match first_number_token.text.parse::<i128>() {
-		Ok(value) => value,
+			Err(_) => {
+				messages.message(error!("Invalid integer literal").span(span));
+				return Err(());
+			}
+		};
 
-		Err(_) => {
-			messages.message(error!("Invalid integer literal").span(first_number_token.span));
-			return Err(());
-		}
+		let literal = IntegerLiteral { value: Node::new(value, span) };
+		Expression::IntegerLiteral(literal)
 	};
 
-	let value = Node::from_token(value, first_number_token);
-	let expression = Expression::IntegerLiteral(IntegerLiteral { value });
-	Ok(Node::from_token(expression, first_number_token))
+	Ok(Node::new(expression, span))
 }
 
 fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Attributes<'a>> {
@@ -1033,7 +1040,9 @@ fn consume_error_syntax(messages: &mut Messages, tokenizer: &mut Tokenizer) {
 			_ => {}
 		}
 
-		tokenizer.next_optional_messages(&mut None).expect("This should never fail");
+		tokenizer
+			.next_with_optional_messages(&mut None)
+			.expect("This should never fail");
 	}
 
 	//Reached end of file while unbalanced

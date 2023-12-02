@@ -599,12 +599,19 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 
 	let op = match operation.op {
 		UnaryOperator::Negate => "-",
+		UnaryOperator::Invert => "!",
 	};
 
-	// TODO: This almost certainly doesn't respect mutability
-	writeln!(output, "{step} = {op}({step});")?;
+	if let Some(result) = generate_type_id(context, operation.expression.type_id, output) {
+		result?;
+	} else {
+		return Ok(None);
+	}
 
-	Ok(Some(step))
+	let temp_id = context.generate_temp_id();
+	writeln!(output, " const {temp_id} = {op}{step};")?;
+
+	Ok(Some(Step::Temp { temp_id }))
 }
 
 fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation, output: Output) -> Result<Option<Step>> {

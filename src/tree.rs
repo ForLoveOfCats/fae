@@ -179,6 +179,7 @@ pub struct FieldInitializer<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperator {
 	Negate,
+	Invert,
 }
 
 #[derive(Debug)]

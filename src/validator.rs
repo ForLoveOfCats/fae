@@ -2063,11 +2063,12 @@ fn validate_unary_operation<'a>(
 	operation: &'a tree::UnaryOperation<'a>,
 	span: Span,
 ) -> Expression<'a> {
+	let mut expression = validate_expression(context, &operation.expression);
 	let op = match operation.op.item {
 		tree::UnaryOperator::Negate => UnaryOperator::Negate,
+		tree::UnaryOperator::Invert => UnaryOperator::Invert,
 	};
 
-	let mut expression = validate_expression(context, &operation.expression);
 	match (op, &mut expression.kind) {
 		(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
 			value.negate(context.messages, span);
@@ -2085,6 +2086,26 @@ fn validate_unary_operation<'a>(
 	}
 
 	let type_id = expression.type_id;
+	match op {
+		UnaryOperator::Negate => {
+			if !type_id.is_numeric(context.type_store) {
+				let error = error!("Cannot negate {} as it is not a numeric type", context.type_name(type_id));
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
+		UnaryOperator::Invert => {
+			if !context.type_store.direct_match(type_id, context.type_store.bool_type_id()) {
+				if !type_id.is_any_collapse(context.type_store) {
+					let error = error!("Cannot invert {} as it is not a boolean", context.type_name(type_id));
+					context.message(error.span(span));
+				}
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+	}
+
 	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
 	Expression { span, type_id, mutable: true, kind }
 }
