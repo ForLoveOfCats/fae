@@ -210,10 +210,21 @@ fn parse_expression_climb<'a>(
 fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 	let operator = match token.kind {
 		TokenKind::Equal => BinaryOperator::Assign,
+
 		TokenKind::Add => BinaryOperator::Add,
 		TokenKind::Sub => BinaryOperator::Sub,
 		TokenKind::Mul => BinaryOperator::Mul,
 		TokenKind::Div => BinaryOperator::Div,
+
+		TokenKind::CompEqual => BinaryOperator::Equals,
+		TokenKind::CompNotEqual => BinaryOperator::NotEquals,
+
+		TokenKind::CompGreater => BinaryOperator::GreaterThan,
+		TokenKind::CompGreaterEqual => BinaryOperator::GreaterThanEquals,
+
+		TokenKind::CompLess => BinaryOperator::LessThan,
+		TokenKind::CompLessEqual => BinaryOperator::LessThanEquals,
+
 		_ => return None,
 	};
 

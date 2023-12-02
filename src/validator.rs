@@ -2157,6 +2157,13 @@ fn validate_binary_operation<'a>(
 	let type_id = match op {
 		BinaryOperator::Assign => context.type_store.void_type_id(),
 
+		BinaryOperator::Equals
+		| BinaryOperator::NotEquals
+		| BinaryOperator::GreaterThan
+		| BinaryOperator::GreaterThanEquals
+		| BinaryOperator::LessThan
+		| BinaryOperator::LessThanEquals => context.type_store.bool_type_id(),
+
 		_ if matches!(left.kind, ExpressionKind::AnyCollapse) || matches!(right.kind, ExpressionKind::AnyCollapse) => {
 			context.type_store.any_collapse_type_id()
 		}
@@ -2183,11 +2190,11 @@ fn perform_constant_math<'a>(
 		};
 
 		let value = match op {
-			BinaryOperator::Assign => return None,
 			BinaryOperator::Add => left.add(context.messages, right)?,
 			BinaryOperator::Sub => left.sub(context.messages, right)?,
 			BinaryOperator::Mul => left.mul(context.messages, right)?,
 			BinaryOperator::Div => left.div(context.messages, right)?,
+			_ => return None,
 		};
 
 		let kind = ExpressionKind::IntegerValue(value);
@@ -2203,11 +2210,11 @@ fn perform_constant_math<'a>(
 		};
 
 		let value = match op {
-			BinaryOperator::Assign => return None,
 			BinaryOperator::Add => left.add(right),
 			BinaryOperator::Sub => left.sub(right),
 			BinaryOperator::Mul => left.mul(right),
 			BinaryOperator::Div => left.div(right),
+			_ => return None,
 		};
 
 		let kind = ExpressionKind::DecimalValue(value);

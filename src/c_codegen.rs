@@ -656,10 +656,20 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 
 	let op = match operation.op {
 		BinaryOperator::Assign => unreachable!(),
+
 		BinaryOperator::Add => "+",
 		BinaryOperator::Sub => "-",
 		BinaryOperator::Mul => "*",
 		BinaryOperator::Div => "/",
+
+		BinaryOperator::Equals => "==",
+		BinaryOperator::NotEquals => "!=",
+
+		BinaryOperator::GreaterThan => ">",
+		BinaryOperator::GreaterThanEquals => ">=",
+
+		BinaryOperator::LessThan => "<",
+		BinaryOperator::LessThanEquals => "<=",
 	};
 	write!(output, " {} ", op)?;
 

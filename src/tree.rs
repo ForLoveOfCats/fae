@@ -198,10 +198,20 @@ pub enum Associativity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
 	Assign,
+
 	Add,
 	Sub,
 	Mul,
 	Div,
+
+	Equals,
+	NotEquals,
+
+	GreaterThan,
+	GreaterThanEquals,
+
+	LessThan,
+	LessThanEquals,
 }
 
 impl BinaryOperator {
@@ -212,6 +222,12 @@ impl BinaryOperator {
 			BinaryOperator::Sub => "Subtraction",
 			BinaryOperator::Mul => "Multiplication",
 			BinaryOperator::Div => "Division",
+			BinaryOperator::Equals => "Equals",
+			BinaryOperator::NotEquals => "Not Equals",
+			BinaryOperator::GreaterThan => "Greater Than",
+			BinaryOperator::GreaterThanEquals => "Greater Than Equals",
+			BinaryOperator::LessThan => "Less Than",
+			BinaryOperator::LessThanEquals => "Less Than Equals",
 		}
 	}
 }
@@ -221,8 +237,9 @@ impl BinaryOperator {
 		use BinaryOperator::*;
 		match self {
 			Assign => 0,
-			Add | Sub => 1,
-			Mul | Div => 2,
+			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 1,
+			Add | Sub => 2,
+			Mul | Div => 3,
 		}
 	}
 
@@ -231,6 +248,7 @@ impl BinaryOperator {
 		match self {
 			Assign => Associativity::Right,
 			Add | Sub | Mul | Div => Associativity::Left,
+			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => Associativity::Left,
 		}
 	}
 }
