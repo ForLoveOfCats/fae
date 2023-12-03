@@ -12,6 +12,10 @@ struct EmptyA {
 
 struct EmptyB {}
 
+fn takes_empty(empty: EmptyA): bool {
+	return true
+}
+
 struct HasBool {
 	field: bool
 }
@@ -53,6 +57,10 @@ fn main() {
 	
 	if (HasBool { field: false }.field) {
 		print_string("In struct false if\n")
+	}
+
+	if takes_empty(EmptyA {}) {
+		print_string("In function if\n")
 	}
 
 	let d: u64 = generic_function[u64](54)
