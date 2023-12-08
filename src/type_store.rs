@@ -490,6 +490,7 @@ impl<'a> TypeStore<'a> {
 		// any collapse -> anything else
 		// untyped integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
 		// untyped decimal -> float of large enough
+		// mutable reference -> immutable reference
 
 		if from.type_id.entry == self.any_collapse_type_id.entry {
 			// From any collapse
@@ -635,11 +636,23 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
+		// mutable reference -> immutable reference
+		let to_entry = self.type_entries[to.index()];
+		let from_entry = self.type_entries[from.type_id.index()];
+		if let TypeEntryKind::Pointer { type_id: to, mutable: to_mutable } = to_entry.kind {
+			if let TypeEntryKind::Pointer { type_id: from, mutable: from_mutable } = from_entry.kind {
+				if to.entry == from.entry && from_mutable && !to_mutable {
+					return Some(true);
+				}
+			}
+		}
+
 		Some(false)
 	}
 
 	fn get_or_create_reference_entries(&mut self, type_id: TypeId) -> u32 {
 		let entry = &self.type_entries[type_id.index()];
+		let generic_poisoned = entry.generic_poisoned;
 		if let Some(entries) = entry.reference_entries {
 			return entries;
 		}
@@ -664,7 +677,9 @@ impl<'a> TypeStore<'a> {
 			sliced_type_id: type_id,
 		};
 		self.type_entries.push(TypeEntry::new(self, kind));
-		self.slice_descriptions.push(description);
+		if !generic_poisoned {
+			self.slice_descriptions.push(description);
+		}
 
 		let kind = TypeEntryKind::Slice(Slice { type_id, mutable: true });
 		self.type_entries.push(TypeEntry::new(self, kind));
@@ -690,6 +705,17 @@ impl<'a> TypeStore<'a> {
 			true => reference_entries + 3,
 		};
 		TypeId { entry }
+	}
+
+	// TODO: Dear god I need anonymous structs
+	// (TypeId, mutable)
+	pub fn pointed_to(&self, type_id: TypeId) -> Option<(TypeId, bool)> {
+		let entry = self.type_entries[type_id.index()];
+		match entry.kind {
+			TypeEntryKind::Pointer { type_id, mutable } => Some((type_id, mutable)),
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, false)),
+			_ => None,
+		}
 	}
 
 	pub fn register_type(&mut self, name: &'a str, kind: UserTypeKind<'a>, span: Span, module_path: &'a [String]) -> Symbol<'a> {

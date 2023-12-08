@@ -691,11 +691,15 @@ pub struct FieldRead<'a> {
 pub enum UnaryOperator {
 	Negate,
 	Invert,
+	AddressOf,
+	AddressOfMut,
+	Dereference,
 }
 
 #[derive(Debug, Clone)]
 pub struct UnaryOperation<'a> {
 	pub op: UnaryOperator,
+	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }
 

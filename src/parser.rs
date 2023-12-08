@@ -379,6 +379,35 @@ fn parse_following_period<'a>(
 		return Ok(Node::new(expression, span));
 	}
 
+	if tokenizer.peek_kind() == Ok(TokenKind::Ampersand) {
+		let ampersand = tokenizer.expect(messages, TokenKind::Ampersand)?;
+
+		let mut op_span = ampersand.span;
+		let mut op = UnaryOperator::AddressOf;
+
+		if tokenizer.peek_kind() == Ok(TokenKind::Word) {
+			let mut_token = tokenizer.expect_word(messages, "mut")?;
+			op_span += mut_token.span;
+			op = UnaryOperator::AddressOfMut;
+		}
+
+		let span = atom.span + op_span;
+		let op = Node::new(op, op_span);
+		let operation = UnaryOperation { op, expression: atom };
+		let expression = Expression::UnaryOperation(Box::new(operation));
+		return Ok(Node::new(expression, span));
+	}
+
+	if tokenizer.peek_kind() == Ok(TokenKind::Mul) {
+		let asterisk = tokenizer.expect(messages, TokenKind::Mul)?;
+		let span = atom.span + asterisk.span;
+
+		let op = Node::new(UnaryOperator::Dereference, asterisk.span);
+		let operation = UnaryOperation { op, expression: atom };
+		let expression = Expression::UnaryOperation(Box::new(operation));
+		return Ok(Node::new(expression, span));
+	}
+
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	let name = Node::from_token(name_token.text, name_token);
 

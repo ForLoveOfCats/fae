@@ -1,0 +1,31 @@
+import fae::stdout::print_u32, print_i64, print_f64, print_bool, print_newline
+
+fn add_pointers(a: &u32, b: &u32): u32 {
+	return a.* + b.*
+}
+
+fn main() {
+	let a: u32 = 5
+	let b: u32 = 12
+	print_u32(add_pointers(a.&, b.&)) // 17
+	print_newline()
+
+	mut c: f64 = 16
+	add_to_pointer(c.&mut, 0.3)
+	print_f64(c) // 16.3
+	print_newline()
+
+	let d: i64 = -42
+	let ptr = d.&
+	print_i64(dereference[i64](ptr)) // -42
+	print_newline()
+}
+
+fn add_to_pointer(a: &mut f64, b: f64) {
+	a.* = a.* + b
+}
+
+generic T
+fn dereference(ptr: &T): T {
+	return ptr.*
+}

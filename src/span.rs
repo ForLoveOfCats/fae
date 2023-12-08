@@ -1,4 +1,4 @@
-use std::ops::Add;
+use std::ops::{Add, AddAssign};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Span {
@@ -17,6 +17,12 @@ impl Add for Span {
 			end: self.end.max(rhs.end),
 			file_index: self.file_index,
 		}
+	}
+}
+
+impl AddAssign for Span {
+	fn add_assign(&mut self, rhs: Self) {
+		*self = *self + rhs;
 	}
 }
 

@@ -1,36 +1,11 @@
 import fae::stdout::print_u64, print_newline
 
-fn fib(to: u64) {
-	print_u64(0)
+fn takes_ptr(ptr: &u64) {
+	print_u64(ptr.*)
 	print_newline()
-
-	if to == 0 {
-		return
-	}
-
-	print_u64(1)
-	print_newline()
-
-	if to == 1 {
-		return
-	}
-
-	fn recurse(a: u64, b: u64, to: u64, depth: u64) {
-		let sum = a + b
-
-		print_u64(sum)
-		print_newline()
-
-		if depth + 1 >= to {
-			return
-		}
-
-		recurse(b, sum, to, depth + 1)
-	}
-
-	recurse(0, 1, to, 1)
 }
 
 fn main() {
-	fib(20)
+	mut a: u64 = 5
+	takes_ptr(a.&mut)
 }

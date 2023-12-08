@@ -180,6 +180,9 @@ pub struct FieldInitializer<'a> {
 pub enum UnaryOperator {
 	Negate,
 	Invert,
+	AddressOf,
+	AddressOfMut,
+	Dereference,
 }
 
 #[derive(Debug)]

@@ -2067,6 +2067,9 @@ fn validate_unary_operation<'a>(
 	let op = match operation.op.item {
 		tree::UnaryOperator::Negate => UnaryOperator::Negate,
 		tree::UnaryOperator::Invert => UnaryOperator::Invert,
+		tree::UnaryOperator::AddressOf => UnaryOperator::AddressOf,
+		tree::UnaryOperator::AddressOfMut => UnaryOperator::AddressOfMut,
+		tree::UnaryOperator::Dereference => UnaryOperator::Dereference,
 	};
 
 	match (op, &mut expression.kind) {
@@ -2093,6 +2096,9 @@ fn validate_unary_operation<'a>(
 				context.message(error.span(span));
 				return Expression::any_collapse(context.type_store, span);
 			}
+
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, mutable: true, kind };
 		}
 
 		UnaryOperator::Invert => {
@@ -2103,11 +2109,40 @@ fn validate_unary_operation<'a>(
 				}
 				return Expression::any_collapse(context.type_store, span);
 			}
+
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, mutable: true, kind };
+		}
+
+		UnaryOperator::AddressOf => {
+			let type_id = context.type_store.pointer_to(type_id, false);
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, mutable: true, kind };
+		}
+
+		UnaryOperator::AddressOfMut => {
+			if !expression.mutable {
+				let error = error!("Cannot take mutable address of immutable value");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+
+			let type_id = context.type_store.pointer_to(type_id, true);
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, mutable: true, kind };
+		}
+
+		UnaryOperator::Dereference => {
+			let Some((type_id, mutable)) = context.type_store.pointed_to(type_id) else {
+				let error = error!("Cannot dereference {} as it is not a pointer", context.type_name(type_id));
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			};
+
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, mutable, kind };
 		}
 	}
-
-	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, expression }));
-	Expression { span, type_id, mutable: true, kind }
 }
 
 fn validate_binary_operation<'a>(
@@ -2148,6 +2183,11 @@ fn validate_binary_operation<'a>(
 		} else if let ExpressionKind::FieldRead(_) = &left.kind {
 			if !left.mutable {
 				context.message(error!("Cannot assign to field of immutable object").span(left.span));
+			}
+		} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
+		{
+			if !left.mutable {
+				context.message(error!("Cannot assign immutable memory location").span(left.span));
 			}
 		} else {
 			context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(left.span));

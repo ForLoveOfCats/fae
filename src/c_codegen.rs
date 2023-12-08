@@ -600,16 +600,31 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 	let op = match operation.op {
 		UnaryOperator::Negate => "-",
 		UnaryOperator::Invert => "!",
+		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => "&",
+		UnaryOperator::Dereference => "*",
 	};
 
-	if let Some(result) = generate_type_id(context, operation.expression.type_id, output) {
+	if let Some(result) = generate_type_id(context, operation.type_id, output) {
 		result?;
 	} else {
 		return Ok(None);
 	}
 
-	let temp_id = context.generate_temp_id();
-	writeln!(output, " const {temp_id} = {op}{step};")?;
+	let mut temp_id = context.generate_temp_id();
+	if operation.op == UnaryOperator::Dereference {
+		let Some((_, mutable)) = context.type_store.pointed_to(operation.expression.type_id) else {
+			unreachable!("{:?}", context.type_store.type_entries[operation.expression.type_id.index()]);
+		};
+
+		if mutable {
+			writeln!(output, " * const {temp_id} = {step};")?;
+		} else {
+			writeln!(output, " const * const {temp_id} = {step}; // not mutable")?;
+		}
+		temp_id.dereference = true;
+	} else {
+		writeln!(output, " const {temp_id} = {op}{step};")?;
+	}
 
 	Ok(Some(Step::Temp { temp_id }))
 }
