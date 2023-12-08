@@ -134,6 +134,9 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				disallow_attributes(messages, attributes, token.span, "An expression");
 				if let Ok(expression) = parse_expression(messages, tokenizer, true) {
 					items.push(Statement::Expression(expression));
+					if tokenizer.expect(messages, TokenKind::Newline).is_err() {
+						consume_error_syntax(messages, tokenizer);
+					}
 				} else {
 					consume_error_syntax(messages, tokenizer);
 				}

@@ -1,0 +1,5 @@
+fn func() {}
+
+fn main() {
+	func() func()
+}
