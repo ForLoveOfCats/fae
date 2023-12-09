@@ -411,6 +411,20 @@ fn parse_following_period<'a>(
 		return Ok(Node::new(expression, span));
 	}
 
+	if tokenizer.peek_kind() == Ok(TokenKind::OpenParen) {
+		let open_paren = tokenizer.expect(messages, TokenKind::OpenParen)?;
+		let parsed_type = parse_type(messages, tokenizer)?;
+		let close_paren = tokenizer.expect(messages, TokenKind::CloseParen)?;
+
+		let op_span = open_paren.span + close_paren.span;
+		let span = atom.span + close_paren.span;
+
+		let op = Node::new(UnaryOperator::Cast { parsed_type }, op_span);
+		let operation = UnaryOperation { op, expression: atom };
+		let expression = Expression::UnaryOperation(Box::new(operation));
+		return Ok(Node::new(expression, span));
+	}
+
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	let name = Node::from_token(name_token.text, name_token);
 

@@ -35,6 +35,11 @@ impl TypeId {
 		range.contains(&self.entry) || self.is_any_collapse(type_store)
 	}
 
+	pub fn is_pointer(self, type_store: &TypeStore) -> bool {
+		let entry = type_store.type_entries[self.index()];
+		matches!(entry.kind, TypeEntryKind::Pointer { .. })
+	}
+
 	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
 		let entry = type_store.type_entries[self.entry as usize];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
@@ -403,6 +408,14 @@ impl<'a> TypeStore<'a> {
 
 	pub fn i64_type_id(&self) -> TypeId {
 		self.i64_type_id
+	}
+
+	pub fn u64_type_id(&self) -> TypeId {
+		self.u64_type_id
+	}
+
+	pub fn usize_type_id(&self) -> TypeId {
+		self.usize_type_id
 	}
 
 	pub fn string_type_id(&self) -> TypeId {

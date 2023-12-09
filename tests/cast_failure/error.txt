@@ -1,0 +1,11 @@
+Validation error: ./tests/cast_failure/cast_failure.fae, line 3: Cannot cast `u8` to a pointer as it is too small
+  3|     let null = a.(&u8)
+                    ^^^^^^^
+
+Validation error: ./tests/cast_failure/cast_failure.fae, line 5: Cannot cast from immutable pointer `&u8` to mutable pointer `&mut u8`
+  5|     let ptr = a.&.(&mut u8)
+                   ^^^^^^^^^^^^^
+
+Validation warning: ./tests/cast_failure/cast_failure.fae, line 9: Unnecessary cast from mutable pointer `&mut i32` to immutable pointer `&i32`
+  9|     mutable.(&i32)
+         ^^^^^^^^^^^^^^

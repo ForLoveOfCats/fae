@@ -687,13 +687,14 @@ pub struct FieldRead<'a> {
 	pub field_index: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOperator {
 	Negate,
 	Invert,
 	AddressOf,
 	AddressOfMut,
 	Dereference,
+	Cast { type_id: TypeId },
 }
 
 #[derive(Debug, Clone)]

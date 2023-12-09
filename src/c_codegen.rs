@@ -597,21 +597,14 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 		return Ok(None);
 	};
 
-	let op = match operation.op {
-		UnaryOperator::Negate => "-",
-		UnaryOperator::Invert => "!",
-		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => "&",
-		UnaryOperator::Dereference => "*",
-	};
-
+	let mut temp_id = context.generate_temp_id();
 	if let Some(result) = generate_type_id(context, operation.type_id, output) {
 		result?;
 	} else {
 		return Ok(None);
 	}
 
-	let mut temp_id = context.generate_temp_id();
-	if operation.op == UnaryOperator::Dereference {
+	if let UnaryOperator::Dereference = operation.op {
 		let Some((_, mutable)) = context.type_store.pointed_to(operation.expression.type_id) else {
 			unreachable!("{:?}", context.type_store.type_entries[operation.expression.type_id.index()]);
 		};
@@ -621,10 +614,26 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 		} else {
 			writeln!(output, " const * const {temp_id} = {step}; // not mutable")?;
 		}
+
 		temp_id.dereference = true;
-	} else {
-		writeln!(output, " const {temp_id} = {op}{step};")?;
+		return Ok(Some(Step::Temp { temp_id }));
 	}
+
+	if let UnaryOperator::Cast { .. } = operation.op {
+		write!(output, " const {temp_id} = (")?;
+		generate_type_id(context, operation.type_id, output).unwrap()?;
+		writeln!(output, "){step};")?;
+		return Ok(Some(Step::Temp { temp_id }));
+	}
+
+	let op = match operation.op {
+		UnaryOperator::Negate => "-",
+		UnaryOperator::Invert => "!",
+		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => "&",
+		_ => unreachable!(),
+	};
+
+	writeln!(output, " const {temp_id} = {op}{step};")?;
 
 	Ok(Some(Step::Temp { temp_id }))
 }

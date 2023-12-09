@@ -2064,12 +2064,18 @@ fn validate_unary_operation<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut expression = validate_expression(context, &operation.expression);
-	let op = match operation.op.item {
+	let op = match &operation.op.item {
 		tree::UnaryOperator::Negate => UnaryOperator::Negate,
 		tree::UnaryOperator::Invert => UnaryOperator::Invert,
 		tree::UnaryOperator::AddressOf => UnaryOperator::AddressOf,
 		tree::UnaryOperator::AddressOfMut => UnaryOperator::AddressOfMut,
 		tree::UnaryOperator::Dereference => UnaryOperator::Dereference,
+
+		tree::UnaryOperator::Cast { parsed_type } => {
+			let any_collapse = context.type_store.any_collapse_type_id();
+			let type_id = context.lookup_type(parsed_type).unwrap_or(any_collapse);
+			UnaryOperator::Cast { type_id }
+		}
 	};
 
 	match (op, &mut expression.kind) {
@@ -2141,6 +2147,55 @@ fn validate_unary_operation<'a>(
 
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
 			return Expression { span, type_id, mutable, kind };
+		}
+
+		UnaryOperator::Cast { type_id: to_type_id } => {
+			if context.type_store.direct_match(type_id, to_type_id) {
+				let warning = warning!("Unnecessary cast from {} to itself", context.type_name(type_id));
+				context.message(warning.span(span));
+			} else if type_id.is_pointer(context.type_store) && to_type_id.is_pointer(context.type_store) {
+				let (from_pointed, from_mutable) = context.type_store.pointed_to(type_id).unwrap();
+				let (to_pointed, to_mutable) = context.type_store.pointed_to(to_type_id).unwrap();
+
+				if to_mutable && !from_mutable {
+					let error = error!(
+						"Cannot cast from immutable pointer {} to mutable pointer {}",
+						context.type_name(type_id),
+						context.type_name(to_type_id)
+					);
+					context.message(error.span(span));
+				} else if context.type_store.direct_match(from_pointed, to_pointed) {
+					// If they were not the same type id, yet they point to the same type, then we must be casting from mut to non-mut
+					let warning = warning!(
+						"Unnecessary cast from mutable pointer {} to immutable pointer {}",
+						context.type_name(type_id),
+						context.type_name(to_type_id)
+					);
+					context.message(warning.span(span));
+				}
+			}
+
+			let from_numeric = type_id.is_numeric(context.type_store);
+			let to_numeric = to_type_id.is_numeric(context.type_store);
+			let from_pointer = type_id.is_pointer(context.type_store);
+			let to_pointer = to_type_id.is_pointer(context.type_store);
+
+			if from_numeric && to_numeric {
+			} else if from_pointer && to_pointer {
+			} else if from_pointer && to_numeric {
+			} else if to_pointer && from_numeric {
+				let is_i64 = context.type_store.direct_match(type_id, context.type_store.i64_type_id());
+				let is_u64 = context.type_store.direct_match(type_id, context.type_store.u64_type_id());
+				let is_usize = context.type_store.direct_match(type_id, context.type_store.usize_type_id());
+				if !is_i64 && !is_u64 && !is_usize {
+					let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(type_id));
+					context.message(error.span(span));
+				}
+			}
+
+			let type_id = to_type_id;
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, mutable: true, kind };
 		}
 	}
 }

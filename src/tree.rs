@@ -176,18 +176,19 @@ pub struct FieldInitializer<'a> {
 	pub expression: Node<Expression<'a>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnaryOperator {
+#[derive(Debug)]
+pub enum UnaryOperator<'a> {
 	Negate,
 	Invert,
 	AddressOf,
 	AddressOfMut,
 	Dereference,
+	Cast { parsed_type: Node<Type<'a>> },
 }
 
 #[derive(Debug)]
 pub struct UnaryOperation<'a> {
-	pub op: Node<UnaryOperator>,
+	pub op: Node<UnaryOperator<'a>>,
 	pub expression: Node<Expression<'a>>,
 }
 
