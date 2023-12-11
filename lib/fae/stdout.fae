@@ -4,7 +4,7 @@
 extern "printf"
 fn c_printf_str(format: &u8, len: i64, str: &u8)
 
-fn print_string(text: [u8]) {
+fn print_string(text: ()u8) {
 	c_printf_str("%.*s\0".pointer, text.len, text.pointer)
 }
 
