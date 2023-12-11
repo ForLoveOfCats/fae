@@ -216,6 +216,9 @@ pub enum BinaryOperator {
 
 	LessThan,
 	LessThanEquals,
+
+	LogicalAnd,
+	LogicalOr,
 }
 
 impl BinaryOperator {
@@ -232,6 +235,8 @@ impl BinaryOperator {
 			BinaryOperator::GreaterThanEquals => "Greater Than Equals",
 			BinaryOperator::LessThan => "Less Than",
 			BinaryOperator::LessThanEquals => "Less Than Equals",
+			BinaryOperator::LogicalAnd => "Logical And",
+			BinaryOperator::LogicalOr => "Logical Or",
 		}
 	}
 }
@@ -241,9 +246,10 @@ impl BinaryOperator {
 		use BinaryOperator::*;
 		match self {
 			Assign => 0,
-			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 1,
-			Add | Sub => 2,
-			Mul | Div => 3,
+			LogicalAnd | LogicalOr => 1,
+			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 2,
+			Add | Sub => 3,
+			Mul | Div => 4,
 		}
 	}
 
@@ -253,6 +259,7 @@ impl BinaryOperator {
 			Assign => Associativity::Right,
 			Add | Sub | Mul | Div => Associativity::Left,
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => Associativity::Left,
+			LogicalAnd | LogicalOr => Associativity::Left,
 		}
 	}
 }

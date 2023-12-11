@@ -7,4 +7,6 @@ fn main() {
 	mut b: i32 = 5
 	let mutable = b.&mut
 	mutable.(&i32)
+
+	0.1.(&mut u8)
 }

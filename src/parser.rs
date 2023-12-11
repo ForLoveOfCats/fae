@@ -228,6 +228,9 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 		TokenKind::CompLess => BinaryOperator::LessThan,
 		TokenKind::CompLessEqual => BinaryOperator::LessThanEquals,
 
+		TokenKind::Word if token.text == "and" => BinaryOperator::LogicalAnd,
+		TokenKind::Word if token.text == "or" => BinaryOperator::LogicalOr,
+
 		_ => return None,
 	};
 

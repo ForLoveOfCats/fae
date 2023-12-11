@@ -2091,6 +2091,12 @@ fn validate_unary_operation<'a>(
 			return expression;
 		}
 
+		(UnaryOperator::Invert, ExpressionKind::BooleanLiteral(value)) => {
+			*value = !*value;
+			expression.span = expression.span + span;
+			return expression;
+		}
+
 		_ => {}
 	}
 
@@ -2184,12 +2190,19 @@ fn validate_unary_operation<'a>(
 			} else if from_pointer && to_pointer {
 			} else if from_pointer && to_numeric {
 			} else if to_pointer && from_numeric {
-				let is_i64 = context.type_store.direct_match(type_id, context.type_store.i64_type_id());
-				let is_u64 = context.type_store.direct_match(type_id, context.type_store.u64_type_id());
-				let is_usize = context.type_store.direct_match(type_id, context.type_store.usize_type_id());
-				if !is_i64 && !is_u64 && !is_usize {
-					let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(type_id));
+				if type_id.is_untyped_decimal(context.type_store) {
+					let error = error!("Cannot cast untyped decimal to a pointer");
 					context.message(error.span(span));
+				} else {
+					let is_i64 = context.type_store.direct_match(type_id, context.type_store.i64_type_id());
+					let is_u64 = context.type_store.direct_match(type_id, context.type_store.u64_type_id());
+					let is_usize = context.type_store.direct_match(type_id, context.type_store.usize_type_id());
+					let is_untyped_integer = type_id.is_untyped_integer(context.type_store);
+
+					if !is_i64 && !is_u64 && !is_usize && !is_untyped_integer {
+						let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(type_id));
+						context.message(error.span(span));
+					}
 				}
 			}
 
@@ -2221,8 +2234,8 @@ fn validate_binary_operation<'a>(
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	if let Some(constant_math_result) = perform_constant_math(context, &left, &right, op) {
-		return constant_math_result;
+	if let Some(constant_operation) = perform_constant_binary_operation(context, &left, &right, op) {
+		return constant_operation;
 	}
 
 	if op == BinaryOperator::Assign {
@@ -2271,14 +2284,14 @@ fn validate_binary_operation<'a>(
 	Expression { span, type_id, mutable: true, kind }
 }
 
-fn perform_constant_math<'a>(
+fn perform_constant_binary_operation<'a>(
 	context: &mut Context<'a, '_, '_>,
-	left: &Expression,
-	right: &Expression,
+	left_expression: &Expression,
+	right_expression: &Expression,
 	op: BinaryOperator,
 ) -> Option<Expression<'a>> {
-	if let ExpressionKind::IntegerValue(left) = left.kind {
-		let right = match &right.kind {
+	if let ExpressionKind::IntegerValue(left) = &left_expression.kind {
+		let right = match &right_expression.kind {
 			ExpressionKind::IntegerValue(right) => *right,
 			ExpressionKind::DecimalValue(..) => unreachable!(),
 			_ => return None,
@@ -2294,11 +2307,11 @@ fn perform_constant_math<'a>(
 
 		let kind = ExpressionKind::IntegerValue(value);
 		let type_id = context.type_store.integer_type_id();
-		return Some(Expression { span: value.span(), type_id, mutable: false, kind });
+		return Some(Expression { span: value.span(), type_id, mutable: true, kind });
 	}
 
-	if let ExpressionKind::DecimalValue(left) = left.kind {
-		let right = match &right.kind {
+	if let ExpressionKind::DecimalValue(left) = &left_expression.kind {
+		let right = match &right_expression.kind {
 			ExpressionKind::DecimalValue(right) => *right,
 			ExpressionKind::IntegerValue(..) => unreachable!(),
 			_ => return None,
@@ -2314,7 +2327,25 @@ fn perform_constant_math<'a>(
 
 		let kind = ExpressionKind::DecimalValue(value);
 		let type_id = context.type_store.decimal_type_id();
-		return Some(Expression { span: value.span(), type_id, mutable: false, kind });
+		return Some(Expression { span: value.span(), type_id, mutable: true, kind });
+	}
+
+	if let ExpressionKind::BooleanLiteral(left) = &left_expression.kind {
+		let right = match &right_expression.kind {
+			ExpressionKind::BooleanLiteral(right) => *right,
+			_ => return None,
+		};
+
+		let value = match op {
+			BinaryOperator::LogicalAnd => *left && right,
+			BinaryOperator::LogicalOr => *left || right,
+			_ => return None,
+		};
+
+		let span = left_expression.span + right_expression.span;
+		let type_id = context.type_store.bool_type_id();
+		let kind = ExpressionKind::BooleanLiteral(value);
+		return Some(Expression { span, type_id, mutable: true, kind });
 	}
 
 	None

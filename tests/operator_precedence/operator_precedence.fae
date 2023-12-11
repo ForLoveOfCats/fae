@@ -1,0 +1,17 @@
+import fae::stdout::print_i64, print_bool, print_newline
+
+fn main() {
+	let a: i64 = 6 / 3 + 2 * 10 - 8
+	print_i64(a) // 14
+	print_newline()
+
+	print_bool(a == 14 and true)
+	print_newline() // true
+
+	print_bool(true.! or a != 14) // false
+	print_newline()
+
+	print_bool(a == 14 or false) // true
+	print_newline()
+}
+

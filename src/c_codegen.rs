@@ -694,6 +694,9 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 
 		BinaryOperator::LessThan => "<",
 		BinaryOperator::LessThanEquals => "<=",
+
+		BinaryOperator::LogicalAnd => "&&",
+		BinaryOperator::LogicalOr => "||",
 	};
 	write!(output, " {} ", op)?;
 

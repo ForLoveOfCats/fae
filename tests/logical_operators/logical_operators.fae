@@ -1,0 +1,61 @@
+import fae::stdout::print_string, print_newline
+
+fn logical_and(a: bool, b: bool, letter: [u8]) {
+	if a and b {
+		print_string(letter)
+		print_newline()
+	}
+}
+
+fn logical_or(a: bool, b: bool, letter: [u8]) {
+	if a or b {
+		print_string(letter)
+		print_newline()
+	}
+}
+
+fn main() {
+	if true and false {
+		print_string("A\n")
+	}
+
+	if true and true {
+		print_string("B\n")
+	}
+
+	if false and true {
+		print_string("C\n")
+	}
+
+	if false and false {
+		print_string("D\n")
+	}
+
+
+	if true or false {
+		print_string("E\n")
+	}
+
+	if true or true {
+		print_string("F\n")
+	}
+
+	if false or true {
+		print_string("G\n")
+	}
+
+	if false or false {
+		print_string("H\n")
+	}
+
+	logical_and(true, false, "I")
+	logical_and(true, true, "J")
+	logical_and(false, true, "K")
+	logical_and(false, false, "L")
+
+	logical_or(true, false, "M")
+	logical_or(true, true, "N")
+	logical_or(false, true, "O")
+	logical_or(false, false, "P")
+}
+

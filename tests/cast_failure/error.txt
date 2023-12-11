@@ -9,3 +9,7 @@ Validation error: ./tests/cast_failure/cast_failure.fae, line 5: Cannot cast fro
 Validation warning: ./tests/cast_failure/cast_failure.fae, line 9: Unnecessary cast from mutable pointer `&mut i32` to immutable pointer `&i32`
   9|     mutable.(&i32)
          ^^^^^^^^^^^^^^
+
+Validation error: ./tests/cast_failure/cast_failure.fae, line 11: Cannot cast untyped decimal to a pointer
+  11|     0.1.(&mut u8)
+          ^^^^^^^^^^^^^

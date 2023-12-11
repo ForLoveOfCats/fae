@@ -1,4 +1,4 @@
-import fae::stdout::print_u64, print_newline
+import fae::stdout::print_u64, print_usize, print_newline
 
 #c_include_system "stdlib.h"
 
@@ -29,4 +29,8 @@ fn main() {
 	ptr.* = 42
 	takes_ptr(ptr.(&u64))
 	deallocate[u64](ptr)
+
+	let null = 0.(&mut u8)
+	print_usize(null.(usize))
+	print_newline()
 }
