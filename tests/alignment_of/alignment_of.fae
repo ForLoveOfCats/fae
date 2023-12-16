@@ -22,40 +22,40 @@ struct Nested {
 
 generic T
 fn generic_func() {
-	print_i64(alignment_of[T]())
+	print_i64(alignment_of<T>())
 }
 
 fn main() {
-	print_i64(alignment_of[u32]()) // 4
+	print_i64(alignment_of<u32>()) // 4
 	print_newline()
 
-	print_i64(alignment_of[u64]()) // 8
+	print_i64(alignment_of<u64>()) // 8
 	print_newline()
 
-	print_i64(alignment_of[i8]()) // 1
+	print_i64(alignment_of<i8>()) // 1
 	print_newline()
 
-	print_i64(alignment_of[f32]()) // 4
+	print_i64(alignment_of<f32>()) // 4
 	print_newline()
 
-	print_i64(alignment_of[Empty]()) // 0
+	print_i64(alignment_of<Empty>()) // 0
 	print_newline()
 
-	print_i64(alignment_of[ContainsEmpty]()) // 4
+	print_i64(alignment_of<ContainsEmpty>()) // 4
 	print_newline()
 
-	print_i64(alignment_of[MultipleFields]()) // 8
+	print_i64(alignment_of<MultipleFields>()) // 8
 	print_newline()
 
-	print_i64(alignment_of[Nested]()) // 8
+	print_i64(alignment_of<Nested>()) // 8
 	print_newline()
 
-	generic_func[u8]() // 1
+	generic_func<u8>() // 1
 	print_newline()
 
-	generic_func[i64]() // 8
+	generic_func<i64>() // 8
 	print_newline()
 
-	generic_func[u16]() // 2
+	generic_func<u16>() // 2
 	print_newline()
 }

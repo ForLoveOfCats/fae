@@ -2,9 +2,9 @@ Validation error: ./tests/cyclic_generic_structs/cyclic_generic_structs.fae, lin
   6| struct B {
             ^
 Note: ./tests/cyclic_generic_structs/cyclic_generic_structs.fae, line 7: Via field `field_b` in `B`
-  7|     field_b: A[B]
+  7|     field_b: A<B>
          ^^^^^^^^^^^^^
-Note: ./tests/cyclic_generic_structs/cyclic_generic_structs.fae, line 3: Via field `field_a` in `A[B]`
+Note: ./tests/cyclic_generic_structs/cyclic_generic_structs.fae, line 3: Via field `field_a` in `A<B>`
   3|     field_a: T
          ^^^^^^^^^^
 

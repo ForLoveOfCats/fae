@@ -1252,7 +1252,7 @@ impl<'a> TypeStore<'a> {
 							.collect::<Vec<_>>()
 							.join(", ");
 
-						format!("{}[{}]", shape.name, type_arguments)
+						format!("{}<{}>", shape.name, type_arguments)
 					}
 				}
 			}

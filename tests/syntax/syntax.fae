@@ -63,7 +63,7 @@ fn main() {
 		print_string("In function if\n")
 	}
 
-	let d: u64 = generic_function[u64](54)
+	let d: u64 = generic_function<u64>(54)
 
 	let ptr: &u8 = STRING.pointer
 	let len: i64 = STRING.len

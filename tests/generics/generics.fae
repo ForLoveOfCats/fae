@@ -1,7 +1,7 @@
 generic T
-fn above(value: T, structure: Below[T]): T {
-	// Fails expecting Above[T, T]
-	below[T](Above[T, i32] {
+fn above(value: T, structure: Below<T>): T {
+	// Fails expecting Above<T, T>
+	below<T>(Above<T, i32> {
 		field: -2
 		below: structure
 	})
@@ -11,30 +11,30 @@ fn above(value: T, structure: Below[T]): T {
 generic A, B
 struct Above {
 	field: B
-	below: Below[A]
+	below: Below<A>
 }
 
 fn main() {
-	let a = Above[f32, i32] {
+	let a = Above<f32, i32> {
 		field: 42
-		below: Below[f32] {
+		below: Below<f32> {
 			field: 4.5
 		}
 	}
 
-	// Fails expecting Below[i32]
-	let b = Above[i32, f32] {
+	// Fails expecting Below<i32>
+	let b = Above<i32, f32> {
 		field: 42
-		below: Below[f32] {
+		below: Below<f32> {
 			field: 4.5
 		}
 	}
 
-	above[u64](44, Below[u64] {
+	above<u64>(44, Below<u64> {
 		field: 5
 	})
 
-	above[u64](44.5, Below[i64] {
+	above<u64>(44.5, Below<i64> {
 		field: -5
 	})
 }
@@ -45,5 +45,5 @@ struct Below {
 }
 
 generic A
-fn below(structure: Above[A, A]) {
+fn below(structure: Above<A, A>) {
 }

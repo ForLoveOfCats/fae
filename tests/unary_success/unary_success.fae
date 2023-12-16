@@ -22,7 +22,7 @@ fn main() {
 	print_f32(d)
 	print_newline()
 
-	print_i32(--identity[i32](2))
+	print_i32(--identity<i32>(2))
 	print_newline()
 
 	let e = false.!

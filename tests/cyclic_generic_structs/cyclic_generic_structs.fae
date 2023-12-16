@@ -4,13 +4,13 @@ struct A {
 }
 
 struct B {
-	field_b: A[B]
+	field_b: A<B>
 }
 
 fn main() {
-	let a = A[B] {
+	let a = A<B> {
 		field_a: B {
-			field_b: A[B] {
+			field_b: A<B> {
 				field_a: 4
 			}
 		}

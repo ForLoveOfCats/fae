@@ -20,6 +20,8 @@ pub enum TokenKind {
 	OpenBracket,
 	CloseBracket,
 
+	OpenGeneric,
+
 	Add,
 	AddEqual,
 	Sub,
@@ -65,6 +67,8 @@ impl std::fmt::Display for TokenKind {
 
 			TokenKind::OpenBracket => "'['",
 			TokenKind::CloseBracket => "']'",
+
+			TokenKind::OpenGeneric => "'<'",
 
 			TokenKind::Add => "'+'",
 			TokenKind::AddEqual => "'+='",
@@ -171,6 +175,7 @@ impl<'a> Tokenizer<'a> {
 			return Ok(peeked.token);
 		}
 
+		let pre_whitespace_offset = self.offset;
 		if let Some(newline_token) = self.consume_leading_whitespace()? {
 			return Ok(newline_token);
 		}
@@ -271,7 +276,14 @@ impl<'a> Tokenizer<'a> {
 				Ok(Token::new("<=", CompLessEqual, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'<', ..] => Ok(Token::new("<", CompLess, self.offset, self.offset + 1, self.file_index)),
+			[b'<', ..] => {
+				if pre_whitespace_offset < self.offset {
+					// There is whitespace before this token
+					Ok(Token::new("<", CompLess, self.offset, self.offset + 1, self.file_index))
+				} else {
+					Ok(Token::new("<", OpenGeneric, self.offset, self.offset + 1, self.file_index))
+				}
+			}
 
 			[b':', b':', ..] => {
 				self.offset += 1;

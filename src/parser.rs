@@ -507,24 +507,24 @@ fn parse_type_arguments<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 ) -> ParseResult<Option<Node<Vec<Node<Type<'a>>>>>> {
-	if tokenizer.peek_kind() != Ok(TokenKind::OpenBracket) {
+	if tokenizer.peek_kind() != Ok(TokenKind::OpenGeneric) {
 		return Ok(None);
 	}
 
-	let open_token = tokenizer.expect(messages, TokenKind::OpenBracket)?;
+	let open_token = tokenizer.expect(messages, TokenKind::OpenGeneric)?;
 
 	let mut types = Vec::new();
-	while !reached_close_bracket(tokenizer) {
+	while !reached_close_generic(tokenizer) {
 		types.push(parse_type(messages, tokenizer)?);
 
-		if reached_close_bracket(tokenizer) {
+		if reached_close_generic(tokenizer) {
 			break;
 		}
 
 		tokenizer.expect(messages, TokenKind::Comma)?;
 	}
 
-	let close_token = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+	let close_token = tokenizer.expect(messages, TokenKind::CompGreater)?;
 
 	let span = open_token.span + close_token.span;
 	Ok(Some(Node::new(types, span)))
@@ -808,10 +808,10 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 
 			let mut type_arguments = Vec::new();
 			let span = match tokenizer.peek() {
-				Ok(Token { kind: TokenKind::OpenBracket, .. }) => {
-					tokenizer.expect(messages, TokenKind::OpenBracket)?;
+				Ok(Token { kind: TokenKind::OpenGeneric, .. }) => {
+					tokenizer.expect(messages, TokenKind::OpenGeneric)?;
 
-					if tokenizer.peek_kind() != Ok(TokenKind::CloseBracket) {
+					if tokenizer.peek_kind() != Ok(TokenKind::CompGreater) {
 						loop {
 							type_arguments.push(parse_type(messages, tokenizer)?);
 							if tokenizer.peek_kind() != Ok(TokenKind::Comma) {
@@ -821,7 +821,7 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 						}
 					}
 
-					let close_bracket = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+					let close_bracket = tokenizer.expect(messages, TokenKind::CompGreater)?;
 					path_segments.span + close_bracket.span
 				}
 
@@ -1070,10 +1070,10 @@ fn reached_close_brace(tokenizer: &mut Tokenizer) -> bool {
 		.unwrap_or(false)
 }
 
-fn reached_close_bracket(tokenizer: &mut Tokenizer) -> bool {
+fn reached_close_generic(tokenizer: &mut Tokenizer) -> bool {
 	tokenizer
 		.peek()
-		.map(|peeked| peeked.kind == TokenKind::CloseBracket)
+		.map(|peeked| peeked.kind == TokenKind::CompGreater)
 		.unwrap_or(false)
 }
 

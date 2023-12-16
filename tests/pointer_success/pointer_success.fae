@@ -17,7 +17,7 @@ fn main() {
 
 	let d: i64 = -42
 	let ptr = d.&
-	print_i64(dereference[i64](ptr)) // -42
+	print_i64(dereference<i64>(ptr)) // -42
 	print_newline()
 }
 

@@ -3,7 +3,7 @@ Validation error: ./tests/inner_function_failure/inner_function_failure.fae, lin
           ^^^^^^^^^^^^^^^^^^^^^
 
 Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 37: Expected 0 type arguments, got 1
-  37|         return level_two[E](a)
+  37|         return level_two<E>(a)
                      ^^^^^^^^^^^^^^^
 
 Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 40: Expected argument of type `T`, got `untyped integer`
