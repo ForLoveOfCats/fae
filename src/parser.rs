@@ -793,9 +793,9 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 			Node::new(Type::Pointer { pointee, mutable }, span)
 		}
 
-		Token { kind: TokenKind::OpenParen, .. } => {
-			let opening = tokenizer.expect(messages, TokenKind::OpenParen)?;
-			tokenizer.expect(messages, TokenKind::CloseParen)?;
+		Token { kind: TokenKind::OpenBracket, .. } => {
+			let opening = tokenizer.expect(messages, TokenKind::OpenBracket)?;
+			tokenizer.expect(messages, TokenKind::CloseBracket)?;
 
 			let inner = Box::new(parse_type(messages, tokenizer)?);
 

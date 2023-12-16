@@ -1,13 +1,13 @@
 import fae::stdout::print_string, print_newline
 
-fn logical_and(a: bool, b: bool, letter: ()u8) {
+fn logical_and(a: bool, b: bool, letter: []u8) {
 	if a and b {
 		print_string(letter)
 		print_newline()
 	}
 }
 
-fn logical_or(a: bool, b: bool, letter: ()u8) {
+fn logical_or(a: bool, b: bool, letter: []u8) {
 	if a or b {
 		print_string(letter)
 		print_newline()
