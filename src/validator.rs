@@ -4,6 +4,7 @@ use std::rc::Rc;
 use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
+use crate::ssa::SsaModule;
 use crate::tree::Node;
 use crate::tree::{self, BinaryOperator, PathSegments};
 use crate::type_store::*;
@@ -30,6 +31,8 @@ pub struct Context<'a, 'b, 'c> {
 	pub symbols: &'b mut Symbols<'a>,
 
 	pub generic_parameters: &'c GenericParameters<'a>,
+
+	pub ssa: &'b mut SsaModule,
 }
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
@@ -61,6 +64,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			symbols: self.symbols,
 
 			generic_parameters: self.generic_parameters,
+
+			ssa: self.ssa,
 		}
 	}
 
@@ -89,6 +94,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			symbols: self.symbols,
 
 			generic_parameters,
+
+			ssa: self.ssa,
 		}
 	}
 
@@ -647,6 +654,7 @@ pub fn validate<'a>(
 		&mut symbols,
 	);
 
+	let mut ssa = SsaModule::new();
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
@@ -670,6 +678,7 @@ pub fn validate<'a>(
 			function_initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
 			generic_parameters: &blank_generic_parameters,
+			ssa: &mut ssa,
 		};
 
 		validate_block(context, &parsed_file.block, true);
@@ -798,6 +807,7 @@ fn validate_root_consts<'a>(
 		symbols.duplicate(&layer.symbols);
 		let old_symbols_len = symbols.len();
 
+		let mut ssa = SsaModule::new();
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut context = Context {
 			file_index,
@@ -814,9 +824,11 @@ fn validate_root_consts<'a>(
 			function_initial_symbols_len: symbols.len(),
 			symbols,
 			generic_parameters: &blank_generic_parameters,
+			ssa: &mut ssa,
 		};
 
 		validate_block_consts(&mut context, &parsed_file.block);
+		assert_eq!(context.ssa.instructions.len(), 0); // TODO: const-evaluation
 		std::mem::forget(context);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);

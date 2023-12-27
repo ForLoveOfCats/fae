@@ -8,6 +8,7 @@ mod ir;
 mod parser;
 mod project;
 mod span;
+mod ssa;
 mod test;
 mod tokenizer;
 mod tree;

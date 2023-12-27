@@ -141,15 +141,7 @@ pub struct UserTypeChainLink<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimativeKind {
-	AnyCollapse,
-	Void,
-
-	UntypedInteger,
-	UntypedDecimal,
-
-	Bool,
-
+pub enum NumericKind {
 	I8,
 	I16,
 	I32,
@@ -166,6 +158,59 @@ pub enum PrimativeKind {
 	F64,
 }
 
+impl std::fmt::Display for NumericKind {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str(self.name())
+	}
+}
+
+impl NumericKind {
+	pub fn name(self) -> &'static str {
+		match self {
+			NumericKind::I8 => "i8",
+			NumericKind::I16 => "i16",
+			NumericKind::I32 => "i32",
+			NumericKind::I64 => "i64",
+			NumericKind::U8 => "u8",
+			NumericKind::U16 => "u16",
+			NumericKind::U32 => "u32",
+			NumericKind::U64 => "u64",
+			NumericKind::USize => "usize",
+			NumericKind::F32 => "f32",
+			NumericKind::F64 => "f64",
+		}
+	}
+
+	pub fn layout(self) -> Layout {
+		match self {
+			NumericKind::I8 => Layout { size: 1, alignment: 1 },
+			NumericKind::I16 => Layout { size: 2, alignment: 2 },
+			NumericKind::I32 => Layout { size: 4, alignment: 4 },
+			NumericKind::I64 => Layout { size: 8, alignment: 8 },
+			NumericKind::U8 => Layout { size: 1, alignment: 1 },
+			NumericKind::U16 => Layout { size: 2, alignment: 2 },
+			NumericKind::U32 => Layout { size: 4, alignment: 4 },
+			NumericKind::U64 => Layout { size: 8, alignment: 8 },
+			NumericKind::USize => Layout { size: 8, alignment: 8 },
+			NumericKind::F32 => Layout { size: 4, alignment: 4 },
+			NumericKind::F64 => Layout { size: 8, alignment: 8 },
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimativeKind {
+	AnyCollapse,
+	Void,
+
+	UntypedInteger,
+	UntypedDecimal,
+
+	Bool,
+
+	Numeric(NumericKind),
+}
+
 impl PrimativeKind {
 	pub fn name(self) -> &'static str {
 		match self {
@@ -174,17 +219,7 @@ impl PrimativeKind {
 			PrimativeKind::UntypedInteger => "untyped integer",
 			PrimativeKind::UntypedDecimal => "untyped decimal",
 			PrimativeKind::Bool => "bool",
-			PrimativeKind::I8 => "i8",
-			PrimativeKind::I16 => "i16",
-			PrimativeKind::I32 => "i32",
-			PrimativeKind::I64 => "i64",
-			PrimativeKind::U8 => "u8",
-			PrimativeKind::U16 => "u16",
-			PrimativeKind::U32 => "u32",
-			PrimativeKind::U64 => "u64",
-			PrimativeKind::USize => "usize",
-			PrimativeKind::F32 => "f32",
-			PrimativeKind::F64 => "f64",
+			PrimativeKind::Numeric(numeric) => numeric.name(),
 		}
 	}
 
@@ -195,17 +230,7 @@ impl PrimativeKind {
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
 			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
-			PrimativeKind::I8 => Layout { size: 1, alignment: 1 },
-			PrimativeKind::I16 => Layout { size: 2, alignment: 2 },
-			PrimativeKind::I32 => Layout { size: 4, alignment: 4 },
-			PrimativeKind::I64 => Layout { size: 8, alignment: 8 },
-			PrimativeKind::U8 => Layout { size: 1, alignment: 1 },
-			PrimativeKind::U16 => Layout { size: 2, alignment: 2 },
-			PrimativeKind::U32 => Layout { size: 4, alignment: 4 },
-			PrimativeKind::U64 => Layout { size: 8, alignment: 8 },
-			PrimativeKind::USize => Layout { size: 8, alignment: 8 },
-			PrimativeKind::F32 => Layout { size: 4, alignment: 4 },
-			PrimativeKind::F64 => Layout { size: 8, alignment: 8 },
+			PrimativeKind::Numeric(numeric) => numeric.layout(),
 		}
 	}
 }
@@ -338,20 +363,20 @@ impl<'a> TypeStore<'a> {
 		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
 		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
 
-		let i8_type_id = push_primative(Some("i8"), PrimativeKind::I8);
-		let i16_type_id = push_primative(Some("i16"), PrimativeKind::I16);
-		let i32_type_id = push_primative(Some("i32"), PrimativeKind::I32);
-		let i64_type_id = push_primative(Some("i64"), PrimativeKind::I64);
+		let i8_type_id = push_primative(Some("i8"), PrimativeKind::Numeric(NumericKind::I8));
+		let i16_type_id = push_primative(Some("i16"), PrimativeKind::Numeric(NumericKind::I16));
+		let i32_type_id = push_primative(Some("i32"), PrimativeKind::Numeric(NumericKind::I32));
+		let i64_type_id = push_primative(Some("i64"), PrimativeKind::Numeric(NumericKind::I64));
 
-		let u8_type_id = push_primative(Some("u8"), PrimativeKind::U8);
-		let u16_type_id = push_primative(Some("u16"), PrimativeKind::U16);
-		let u32_type_id = push_primative(Some("u32"), PrimativeKind::U32);
-		let u64_type_id = push_primative(Some("u64"), PrimativeKind::U64);
+		let u8_type_id = push_primative(Some("u8"), PrimativeKind::Numeric(NumericKind::U8));
+		let u16_type_id = push_primative(Some("u16"), PrimativeKind::Numeric(NumericKind::U16));
+		let u32_type_id = push_primative(Some("u32"), PrimativeKind::Numeric(NumericKind::U32));
+		let u64_type_id = push_primative(Some("u64"), PrimativeKind::Numeric(NumericKind::U64));
 
-		let usize_type_id = push_primative(Some("usize"), PrimativeKind::USize);
+		let usize_type_id = push_primative(Some("usize"), PrimativeKind::Numeric(NumericKind::USize));
 
-		let f32_type_id = push_primative(Some("f32"), PrimativeKind::F32);
-		let f64_type_id = push_primative(Some("f64"), PrimativeKind::F64);
+		let f32_type_id = push_primative(Some("f32"), PrimativeKind::Numeric(NumericKind::F32));
+		let f64_type_id = push_primative(Some("f64"), PrimativeKind::Numeric(NumericKind::F64));
 
 		let mut type_store = TypeStore {
 			primative_type_symbols,
