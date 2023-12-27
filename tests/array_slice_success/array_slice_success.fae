@@ -1,0 +1,16 @@
+import fae::stdout::print_i32, print_newline
+
+fn func(slice: []i32) {
+	print_i32(slice[0])
+	print_newline()
+	print_i32(slice[1])
+	print_newline()
+}
+
+fn main() {
+	let array: []mut i32 = [1.(i32), 2]
+	func(array)
+	array[1] = 3
+	array[0] = 4
+	func(array)
+}

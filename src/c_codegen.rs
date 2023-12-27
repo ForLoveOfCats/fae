@@ -53,7 +53,7 @@ struct Context<'a, 'b> {
 }
 
 impl<'a, 'b> Context<'a, 'b> {
-	fn generate_temp_id(&mut self) -> TempId {
+	fn next_temp_id(&mut self) -> TempId {
 		let id = self.next_temp_id;
 		self.next_temp_id += 1;
 		TempId { id, dereference: false }
@@ -437,9 +437,7 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 					continue;
 				};
 
-				if let Some(result) = generate_type_id(context, binding.type_id, output) {
-					result?;
-				} else {
+				if !generate_type_id(context, binding.type_id, output)? {
 					continue;
 				}
 
@@ -468,6 +466,50 @@ fn generate_block(context: &mut Context, block: &Block, output: Output) -> Resul
 	Ok(())
 }
 
+fn generate_array_literal(context: &mut Context, literal: &ArrayLiteral, output: Output) -> Result<Option<Step>> {
+	let mut entry_steps = Vec::new(); // Belch
+	for expression in &literal.expressions {
+		if let Some(step) = generate_expression(context, expression, output)? {
+			entry_steps.push(step);
+		}
+	}
+
+	if context.type_store.type_layout(literal.pointee_type_id).size <= 0 {
+		assert!(generate_type_id(context, literal.type_id, output)?);
+
+		let temp_id = context.next_temp_id();
+		write!(output, " {temp_id}[0] = ")?;
+		generate_struct_construction_open(context, literal.type_id, output)?;
+		// See `generate_unary_operation` note about zero size pointee
+		write!(output, ".fi_0 = (void *)1, .fi_1 = 0")?;
+		generate_struct_construction_close(output)?;
+		writeln!(output, ";")?;
+
+		return Ok(Some(Step::Temp { temp_id }));
+	}
+
+	assert_eq!(entry_steps.len(), literal.expressions.len());
+	let entry_count = entry_steps.len();
+
+	assert!(generate_type_id(context, literal.pointee_type_id, output)?);
+	let array_temp_id = context.next_temp_id();
+	write!(output, " {array_temp_id}[{}] = {{", entry_count)?;
+	for entry_step in entry_steps {
+		write!(output, "{entry_step}, ")?;
+	}
+	writeln!(output, "}};")?;
+
+	assert!(generate_type_id(context, literal.type_id, output)?);
+	let slice_temp_id = context.next_temp_id();
+	write!(output, " {slice_temp_id} = ")?;
+	generate_struct_construction_open(context, literal.type_id, output)?;
+	write!(output, ".fi_0 = {array_temp_id}, .fi_1 = {}", entry_count)?;
+	generate_struct_construction_close(output)?;
+	writeln!(output, ";")?;
+
+	Ok(Some(Step::Temp { temp_id: slice_temp_id }))
+}
+
 fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, output: Output) -> Result<Option<Step>> {
 	let mut field_steps = Vec::new(); // Belch
 	for initalizer in &literal.field_initializers {
@@ -476,12 +518,10 @@ fn generate_struct_literal(context: &mut Context, literal: &StructLiteral, outpu
 		}
 	}
 
-	if let Some(result) = generate_type_id(context, literal.type_id, output) {
-		result?;
-	} else {
+	if !generate_type_id(context, literal.type_id, output)? {
 		return Ok(None);
 	}
-	let temp_id = context.generate_temp_id();
+	let temp_id = context.next_temp_id();
 	write!(output, " {temp_id} = ")?;
 
 	generate_struct_construction_open(context, literal.type_id, output)?;
@@ -530,10 +570,9 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let void = context.type_store.void_type_id();
 	if !context.type_store.direct_match(specialization.return_type, void) {
 		let return_type = specialization.return_type;
-		let id = context.generate_temp_id();
+		let id = context.next_temp_id();
 		maybe_id = Some(id);
-		if let Some(result) = generate_type_id(context, return_type, output) {
-			result?;
+		if generate_type_id(context, return_type, output)? {
 			write!(output, " {id} = ")?;
 		}
 	}
@@ -594,15 +633,46 @@ fn generate_intrinsic(context: &mut Context, call: &Call, function_id: FunctionI
 
 fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, output: Output) -> Result<Option<Step>> {
 	let Some(step) = generate_expression(context, &operation.expression, output)? else {
+		if matches!(operation.op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
+			// If pointee is zero size then give back a garbage pointer equal to `1`. This is still guarenteed
+			// to still be outside the process space for dereference/offset but will not erroneously be equal to
+			// C null, as that could confuse validity checks. Assuming codegen is correct, we will never emit
+			// a dereference of this pointer unless the program is doing something unsafe. As far as the C
+			// compiler is concerned, the pointee is an opaque type.
+			if !generate_type_id(context, operation.type_id, output)? {
+				return Ok(None);
+			}
+
+			let temp_id = context.next_temp_id();
+			writeln!(output, " {temp_id} = (void *)1;")?;
+			return Ok(Some(Step::Temp { temp_id }));
+		}
+
 		return Ok(None);
 	};
 
-	let mut temp_id = context.generate_temp_id();
-	if let Some(result) = generate_type_id(context, operation.type_id, output) {
-		result?;
-	} else {
+	if let UnaryOperator::Index { index_expression } = &operation.op {
+		let Some((_, mutable)) = context.type_store.sliced_of(operation.expression.type_id) else {
+			unreachable!("{:?}", context.type_store.type_entries[operation.expression.type_id.index()]);
+		};
+
+		let index_step = generate_expression(context, index_expression, output)?.unwrap();
+		writeln!(output, "check_slice_bounds({step}, {index_step});")?;
+		assert!(generate_type_id(context, operation.type_id, output)?);
+		let mut temp_id = context.next_temp_id();
+		if mutable {
+			writeln!(output, " * const {temp_id} = &({step}.fi_0[{index_step}]);")?;
+		} else {
+			writeln!(output, " const * const {temp_id} = &({step}.fi_0[{index_step}]);")?;
+		}
+		temp_id.dereference = true;
+		return Ok(Some(Step::Temp { temp_id }));
+	}
+
+	if !generate_type_id(context, operation.type_id, output)? {
 		return Ok(None);
 	}
+	let mut temp_id = context.next_temp_id();
 
 	if let UnaryOperator::Dereference = operation.op {
 		let Some((_, mutable)) = context.type_store.pointed_to(operation.expression.type_id) else {
@@ -621,7 +691,7 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 
 	if let UnaryOperator::Cast { .. } = operation.op {
 		write!(output, " const {temp_id} = (")?;
-		generate_type_id(context, operation.type_id, output).unwrap()?;
+		assert!(generate_type_id(context, operation.type_id, output)?);
 		writeln!(output, "){step};")?;
 		return Ok(Some(Step::Temp { temp_id }));
 	}
@@ -670,12 +740,10 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 		return Ok(Some(left_step));
 	}
 
-	if let Some(result) = generate_type_id(context, operation.type_id, output) {
-		result?;
-	} else {
+	if !generate_type_id(context, operation.type_id, output)? {
 		return Ok(None);
 	}
-	let temp_id = context.generate_temp_id();
+	let temp_id = context.next_temp_id();
 	write!(output, " {temp_id} = ({left_step}")?;
 
 	let op = match operation.op {
@@ -706,7 +774,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 }
 
 fn generate_expression(context: &mut Context, expression: &Expression, output: Output) -> std::io::Result<Option<Step>> {
-	let mut temp_id = context.generate_temp_id();
+	let mut temp_id = context.next_temp_id();
 
 	match &expression.kind {
 		ExpressionKind::Block(block) => {
@@ -744,9 +812,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 		ExpressionKind::StringLiteral(literal) => {
 			let type_id = context.type_store.string_type_id();
-			if let Some(result) = generate_type_id(context, type_id, output) {
-				result?;
-			} else {
+			if !generate_type_id(context, type_id, output)? {
 				return Ok(None);
 			}
 			write!(output, " {temp_id} = ")?;
@@ -756,6 +822,10 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 			writeln!(output, ";")?;
 		}
 
+		ExpressionKind::ArrayLiteral(literal) => {
+			return generate_array_literal(context, literal, output);
+		}
+
 		ExpressionKind::StructLiteral(literal) => {
 			return generate_struct_literal(context, literal, output);
 		}
@@ -763,9 +833,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 		ExpressionKind::Call(call) => return generate_call(context, call, output),
 
 		ExpressionKind::Read(read) => {
-			if let Some(result) = generate_type_id(context, read.type_id, output) {
-				result?;
-			} else {
+			if !generate_type_id(context, read.type_id, output)? {
 				return Ok(None);
 			}
 
@@ -786,9 +854,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 				return Ok(None);
 			};
 
-			if let Some(result) = generate_type_id(context, field_read.type_id, output) {
-				result?;
-			} else {
+			if !generate_type_id(context, field_read.type_id, output)? {
 				return Ok(None);
 			}
 
@@ -810,6 +876,20 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 			return generate_binary_operation(context, operation, output);
 		}
 
+		ExpressionKind::SliceMutableToImmutable(conversion) => {
+			let step = generate_expression(context, &conversion.expression, output)?.expect("Slice itself cannot be zero size");
+
+			assert!(generate_type_id(context, conversion.type_id, output)?);
+			let temp_id = context.next_temp_id();
+			write!(output, " {temp_id} = ")?;
+			generate_struct_construction_open(context, conversion.type_id, output)?;
+			write!(output, ".fi_0 = {step}.fi_0, .fi_1 = {step}.fi_1")?;
+			generate_struct_construction_close(output)?;
+			writeln!(output, ";")?;
+
+			return Ok(Some(Step::Temp { temp_id }));
+		}
+
 		ExpressionKind::AnyCollapse => unreachable!(),
 	}
 
@@ -818,7 +898,7 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 fn generate_struct_construction_open(context: &mut Context, type_id: TypeId, output: Output) -> Result<()> {
 	write!(output, "((")?;
-	generate_type_id(context, type_id, output).unwrap()?;
+	assert!(generate_type_id(context, type_id, output)?);
 	write!(output, ") {{ ")
 }
 
@@ -826,7 +906,7 @@ fn generate_struct_construction_close(output: Output) -> Result<()> {
 	write!(output, " }})")
 }
 
-fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> Option<Result<()>> {
+fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> Result<bool> {
 	let mut generic_usages = Vec::new();
 	let type_id = context.type_store.specialize_with_function_generics(
 		context.messages,
@@ -840,10 +920,10 @@ fn generate_type_id(context: &mut Context, type_id: TypeId, output: Output) -> O
 	assert_eq!(generic_usages.len(), 0);
 
 	if context.type_store.type_layout(type_id).size <= 0 {
-		return None;
+		return Ok(false);
 	}
 
-	Some(generate_raw_type_id(context.type_store, type_id, output))
+	generate_raw_type_id(context.type_store, type_id, output).map(|_| true)
 }
 
 fn generate_raw_type_id(type_store: &TypeStore, type_id: TypeId, output: Output) -> Result<()> {

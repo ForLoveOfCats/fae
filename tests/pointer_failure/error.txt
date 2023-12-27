@@ -8,4 +8,4 @@ Validation error: ./tests/pointer_failure/pointer_failure.fae, line 5: Cannot de
 
 Validation error: ./tests/pointer_failure/pointer_failure.fae, line 8: Cannot assign immutable memory location
   8|     ptr.* = 6
-         ^^^^^
+         ^^^^^^^^^

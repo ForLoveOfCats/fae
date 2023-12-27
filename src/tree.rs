@@ -86,7 +86,11 @@ pub enum Type<'a> {
 		pointee: Box<Node<Type<'a>>>,
 		mutable: bool,
 	},
-	Slice(Box<Node<Type<'a>>>),
+
+	Slice {
+		pointee: Box<Node<Type<'a>>>,
+		mutable: bool,
+	},
 
 	Path {
 		path_segments: Node<PathSegments<'a>>,
@@ -160,6 +164,11 @@ pub struct StringLiteral<'a> {
 }
 
 #[derive(Debug)]
+pub struct ArrayLiteral<'a> {
+	pub expressions: Vec<Node<Expression<'a>>>,
+}
+
+#[derive(Debug)]
 pub struct StructLiteral<'a> {
 	pub parsed_type: Node<Type<'a>>,
 	pub initializer: Node<StructInitializer<'a>>,
@@ -184,6 +193,7 @@ pub enum UnaryOperator<'a> {
 	AddressOfMut,
 	Dereference,
 	Cast { parsed_type: Node<Type<'a>> },
+	Index { index_expression: Node<Expression<'a>> },
 }
 
 #[derive(Debug)]
@@ -371,6 +381,7 @@ pub enum Expression<'a> {
 	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
+	ArrayLiteral(ArrayLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),

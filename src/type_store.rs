@@ -1,5 +1,8 @@
 use crate::error::Messages;
-use crate::ir::{DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, Symbol, SymbolKind, TypeArguments};
+use crate::ir::{
+	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, SliceMutableToImmutable, Symbol, SymbolKind,
+	TypeArguments,
+};
 use crate::span::Span;
 use crate::tree::{self, Node};
 use crate::validator::{FunctionStore, RootLayers, Symbols};
@@ -504,6 +507,7 @@ impl<'a> TypeStore<'a> {
 		// untyped integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
 		// untyped decimal -> float of large enough
 		// mutable reference -> immutable reference
+		// mutable slice -> immutable slice
 
 		if from.type_id.entry == self.any_collapse_type_id.entry {
 			// From any collapse
@@ -660,6 +664,30 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
+		// mutable slice -> immutable slice
+		let to_entry = self.type_entries[to.index()];
+		let from_entry = self.type_entries[from.type_id.index()];
+		if let TypeEntryKind::Slice(Slice { type_id: to_type_id, mutable: to_mutable }) = to_entry.kind {
+			if let TypeEntryKind::Slice(Slice { type_id: from_type_id, mutable: from_mutable }) = from_entry.kind {
+				if to_type_id.entry == from_type_id.entry && from_mutable && !to_mutable {
+					if let ExpressionKind::ArrayLiteral(literal) = &mut from.kind {
+						// See `get_or_create_reference_entries`, mutable slice directly follows immutable slice of same type
+						// Back up one entry to turn the array's slice from mutable to immutable
+						literal.type_id.entry -= 1;
+						return Some(true);
+					}
+
+					// TODO: This replace is a dumb solution
+					let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
+					let type_id = TypeId { entry: expression.type_id.entry - 1 };
+					let conversion = Box::new(SliceMutableToImmutable { type_id, expression });
+					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
+					*from = Expression { span: from.span, type_id, mutable: false, kind };
+					return Some(true);
+				}
+			}
+		}
+
 		Some(false)
 	}
 
@@ -726,6 +754,16 @@ impl<'a> TypeStore<'a> {
 		let entry = self.type_entries[type_id.index()];
 		match entry.kind {
 			TypeEntryKind::Pointer { type_id, mutable } => Some((type_id, mutable)),
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, false)),
+			_ => None,
+		}
+	}
+
+	// (TypeId, mutable)
+	pub fn sliced_of(&self, type_id: TypeId) -> Option<(TypeId, bool)> {
+		let entry = self.type_entries[type_id.index()];
+		match entry.kind {
+			TypeEntryKind::Slice(Slice { type_id, mutable }) => Some((type_id, mutable)),
 			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, false)),
 			_ => None,
 		}
@@ -873,7 +911,7 @@ impl<'a> TypeStore<'a> {
 				return Some(self.pointer_to(id, *mutable));
 			}
 
-			tree::Type::Slice(inner) => {
+			tree::Type::Slice { pointee, mutable } => {
 				let id = self.lookup_type(
 					messages,
 					function_store,
@@ -882,9 +920,9 @@ impl<'a> TypeStore<'a> {
 					root_layers,
 					symbols,
 					function_initial_symbols_len,
-					inner,
+					pointee,
 				)?;
-				return Some(self.slice_of(id, false)); // TODO: Parse mutability
+				return Some(self.slice_of(id, *mutable));
 			}
 
 			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),

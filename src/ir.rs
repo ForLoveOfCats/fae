@@ -429,6 +429,7 @@ pub enum ExpressionKind<'a> {
 	CodepointLiteral(CodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
+	ArrayLiteral(ArrayLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),
@@ -437,6 +438,8 @@ pub enum ExpressionKind<'a> {
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
+
+	SliceMutableToImmutable(Box<SliceMutableToImmutable<'a>>),
 }
 
 impl<'a> ExpressionKind<'a> {
@@ -450,12 +453,16 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::BooleanLiteral(_) => "a boolean literal",
 			ExpressionKind::CodepointLiteral(_) => "a codepoint literal",
 			ExpressionKind::StringLiteral(_) => "a string literal",
+			ExpressionKind::ArrayLiteral(_) => "an array literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::Call(_) => "a function call",
 			ExpressionKind::Read(_) => "a binding read",
 			ExpressionKind::FieldRead(_) => "a field read",
 			ExpressionKind::UnaryOperation(_) => "an unary operation",
 			ExpressionKind::BinaryOperation(_) => "a binary operation",
+
+			// TODO: Is this correct?
+			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
 		}
 	}
 }
@@ -655,6 +662,13 @@ pub struct StringLiteral<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct ArrayLiteral<'a> {
+	pub type_id: TypeId,
+	pub pointee_type_id: TypeId,
+	pub expressions: Vec<Expression<'a>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StructLiteral<'a> {
 	pub type_id: TypeId,
 	pub field_initializers: Vec<FieldInitializer<'a>>,
@@ -687,19 +701,20 @@ pub struct FieldRead<'a> {
 	pub field_index: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum UnaryOperator {
+#[derive(Debug, Clone)]
+pub enum UnaryOperator<'a> {
 	Negate,
 	Invert,
 	AddressOf,
 	AddressOfMut,
 	Dereference,
 	Cast { type_id: TypeId },
+	Index { index_expression: Expression<'a> },
 }
 
 #[derive(Debug, Clone)]
 pub struct UnaryOperation<'a> {
-	pub op: UnaryOperator,
+	pub op: UnaryOperator<'a>,
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }
@@ -710,4 +725,10 @@ pub struct BinaryOperation<'a> {
 	pub left: Expression<'a>,
 	pub right: Expression<'a>,
 	pub type_id: TypeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct SliceMutableToImmutable<'a> {
+	pub type_id: TypeId,
+	pub expression: Expression<'a>,
 }

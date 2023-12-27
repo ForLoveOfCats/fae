@@ -1,4 +1,4 @@
-const MAX_LINE = 1024 * 4
+ const MAX_LINE = 1024 * 4
 
 fn main()
 throws {

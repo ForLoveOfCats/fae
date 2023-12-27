@@ -1610,10 +1610,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 
 	let mut expression = validate_expression(context, &statement.item.expression);
 	if let Some(explicit_type) = explicit_type {
-		if !context
-			.type_store
-			.collapse_to(context.messages, explicit_type, &mut expression)?
-		{
+		if !context.collapse_to(explicit_type, &mut expression)? {
 			context.message(
 				error!(
 					"Const type mismatch between explicit type {} and expression type {}",
@@ -1704,6 +1701,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::BooleanLiteral(literal) => validate_bool_literal(context, *literal, span),
 		tree::Expression::CodepointLiteral(literal) => validate_codepoint_literal(context, literal, span),
 		tree::Expression::StringLiteral(literal) => validate_string_literal(context, literal, span),
+		tree::Expression::ArrayLiteral(literal) => validate_array_literal(context, literal, span),
 		tree::Expression::StructLiteral(literal) => validate_struct_literal(context, literal, span),
 		tree::Expression::Call(call) => validate_call(context, call, span),
 		tree::Expression::Read(read) => validate_read(context, read, span),
@@ -1765,6 +1763,35 @@ fn validate_string_literal<'a>(
 ) -> Expression<'a> {
 	let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item.clone() });
 	let type_id = context.type_store.string_type_id();
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_array_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &'a tree::ArrayLiteral<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let mut expressions = Vec::with_capacity(literal.expressions.len());
+	for expression in &literal.expressions {
+		expressions.push(validate_expression(context, expression));
+	}
+
+	let pointee_type_id = expressions.first().expect("TODO: Support item-less array literal").type_id;
+	for expression in &mut expressions {
+		let collapsed = context.collapse_to(pointee_type_id, expression);
+		if !collapsed.unwrap_or(true) {
+			let error = error!(
+				"Type mismatch for array entry, expected {} but got {}",
+				context.type_name(pointee_type_id),
+				context.type_name(expression.type_id)
+			);
+			context.message(error.span(expression.span));
+		}
+	}
+
+	let type_id = context.type_store.slice_of(pointee_type_id, true);
+	let literal = ArrayLiteral { type_id, pointee_type_id, expressions };
+	let kind = ExpressionKind::ArrayLiteral(literal);
 	Expression { span, type_id, mutable: true, kind }
 }
 
@@ -2072,13 +2099,15 @@ fn validate_unary_operation<'a>(
 		tree::UnaryOperator::Dereference => UnaryOperator::Dereference,
 
 		tree::UnaryOperator::Cast { parsed_type } => {
-			let any_collapse = context.type_store.any_collapse_type_id();
-			let type_id = context.lookup_type(parsed_type).unwrap_or(any_collapse);
-			UnaryOperator::Cast { type_id }
+			return validate_cast(context, expression, parsed_type, span);
+		}
+
+		tree::UnaryOperator::Index { index_expression } => {
+			return validate_bracket_index(context, expression, index_expression, span);
 		}
 	};
 
-	match (op, &mut expression.kind) {
+	match (&op, &mut expression.kind) {
 		(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
 			value.negate(context.messages, span);
 			expression.span = expression.span + span;
@@ -2155,62 +2184,111 @@ fn validate_unary_operation<'a>(
 			return Expression { span, type_id, mutable, kind };
 		}
 
-		UnaryOperator::Cast { type_id: to_type_id } => {
-			if context.type_store.direct_match(type_id, to_type_id) {
-				let warning = warning!("Unnecessary cast from {} to itself", context.type_name(type_id));
-				context.message(warning.span(span));
-			} else if type_id.is_pointer(context.type_store) && to_type_id.is_pointer(context.type_store) {
-				let (from_pointed, from_mutable) = context.type_store.pointed_to(type_id).unwrap();
-				let (to_pointed, to_mutable) = context.type_store.pointed_to(to_type_id).unwrap();
+		UnaryOperator::Cast { .. } => unreachable!(),
+		UnaryOperator::Index { .. } => unreachable!(),
+	}
+}
 
-				if to_mutable && !from_mutable {
-					let error = error!(
-						"Cannot cast from immutable pointer {} to mutable pointer {}",
-						context.type_name(type_id),
-						context.type_name(to_type_id)
-					);
-					context.message(error.span(span));
-				} else if context.type_store.direct_match(from_pointed, to_pointed) {
-					// If they were not the same type id, yet they point to the same type, then we must be casting from mut to non-mut
-					let warning = warning!(
-						"Unnecessary cast from mutable pointer {} to immutable pointer {}",
-						context.type_name(type_id),
-						context.type_name(to_type_id)
-					);
-					context.message(warning.span(span));
-				}
-			}
+fn validate_cast<'a>(
+	context: &mut Context<'a, '_, '_>,
+	expression: Expression<'a>,
+	parsed_type: &Node<tree::Type<'a>>,
+	span: Span,
+) -> Expression<'a> {
+	let any_collapse = context.type_store.any_collapse_type_id();
+	let from_type_id = expression.type_id;
+	let to_type_id = context.lookup_type(parsed_type).unwrap_or(any_collapse);
 
-			let from_numeric = type_id.is_numeric(context.type_store);
-			let to_numeric = to_type_id.is_numeric(context.type_store);
-			let from_pointer = type_id.is_pointer(context.type_store);
-			let to_pointer = to_type_id.is_pointer(context.type_store);
+	if context.type_store.direct_match(from_type_id, to_type_id) {
+		let warning = warning!("Unnecessary cast from {} to itself", context.type_name(from_type_id));
+		context.message(warning.span(span));
+	} else if from_type_id.is_pointer(context.type_store) && to_type_id.is_pointer(context.type_store) {
+		let (from_pointed, from_mutable) = context.type_store.pointed_to(from_type_id).unwrap();
+		let (to_pointed, to_mutable) = context.type_store.pointed_to(to_type_id).unwrap();
 
-			if from_numeric && to_numeric {
-			} else if from_pointer && to_pointer {
-			} else if from_pointer && to_numeric {
-			} else if to_pointer && from_numeric {
-				if type_id.is_untyped_decimal(context.type_store) {
-					let error = error!("Cannot cast untyped decimal to a pointer");
-					context.message(error.span(span));
-				} else {
-					let is_i64 = context.type_store.direct_match(type_id, context.type_store.i64_type_id());
-					let is_u64 = context.type_store.direct_match(type_id, context.type_store.u64_type_id());
-					let is_usize = context.type_store.direct_match(type_id, context.type_store.usize_type_id());
-					let is_untyped_integer = type_id.is_untyped_integer(context.type_store);
-
-					if !is_i64 && !is_u64 && !is_usize && !is_untyped_integer {
-						let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(type_id));
-						context.message(error.span(span));
-					}
-				}
-			}
-
-			let type_id = to_type_id;
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
-			return Expression { span, type_id, mutable: true, kind };
+		if to_mutable && !from_mutable {
+			let error = error!(
+				"Cannot cast from immutable pointer {} to mutable pointer {}",
+				context.type_name(from_type_id),
+				context.type_name(to_type_id)
+			);
+			context.message(error.span(span));
+		} else if context.type_store.direct_match(from_pointed, to_pointed) {
+			// If they were not the same type id, yet they point to the same type, then we must be casting from mut to non-mut
+			let warning = warning!(
+				"Unnecessary cast from mutable pointer {} to immutable pointer {}",
+				context.type_name(from_type_id),
+				context.type_name(to_type_id)
+			);
+			context.message(warning.span(span));
 		}
 	}
+
+	let from_numeric = from_type_id.is_numeric(context.type_store);
+	let to_numeric = to_type_id.is_numeric(context.type_store);
+	let from_pointer = from_type_id.is_pointer(context.type_store);
+	let to_pointer = to_type_id.is_pointer(context.type_store);
+
+	if from_numeric && to_numeric {
+	} else if from_pointer && to_pointer {
+	} else if from_pointer && to_numeric {
+	} else if to_pointer && from_numeric {
+		if from_type_id.is_untyped_decimal(context.type_store) {
+			let error = error!("Cannot cast untyped decimal to a pointer");
+			context.message(error.span(span));
+		} else {
+			let is_i64 = context
+				.type_store
+				.direct_match(from_type_id, context.type_store.i64_type_id());
+			let is_u64 = context
+				.type_store
+				.direct_match(from_type_id, context.type_store.u64_type_id());
+			let is_usize = context
+				.type_store
+				.direct_match(from_type_id, context.type_store.usize_type_id());
+			let is_untyped_integer = from_type_id.is_untyped_integer(context.type_store);
+
+			if !is_i64 && !is_u64 && !is_usize && !is_untyped_integer {
+				let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(from_type_id));
+				context.message(error.span(span));
+			}
+		}
+	}
+
+	let type_id = to_type_id;
+	let op = UnaryOperator::Cast { type_id };
+	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+	Expression { span, type_id, mutable: true, kind }
+}
+
+fn validate_bracket_index<'a>(
+	context: &mut Context<'a, '_, '_>,
+	expression: Expression<'a>,
+	index_expression: &'a Node<tree::Expression<'a>>,
+	span: Span,
+) -> Expression<'a> {
+	let mut index_expression = validate_expression(context, index_expression);
+	let (type_id, mutable) = match context.type_store.sliced_of(expression.type_id) {
+		Some((type_id, mutable)) => (type_id, mutable),
+
+		None => {
+			// TODO: Once arrays have an actual type this needs to account for that
+			let error = error!("Cannot index on a value of type {}", context.type_name(expression.type_id));
+			context.message(error.span(span));
+			(context.type_store.any_collapse_type_id(), true)
+		}
+	};
+
+	let i64_type_id = context.type_store.i64_type_id();
+	let collapsed = context.collapse_to(i64_type_id, &mut index_expression);
+	if !collapsed.unwrap_or(true) {
+		let error = error!("Cannot index by a value of {}", context.type_name(index_expression.type_id));
+		context.message(error.span(index_expression.span));
+	}
+
+	let op = UnaryOperator::Index { index_expression };
+	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+	Expression { span, type_id, mutable, kind }
 }
 
 fn validate_binary_operation<'a>(
@@ -2246,19 +2324,24 @@ fn validate_binary_operation<'a>(
 			};
 
 			if readable.kind != ReadableKind::Mut {
-				context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(left.span));
+				context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(span));
 			}
 		} else if let ExpressionKind::FieldRead(_) = &left.kind {
 			if !left.mutable {
-				context.message(error!("Cannot assign to field of immutable object").span(left.span));
+				context.message(error!("Cannot assign to field of immutable object").span(span));
 			}
 		} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
 		{
 			if !left.mutable {
-				context.message(error!("Cannot assign immutable memory location").span(left.span));
+				context.message(error!("Cannot assign immutable memory location").span(span));
+			}
+		} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
+		{
+			if !left.mutable {
+				context.message(error!("Cannot assign to index of immutable slice").span(span));
 			}
 		} else {
-			context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(left.span));
+			context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(span));
 		}
 	}
 

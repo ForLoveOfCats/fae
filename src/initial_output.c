@@ -1,5 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 typedef uint8_t bool;
 #define true 1
@@ -19,6 +21,12 @@ typedef int8_t i8;
 
 typedef double f64;
 typedef float f32;
+
+#define check_slice_bounds(slice, index) \
+	if (index < 0 || slice.fi_1 <= index) { \
+		printf("Index %ld is out of range of slice with length %ld\n", slice.fi_1); \
+		exit(EXIT_FAILURE); \
+	}
 
 void fae_main(void);
 

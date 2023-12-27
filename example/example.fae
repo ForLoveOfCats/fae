@@ -1,1 +1,6 @@
-fn main() {}
+import fae::stdout::print_bool, print_newline
+
+fn main() {
+	let a: []mut bool = [true, false]
+	a[0] = false
+}

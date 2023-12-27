@@ -178,8 +178,14 @@ fn parse_expression_climb<'a>(
 ) -> ParseResult<Node<Expression<'a>>> {
 	let mut atom = parse_expression_atom(messages, tokenizer, allow_struct_literal)?;
 
-	while tokenizer.peek_kind() == Ok(TokenKind::Period) {
-		atom = parse_following_period(messages, tokenizer, atom)?;
+	loop {
+		if tokenizer.peek_kind() == Ok(TokenKind::Period) {
+			atom = parse_following_period(messages, tokenizer, atom)?;
+		} else if tokenizer.peek_kind() == Ok(TokenKind::OpenBracket) {
+			atom = parse_bracket_index(messages, tokenizer, atom)?;
+		} else {
+			break;
+		}
 	}
 
 	while let Some(operator) = tokenizer.peek().ok().and_then(token_to_operator) {
@@ -350,6 +356,36 @@ fn parse_expression_atom<'a>(
 			Ok(expression)
 		}
 
+		TokenKind::OpenBracket => {
+			let open_token = tokenizer.expect(messages, TokenKind::OpenBracket)?;
+
+			let multi_line = tokenizer.peek_kind() == Ok(TokenKind::Newline);
+			if multi_line {
+				tokenizer.expect(messages, TokenKind::Newline)?;
+			}
+
+			let mut expressions = Vec::new();
+			while tokenizer.peek_kind() != Ok(TokenKind::CloseBracket) {
+				expressions.push(parse_expression(messages, tokenizer, true)?);
+
+				if multi_line {
+					if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+						tokenizer.expect(messages, TokenKind::Comma)?;
+					}
+					tokenizer.expect(messages, TokenKind::Newline)?;
+				} else if tokenizer.peek_kind() != Ok(TokenKind::CloseBracket) {
+					tokenizer.expect(messages, TokenKind::Comma)?;
+				}
+			}
+
+			let close_token = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+
+			let literal = ArrayLiteral { expressions };
+			let expression = Expression::ArrayLiteral(literal);
+			let span = open_token.span + close_token.span;
+			Ok(Node::new(expression, span))
+		}
+
 		TokenKind::OpenBrace => {
 			let parsed_block = parse_block(messages, tokenizer)?;
 
@@ -434,6 +470,23 @@ fn parse_following_period<'a>(
 	let span = atom.span + name.span;
 	let field_read = Box::new(FieldRead { base: atom, name });
 	return Ok(Node::new(Expression::FieldRead(field_read), span));
+}
+
+fn parse_bracket_index<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	atom: Node<Expression<'a>>,
+) -> ParseResult<Node<Expression<'a>>> {
+	tokenizer.expect(messages, TokenKind::OpenBracket)?;
+	let index_expression = parse_expression(messages, tokenizer, true)?;
+	let close_token = tokenizer.expect(messages, TokenKind::CloseBracket)?;
+
+	let span = atom.span + close_token.span;
+	let index = UnaryOperator::Index { index_expression };
+	let op = Node::new(index, span);
+	let operation = UnaryOperation { op, expression: atom };
+	let expression = Expression::UnaryOperation(Box::new(operation));
+	Ok(Node::new(expression, span))
 }
 
 fn parse_string_contents(string: &str) -> Cow<str> {
@@ -797,10 +850,16 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 			let opening = tokenizer.expect(messages, TokenKind::OpenBracket)?;
 			tokenizer.expect(messages, TokenKind::CloseBracket)?;
 
-			let inner = Box::new(parse_type(messages, tokenizer)?);
+			let mut mutable = false;
+			if tokenizer.peek().map(|t| t.text) == Ok("mut") {
+				tokenizer.expect_word(messages, "mut")?;
+				mutable = true;
+			}
 
-			let span = opening.span + inner.span;
-			Node::new(Type::Slice(inner), span)
+			let pointee = Box::new(parse_type(messages, tokenizer)?);
+
+			let span = opening.span + pointee.span;
+			Node::new(Type::Slice { pointee, mutable }, span)
 		}
 
 		_ => {
