@@ -1,0 +1,4 @@
+true
+false
+true
+Index 3 is out of range of slice with length 3

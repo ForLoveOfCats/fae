@@ -1,0 +1,17 @@
+import fae::stdout::print_bool, print_newline
+
+fn main() {
+	let slice = [true, false, true != false]
+
+	print_bool(slice[0]) // true
+	print_newline()
+
+	print_bool(slice[1]) // false
+	print_newline()
+
+	print_bool(slice[2]) // true
+	print_newline()
+
+	print_bool(slice[3]) // panic
+	print_newline()
+}
