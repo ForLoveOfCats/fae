@@ -518,6 +518,10 @@ impl IntegerValue {
 		self.collapse = Some(type_id);
 	}
 
+	pub fn collapsed(&self) -> TypeId {
+		self.collapse.unwrap()
+	}
+
 	pub fn negate(&mut self, messages: &mut Messages, sign_span: Span) {
 		assert_not_collapsed(self.collapse);
 
@@ -616,6 +620,10 @@ impl DecimalValue {
 	pub fn collapse(&mut self, type_id: TypeId) {
 		assert_not_collapsed(self.collapse);
 		self.collapse = Some(type_id);
+	}
+
+	pub fn collapsed(&self) -> TypeId {
+		self.collapse.unwrap()
 	}
 
 	pub fn negate(&mut self, sign_span: Span) {

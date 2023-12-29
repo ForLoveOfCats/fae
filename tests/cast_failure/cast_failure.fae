@@ -9,4 +9,5 @@ fn main() {
 	mutable.(&i32)
 
 	0.1.(&mut u8)
+	(-1).(&mut u8) // TODO: Support negative literals natively
 }

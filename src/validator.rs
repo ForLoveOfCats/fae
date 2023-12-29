@@ -2205,7 +2205,7 @@ fn validate_unary_operation<'a>(
 
 fn validate_cast<'a>(
 	context: &mut Context<'a, '_, '_>,
-	expression: Expression<'a>,
+	mut expression: Expression<'a>,
 	parsed_type: &Node<tree::Type<'a>>,
 	span: Span,
 ) -> Expression<'a> {
@@ -2244,9 +2244,20 @@ fn validate_cast<'a>(
 	let to_pointer = to_type_id.is_pointer(context.type_store);
 
 	if from_numeric && to_numeric {
+		let from_untyped_integer = from_type_id.is_untyped_integer(context.type_store);
+		let from_untyped_decimal = from_type_id.is_untyped_decimal(context.type_store);
+		let from_untyped = from_untyped_integer || from_untyped_decimal;
+
+		let to_untyped_integer = to_type_id.is_untyped_integer(context.type_store);
+		let to_untyped_decimal = to_type_id.is_untyped_decimal(context.type_store);
+		let to_untyped = to_untyped_integer || to_untyped_decimal;
+
+		if from_untyped && !to_untyped {
+			context.collapse_to(to_type_id, &mut expression);
+		}
 	} else if from_pointer && to_pointer {
 	} else if from_pointer && to_numeric {
-	} else if to_pointer && from_numeric {
+	} else if from_numeric && to_pointer {
 		if from_type_id.is_untyped_decimal(context.type_store) {
 			let error = error!("Cannot cast untyped decimal to a pointer");
 			context.message(error.span(span));
@@ -2265,6 +2276,8 @@ fn validate_cast<'a>(
 			if !is_i64 && !is_u64 && !is_usize && !is_untyped_integer {
 				let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(from_type_id));
 				context.message(error.span(span));
+			} else if from_type_id.is_untyped_integer(context.type_store) {
+				context.collapse_to(context.type_store.usize_type_id(), &mut expression);
 			}
 		}
 	}

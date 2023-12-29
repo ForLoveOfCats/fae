@@ -80,10 +80,6 @@ impl std::fmt::Display for TempId {
 enum Step {
 	Temp { temp_id: TempId },
 	Readable { readable_index: usize },
-	ConstantInteger(i128),
-	ConstantDecimal(f64),
-	ConstantBool(bool),
-	ConstantCodepoint(char),
 }
 
 impl std::fmt::Display for Step {
@@ -91,10 +87,6 @@ impl std::fmt::Display for Step {
 		match self {
 			Step::Temp { temp_id } => temp_id.fmt(f),
 			Step::Readable { readable_index } => write!(f, "re_{}", readable_index),
-			Step::ConstantInteger(integer) => write!(f, "{}", integer),
-			Step::ConstantDecimal(decimal) => write!(f, "{}", decimal),
-			Step::ConstantBool(literal) => write!(f, "{}", literal),
-			Step::ConstantCodepoint(codepoint) => write!(f, "{}", *codepoint as u32),
 		}
 	}
 }
@@ -736,17 +728,23 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	let Some(left_step) = left_step else {
 		assert!(right_step.is_none());
 
-		return Ok(match operation.op {
-			BinaryOperator::Assign => None,
-			BinaryOperator::Equals => Some(Step::ConstantBool(true)),
-			BinaryOperator::NotEquals => Some(Step::ConstantBool(false)),
-			BinaryOperator::GreaterThan => Some(Step::ConstantBool(false)),
-			BinaryOperator::GreaterThanEquals => Some(Step::ConstantBool(true)),
-			BinaryOperator::LessThan => Some(Step::ConstantBool(false)),
-			BinaryOperator::LessThanEquals => Some(Step::ConstantBool(true)),
+		let value = match operation.op {
+			BinaryOperator::Assign => return Ok(None),
+
+			BinaryOperator::Equals => true,
+			BinaryOperator::NotEquals => false,
+			BinaryOperator::GreaterThan => false,
+			BinaryOperator::GreaterThanEquals => true,
+			BinaryOperator::LessThan => false,
+			BinaryOperator::LessThanEquals => true,
 
 			op => todo!("{op:?}"),
-		});
+		};
+
+		let temp_id = context.next_temp_id();
+		assert!(generate_type_id(context, context.type_store.bool_type_id(), output)?);
+		writeln!(output, " {temp_id} = {};", value)?;
+		return Ok(Some(Step::Temp { temp_id }));
 	};
 
 	let Some(right_step) = right_step else { unreachable!() };
@@ -811,19 +809,27 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 		}
 
 		ExpressionKind::IntegerValue(value) => {
-			return Ok(Some(Step::ConstantInteger(value.value())));
+			assert!(generate_type_id(context, value.collapsed(), output)?);
+			writeln!(output, " {temp_id} = {};", value.value())?;
+			return Ok(Some(Step::Temp { temp_id }));
 		}
 
 		ExpressionKind::DecimalValue(value) => {
-			return Ok(Some(Step::ConstantDecimal(value.value())));
+			assert!(generate_type_id(context, value.collapsed(), output)?);
+			writeln!(output, " {temp_id} = {};", value.value())?;
+			return Ok(Some(Step::Temp { temp_id }));
 		}
 
 		ExpressionKind::BooleanLiteral(literal) => {
-			return Ok(Some(Step::ConstantBool(*literal)));
+			assert!(generate_type_id(context, context.type_store.bool_type_id(), output)?);
+			writeln!(output, " {temp_id} = {};", literal)?;
+			return Ok(Some(Step::Temp { temp_id }));
 		}
 
 		ExpressionKind::CodepointLiteral(literal) => {
-			return Ok(Some(Step::ConstantCodepoint(literal.value)));
+			assert!(generate_type_id(context, context.type_store.u32_type_id(), output)?);
+			writeln!(output, " {temp_id} = {};", literal.value as u32)?;
+			return Ok(Some(Step::Temp { temp_id }));
 		}
 
 		ExpressionKind::StringLiteral(literal) => {
