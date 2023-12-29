@@ -382,7 +382,7 @@ fn generate_function<'a>(
 	// Belch
 	annotate_comment!(
 		output,
-		"fn {}[{}][{}]",
+		"fn {}<{}><{}>",
 		shape.name.item,
 		specialization.type_arguments.ids()[..specialization.type_arguments.implicit_len()]
 			.iter()
@@ -478,10 +478,10 @@ fn generate_array_literal(context: &mut Context, literal: &ArrayLiteral, output:
 		assert!(generate_type_id(context, literal.type_id, output)?);
 
 		let temp_id = context.next_temp_id();
-		write!(output, " {temp_id}[0] = ")?;
+		write!(output, " {temp_id} = ")?;
 		generate_struct_construction_open(context, literal.type_id, output)?;
 		// See `generate_unary_operation` note about zero size pointee
-		write!(output, ".fi_0 = (void *)1, .fi_1 = 0")?;
+		write!(output, ".fi_0 = (void *)1, .fi_1 = {}", literal.expressions.len())?;
 		generate_struct_construction_close(output)?;
 		writeln!(output, ";")?;
 
@@ -652,12 +652,17 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 	};
 
 	if let UnaryOperator::Index { index_expression } = &operation.op {
-		let Some((_, mutable)) = context.type_store.sliced_of(operation.expression.type_id) else {
+		let Some((sliced_type_id, mutable)) = context.type_store.sliced_of(operation.expression.type_id) else {
 			unreachable!("{:?}", context.type_store.type_entries[operation.expression.type_id.index()]);
 		};
 
 		let index_step = generate_expression(context, index_expression, output)?.unwrap();
 		writeln!(output, "check_slice_bounds({step}, {index_step});")?;
+
+		if context.type_store.type_layout(sliced_type_id).size <= 0 {
+			return Ok(None);
+		}
+
 		assert!(generate_type_id(context, operation.type_id, output)?);
 		let mut temp_id = context.next_temp_id();
 		if mutable {
@@ -682,7 +687,7 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 		if mutable {
 			writeln!(output, " * const {temp_id} = {step};")?;
 		} else {
-			writeln!(output, " const * const {temp_id} = {step}; // not mutable")?;
+			writeln!(output, " const * const {temp_id} = {step};")?;
 		}
 
 		temp_id.dereference = true;
@@ -729,11 +734,22 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 	let right_step = generate_expression(context, &operation.right, output)?;
 
 	let Some(left_step) = left_step else {
-		return Ok(None);
+		assert!(right_step.is_none());
+
+		return Ok(match operation.op {
+			BinaryOperator::Assign => None,
+			BinaryOperator::Equals => Some(Step::ConstantBool(true)),
+			BinaryOperator::NotEquals => Some(Step::ConstantBool(false)),
+			BinaryOperator::GreaterThan => Some(Step::ConstantBool(false)),
+			BinaryOperator::GreaterThanEquals => Some(Step::ConstantBool(true)),
+			BinaryOperator::LessThan => Some(Step::ConstantBool(false)),
+			BinaryOperator::LessThanEquals => Some(Step::ConstantBool(true)),
+
+			op => todo!("{op:?}"),
+		});
 	};
-	let Some(right_step) = right_step else {
-		return Ok(None);
-	};
+
+	let Some(right_step) = right_step else { unreachable!() };
 
 	if operation.op == BinaryOperator::Assign {
 		writeln!(output, "{left_step} = {right_step};")?;
@@ -889,6 +905,8 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 
 			return Ok(Some(Step::Temp { temp_id }));
 		}
+
+		ExpressionKind::Void => return Ok(None),
 
 		ExpressionKind::AnyCollapse => unreachable!(),
 	}

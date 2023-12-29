@@ -39,6 +39,7 @@ pub fn run_tests(args: Vec<String>) {
 		let expected_error = std::fs::read_to_string(entry.path().join("error.txt")).ok();
 		let expected_stdout = std::fs::read_to_string(entry.path().join("stdout.txt")).ok();
 		let expected_stderr = std::fs::read_to_string(entry.path().join("stderr.txt")).ok();
+		let panics = std::fs::metadata(entry.path().join("panics")).is_ok();
 		let mut error_output = String::new();
 
 		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone(), DebugCodegen::OnFailure) else {
@@ -66,7 +67,11 @@ pub fn run_tests(args: Vec<String>) {
 			.output()
 			.expect("Failed to launch test binary, this is probably an internal bug");
 
-		if !output.status.success() {
+		if panics && output.status.success() {
+			eprintln!("{RED}Test {name:?} was expected to end with failure exit code but didn't{RESET}");
+			failures.push(name);
+			continue;
+		} else if !panics && !output.status.success() {
 			eprintln!("{RED}Test {name:?} ended with failure exit code{RESET}");
 			failures.push(name);
 			continue;

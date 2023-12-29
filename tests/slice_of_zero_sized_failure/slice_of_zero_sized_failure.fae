@@ -2,7 +2,7 @@ import fae::stdout::print_bool, print_newline
 
 fn func(slice: []void): bool {
 	let a = slice[0]
-	let b = slice[1]
+	let b = slice[2]
 	return a == b
 }
 

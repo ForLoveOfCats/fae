@@ -413,11 +413,21 @@ impl<'a> Expression<'a> {
 			kind: ExpressionKind::AnyCollapse,
 		}
 	}
+
+	pub fn void(type_store: &TypeStore<'a>, span: Span) -> Self {
+		Expression {
+			span,
+			type_id: type_store.void_type_id(),
+			mutable: true, // TODO: Think about this harder?
+			kind: ExpressionKind::Void,
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind<'a> {
 	AnyCollapse,
+	Void,
 
 	Block(Block<'a>),
 	If(Box<If<'a>>),
@@ -446,6 +456,7 @@ impl<'a> ExpressionKind<'a> {
 	pub fn name_with_article(&self) -> &'static str {
 		match self {
 			ExpressionKind::AnyCollapse => "an AnyCollapse",
+			ExpressionKind::Void => "a void value",
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::If(_) => "a if expression",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",

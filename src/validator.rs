@@ -1680,9 +1680,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 		_ => expression.type_id,
 	};
 
-	if type_id.is_void(context.type_store) {
-		context.message(error!("Cannot create binding of `void`").span(statement.span));
-	} else if type_id.is_untyped_integer(context.type_store) {
+	if type_id.is_untyped_integer(context.type_store) {
 		context.message(error!("Cannot create binding of untyped integer").span(statement.span));
 	} else if type_id.is_untyped_decimal(context.type_store) {
 		context.message(error!("Cannot create binding of untyped decimal").span(statement.span));
@@ -2028,6 +2026,10 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			};
 
 			return Expression { span, type_id, mutable: false, kind };
+		}
+
+		SymbolKind::BuiltinType { type_id } if type_id.is_void(context.type_store) => {
+			return Expression::void(context.type_store, span);
 		}
 
 		kind => {

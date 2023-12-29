@@ -1,4 +1,4 @@
-import fae::stdout::print_i32, print_newline
+import fae::stdout::print_i32, print_bool, print_newline
 
 struct A {}
 
@@ -37,4 +37,16 @@ fn main() {
 	print_newline()
 
 	func_c(a.&mut)
+
+	print_cmp(void == void)
+	print_cmp(void != void)
+	print_cmp(void > void)
+	print_cmp(void >= void)
+	print_cmp(void < void)
+	print_cmp(void <= void)
+}
+
+fn print_cmp(result: bool) {
+	print_bool(result)
+	print_newline()
 }
