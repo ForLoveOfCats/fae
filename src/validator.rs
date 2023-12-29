@@ -828,7 +828,7 @@ fn validate_root_consts<'a>(
 		};
 
 		validate_block_consts(&mut context, &parsed_file.block);
-		assert_eq!(context.ssa.instructions.len(), 0); // TODO: const-evaluation
+		assert_eq!(context.ssa.instruction_count(), 0); // TODO: const-evaluation
 		std::mem::forget(context);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
