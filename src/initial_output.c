@@ -24,7 +24,7 @@ typedef float f32;
 
 #define check_slice_bounds(slice, index) \
 	if (index < 0 || slice.fi_1 <= index) { \
-		printf("Index %ld is out of range of slice with length %ld\n", index, slice.fi_1); \
+		fprintf(stderr, "Index %ld is out of range of slice with length %ld\n", index, slice.fi_1); \
 		exit(EXIT_FAILURE); \
 	}
 
