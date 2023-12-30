@@ -1,58 +1,39 @@
-# Features implemented:
- - Basic error-tolerant parsing, limited huristics for recovery but it's a start
-    - Single line comments
-    - Multi-line comments
-    - Strings with escape sequences, including \" and \\
- - Most of an error-tolerant type system and checker, much more advanced in its recovery
-    - Primative numeric types (i8-i64, u8-u64, f32-f64, usize)
-    - Codepoint literals (u32)
-    - Structs
-    - Pointers (mutable and non-mutable) (not constructable yet)
-    - Slices (mutable and non-mutable with access to pointer and len) (not constructable yet)
-    - Strings (slices of u8)
-    - Variable type inferrence from expression
-    - Generics
-        - Generic structs
-        - Generic functions
-        - Functions declared within generic functions inheriting type arguments
- - Compile time const value system
-    - Constant folding with compile time known numerics
-    - "Typeless" numeric constants, they "just work"
-    - Basic constant type inferrence
- - Bindings
-    - Mutable variables
-    - Immutable bindings
- - Beginnings of block expressions
-    - Accepted and handled correctly by the compiler (useless without `give`/`yield` keyword)
- - Module system
-    - Module structure derived from file system
-    - Imports of individual items
-    - Direct path referencing an item (no importing of scopes yet)
- - Extern functions
-    - Specify C header to include (deduplicated across the entire project)
-    - Define signature and the external symbol name
- - Basic codegen via emitting C
-  - De-sugar-s generic specializations into unique items
-  - Separates out sub-expressions to allow for block expressions
-    - Guarentees evaluation order as a nice bonus
+# Changes since last video:
+ - Lots of generic type system bug fixes
+ - Overhaul of how the compiler detects recursive types
+ - Compiler now knows/calculates the size and alignment of all types in the program
+ - Zero size type support
+ 	- `void` is now an actual unit value
+ - Primative numeric and pointer casts
+ - Pointer dereference (read and assign)
+ - Boolean values
+ 	- Boolean literals
+  	- Comparison operators (very naive typechecking)
+   	- Logical `and` and `or` (thinking about moving to `&&` and `||` instead)
+ - Slice indexing (get value at index and assign value at index)
+ 	- Generic type syntax changed (slight parsing hack)
+  	- Extremely primative runtime bounds checking (to be superseded by in-language error handling)
+ - Slice type syntax changed
+ - Array literals (currently only give a slice of the values rather than the actual array)
+ - Extremely basic flow control with `if` (missing `else if` and `else`, struct literals are a bit weird)
+ - A whole slew of new tests & test infrastructure improvements
+ 	- Previously tests could either generate expected errors or were expected to run to completion, now they can include expected stdout/stderr text which the resulting binary must output to pass
+  	- Tests can now expect to panic (to test things like runtype bounds checking)
+ - Started to tinker with a custom SSA representation
 
 
 # Short-medium term plans:
- - Control flow
-    - Needs to be done correctly to support enum variant flow typing in the future
+ - Custom SSA representation
+ - Beginnings of a custom optimization pass
+ - Custom AMD64 codegen
+ - Rip out existing C codegen (maybe replace with new one based on the SSA representation)
+ - More control flow
+    - Enum variant flow typing
+    - Loops with `break` and `continue`
+    - Actual block expression type inferrence and value returning
  - Infer generic arguments from actual function arguments
- - Pointer casts
- - Pointer dereferences
  - Methods
- - Traits (w/generic trait bounds)
  - Visibility modifiers for methods and fields
- - Anonymous structs
  - Enums
     - Independent variant types
     - Flow control based typing
- - Improve parser error handling huristics
- - Parallelize parsing and semantic analysis
-    - Planned from the beginning, mostly just type system stuff needs to be done
- - Code formatter
- - Tree-sitter grammer
- - Language server protocol server
