@@ -118,7 +118,10 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			ReadableKind::Mut => SymbolKind::Mut { readable_index },
 		};
 
-		self.push_symbol(Symbol { name, kind, span });
+		if name != "_" {
+			self.push_symbol(Symbol { name, kind, span });
+		}
+
 		readable_index
 	}
 
@@ -144,8 +147,12 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		self.type_store.type_name(self.function_store, self.module_path, type_id)
 	}
 
+	pub fn collapse_fair(&mut self, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Option<TypeId> {
+		self.type_store.collapse_fair(self.messages, self.function_store, a, b)
+	}
+
 	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
-		self.type_store.collapse_to(self.messages, to, from)
+		self.type_store.collapse_to(self.messages, self.function_store, to, from)
 	}
 }
 
@@ -241,17 +248,21 @@ impl<'a> Symbols<'a> {
 	}
 
 	fn push_symbol(&mut self, messages: &mut Messages, function_initial_symbol_len: usize, symbol: Symbol<'a>) {
-		// TODO: Allow duplicate symbol when symbol is variable
-		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
-			// `symbol.span` should only be None for builtin types, yes it's a hack, shush
-			messages.message(
-				error!("Duplicate symbol `{}`", symbol.name)
-					.span_if_some(symbol.span)
-					.note_if_some(found.span, "Original symbol here"),
-			);
-		} else {
-			self.symbols.push(symbol);
+		let is_binding = matches!(symbol.kind, SymbolKind::Let { .. } | SymbolKind::Mut { .. });
+
+		if !is_binding {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
+				// `symbol.span` should only be None for builtin types, yes it's a hack, shush
+				messages.message(
+					error!("Duplicate symbol `{}`", symbol.name)
+						.span_if_some(symbol.span)
+						.note_if_some(found.span, "Original symbol here"),
+				);
+			}
 		}
+
+		// Pushing the symbol even if duplicate seems to be a better failure state for following errors
+		self.symbols.push(symbol);
 	}
 
 	fn push_imported_symbol(
@@ -1965,8 +1976,12 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 			None => break,
 		};
 
-		let collapsed = context.type_store.collapse_to(context.messages, parameter.type_id, argument);
-		if !collapsed.unwrap_or(true) {
+		let collapsed = context
+			.type_store
+			.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
+			.unwrap_or(true);
+
+		if !collapsed {
 			let error = error!(
 				"Expected argument of type {}, got {}",
 				context.type_name(parameter.type_id),
@@ -2327,7 +2342,7 @@ fn validate_binary_operation<'a>(
 
 	let mut left = validate_expression(context, &operation.left);
 	let mut right = validate_expression(context, &operation.right);
-	let collapsed = context.type_store.collapse_fair(context.messages, &mut left, &mut right);
+	let collapsed = context.collapse_fair(&mut left, &mut right);
 
 	let Some(collapsed) = collapsed else {
 		context.message(

@@ -14,6 +14,6 @@ Validation error: ./tests/cast_failure/cast_failure.fae, line 11: Cannot cast un
   11|     0.1.(&mut u8)
           ^^^^^^^^^^^^^
 
-Validation error: ./tests/cast_failure/cast_failure.fae, line 12: Constant integer -1 is negative and so cannot be represented as a `u64`
+Validation error: ./tests/cast_failure/cast_failure.fae, line 12: Constant integer -1 is negative and so cannot be represented as `usize`
   12|     (-1).(&mut u8) // TODO: Support negative literals natively
            ^^

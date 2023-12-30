@@ -1,0 +1,5 @@
+fn main() {
+	mut a = true
+	let b = a = false
+	return void
+}

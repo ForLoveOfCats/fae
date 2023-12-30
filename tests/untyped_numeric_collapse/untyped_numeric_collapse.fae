@@ -1,0 +1,15 @@
+fn main() {
+	let _: u32 = 0
+	let _: u32 = -1 // negative
+
+	let _: u8 = 255
+	let _: u8 = 256 // to large
+
+	let _: i8 = 127
+	let _: i8 = 128 // to large
+	let _: i8 = -128
+	let _: i8 = -129 // to small
+
+	let _: f64 = 2.2
+	let _: f32 = 2.2 // loss of precision
+}

@@ -468,7 +468,13 @@ impl<'a> TypeStore<'a> {
 		true
 	}
 
-	pub fn collapse_fair(&self, messages: &mut Messages<'a>, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Option<TypeId> {
+	pub fn collapse_fair(
+		&self,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore,
+		a: &mut Expression<'a>,
+		b: &mut Expression<'a>,
+	) -> Option<TypeId> {
 		if a.type_id.entry == b.type_id.entry {
 			return Some(a.type_id);
 		}
@@ -495,7 +501,7 @@ impl<'a> TypeStore<'a> {
 				unreachable!();
 			};
 
-			let collapsed = self.collapse_to(messages, self.decimal_type_id, non_decimal)?;
+			let collapsed = self.collapse_to(messages, function_store, self.decimal_type_id, non_decimal)?;
 			return match collapsed {
 				true => Some(self.decimal_type_id),
 				false => None,
@@ -504,7 +510,7 @@ impl<'a> TypeStore<'a> {
 
 		if a_number {
 			assert!(!b_number);
-			let collapsed = self.collapse_to(messages, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
 			return match collapsed {
 				true => Some(b.type_id),
 				false => None,
@@ -513,7 +519,7 @@ impl<'a> TypeStore<'a> {
 
 		if b_number {
 			assert!(!a_number);
-			let collapsed = self.collapse_to(messages, a.type_id, b)?;
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
 			return match collapsed {
 				true => Some(a.type_id),
 				false => None,
@@ -523,7 +529,13 @@ impl<'a> TypeStore<'a> {
 		None
 	}
 
-	pub fn collapse_to(&self, messages: &mut Messages<'a>, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
+	pub fn collapse_to(
+		&self,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore,
+		to: TypeId,
+		from: &mut Expression<'a>,
+	) -> Option<bool> {
 		if to.entry == from.type_id.entry {
 			return Some(true);
 		}
@@ -551,7 +563,7 @@ impl<'a> TypeStore<'a> {
 			};
 
 			const MAX_F23_INTEGER: i128 = 16_777_215; // 2^24
-			const MAX_F64_INTEGER: i128 = 9_007_199_254_740_992; // 2^53
+			const MAX_F64_INTEGER: i128 = 9_007_199_254_740_991; // 2^53 - 1
 
 			if to_decimal {
 				if value.abs() > MAX_F64_INTEGER {
@@ -566,15 +578,16 @@ impl<'a> TypeStore<'a> {
 				return Some(true);
 			}
 
-			let (to_float, bit_count, max_float_integer) = match to.entry {
-				e if e == self.f32_type_id.entry => (true, 32, MAX_F23_INTEGER),
-				e if e == self.f64_type_id.entry => (true, 64, MAX_F64_INTEGER),
-				_ => (false, 0, 0),
+			let (to_float, max_float_integer) = match to.entry {
+				e if e == self.f32_type_id.entry => (true, MAX_F23_INTEGER),
+				e if e == self.f64_type_id.entry => (true, MAX_F64_INTEGER),
+				_ => (false, 0),
 			};
 
 			if to_float {
 				if value.abs() > max_float_integer {
-					let err = error!("Constant integer {value} is unable to be represented as an `f{bit_count}`");
+					let name = self.type_name(function_store, &[], to);
+					let err = error!("Constant integer {value} is unable to be represented as {name}");
 					messages.message(err.span(span));
 					return None;
 				}
@@ -604,17 +617,17 @@ impl<'a> TypeStore<'a> {
 				if value.is_negative() {
 					let min_value = -i128::pow(2, bit_count - 1);
 					if value < min_value {
-						messages.message(
-							error!("Constant integer {value} is too small to be represented as an `i{bit_count}`").span(span),
-						);
+						let name = self.type_name(function_store, &[], to);
+						let error = error!("Constant integer {value} is too small to be represented as {name}");
+						messages.message(error.span(span));
 						return None;
 					}
 				} else {
 					let max_value = i128::pow(2, bit_count - 1) - 1;
 					if value > max_value {
-						messages.message(
-							error!("Constant integer {value} is too large to be represented as an `i{bit_count}`").span(span),
-						);
+						let name = self.type_name(function_store, &[], to);
+						let error = error!("Constant integer {value} is too large to be represented as {name}");
+						messages.message(error.span(span));
 						return None;
 					}
 				}
@@ -626,17 +639,17 @@ impl<'a> TypeStore<'a> {
 
 			if to_unsigned {
 				if value.is_negative() {
-					messages.message(
-						error!("Constant integer {value} is negative and so cannot be represented as a `u{bit_count}`")
-							.span(span),
-					);
+					let name = self.type_name(function_store, &[], to);
+					let error = error!("Constant integer {value} is negative and so cannot be represented as {name}",);
+					messages.message(error.span(span));
 					return None;
 				}
 
-				let max_value = i128::pow(2, bit_count - 1) - 1;
+				let max_value = i128::pow(2, bit_count) - 1;
 				if value > max_value {
-					let err = error!("Constant integer {value} is too large to be represented as a `u{bit_count}`");
-					messages.message(err.span(span));
+					let name = self.type_name(function_store, &[], to);
+					let error = error!("Constant integer {value} is too large to be represented as {name}");
+					messages.message(error.span(span));
 					return None;
 				}
 
@@ -664,9 +677,8 @@ impl<'a> TypeStore<'a> {
 				if bit_count == 32 {
 					let cast = value as f32 as f64;
 					if cast != value {
-						let err = error!(
-							"Constant decimal {value} cannot be represented as an `f{bit_count}` without a loss in precision"
-						);
+						let name = self.type_name(function_store, &[], to);
+						let err = error!("Constant decimal {value} cannot be represented as {name} without a loss in precision");
 						messages.message(err.span(span));
 						return None;
 					}
