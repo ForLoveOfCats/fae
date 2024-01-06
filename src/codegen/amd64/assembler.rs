@@ -50,6 +50,76 @@ impl Assembler {
 		self.bytes.extend_from_slice(&intermediate.0);
 		self.finalize_instruction();
 	}
+
+	#[cfg(test)]
+	pub fn expect(&self, expected: &str) {
+		use crate::color::*;
+		use crate::error::WriteFmt;
+
+		let mut actual = String::new();
+		write!(&mut actual, "{self}");
+
+		let mut actual = actual.lines();
+		let mut expected = expected.lines();
+
+		let mut line_number = 0;
+		loop {
+			let actual = actual.next();
+			let expected = expected.next();
+			line_number += 1;
+
+			let (Some(actual), Some(expected)) = (actual, expected) else {
+				if let Some(actual) = actual {
+					println!("{RED}Actual instructions has more lines than expected{RESET}");
+					println!("{line_number:2}| Next actual line: {actual}");
+				} else if let Some(expected) = expected {
+					println!("{RED}Expected instructions has more lines than actual{RESET}");
+					println!("{line_number:2}| Next expected line: {expected}");
+				} else {
+					break;
+				}
+
+				println!();
+				println!("Full actual contents:");
+				println!("{self}");
+
+				std::process::exit(-1);
+			};
+
+			let mismatch = actual != expected;
+			if mismatch {
+				println!("{RED}Actual did not match expected:{RESET}");
+			}
+
+			println!("{line_number:2}| Expected: {expected}");
+			println!("{line_number:2}| Actual:   {actual}");
+			println!();
+
+			if mismatch {
+				std::process::exit(-1);
+			}
+		}
+	}
+
+	#[cfg(test)]
+	#[allow(unused)]
+	pub fn dump_test_case(&self) {
+		use crate::error::WriteFmt;
+
+		let mut actual = String::new();
+		write!(&mut actual, "{self}");
+
+		println!("assembler.expect(multi_line_string!(");
+
+		for (index, line) in actual.lines().enumerate() {
+			println!("    {line:?} // {}", index + 1);
+		}
+
+		println!("));");
+
+		// Don't have to remember to pass `-- --nocapture`
+		std::process::exit(-1);
+	}
 }
 
 impl std::fmt::Display for Assembler {
