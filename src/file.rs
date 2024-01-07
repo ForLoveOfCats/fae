@@ -13,7 +13,7 @@ pub struct SourceFile {
 }
 
 impl std::fmt::Debug for SourceFile {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		f.debug_struct("SourceFile")
 			.field("source", &"...")
 			.field("path", &self.path)

@@ -125,7 +125,7 @@ impl Assembler {
 }
 
 impl std::fmt::Display for Assembler {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let mut offset = 0;
 		for &length in &self.lengths {
 			let bytes = &self.bytes[offset..offset + length];

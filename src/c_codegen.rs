@@ -67,7 +67,7 @@ struct TempId {
 }
 
 impl std::fmt::Display for TempId {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		if self.dereference {
 			write!(f, "(*t_{})", self.id)
 		} else {
@@ -83,7 +83,7 @@ enum Step {
 }
 
 impl std::fmt::Display for Step {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
 			Step::Temp { temp_id } => temp_id.fmt(f),
 			Step::Readable { readable_index } => write!(f, "re_{}", readable_index),

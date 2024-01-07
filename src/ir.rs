@@ -45,7 +45,7 @@ pub enum SymbolKind {
 }
 
 impl std::fmt::Display for SymbolKind {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let name = match self {
 			SymbolKind::BuiltinType { .. } => "a built in type",
 			SymbolKind::Type { .. } => "a type",
