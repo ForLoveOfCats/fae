@@ -1,4 +1,5 @@
-use super::assembler::*;
+use crate::codegen::amd64::assembler::*;
+use crate::codegen::intermediate::Intermediate32;
 
 #[test]
 fn test_add_intermediate32_to_register32() {

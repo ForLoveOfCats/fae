@@ -1,3 +1,5 @@
+use crate::codegen::intermediate::Intermediate32;
+
 pub struct Assembler {
 	bytes: Vec<u8>,
 	start_offset: usize,
@@ -142,15 +144,6 @@ impl std::fmt::Display for Assembler {
 		Ok(())
 	}
 }
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Intermediate8(pub [u8; 1]);
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Intermediate16(pub [u8; 2]);
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Intermediate32(pub [u8; 4]);
 
 pub enum AddressingMode {
 	RegisterDirect = 0b11,

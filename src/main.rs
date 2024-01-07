@@ -12,7 +12,6 @@ mod ir;
 mod parser;
 mod project;
 mod span;
-mod ssa;
 mod test;
 mod tokenizer;
 mod tree;
@@ -25,6 +24,20 @@ use c_codegen::DebugCodegen;
 use project::build_project;
 
 fn main() {
+	let mut module = codegen::ssa::SsaModule::new();
+	module.start_function();
+	let number = module.push_move_32(42);
+	let condition = module.push_move_8(true);
+	let label = module.push_branch(condition);
+	let a = module.push_move_32(1);
+	module.push_label(label);
+	let b = module.push_move_32(0);
+	let phi = module.push_phi(vec![a, b]);
+	module.push_add(type_store::NumericKind::I32, number, phi);
+
+	println!("{module}");
+	return;
+
 	let mut args = std::env::args_os().skip(1);
 	if args.next().as_deref() == Some(OsStr::new("t")) {
 		let args = args.map(|s| s.to_str().expect("test name arguments must be valid Unicode").to_owned());
