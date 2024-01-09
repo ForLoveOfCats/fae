@@ -34,8 +34,10 @@ fn main() {
 	let b = module.push_move_32(0);
 	let phi = module.push_phi(vec![a, b]);
 	module.push_add(type_store::NumericKind::I32, number, phi);
+	// println!("{module}");
 
-	println!("{module}");
+	let elf = codegen::amd64::elf::construct_elf(module);
+	std::fs::write("./shared/executable.x64", elf).unwrap();
 	return;
 
 	let mut args = std::env::args_os().skip(1);
