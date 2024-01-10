@@ -1,14 +1,14 @@
 use crate::codegen::intermediate::Intermediate32;
 
-pub struct Assembler {
-	bytes: Vec<u8>,
+pub struct Assembler<'a> {
+	bytes: &'a mut Vec<u8>,
 	start_offset: usize,
 	lengths: Vec<usize>,
 }
 
-impl Assembler {
-	pub fn new() -> Assembler {
-		Assembler { bytes: Vec::new(), start_offset: 0, lengths: Vec::new() }
+impl<'a> Assembler<'a> {
+	pub fn new(bytes: &'a mut Vec<u8>) -> Assembler<'a> {
+		Assembler { bytes, start_offset: 0, lengths: Vec::new() }
 	}
 
 	fn finalize_instruction(&mut self) {
@@ -20,6 +20,12 @@ impl Assembler {
 		const MARKER: u8 = 0b0100 << 4;
 		let prefix = MARKER | (W as u8) << 3 | (R as u8) << 2 | (X as u8) << 1 | (B as u8);
 		self.bytes.push(prefix);
+	}
+
+	fn register_32_rex_prefix(&mut self, register: Register32) {
+		if register as u8 >= 8 {
+			self.rex_prefix::<false, false, false, true>();
+		}
 	}
 
 	// reg and rm may not be > 0b111 (7)
@@ -38,7 +44,34 @@ impl Assembler {
 		}
 	}
 
-	pub fn add_intermediate32_to_register32(&mut self, intermediate: Intermediate32, destination_register: Register32) {
+	// make sure to add mod_rm before instruction if using register >= r8w
+	fn plus_rd(&mut self, register: Register32) {
+		let mut value = register as u8;
+		if value >= 8 {
+			value -= 8;
+		}
+
+		*self.bytes.last_mut().unwrap() += value;
+	}
+
+	pub fn move_intermediate32_to_register32(
+		&mut self,
+		intermediate: impl Into<Intermediate32>,
+		destination_register: Register32,
+	) {
+		self.register_32_rex_prefix(destination_register);
+		self.bytes.push(0xb8);
+		self.plus_rd(destination_register);
+		self.bytes.extend_from_slice(&intermediate.into().0);
+		self.finalize_instruction();
+	}
+
+	pub fn add_intermediate32_to_register32(
+		&mut self,
+		intermediate: impl Into<Intermediate32>,
+		destination_register: Register32,
+	) {
+		let intermediate = intermediate.into();
 		if destination_register == Register32::Eax {
 			self.bytes.push(0x05);
 			self.bytes.extend_from_slice(&intermediate.0);
@@ -50,6 +83,12 @@ impl Assembler {
 		self.bytes.push(0x81);
 		self.mod_rm(AddressingMode::RegisterDirect, 0, rm);
 		self.bytes.extend_from_slice(&intermediate.0);
+		self.finalize_instruction();
+	}
+
+	pub fn syscall(&mut self) {
+		self.bytes.push(0x0f);
+		self.bytes.push(0x05);
 		self.finalize_instruction();
 	}
 
@@ -124,7 +163,7 @@ impl Assembler {
 	}
 }
 
-impl std::fmt::Display for Assembler {
+impl<'a> std::fmt::Display for Assembler<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let mut offset = 0;
 		for &length in &self.lengths {

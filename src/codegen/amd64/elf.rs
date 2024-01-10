@@ -1,5 +1,6 @@
 use std::mem::{size_of, transmute};
 
+use crate::codegen::amd64::assembler::{Assembler, Register32};
 use crate::codegen::amd64::codegen;
 use crate::codegen::ssa::SsaModule;
 
@@ -113,7 +114,11 @@ pub fn construct_elf(module: SsaModule) -> Vec<u8> {
 		data.push(0);
 	}
 
-	codegen::generate(module, &mut data);
+	let mut assembler = Assembler::new(&mut data);
+	codegen::generate(module, &mut assembler);
+	assembler.move_intermediate32_to_register32(0, Register32::Edi); // Return code
+	assembler.move_intermediate32_to_register32(0x3c, Register32::Eax); // Exit syscall
+	assembler.syscall();
 	let code_size = data.len() - program_header_table_start;
 
 	let program_header_table = ProgramHeader::new(code_size as u64);

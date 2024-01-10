@@ -5,7 +5,8 @@ use crate::codegen::intermediate::Intermediate32;
 fn test_add_intermediate32_to_register32() {
 	let v = Intermediate32(0x12345678_u32.to_le_bytes());
 
-	let mut assembler = Assembler::new();
+	let mut bytes = Vec::new();
+	let mut assembler = Assembler::new(&mut bytes);
 	assembler.add_intermediate32_to_register32(v, Register32::Eax);
 	assembler.add_intermediate32_to_register32(v, Register32::Ebx);
 	assembler.add_intermediate32_to_register32(v, Register32::Ecx);

@@ -1,7 +1,4 @@
-use crate::codegen::ssa::SsaModule;
+use crate::codegen::amd64::assembler::{Assembler, Register32};
+use crate::codegen::{intermediate::Intermediate32, ssa::SsaModule};
 
-pub fn generate(module: SsaModule, code: &mut Vec<u8>) {
-	code.extend_from_slice(&[
-		0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00, 0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00, 0x0F, 0x05,
-	]);
-}
+pub fn generate(module: SsaModule, assembler: &mut Assembler) {}
