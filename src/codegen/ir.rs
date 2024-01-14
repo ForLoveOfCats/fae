@@ -63,6 +63,10 @@ pub enum Instruction {
 		right: Source,
 		destination: MemorySlot,
 	},
+
+	ForceUsed {
+		slot: MemorySlot,
+	},
 }
 
 impl Instruction {
@@ -106,10 +110,14 @@ impl Instruction {
 				push_source(left);
 				push_source(right);
 			}
+
+			Self::ForceUsed { slot } => {
+				slots[index] = slot;
+				index += 1;
+			}
 		}
 
 		let slots = &slots[0..index];
-		dbg!(self, slots.len());
 		slots
 	}
 
@@ -126,6 +134,7 @@ impl Instruction {
 			Instruction::Subtract { destination, .. } => Some(destination),
 			Instruction::Multiply { destination, .. } => Some(destination),
 			Instruction::Divide { destination, .. } => Some(destination),
+			Instruction::ForceUsed { slot } => Some(slot),
 		}
 	}
 }
@@ -206,6 +215,10 @@ impl MemorySlot {
 		MemorySlot { index }
 	}
 
+	pub fn index(self) -> usize {
+		self.index as usize
+	}
+
 	pub fn display(self, module: &IrModule) -> FmtDisplayMemorySlot {
 		FmtDisplayMemorySlot {
 			slot: self,
@@ -221,11 +234,11 @@ pub struct FmtDisplayMemorySlot<'a> {
 
 impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		let metadata = self.borrowed_metadata[self.slot.index as usize];
-		if metadata.location.is_none() {
-			write!(f, "_")
-		} else {
-			write!(f, "[{}]", self.slot.index)
+		let metadata = self.borrowed_metadata[self.slot.index()];
+		match metadata.location {
+			Some(Location::Stack) => write!(f, "${}", self.slot.index),
+			Some(Location::Register(reg)) => write!(f, "%{reg}"),
+			None => write!(f, "_"),
 		}
 	}
 }
@@ -233,7 +246,14 @@ impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct SlotMetadata {
 	pub reads: u32,
+	pub force_used: bool,
 	pub location: Option<Location>,
+}
+
+impl SlotMetadata {
+	pub fn is_unused(self) -> bool {
+		self.reads <= 0 && !self.force_used
+	}
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -322,7 +342,7 @@ impl IrModule {
 	pub fn next_memory_slot(&mut self) -> MemorySlot {
 		let current_function = self.current_function_mut();
 		let index = current_function.memory_slots.len() as u16;
-		let metadata = SlotMetadata { reads: 0, location: Some(Location::Stack) };
+		let metadata = SlotMetadata { reads: 0, force_used: false, location: Some(Location::Stack) };
 		current_function.memory_slots.push(metadata);
 		MemorySlot { index }
 	}
@@ -340,7 +360,11 @@ impl IrModule {
 		let slots = instruction.source_slots(&mut slots_buffer);
 
 		for slot in slots {
-			current_function.memory_slots[slot.index as usize].reads += 1;
+			current_function.memory_slots[slot.index()].reads += 1;
+		}
+
+		if let Instruction::ForceUsed { slot } = instruction {
+			current_function.memory_slots[slot.index()].force_used = true;
 		}
 
 		self.instructions.push(instruction);
@@ -355,17 +379,13 @@ impl IrModule {
 		else_label
 	}
 
-	pub fn push_label(&mut self, label: Label) {
-		self.instructions.push(Instruction::Label { label });
-	}
-
 	pub fn debug_dump(&mut self) {
 		self.current_function = 0;
 
 		if self.optimized {
-			println!("Optimized SSA Module:");
+			println!("Optimized IR Module:");
 		} else {
-			println!("Unoptimized SSA Module:");
+			println!("Unoptimized IR Module:");
 		}
 		let indent = || print!("    ");
 		let function_label_indent = || print!("  ");
@@ -375,7 +395,7 @@ impl IrModule {
 				Instruction::Function { function } => {
 					self.current_function = function.index;
 					if index != 0 {
-						println!("\n");
+						println!();
 					}
 					function_label_indent();
 					println!("Function {function}");
@@ -449,6 +469,11 @@ impl IrModule {
 						left.display(self),
 						right.display(self),
 					);
+				}
+
+				Instruction::ForceUsed { slot } => {
+					indent();
+					println!("ForceUsed {}", slot.display(self));
 				}
 			}
 		}

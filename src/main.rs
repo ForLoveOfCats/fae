@@ -38,20 +38,37 @@ fn main() {
 
 	let mut module = codegen::ir::IrModule::new();
 	module.start_function();
+	let first = module.next_memory_slot();
+	module.push(Instruction::Move32 { value: Intermediate32::from(40).into(), destination: first });
+	let second = module.next_memory_slot();
+	module.push(Instruction::Move32 { value: Intermediate32::from(2).into(), destination: second });
+	let third = module.next_memory_slot();
+	module.push(Instruction::Add {
+		kind: NumericKind::I32,
+		left: first.into(),
+		right: second.into(),
+		destination: third,
+	});
+	// module.push(Instruction::ForceUsed { slot: third });
+
+	// let mut module = codegen::ir::IrModule::new();
+	module.start_function();
 	let condition = module.next_memory_slot();
 	module.push(Instruction::Move8 { value: true.into(), destination: condition });
 	let a = module.next_memory_slot();
 	module.push(Instruction::Move32 { value: 0.into(), destination: a });
 	let label = module.push_branch(condition);
 	module.push(Instruction::Move32 { value: 1.into(), destination: a });
-	module.push_label(label);
-	let addend = module.next_memory_slot();
+	module.push(Instruction::Label { label });
+	let unused = module.next_memory_slot();
+	module.push(Instruction::Move32 { value: 69.into(), destination: unused });
 	module.push(Instruction::Add {
 		kind: NumericKind::U32,
 		left: a.into(),
 		right: Intermediate32::from(42).into(),
 		destination: a,
 	});
+	module.push(Instruction::ForceUsed { slot: a });
 
 	// let number = module.push_move_32(42);
 	// let condition = module.push_move_8(true);
@@ -64,7 +81,7 @@ fn main() {
 
 	module.debug_dump();
 	println!("\n");
-	optimization::optimize(&mut module);
+	optimization::optimize(&mut module, 16);
 	module.debug_dump();
 
 	// let elf = codegen::amd64::elf::construct_elf(module);
