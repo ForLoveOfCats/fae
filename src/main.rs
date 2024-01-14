@@ -23,7 +23,10 @@ use std::{ffi::OsStr, path::Path};
 use c_codegen::DebugCodegen;
 use project::build_project;
 
-use crate::codegen::optimization;
+use crate::{
+	codegen::{intermediate::Intermediate32, ir::Instruction, optimization},
+	type_store::NumericKind,
+};
 
 fn main() {
 	let mut args = std::env::args_os().skip(1);
@@ -32,17 +35,32 @@ fn main() {
 		test::run_tests(args.collect());
 		return;
 	}
-	
-	let mut module = codegen::ssa::SsaModule::new();
+
+	let mut module = codegen::ir::IrModule::new();
 	module.start_function();
-	let number = module.push_move_32(42);
-	let condition = module.push_move_8(true);
+	let condition = module.next_memory_slot();
+	module.push(Instruction::Move8 { value: true.into(), destination: condition });
+	let a = module.next_memory_slot();
+	module.push(Instruction::Move32 { value: 0.into(), destination: a });
 	let label = module.push_branch(condition);
-	let a = module.push_move_32(1);
+	module.push(Instruction::Move32 { value: 1.into(), destination: a });
 	module.push_label(label);
-	let b = module.push_move_32(0);
-	let phi = module.push_phi(vec![a, b]);
-	module.push_add(type_store::NumericKind::I32, number, phi);
+	let addend = module.next_memory_slot();
+	module.push(Instruction::Add {
+		kind: NumericKind::U32,
+		left: a.into(),
+		right: Intermediate32::from(42).into(),
+		destination: a,
+	});
+
+	// let number = module.push_move_32(42);
+	// let condition = module.push_move_8(true);
+	// let label = module.push_branch(condition);
+	// let a = module.push_move_32(1);
+	// module.push_label(label);
+	// let b = module.push_move_32(0);
+	// let phi = module.push_phi(vec![a, b]);
+	// module.push_add(type_store::NumericKind::I32, number, phi);
 
 	module.debug_dump();
 	println!("\n");
