@@ -631,6 +631,8 @@ fn generate_unary_operation(context: &mut Context, operation: &UnaryOperation, o
 			// C null, as that could confuse validity checks. Assuming codegen is correct, we will never emit
 			// a dereference of this pointer unless the program is doing something unsafe. As far as the C
 			// compiler is concerned, the pointee is an opaque type.
+			// TODO: Generate `alignment_of<T>()` instead of `1`
+
 			if !generate_type_id(context, operation.type_id, output)? {
 				return Ok(None);
 			}
