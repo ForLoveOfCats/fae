@@ -120,7 +120,7 @@ fn main() {
 
 	module.debug_dump();
 	println!("\n\n\n");
-	optimization::optimize(&mut module, 16);
+	optimization::optimize(&mut module);
 	module.debug_dump();
 
 	// let elf = codegen::amd64::elf::construct_elf(module);

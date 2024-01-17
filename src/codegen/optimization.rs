@@ -4,14 +4,13 @@ use crate::codegen::ir::{FlowControlId, Source};
 
 use super::ir::{FunctionData, Instruction, InstructionKind, IrModule, MemorySlot};
 
-// TODO: Pass closure capable of reserving registers for calling convention
-pub fn optimize(module: &mut IrModule, register_count: u8) {
+pub fn optimize(module: &mut IrModule) {
 	module.current_function = 0;
-	module_forward_pass(module, register_count);
+	module_forward_pass(module);
 	module.optimized = true;
 }
 
-fn module_forward_pass(module: &mut IrModule, register_count: u8) {
+fn module_forward_pass(module: &mut IrModule) {
 	let mut instruction_index = 0;
 
 	while instruction_index < module.instructions.len() {
