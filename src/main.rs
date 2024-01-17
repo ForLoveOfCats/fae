@@ -23,7 +23,7 @@ use std::{ffi::OsStr, path::Path};
 use c_codegen::DebugCodegen;
 use project::build_project;
 
-use crate::codegen::intermediate::Intermediate32;
+use crate::codegen::intermediate::{Intermediate32, Intermediate8};
 use crate::codegen::ir::InstructionKind;
 use crate::codegen::optimization;
 use crate::type_store::NumericKind;
@@ -48,7 +48,7 @@ fn main() {
 
 	module.start_function();
 	let counter = module.next_memory_slot();
-	module.push(InstructionKind::Move32 { value: Intermediate32::from(10), destination: counter });
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(10u8), destination: counter });
 	let loop_id = module.push_while_loop(counter);
 	module.push(InstructionKind::Subtract {
 		kind: NumericKind::U32,
@@ -80,6 +80,28 @@ fn main() {
 	});
 
 	module.start_function();
+	let first = module.next_memory_slot();
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(40).into(), destination: first });
+	let second = module.next_memory_slot();
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(2).into(), destination: second });
+	let third = module.next_memory_slot();
+	module.push(InstructionKind::Add {
+		kind: NumericKind::I32,
+		left: first.into(),
+		right: second.into(),
+		destination: third,
+	});
+	let forth = module.next_memory_slot();
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(3).into(), destination: forth });
+	module.push(InstructionKind::Add {
+		kind: NumericKind::I32,
+		left: third.into(),
+		right: second.into(),
+		destination: forth,
+	});
+	module.push(InstructionKind::ForceUsed { slot: forth });
+
+	module.start_function();
 	let condition = module.next_memory_slot();
 	module.push(InstructionKind::Move8 { value: true.into(), destination: condition });
 	let a = module.next_memory_slot();
@@ -95,7 +117,6 @@ fn main() {
 		right: Intermediate32::from(42).into(),
 		destination: a,
 	});
-	// module.push(InstructionKind::ForceUsed { slot: a });
 
 	module.debug_dump();
 	println!("\n\n\n");

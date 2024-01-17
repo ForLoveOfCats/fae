@@ -252,10 +252,10 @@ pub struct FmtDisplayMemorySlot<'a> {
 impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let metadata = self.borrowed_metadata[self.slot.index()];
-		match metadata.location {
-			Some(Location::Stack) => write!(f, "${}", self.slot.index),
-			Some(Location::Register(reg)) => write!(f, "%{reg}"),
-			None => write!(f, "_"),
+		if metadata.is_unused() {
+			write!(f, "_")
+		} else {
+			write!(f, "${}", self.slot.index)
 		}
 	}
 }
@@ -264,12 +264,19 @@ impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
 pub struct SlotMetadata {
 	pub reads: u32,
 	pub force_used: bool,
-	pub location: Option<Location>,
 }
 
 impl SlotMetadata {
 	pub fn is_unused(self) -> bool {
 		self.reads <= 0 && !self.force_used
+	}
+
+	pub fn increment_reads(&mut self) {
+		self.reads += 1;
+	}
+
+	pub fn decrement_reads(&mut self) {
+		self.reads = self.reads.saturating_sub(1);
 	}
 }
 
@@ -284,7 +291,7 @@ impl std::fmt::Display for Label {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlowControlId {
 	index: u32,
 }
@@ -293,12 +300,6 @@ impl std::fmt::Display for FlowControlId {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		write!(f, "^{}", self.index)
 	}
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Location {
-	Stack,
-	Register(u8),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -383,7 +384,7 @@ impl IrModule {
 	pub fn next_memory_slot(&mut self) -> MemorySlot {
 		let current_function = self.current_function_mut();
 		let index = current_function.memory_slots.len() as u16;
-		let metadata = SlotMetadata { reads: 0, force_used: false, location: Some(Location::Stack) };
+		let metadata = SlotMetadata { reads: 0, force_used: false };
 		current_function.memory_slots.push(metadata);
 		MemorySlot { index }
 	}
@@ -409,7 +410,7 @@ impl IrModule {
 				}
 			}
 
-			current_function.memory_slots[source_slot.index()].reads += 1;
+			current_function.memory_slots[source_slot.index()].increment_reads();
 		}
 
 		if let InstructionKind::ForceUsed { slot } = instruction.kind {
@@ -448,7 +449,7 @@ impl IrModule {
 
 		let mut current_line_number = 1;
 		let line_number = |current_line_number: &mut u32| {
-			print!("{current_line_number:3}| ");
+			print!("{current_line_number:3}|");
 			*current_line_number += 1;
 		};
 
@@ -457,11 +458,13 @@ impl IrModule {
 			line_number(current_line_number);
 
 			if instruction.removed {
-				print!("✕");
+				print!("✕| ");
+			} else {
+				print!(" | ");
 			}
 
 			for _ in 0..indent_level {
-				print!("  ");
+				print!("    ");
 			}
 		};
 
@@ -473,7 +476,7 @@ impl IrModule {
 						println!();
 					}
 					line_number(&mut current_line_number);
-					println!("Function {function}");
+					println!(" | Function {function}");
 					indent_level = 1
 				}
 

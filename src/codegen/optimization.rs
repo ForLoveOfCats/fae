@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use crate::codegen::ir::{FlowControlId, Source};
+
 use super::ir::{FunctionData, Instruction, InstructionKind, IrModule, MemorySlot};
 
 // TODO: Pass closure capable of reserving registers for calling convention
@@ -29,8 +31,6 @@ fn module_forward_pass(module: &mut IrModule, register_count: u8) {
 }
 
 fn function_forward_pass(module: &mut IrModule, mut instruction_index: usize) -> usize {
-	mark_first_layer_unused_memory_slots(module);
-
 	while instruction_index < module.instructions.len() {
 		let instruction = module.instructions[instruction_index];
 		if let InstructionKind::Function { .. } = instruction.kind {
@@ -43,23 +43,23 @@ fn function_forward_pass(module: &mut IrModule, mut instruction_index: usize) ->
 	instruction_index
 }
 
-fn mark_first_layer_unused_memory_slots(module: &mut IrModule) {
-	let current_function = module.current_function_mut();
-	for slot in &mut current_function.memory_slots {
-		if slot.is_unused() {
-			slot.location = None;
-		}
-	}
+struct FlowControlStackEntry {
+	id: FlowControlId,
+	index: usize,
+	live_instructions: usize,
 }
 
 fn function_reverse_pass(module: &mut IrModule, range: Range<usize>) {
 	// inlined `current_function_mut` to satiate borrow checker
 	let current_function = &mut module.functions[module.current_function as usize];
 
+	let mut flow_control_stack = Vec::new();
+
 	for instruction_index in range.rev() {
 		let instruction = &mut module.instructions[instruction_index];
 		mark_sources_unused_if_destination_unused(current_function, instruction);
-		prune_instruction_if_destination_unused(current_function, instruction);
+		mark_instruction_removed_unneeded(current_function, instruction, &flow_control_stack);
+		maintain_flow_control_stack(&mut module.instructions, instruction_index, &mut flow_control_stack);
 	}
 }
 
@@ -74,18 +74,74 @@ fn mark_sources_unused_if_destination_unused(current_function: &mut FunctionData
 
 		for source_slot in source_slots {
 			let slot_metadata = &mut current_function.memory_slots[source_slot.index()];
-			slot_metadata.reads = slot_metadata.reads.saturating_sub(1);
-
-			if slot_metadata.is_unused() {
-				slot_metadata.location = None;
-			}
+			slot_metadata.decrement_reads();
 		}
 	}
 }
 
-fn prune_instruction_if_destination_unused(current_function: &FunctionData, instruction: &mut Instruction) {
+fn mark_instruction_removed_unneeded(
+	current_function: &mut FunctionData,
+	instruction: &mut Instruction,
+	flow_control_stack: &[FlowControlStackEntry],
+) {
 	if let Some(destination) = instruction.destination() {
-		let slot_metadata = current_function.memory_slots[destination.index()];
-		instruction.removed = slot_metadata.is_unused();
+		let destination_metadata = current_function.memory_slots[destination.index()];
+		instruction.removed = destination_metadata.is_unused();
+		return;
+	}
+
+	let (id, conditional) = match instruction.kind {
+		InstructionKind::Branch { id, conditional } | InstructionKind::While { id, conditional } => (id, conditional),
+		_ => return,
+	};
+
+	let stack_entry = flow_control_stack.last().unwrap();
+	assert_eq!(stack_entry.id, id);
+
+	if stack_entry.live_instructions <= 0 {
+		instruction.removed = true;
+
+		if let Source::MemorySlot(slot) = conditional {
+			let slot_metadata = &mut current_function.memory_slots[slot.index()];
+			slot_metadata.decrement_reads()
+		}
+	}
+}
+
+fn maintain_flow_control_stack(
+	instructions: &mut [Instruction],
+	instruction_index: usize,
+	flow_control_stack: &mut Vec<FlowControlStackEntry>,
+) {
+	let instruction = instructions[instruction_index];
+	match instruction.kind {
+		InstructionKind::End { id } => {
+			let entry = FlowControlStackEntry { id, index: instruction_index, live_instructions: 0 };
+			flow_control_stack.push(entry);
+			return;
+		}
+
+		InstructionKind::Branch { id, .. } | InstructionKind::While { id, .. } => {
+			let stack_entry = flow_control_stack.pop().unwrap();
+			assert_eq!(stack_entry.id, id);
+
+			if instruction.removed {
+				let end = &mut instructions[stack_entry.index];
+				match end.kind {
+					InstructionKind::End { .. } => end.removed = true,
+					_ => unreachable!(),
+				}
+			}
+
+			return;
+		}
+
+		_ => {}
+	}
+
+	if let Some(stack_entry) = flow_control_stack.last_mut() {
+		if !instruction.removed {
+			stack_entry.live_instructions += 1;
+		}
 	}
 }
