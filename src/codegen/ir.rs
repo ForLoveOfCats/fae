@@ -2,7 +2,13 @@ use crate::codegen::intermediate::*;
 use crate::type_store::NumericKind;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Instruction {
+pub struct Instruction {
+	pub kind: InstructionKind,
+	pub removed: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum InstructionKind {
 	Function {
 		function: Function,
 	},
@@ -84,43 +90,43 @@ impl Instruction {
 			}
 		};
 
-		match self {
-			Instruction::Function { .. }
-			| Instruction::End { .. }
-			| Instruction::Move8 { .. }
-			| Instruction::Move16 { .. }
-			| Instruction::Move32 { .. }
-			| Instruction::Move64 { .. } => return &[],
+		match self.kind {
+			InstructionKind::Function { .. }
+			| InstructionKind::End { .. }
+			| InstructionKind::Move8 { .. }
+			| InstructionKind::Move16 { .. }
+			| InstructionKind::Move32 { .. }
+			| InstructionKind::Move64 { .. } => return &[],
 
-			Instruction::Branch { conditional, .. } => {
+			InstructionKind::Branch { conditional, .. } => {
 				push_source(conditional);
 			}
 
-			Instruction::While { conditional, .. } => {
+			InstructionKind::While { conditional, .. } => {
 				push_source(conditional);
 			}
 
-			Instruction::Add { left, right, .. } => {
+			InstructionKind::Add { left, right, .. } => {
 				push_source(left);
 				push_source(right);
 			}
 
-			Instruction::Subtract { left, right, .. } => {
+			InstructionKind::Subtract { left, right, .. } => {
 				push_source(left);
 				push_source(right);
 			}
 
-			Instruction::Multiply { left, right, .. } => {
+			InstructionKind::Multiply { left, right, .. } => {
 				push_source(left);
 				push_source(right);
 			}
 
-			Instruction::Divide { left, right, .. } => {
+			InstructionKind::Divide { left, right, .. } => {
 				push_source(left);
 				push_source(right);
 			}
 
-			Self::ForceUsed { slot } => {
+			InstructionKind::ForceUsed { slot } => {
 				slots[index] = slot;
 				index += 1;
 			}
@@ -131,19 +137,21 @@ impl Instruction {
 	}
 
 	pub fn destination(self) -> Option<MemorySlot> {
-		match self {
-			Instruction::Function { .. } | Instruction::Branch { .. } | Instruction::While { .. } | Instruction::End { .. } => {
-				None
-			}
-			Instruction::Move8 { destination, .. } => Some(destination),
-			Instruction::Move16 { destination, .. } => Some(destination),
-			Instruction::Move32 { destination, .. } => Some(destination),
-			Instruction::Move64 { destination, .. } => Some(destination),
-			Instruction::Add { destination, .. } => Some(destination),
-			Instruction::Subtract { destination, .. } => Some(destination),
-			Instruction::Multiply { destination, .. } => Some(destination),
-			Instruction::Divide { destination, .. } => Some(destination),
-			Instruction::ForceUsed { slot } => Some(slot),
+		match self.kind {
+			InstructionKind::Function { .. }
+			| InstructionKind::Branch { .. }
+			| InstructionKind::While { .. }
+			| InstructionKind::End { .. } => None,
+
+			InstructionKind::Move8 { destination, .. } => Some(destination),
+			InstructionKind::Move16 { destination, .. } => Some(destination),
+			InstructionKind::Move32 { destination, .. } => Some(destination),
+			InstructionKind::Move64 { destination, .. } => Some(destination),
+			InstructionKind::Add { destination, .. } => Some(destination),
+			InstructionKind::Subtract { destination, .. } => Some(destination),
+			InstructionKind::Multiply { destination, .. } => Some(destination),
+			InstructionKind::Divide { destination, .. } => Some(destination),
+			InstructionKind::ForceUsed { slot } => Some(slot),
 		}
 	}
 }
@@ -382,21 +390,29 @@ impl IrModule {
 
 	pub fn start_function(&mut self) -> Function {
 		let function = self.next_function();
-		self.push(Instruction::Function { function });
+		self.push(InstructionKind::Function { function });
 		function
 	}
 
-	pub fn push(&mut self, instruction: Instruction) {
+	pub fn push(&mut self, kind: InstructionKind) {
+		let instruction = Instruction { kind, removed: false };
 		let current_function = self.current_function_mut();
 
-		let mut slots_buffer = [MemorySlot::default(); 2];
-		let slots = instruction.source_slots(&mut slots_buffer);
+		let mut source_slots_buffer = [MemorySlot::default(); 2];
+		let source_slots = instruction.source_slots(&mut source_slots_buffer);
+		let destination = instruction.destination();
 
-		for slot in slots {
-			current_function.memory_slots[slot.index()].reads += 1;
+		for source_slot in source_slots {
+			if let Some(destination) = destination {
+				if source_slot.index == destination.index {
+					continue;
+				}
+			}
+
+			current_function.memory_slots[source_slot.index()].reads += 1;
 		}
 
-		if let Instruction::ForceUsed { slot } = instruction {
+		if let InstructionKind::ForceUsed { slot } = instruction.kind {
 			current_function.memory_slots[slot.index()].force_used = true;
 		}
 
@@ -408,7 +424,7 @@ impl IrModule {
 	pub fn push_branch(&mut self, conditional: impl Into<Source>) -> FlowControlId {
 		let conditional = conditional.into();
 		let id = self.next_control_flow_id();
-		self.push(Instruction::Branch { id, conditional });
+		self.push(InstructionKind::Branch { id, conditional });
 		id
 	}
 
@@ -417,7 +433,7 @@ impl IrModule {
 	pub fn push_while_loop(&mut self, conditional: impl Into<Source>) -> FlowControlId {
 		let conditional = conditional.into();
 		let id = self.next_control_flow_id();
-		self.push(Instruction::While { id, conditional });
+		self.push(InstructionKind::While { id, conditional });
 		id
 	}
 
@@ -437,16 +453,21 @@ impl IrModule {
 		};
 
 		let mut indent_level = 1;
-		let indent = |indent_level: u32, current_line_number: &mut u32| {
+		let indent = |indent_level: u32, current_line_number: &mut u32, instruction: Instruction| {
 			line_number(current_line_number);
+
+			if instruction.removed {
+				print!("✕");
+			}
+
 			for _ in 0..indent_level {
 				print!("  ");
 			}
 		};
 
-		for (index, instruction) in self.instructions.iter().enumerate() {
-			match instruction {
-				Instruction::Function { function } => {
+		for (index, &instruction) in self.instructions.iter().enumerate() {
+			match instruction.kind {
+				InstructionKind::Function { function } => {
 					self.current_function = function.index;
 					if index != 0 {
 						println!();
@@ -456,46 +477,46 @@ impl IrModule {
 					indent_level = 1
 				}
 
-				Instruction::Branch { id, conditional } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Branch { id, conditional } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("Branch {} else → {id}", conditional.display(self));
 					indent_level += 1;
 				}
 
-				Instruction::While { conditional, id } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::While { conditional, id } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("While {}: {id}", conditional.display(self));
 					indent_level += 1;
 				}
 
-				Instruction::End { id } => {
+				InstructionKind::End { id } => {
 					indent_level -= 1;
-					indent(indent_level, &mut current_line_number);
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("End {id}");
 				}
 
-				Instruction::Move8 { value, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Move8 { value, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("{} = Move8 {value}", destination.display(self));
 				}
 
-				Instruction::Move16 { value, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Move16 { value, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("{} = Move16 {value}", destination.display(self));
 				}
 
-				Instruction::Move32 { value, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Move32 { value, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("{} = Move32 {value}", destination.display(self));
 				}
 
-				Instruction::Move64 { value, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Move64 { value, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("{} = Move64 {value}", destination.display(self));
 				}
 
-				Instruction::Add { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Add { kind, left, right, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!(
 						"{} = Add<{kind}> {}, {}",
 						destination.display(self),
@@ -504,8 +525,8 @@ impl IrModule {
 					);
 				}
 
-				Instruction::Subtract { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Subtract { kind, left, right, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!(
 						"{} = Subtract<{kind}> {}, {}",
 						destination.display(self),
@@ -514,8 +535,8 @@ impl IrModule {
 					);
 				}
 
-				Instruction::Multiply { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Multiply { kind, left, right, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!(
 						"{} = Multiply<{kind}> {}, {}",
 						destination.display(self),
@@ -524,8 +545,8 @@ impl IrModule {
 					);
 				}
 
-				Instruction::Divide { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::Divide { kind, left, right, destination } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!(
 						"{} = Divide<{kind}> {}, {}",
 						destination.display(self),
@@ -534,8 +555,8 @@ impl IrModule {
 					);
 				}
 
-				Instruction::ForceUsed { slot } => {
-					indent(indent_level, &mut current_line_number);
+				InstructionKind::ForceUsed { slot } => {
+					indent(indent_level, &mut current_line_number, instruction);
 					println!("ForceUsed {}", slot.display(self));
 				}
 			}

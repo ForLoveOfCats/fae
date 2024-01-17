@@ -23,10 +23,10 @@ use std::{ffi::OsStr, path::Path};
 use c_codegen::DebugCodegen;
 use project::build_project;
 
-use crate::{
-	codegen::{intermediate::Intermediate32, ir::Instruction, optimization},
-	type_store::NumericKind,
-};
+use crate::codegen::intermediate::Intermediate32;
+use crate::codegen::ir::InstructionKind;
+use crate::codegen::optimization;
+use crate::type_store::NumericKind;
 
 fn main() {
 	let mut args = std::env::args_os().skip(1);
@@ -37,34 +37,42 @@ fn main() {
 	}
 
 	let mut module = codegen::ir::IrModule::new();
+	module.start_function();
+	let a = module.next_memory_slot();
+	module.push(InstructionKind::Add {
+		kind: NumericKind::I32,
+		left: a.into(),
+		right: Intermediate32::from(1).into(),
+		destination: a,
+	});
 
 	module.start_function();
 	let counter = module.next_memory_slot();
-	module.push(Instruction::Move32 { value: Intermediate32::from(10), destination: counter });
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(10), destination: counter });
 	let loop_id = module.push_while_loop(counter);
-	module.push(Instruction::Subtract {
+	module.push(InstructionKind::Subtract {
 		kind: NumericKind::U32,
 		left: counter.into(),
 		right: Intermediate32::from(1).into(),
 		destination: counter,
 	});
-	module.push(Instruction::End { id: loop_id });
+	module.push(InstructionKind::End { id: loop_id });
 
 	module.start_function();
 	let first = module.next_memory_slot();
-	module.push(Instruction::Move32 { value: Intermediate32::from(40).into(), destination: first });
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(40).into(), destination: first });
 	let second = module.next_memory_slot();
-	module.push(Instruction::Move32 { value: Intermediate32::from(2).into(), destination: second });
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(2).into(), destination: second });
 	let third = module.next_memory_slot();
-	module.push(Instruction::Add {
+	module.push(InstructionKind::Add {
 		kind: NumericKind::I32,
 		left: first.into(),
 		right: second.into(),
 		destination: third,
 	});
 	let forth = module.next_memory_slot();
-	module.push(Instruction::Move32 { value: Intermediate32::from(3).into(), destination: forth });
-	module.push(Instruction::Add {
+	module.push(InstructionKind::Move32 { value: Intermediate32::from(3).into(), destination: forth });
+	module.push(InstructionKind::Add {
 		kind: NumericKind::I32,
 		left: third.into(),
 		right: second.into(),
@@ -73,21 +81,21 @@ fn main() {
 
 	module.start_function();
 	let condition = module.next_memory_slot();
-	module.push(Instruction::Move8 { value: true.into(), destination: condition });
+	module.push(InstructionKind::Move8 { value: true.into(), destination: condition });
 	let a = module.next_memory_slot();
-	module.push(Instruction::Move32 { value: 0.into(), destination: a });
+	module.push(InstructionKind::Move32 { value: 0.into(), destination: a });
 	let branch_id = module.push_branch(condition);
-	module.push(Instruction::Move32 { value: 1.into(), destination: a });
-	module.push(Instruction::End { id: branch_id });
+	module.push(InstructionKind::Move32 { value: 1.into(), destination: a });
+	module.push(InstructionKind::End { id: branch_id });
 	let unused = module.next_memory_slot();
-	module.push(Instruction::Move32 { value: 69.into(), destination: unused });
-	module.push(Instruction::Add {
+	module.push(InstructionKind::Move32 { value: 69.into(), destination: unused });
+	module.push(InstructionKind::Add {
 		kind: NumericKind::U32,
 		left: a.into(),
 		right: Intermediate32::from(42).into(),
 		destination: a,
 	});
-	module.push(Instruction::ForceUsed { slot: a });
+	// module.push(InstructionKind::ForceUsed { slot: a });
 
 	module.debug_dump();
 	println!("\n\n\n");
