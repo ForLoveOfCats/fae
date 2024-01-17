@@ -7,13 +7,18 @@ pub enum Instruction {
 		function: Function,
 	},
 
-	Label {
-		label: Label,
+	Branch {
+		id: FlowControlId,
+		conditional: Source,
 	},
 
-	Branch {
+	While {
+		id: FlowControlId,
 		conditional: Source,
-		else_label: Label,
+	},
+
+	End {
+		id: FlowControlId,
 	},
 
 	Move8 {
@@ -81,13 +86,17 @@ impl Instruction {
 
 		match self {
 			Instruction::Function { .. }
-			| Instruction::Label { .. }
+			| Instruction::End { .. }
 			| Instruction::Move8 { .. }
 			| Instruction::Move16 { .. }
 			| Instruction::Move32 { .. }
 			| Instruction::Move64 { .. } => return &[],
 
 			Instruction::Branch { conditional, .. } => {
+				push_source(conditional);
+			}
+
+			Instruction::While { conditional, .. } => {
 				push_source(conditional);
 			}
 
@@ -123,9 +132,9 @@ impl Instruction {
 
 	pub fn destination(self) -> Option<MemorySlot> {
 		match self {
-			Instruction::Function { .. } => None,
-			Instruction::Label { .. } => None,
-			Instruction::Branch { .. } => None,
+			Instruction::Function { .. } | Instruction::Branch { .. } | Instruction::While { .. } | Instruction::End { .. } => {
+				None
+			}
 			Instruction::Move8 { destination, .. } => Some(destination),
 			Instruction::Move16 { destination, .. } => Some(destination),
 			Instruction::Move32 { destination, .. } => Some(destination),
@@ -268,6 +277,17 @@ impl std::fmt::Display for Label {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct FlowControlId {
+	index: u32,
+}
+
+impl std::fmt::Display for FlowControlId {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		write!(f, "^{}", self.index)
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Location {
 	Stack,
 	Register(u8),
@@ -287,6 +307,7 @@ impl std::fmt::Display for Function {
 #[derive(Debug)]
 pub struct FunctionData {
 	pub next_label: u32,
+	pub next_control_flow_id: u32,
 	pub memory_slots: Vec<SlotMetadata>,
 }
 
@@ -316,7 +337,12 @@ impl IrModule {
 
 	pub fn next_function(&mut self) -> Function {
 		self.current_function = self.next_function;
-		self.functions.push(FunctionData { next_label: 0, memory_slots: Vec::new() });
+		let data = FunctionData {
+			next_label: 0,
+			next_control_flow_id: 0,
+			memory_slots: Vec::new(),
+		};
+		self.functions.push(data);
 
 		let function = Function { index: self.next_function };
 
@@ -332,10 +358,17 @@ impl IrModule {
 		&mut self.functions[self.current_function as usize]
 	}
 
-	pub fn next_label(&mut self) -> Label {
+	// pub fn next_label(&mut self) -> Label {
+	// 	let current_function = self.current_function_mut();
+	// 	let label = Label { index: current_function.next_label };
+	// 	current_function.next_label += 1;
+	// 	label
+	// }
+
+	pub fn next_control_flow_id(&mut self) -> FlowControlId {
 		let current_function = self.current_function_mut();
-		let label = Label { index: current_function.next_label };
-		current_function.next_label += 1;
+		let label = FlowControlId { index: current_function.next_control_flow_id };
+		current_function.next_control_flow_id += 1;
 		label
 	}
 
@@ -371,12 +404,21 @@ impl IrModule {
 	}
 
 	// conditional value must be a single byte, uses C style numeric truthiness
-	// returns the else-branch, insert at the end of the branch block
-	pub fn push_branch(&mut self, conditional: impl Into<Source>) -> Label {
+	// returns the id, insert as End at the end of the loop block
+	pub fn push_branch(&mut self, conditional: impl Into<Source>) -> FlowControlId {
 		let conditional = conditional.into();
-		let else_label = self.next_label();
-		self.push(Instruction::Branch { conditional, else_label });
-		else_label
+		let id = self.next_control_flow_id();
+		self.push(Instruction::Branch { id, conditional });
+		id
+	}
+
+	// conditional value must be a single byte, uses C style numeric truthiness
+	// returns the id, insert as End at the end of the loop block
+	pub fn push_while_loop(&mut self, conditional: impl Into<Source>) -> FlowControlId {
+		let conditional = conditional.into();
+		let id = self.next_control_flow_id();
+		self.push(Instruction::While { id, conditional });
+		id
 	}
 
 	pub fn debug_dump(&mut self) {
@@ -387,8 +429,20 @@ impl IrModule {
 		} else {
 			println!("Unoptimized IR Module:");
 		}
-		let indent = || print!("    ");
-		let function_label_indent = || print!("  ");
+
+		let mut current_line_number = 1;
+		let line_number = |current_line_number: &mut u32| {
+			print!("{current_line_number:3}| ");
+			*current_line_number += 1;
+		};
+
+		let mut indent_level = 1;
+		let indent = |indent_level: u32, current_line_number: &mut u32| {
+			line_number(current_line_number);
+			for _ in 0..indent_level {
+				print!("  ");
+			}
+		};
 
 		for (index, instruction) in self.instructions.iter().enumerate() {
 			match instruction {
@@ -397,42 +451,51 @@ impl IrModule {
 					if index != 0 {
 						println!();
 					}
-					function_label_indent();
+					line_number(&mut current_line_number);
 					println!("Function {function}");
+					indent_level = 1
 				}
 
-				Instruction::Label { label } => {
-					function_label_indent();
-					println!("Label {label}");
+				Instruction::Branch { id, conditional } => {
+					indent(indent_level, &mut current_line_number);
+					println!("Branch {} else → {id}", conditional.display(self));
+					indent_level += 1;
 				}
 
-				Instruction::Branch { conditional, else_label } => {
-					indent();
-					println!("Branch {} else → {else_label}", conditional.display(self));
+				Instruction::While { conditional, id } => {
+					indent(indent_level, &mut current_line_number);
+					println!("While {}: {id}", conditional.display(self));
+					indent_level += 1;
+				}
+
+				Instruction::End { id } => {
+					indent_level -= 1;
+					indent(indent_level, &mut current_line_number);
+					println!("End {id}");
 				}
 
 				Instruction::Move8 { value, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!("{} = Move8 {value}", destination.display(self));
 				}
 
 				Instruction::Move16 { value, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!("{} = Move16 {value}", destination.display(self));
 				}
 
 				Instruction::Move32 { value, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!("{} = Move32 {value}", destination.display(self));
 				}
 
 				Instruction::Move64 { value, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!("{} = Move64 {value}", destination.display(self));
 				}
 
 				Instruction::Add { kind, left, right, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!(
 						"{} = Add<{kind}> {}, {}",
 						destination.display(self),
@@ -442,7 +505,7 @@ impl IrModule {
 				}
 
 				Instruction::Subtract { kind, left, right, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!(
 						"{} = Subtract<{kind}> {}, {}",
 						destination.display(self),
@@ -452,7 +515,7 @@ impl IrModule {
 				}
 
 				Instruction::Multiply { kind, left, right, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!(
 						"{} = Multiply<{kind}> {}, {}",
 						destination.display(self),
@@ -462,7 +525,7 @@ impl IrModule {
 				}
 
 				Instruction::Divide { kind, left, right, destination } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!(
 						"{} = Divide<{kind}> {}, {}",
 						destination.display(self),
@@ -472,7 +535,7 @@ impl IrModule {
 				}
 
 				Instruction::ForceUsed { slot } => {
-					indent();
+					indent(indent_level, &mut current_line_number);
 					println!("ForceUsed {}", slot.display(self));
 				}
 			}
