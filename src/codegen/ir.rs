@@ -447,15 +447,13 @@ impl IrModule {
 			println!("Unoptimized IR Module:");
 		}
 
-		let mut current_line_number = 1;
-		let line_number = |current_line_number: &mut u32| {
-			print!("{current_line_number:3}|");
-			*current_line_number += 1;
+		let line_number = |index: usize| {
+			print!("{index:3}|");
 		};
 
 		let mut indent_level = 1;
-		let indent = |indent_level: u32, current_line_number: &mut u32, instruction: Instruction| {
-			line_number(current_line_number);
+		let indent = |indent_level: u32, index: usize, instruction: Instruction| {
+			line_number(index);
 
 			if instruction.removed {
 				print!("✕| ");
@@ -475,51 +473,51 @@ impl IrModule {
 					if index != 0 {
 						println!();
 					}
-					line_number(&mut current_line_number);
+					line_number(index);
 					println!(" | Function {function}");
 					indent_level = 1
 				}
 
 				InstructionKind::Branch { id, conditional } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("Branch {} else → {id}", conditional.display(self));
 					indent_level += 1;
 				}
 
 				InstructionKind::While { conditional, id } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("While {}: {id}", conditional.display(self));
 					indent_level += 1;
 				}
 
 				InstructionKind::End { id } => {
 					indent_level -= 1;
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("End {id}");
 				}
 
 				InstructionKind::Move8 { value, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("{} = Move8 {value}", destination.display(self));
 				}
 
 				InstructionKind::Move16 { value, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("{} = Move16 {value}", destination.display(self));
 				}
 
 				InstructionKind::Move32 { value, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("{} = Move32 {value}", destination.display(self));
 				}
 
 				InstructionKind::Move64 { value, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("{} = Move64 {value}", destination.display(self));
 				}
 
 				InstructionKind::Add { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!(
 						"{} = Add<{kind}> {}, {}",
 						destination.display(self),
@@ -529,7 +527,7 @@ impl IrModule {
 				}
 
 				InstructionKind::Subtract { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!(
 						"{} = Subtract<{kind}> {}, {}",
 						destination.display(self),
@@ -539,7 +537,7 @@ impl IrModule {
 				}
 
 				InstructionKind::Multiply { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!(
 						"{} = Multiply<{kind}> {}, {}",
 						destination.display(self),
@@ -549,7 +547,7 @@ impl IrModule {
 				}
 
 				InstructionKind::Divide { kind, left, right, destination } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!(
 						"{} = Divide<{kind}> {}, {}",
 						destination.display(self),
@@ -559,7 +557,7 @@ impl IrModule {
 				}
 
 				InstructionKind::ForceUsed { slot } => {
-					indent(indent_level, &mut current_line_number, instruction);
+					indent(indent_level, index, instruction);
 					println!("ForceUsed {}", slot.display(self));
 				}
 			}
