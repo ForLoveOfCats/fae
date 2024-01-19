@@ -39,6 +39,17 @@ fn main() {
 	let mut module = codegen::ir::IrModule::new();
 	module.start_function();
 	let a = module.next_memory_slot();
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(0u8), destination: a });
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(1u8), destination: a });
+	let branch = module.push_branch(Intermediate8::from(1u8));
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(2u8), destination: a });
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(3u8), destination: a });
+	module.push(InstructionKind::End { id: branch });
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(4u8), destination: a });
+	module.push(InstructionKind::Move8 { value: Intermediate8::from(5u8), destination: a });
+
+	module.start_function();
+	let a = module.next_memory_slot();
 	module.push(InstructionKind::Add {
 		kind: NumericKind::I32,
 		left: a.into(),
@@ -78,28 +89,6 @@ fn main() {
 		right: second.into(),
 		destination: forth,
 	});
-
-	module.start_function();
-	let first = module.next_memory_slot();
-	module.push(InstructionKind::Move32 { value: Intermediate32::from(40).into(), destination: first });
-	let second = module.next_memory_slot();
-	module.push(InstructionKind::Move32 { value: Intermediate32::from(2).into(), destination: second });
-	let third = module.next_memory_slot();
-	module.push(InstructionKind::Add {
-		kind: NumericKind::I32,
-		left: first.into(),
-		right: second.into(),
-		destination: third,
-	});
-	let forth = module.next_memory_slot();
-	module.push(InstructionKind::Move32 { value: Intermediate32::from(3).into(), destination: forth });
-	module.push(InstructionKind::Add {
-		kind: NumericKind::I32,
-		left: third.into(),
-		right: second.into(),
-		destination: forth,
-	});
-	module.push(InstructionKind::ForceUsed { slot: forth });
 
 	module.start_function();
 	let condition = module.next_memory_slot();

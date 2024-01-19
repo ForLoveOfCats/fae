@@ -15,7 +15,7 @@ fn module_forward_pass(module: &mut IrModule) {
 
 	while instruction_index < module.instructions.len() {
 		let instruction = module.instructions[instruction_index];
-		let initial_instruction_index = instruction_index;
+		let initial_instruction_index = instruction_index + 1;
 
 		if let InstructionKind::Function { function } = instruction.kind {
 			module.current_function = function.index;
@@ -56,54 +56,8 @@ fn function_reverse_pass(module: &mut IrModule, range: Range<usize>) {
 
 	for instruction_index in range.rev() {
 		let instruction = &mut module.instructions[instruction_index];
-		mark_sources_unused_if_destination_unused(current_function, instruction);
-		mark_instruction_removed_unneeded(current_function, instruction, &flow_control_stack);
+		mark_removed_if_overwritten_slot_write(current_function, instruction);
 		maintain_flow_control_stack(&mut module.instructions, instruction_index, &mut flow_control_stack);
-	}
-}
-
-fn mark_sources_unused_if_destination_unused(current_function: &mut FunctionData, instruction: &Instruction) {
-	let Some(destination) = instruction.destination() else {
-		return;
-	};
-
-	if current_function.memory_slots[destination.index()].is_unused() {
-		let mut slots_buffer = [MemorySlot::default(); 2];
-		let source_slots = instruction.source_slots(&mut slots_buffer);
-
-		for source_slot in source_slots {
-			let slot_metadata = &mut current_function.memory_slots[source_slot.index()];
-			slot_metadata.decrement_reads();
-		}
-	}
-}
-
-fn mark_instruction_removed_unneeded(
-	current_function: &mut FunctionData,
-	instruction: &mut Instruction,
-	flow_control_stack: &[FlowControlStackEntry],
-) {
-	if let Some(destination) = instruction.destination() {
-		let destination_metadata = current_function.memory_slots[destination.index()];
-		instruction.removed = destination_metadata.is_unused();
-		return;
-	}
-
-	let (id, conditional) = match instruction.kind {
-		InstructionKind::Branch { id, conditional } | InstructionKind::While { id, conditional } => (id, conditional),
-		_ => return,
-	};
-
-	let stack_entry = flow_control_stack.last().unwrap();
-	assert_eq!(stack_entry.id, id);
-
-	if stack_entry.live_instructions <= 0 {
-		instruction.removed = true;
-
-		if let Source::MemorySlot(slot) = conditional {
-			let slot_metadata = &mut current_function.memory_slots[slot.index()];
-			slot_metadata.decrement_reads()
-		}
 	}
 }
 
@@ -142,5 +96,32 @@ fn maintain_flow_control_stack(
 		if !instruction.removed {
 			stack_entry.live_instructions += 1;
 		}
+	}
+}
+
+// Marks the instruction as removed if the destinatation is guarenteed to be overwritten
+// with something else before the next read to that memory slot. Maintains the state it
+// need to track to recognize this
+fn mark_removed_if_overwritten_slot_write(current_function: &mut FunctionData, instruction: &mut Instruction) {
+	if instruction.forces_proceeding_writes() {
+		for slot in &mut current_function.memory_slots {
+			slot.next_forward_operation_is_write = false;
+		}
+	}
+
+	let Some(destination) = instruction.destination() else {
+		return;
+	};
+
+	let metadata = &mut current_function.memory_slots[destination.index()];
+	if metadata.next_forward_operation_is_write {
+		instruction.removed = true;
+	}
+	metadata.next_forward_operation_is_write = true;
+
+	let mut source_slots_buffer = [MemorySlot::default(); 2];
+	let source_slots = instruction.source_slots(&mut source_slots_buffer);
+	for source_slot in source_slots {
+		current_function.memory_slots[source_slot.index()].next_forward_operation_is_write = false;
 	}
 }

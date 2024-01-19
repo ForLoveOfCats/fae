@@ -75,8 +75,8 @@ pub enum InstructionKind {
 		destination: MemorySlot,
 	},
 
-	ForceUsed {
-		slot: MemorySlot,
+	Call {
+		function: Function,
 	},
 }
 
@@ -96,7 +96,8 @@ impl Instruction {
 			| InstructionKind::Move8 { .. }
 			| InstructionKind::Move16 { .. }
 			| InstructionKind::Move32 { .. }
-			| InstructionKind::Move64 { .. } => return &[],
+			| InstructionKind::Move64 { .. }
+			| InstructionKind::Call { .. } => return &[],
 
 			InstructionKind::Branch { conditional, .. } => {
 				push_source(conditional);
@@ -125,11 +126,6 @@ impl Instruction {
 				push_source(left);
 				push_source(right);
 			}
-
-			InstructionKind::ForceUsed { slot } => {
-				slots[index] = slot;
-				index += 1;
-			}
 		}
 
 		let slots = &slots[0..index];
@@ -141,7 +137,8 @@ impl Instruction {
 			InstructionKind::Function { .. }
 			| InstructionKind::Branch { .. }
 			| InstructionKind::While { .. }
-			| InstructionKind::End { .. } => None,
+			| InstructionKind::End { .. }
+			| InstructionKind::Call { .. } => None,
 
 			InstructionKind::Move8 { destination, .. } => Some(destination),
 			InstructionKind::Move16 { destination, .. } => Some(destination),
@@ -151,7 +148,26 @@ impl Instruction {
 			InstructionKind::Subtract { destination, .. } => Some(destination),
 			InstructionKind::Multiply { destination, .. } => Some(destination),
 			InstructionKind::Divide { destination, .. } => Some(destination),
-			InstructionKind::ForceUsed { slot } => Some(slot),
+		}
+	}
+
+	pub fn forces_proceeding_writes(self) -> bool {
+		match self.kind {
+			InstructionKind::Function { .. } => unreachable!(),
+
+			InstructionKind::Branch { .. }
+			| InstructionKind::While { .. }
+			| InstructionKind::End { .. }
+			| InstructionKind::Call { .. } => true,
+
+			InstructionKind::Move8 { .. }
+			| InstructionKind::Move16 { .. }
+			| InstructionKind::Move32 { .. }
+			| InstructionKind::Move64 { .. }
+			| InstructionKind::Add { .. }
+			| InstructionKind::Subtract { .. }
+			| InstructionKind::Multiply { .. }
+			| InstructionKind::Divide { .. } => false,
 		}
 	}
 }
@@ -252,33 +268,18 @@ pub struct FmtDisplayMemorySlot<'a> {
 impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let metadata = self.borrowed_metadata[self.slot.index()];
-		if metadata.is_unused() {
-			write!(f, "_")
-		} else {
-			write!(f, "${}", self.slot.index)
-		}
+		write!(f, "${}", self.slot.index)
 	}
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct SlotMetadata {
-	pub reads: u32,
-	pub force_used: bool,
+	// Used by the optimizer to track if the previously inspected (in reverse function order) operation
+	// to this memory slot was a write instead of a read
+	pub next_forward_operation_is_write: bool,
 }
 
-impl SlotMetadata {
-	pub fn is_unused(self) -> bool {
-		self.reads <= 0 && !self.force_used
-	}
-
-	pub fn increment_reads(&mut self) {
-		self.reads += 1;
-	}
-
-	pub fn decrement_reads(&mut self) {
-		self.reads = self.reads.saturating_sub(1);
-	}
-}
+impl SlotMetadata {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Label {
@@ -384,7 +385,7 @@ impl IrModule {
 	pub fn next_memory_slot(&mut self) -> MemorySlot {
 		let current_function = self.current_function_mut();
 		let index = current_function.memory_slots.len() as u16;
-		let metadata = SlotMetadata { reads: 0, force_used: false };
+		let metadata = SlotMetadata { next_forward_operation_is_write: false };
 		current_function.memory_slots.push(metadata);
 		MemorySlot { index }
 	}
@@ -397,7 +398,6 @@ impl IrModule {
 
 	pub fn push(&mut self, kind: InstructionKind) {
 		let instruction = Instruction { kind, removed: false };
-		let current_function = self.current_function_mut();
 
 		let mut source_slots_buffer = [MemorySlot::default(); 2];
 		let source_slots = instruction.source_slots(&mut source_slots_buffer);
@@ -409,12 +409,6 @@ impl IrModule {
 					continue;
 				}
 			}
-
-			current_function.memory_slots[source_slot.index()].increment_reads();
-		}
-
-		if let InstructionKind::ForceUsed { slot } = instruction.kind {
-			current_function.memory_slots[slot.index()].force_used = true;
 		}
 
 		self.instructions.push(instruction);
@@ -556,9 +550,9 @@ impl IrModule {
 					);
 				}
 
-				InstructionKind::ForceUsed { slot } => {
+				InstructionKind::Call { function } => {
 					indent(indent_level, index, instruction);
-					println!("ForceUsed {}", slot.display(self));
+					println!("Call {function}");
 				}
 			}
 		}
