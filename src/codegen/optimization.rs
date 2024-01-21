@@ -4,13 +4,22 @@ use crate::codegen::ir::{FlowControlId, Source};
 
 use super::ir::{FunctionData, Instruction, InstructionKind, IrModule, MemorySlot};
 
-pub fn optimize(module: &mut IrModule) {
+pub fn optimize(module: &mut IrModule) -> Tracker {
+	let mut tracker = Tracker { overwritten_slot_writes_removals: 0 };
+
 	module.current_function = 0;
-	module_forward_pass(module);
+	module_forward_pass(module, &mut tracker);
 	module.optimized = true;
+
+	tracker
 }
 
-fn module_forward_pass(module: &mut IrModule) {
+#[derive(Debug)]
+pub struct Tracker {
+	overwritten_slot_writes_removals: u64,
+}
+
+fn module_forward_pass(module: &mut IrModule, tracker: &mut Tracker) {
 	let mut instruction_index = 0;
 
 	while instruction_index < module.instructions.len() {
@@ -25,7 +34,7 @@ fn module_forward_pass(module: &mut IrModule) {
 		}
 
 		let range = initial_instruction_index..instruction_index;
-		function_reverse_pass(module, range);
+		function_reverse_pass(module, range, tracker);
 	}
 }
 
@@ -48,7 +57,7 @@ struct FlowControlStackEntry {
 	live_instructions: usize,
 }
 
-fn function_reverse_pass(module: &mut IrModule, range: Range<usize>) {
+fn function_reverse_pass(module: &mut IrModule, range: Range<usize>, tracker: &mut Tracker) {
 	// inlined `current_function_mut` to satiate borrow checker
 	let current_function = &mut module.functions[module.current_function as usize];
 
@@ -56,7 +65,7 @@ fn function_reverse_pass(module: &mut IrModule, range: Range<usize>) {
 
 	for instruction_index in range.rev() {
 		let instruction = &mut module.instructions[instruction_index];
-		mark_removed_if_overwritten_slot_write(current_function, instruction);
+		mark_removed_if_overwritten_slot_write(current_function, instruction, tracker);
 		maintain_flow_control_stack(&mut module.instructions, instruction_index, &mut flow_control_stack);
 	}
 }
@@ -102,7 +111,11 @@ fn maintain_flow_control_stack(
 // Marks the instruction as removed if the destinatation is guarenteed to be overwritten
 // with something else before the next read to that memory slot. Maintains the state it
 // need to track to recognize this
-fn mark_removed_if_overwritten_slot_write(current_function: &mut FunctionData, instruction: &mut Instruction) {
+fn mark_removed_if_overwritten_slot_write(
+	current_function: &mut FunctionData,
+	instruction: &mut Instruction,
+	tracker: &mut Tracker,
+) {
 	if instruction.forces_proceeding_writes() {
 		for slot in &mut current_function.memory_slots {
 			slot.next_forward_operation_is_write = false;
@@ -116,6 +129,7 @@ fn mark_removed_if_overwritten_slot_write(current_function: &mut FunctionData, i
 	let metadata = &mut current_function.memory_slots[destination.index()];
 	if metadata.next_forward_operation_is_write {
 		instruction.removed = true;
+		tracker.overwritten_slot_writes_removals += 1;
 	}
 	metadata.next_forward_operation_is_write = true;
 

@@ -109,8 +109,10 @@ fn main() {
 
 	module.debug_dump();
 	println!("\n\n\n");
-	optimization::optimize(&mut module);
+	let tracker = optimization::optimize(&mut module);
 	module.debug_dump();
+	println!("\n\n\n");
+	println!("{tracker:#?}");
 
 	// let elf = codegen::amd64::elf::construct_elf(module);
 	// std::fs::write("./shared/executable.x64", elf).unwrap();
