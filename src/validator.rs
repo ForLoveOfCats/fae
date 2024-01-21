@@ -630,6 +630,7 @@ pub fn validate<'a>(
 	c_include_store: &mut CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	ir: &mut IrModule,
 	parsed_files: &'a [tree::File<'a>],
 ) {
 	let mut function_generic_usages = Vec::new();
@@ -665,7 +666,6 @@ pub fn validate<'a>(
 		&mut symbols,
 	);
 
-	let mut ir = IrModule::new();
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
@@ -689,7 +689,7 @@ pub fn validate<'a>(
 			function_initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
 			generic_parameters: &blank_generic_parameters,
-			ir: &mut ir,
+			ir,
 		};
 
 		validate_block(context, &parsed_file.block, true);

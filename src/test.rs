@@ -1,7 +1,6 @@
 use std::fs::read_dir;
 use std::io::{stderr, Write};
 
-use crate::c_codegen::DebugCodegen;
 use crate::color::*;
 use crate::project::build_project;
 
@@ -42,7 +41,7 @@ pub fn run_tests(args: Vec<String>) {
 		let panics = std::fs::metadata(entry.path().join("panics")).is_ok();
 		let mut error_output = String::new();
 
-		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone(), DebugCodegen::OnFailure) else {
+		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone()) else {
 			if let Some(expected_error) = &expected_error {
 				if error_output.trim_end() == expected_error.trim_end() {
 					successes += 1;
