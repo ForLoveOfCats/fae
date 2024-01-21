@@ -81,6 +81,48 @@ pub enum InstructionKind {
 }
 
 impl Instruction {
+	pub fn check_sizes_match(self, module: &IrModule) {
+		match self.kind {
+			InstructionKind::Function { .. } | InstructionKind::End { .. } | InstructionKind::Call { .. } => {}
+
+			InstructionKind::Branch { conditional, .. } => assert_eq!(conditional.primative_size(module), PrimativeSize::Ps8),
+			InstructionKind::While { conditional, .. } => assert_eq!(conditional.primative_size(module), PrimativeSize::Ps8),
+
+			InstructionKind::Move8 { destination, .. } => assert_eq!(destination.primative_size(module), PrimativeSize::Ps8),
+			InstructionKind::Move16 { destination, .. } => assert_eq!(destination.primative_size(module), PrimativeSize::Ps16),
+			InstructionKind::Move32 { destination, .. } => assert_eq!(destination.primative_size(module), PrimativeSize::Ps32),
+			InstructionKind::Move64 { destination, .. } => assert_eq!(destination.primative_size(module), PrimativeSize::Ps64),
+
+			InstructionKind::Add { kind, left, right, destination } => {
+				let primative_size = kind.ir_primative_size();
+				assert_eq!(primative_size, left.primative_size(module));
+				assert_eq!(primative_size, right.primative_size(module));
+				assert_eq!(primative_size, destination.primative_size(module));
+			}
+
+			InstructionKind::Subtract { kind, left, right, destination } => {
+				let primative_size = kind.ir_primative_size();
+				assert_eq!(primative_size, left.primative_size(module));
+				assert_eq!(primative_size, right.primative_size(module));
+				assert_eq!(primative_size, destination.primative_size(module));
+			}
+
+			InstructionKind::Multiply { kind, left, right, destination } => {
+				let primative_size = kind.ir_primative_size();
+				assert_eq!(primative_size, left.primative_size(module));
+				assert_eq!(primative_size, right.primative_size(module));
+				assert_eq!(primative_size, destination.primative_size(module));
+			}
+
+			InstructionKind::Divide { kind, left, right, destination } => {
+				let primative_size = kind.ir_primative_size();
+				assert_eq!(primative_size, left.primative_size(module));
+				assert_eq!(primative_size, right.primative_size(module));
+				assert_eq!(primative_size, destination.primative_size(module));
+			}
+		}
+	}
+
 	pub fn source_slots(self, slots: &mut [MemorySlot; 2]) -> &[MemorySlot] {
 		let mut index = 0;
 		let mut push_source = |source: Source| {
@@ -172,6 +214,27 @@ impl Instruction {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimativeSize {
+	Ps8,
+	Ps16,
+	Ps32,
+	Ps64,
+}
+
+impl std::fmt::Display for PrimativeSize {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let value = match self {
+			PrimativeSize::Ps8 => 8,
+			PrimativeSize::Ps16 => 16,
+			PrimativeSize::Ps32 => 32,
+			PrimativeSize::Ps64 => 64,
+		};
+
+		write!(f, "{value}")
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Source {
 	Intermediate8(Intermediate8),
@@ -182,6 +245,16 @@ pub enum Source {
 }
 
 impl Source {
+	pub fn primative_size(self, module: &IrModule) -> PrimativeSize {
+		match self {
+			Source::Intermediate8(_) => PrimativeSize::Ps8,
+			Source::Intermediate16(_) => PrimativeSize::Ps16,
+			Source::Intermediate32(_) => PrimativeSize::Ps32,
+			Source::Intermediate64(_) => PrimativeSize::Ps64,
+			Source::MemorySlot(slot) => slot.primative_size(module),
+		}
+	}
+
 	pub fn display(self, module: &IrModule) -> FmtDisplaySource {
 		FmtDisplaySource {
 			source: self,
@@ -244,12 +317,12 @@ pub struct MemorySlot {
 }
 
 impl MemorySlot {
-	pub fn new(index: u16) -> MemorySlot {
-		MemorySlot { index }
-	}
-
 	pub fn index(self) -> usize {
 		self.index as usize
+	}
+
+	pub fn primative_size(self, module: &IrModule) -> PrimativeSize {
+		module.current_function().memory_slots[self.index()].primative_size
 	}
 
 	pub fn display(self, module: &IrModule) -> FmtDisplayMemorySlot {
@@ -268,12 +341,13 @@ pub struct FmtDisplayMemorySlot<'a> {
 impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let metadata = self.borrowed_metadata[self.slot.index()];
-		write!(f, "${}", self.slot.index)
+		write!(f, "${}_{}", self.slot.index, metadata.primative_size)
 	}
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct SlotMetadata {
+	primative_size: PrimativeSize,
 	// Used by the optimizer to track if the previously inspected (in reverse function order) operation
 	// to this memory slot was a write instead of a read
 	pub next_forward_operation_is_write: bool,
@@ -382,10 +456,10 @@ impl IrModule {
 		label
 	}
 
-	pub fn next_memory_slot(&mut self) -> MemorySlot {
+	pub fn next_memory_slot(&mut self, size: PrimativeSize) -> MemorySlot {
 		let current_function = self.current_function_mut();
 		let index = current_function.memory_slots.len() as u16;
-		let metadata = SlotMetadata { next_forward_operation_is_write: false };
+		let metadata = SlotMetadata { primative_size: size, next_forward_operation_is_write: false };
 		current_function.memory_slots.push(metadata);
 		MemorySlot { index }
 	}
@@ -398,6 +472,7 @@ impl IrModule {
 
 	pub fn push(&mut self, kind: InstructionKind) {
 		let instruction = Instruction { kind, removed: false };
+		instruction.check_sizes_match(self);
 
 		let mut source_slots_buffer = [MemorySlot::default(); 2];
 		let source_slots = instruction.source_slots(&mut source_slots_buffer);

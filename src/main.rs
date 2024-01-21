@@ -24,7 +24,7 @@ use c_codegen::DebugCodegen;
 use project::build_project;
 
 use crate::codegen::intermediate::{Intermediate32, Intermediate8};
-use crate::codegen::ir::InstructionKind;
+use crate::codegen::ir::{InstructionKind, PrimativeSize};
 use crate::codegen::optimization;
 use crate::type_store::NumericKind;
 
@@ -38,7 +38,7 @@ fn main() {
 
 	let mut module = codegen::ir::IrModule::new();
 	module.start_function();
-	let a = module.next_memory_slot();
+	let a = module.next_memory_slot(PrimativeSize::Ps8);
 	module.push(InstructionKind::Move8 { value: Intermediate8::from(0u8), destination: a });
 	module.push(InstructionKind::Move8 { value: Intermediate8::from(1u8), destination: a });
 	let branch = module.push_branch(Intermediate8::from(1u8));
@@ -49,7 +49,7 @@ fn main() {
 	module.push(InstructionKind::Move8 { value: Intermediate8::from(5u8), destination: a });
 
 	module.start_function();
-	let a = module.next_memory_slot();
+	let a = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Add {
 		kind: NumericKind::I32,
 		left: a.into(),
@@ -58,30 +58,30 @@ fn main() {
 	});
 
 	module.start_function();
-	let counter = module.next_memory_slot();
+	let counter = module.next_memory_slot(PrimativeSize::Ps8);
 	module.push(InstructionKind::Move8 { value: Intermediate8::from(10u8), destination: counter });
 	let loop_id = module.push_while_loop(counter);
 	module.push(InstructionKind::Subtract {
-		kind: NumericKind::U32,
+		kind: NumericKind::U8,
 		left: counter.into(),
-		right: Intermediate32::from(1).into(),
+		right: Intermediate8::from(1u8).into(),
 		destination: counter,
 	});
 	module.push(InstructionKind::End { id: loop_id });
 
 	module.start_function();
-	let first = module.next_memory_slot();
+	let first = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Move32 { value: Intermediate32::from(40).into(), destination: first });
-	let second = module.next_memory_slot();
+	let second = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Move32 { value: Intermediate32::from(2).into(), destination: second });
-	let third = module.next_memory_slot();
+	let third = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Add {
 		kind: NumericKind::I32,
 		left: first.into(),
 		right: second.into(),
 		destination: third,
 	});
-	let forth = module.next_memory_slot();
+	let forth = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Move32 { value: Intermediate32::from(3).into(), destination: forth });
 	module.push(InstructionKind::Add {
 		kind: NumericKind::I32,
@@ -91,14 +91,14 @@ fn main() {
 	});
 
 	module.start_function();
-	let condition = module.next_memory_slot();
+	let condition = module.next_memory_slot(PrimativeSize::Ps8);
 	module.push(InstructionKind::Move8 { value: true.into(), destination: condition });
-	let a = module.next_memory_slot();
+	let a = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Move32 { value: 0.into(), destination: a });
 	let branch_id = module.push_branch(condition);
 	module.push(InstructionKind::Move32 { value: 1.into(), destination: a });
 	module.push(InstructionKind::End { id: branch_id });
-	let unused = module.next_memory_slot();
+	let unused = module.next_memory_slot(PrimativeSize::Ps32);
 	module.push(InstructionKind::Move32 { value: 69.into(), destination: unused });
 	module.push(InstructionKind::Add {
 		kind: NumericKind::U32,
@@ -113,9 +113,10 @@ fn main() {
 	module.debug_dump();
 	println!("\n\n\n");
 	println!("{tracker:#?}");
+	println!();
 
-	// let elf = codegen::amd64::elf::construct_elf(module);
-	// std::fs::write("./shared/executable.x64", elf).unwrap();
+	let elf = codegen::amd64::elf::construct_elf(module);
+	std::fs::write("./shared/executable.x64", elf).unwrap();
 	return;
 
 	let mut stderr = std::io::stderr();

@@ -2,18 +2,26 @@ use crate::codegen::intermediate::Intermediate32;
 
 pub struct Assembler<'a> {
 	bytes: &'a mut Vec<u8>,
-	start_offset: usize,
+	initial_bytes_len: usize,
+
+	current_instruction_start_offset: usize,
 	lengths: Vec<usize>,
 }
 
 impl<'a> Assembler<'a> {
 	pub fn new(bytes: &'a mut Vec<u8>) -> Assembler<'a> {
-		Assembler { bytes, start_offset: 0, lengths: Vec::new() }
+		let initial_bytes_len = bytes.len();
+		Assembler {
+			bytes,
+			initial_bytes_len,
+			current_instruction_start_offset: initial_bytes_len,
+			lengths: Vec::new(),
+		}
 	}
 
 	fn finalize_instruction(&mut self) {
-		self.lengths.push(self.bytes.len() - self.start_offset);
-		self.start_offset = self.bytes.len();
+		self.lengths.push(self.bytes.len() - self.current_instruction_start_offset);
+		self.current_instruction_start_offset = self.bytes.len();
 	}
 
 	fn rex_prefix<const W: bool, const R: bool, const X: bool, const B: bool>(&mut self) {
@@ -165,7 +173,7 @@ impl<'a> Assembler<'a> {
 
 impl<'a> std::fmt::Display for Assembler<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		let mut offset = 0;
+		let mut offset = self.initial_bytes_len;
 		for &length in &self.lengths {
 			let bytes = &self.bytes[offset..offset + length];
 			offset += length;

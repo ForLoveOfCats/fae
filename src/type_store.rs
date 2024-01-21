@@ -1,3 +1,4 @@
+use crate::codegen;
 use crate::error::Messages;
 use crate::ir::{
 	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, SliceMutableToImmutable, Symbol, SymbolKind,
@@ -194,6 +195,24 @@ impl NumericKind {
 			NumericKind::USize => Layout { size: 8, alignment: 8 },
 			NumericKind::F32 => Layout { size: 4, alignment: 4 },
 			NumericKind::F64 => Layout { size: 8, alignment: 8 },
+		}
+	}
+
+	pub fn ir_primative_size(self) -> codegen::ir::PrimativeSize {
+		use codegen::ir::PrimativeSize;
+
+		match self {
+			NumericKind::I8 => PrimativeSize::Ps8,
+			NumericKind::I16 => PrimativeSize::Ps16,
+			NumericKind::I32 => PrimativeSize::Ps32,
+			NumericKind::I64 => PrimativeSize::Ps64,
+			NumericKind::U8 => PrimativeSize::Ps8,
+			NumericKind::U16 => PrimativeSize::Ps16,
+			NumericKind::U32 => PrimativeSize::Ps32,
+			NumericKind::U64 => PrimativeSize::Ps64,
+			NumericKind::USize => PrimativeSize::Ps64,
+			NumericKind::F32 => PrimativeSize::Ps32,
+			NumericKind::F64 => PrimativeSize::Ps64,
 		}
 	}
 }

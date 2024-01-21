@@ -119,6 +119,7 @@ pub fn construct_elf(module: IrModule) -> Vec<u8> {
 	assembler.move_intermediate32_to_register32(0, Register32::Edi); // Return code
 	assembler.move_intermediate32_to_register32(0x3c, Register32::Eax); // Exit syscall
 	assembler.syscall();
+	println!("Generated Assembly:\n{assembler}");
 	let code_size = data.len() - program_header_table_start;
 
 	let program_header_table = ProgramHeader::new(code_size as u64);
