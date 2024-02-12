@@ -1,7 +1,7 @@
 pub mod amd64;
-pub mod ir;
+// pub mod ir;
 pub mod literal;
-pub mod optimization;
+// pub mod optimization;
 
-mod intermediate;
-mod memory_slot;
+// mod intermediate;
+// mod memory_slot;

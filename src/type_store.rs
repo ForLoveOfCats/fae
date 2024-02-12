@@ -1,4 +1,3 @@
-use crate::codegen;
 use crate::error::Messages;
 use crate::ir::{
 	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, SliceMutableToImmutable, Symbol, SymbolKind,
@@ -142,6 +141,27 @@ pub struct UserTypeChainLink<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimativeSize {
+	Ps8,
+	Ps16,
+	Ps32,
+	Ps64,
+}
+
+impl std::fmt::Display for PrimativeSize {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let value = match self {
+			PrimativeSize::Ps8 => 8,
+			PrimativeSize::Ps16 => 16,
+			PrimativeSize::Ps32 => 32,
+			PrimativeSize::Ps64 => 64,
+		};
+
+		write!(f, "{value}")
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NumericKind {
 	I8,
 	I16,
@@ -198,9 +218,7 @@ impl NumericKind {
 		}
 	}
 
-	pub fn ir_primative_size(self) -> codegen::ir::PrimativeSize {
-		use codegen::ir::PrimativeSize;
-
+	pub fn ir_primative_size(self) -> PrimativeSize {
 		match self {
 			NumericKind::I8 => PrimativeSize::Ps8,
 			NumericKind::I16 => PrimativeSize::Ps16,

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::codegen;
-use crate::codegen::ir::IrModule;
 use crate::error::{Messages, WriteFmt};
 use crate::file::load_all_files;
 use crate::parser::parse_file;
@@ -39,14 +38,12 @@ pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: Str
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
 	let mut root_layers = RootLayers::new(root_name);
-	let mut module = IrModule::new();
 	validate(
 		&mut messages,
 		&mut root_layers,
 		&mut c_include_store,
 		&mut type_store,
 		&mut function_store,
-		&mut module,
 		&parsed_files,
 	);
 
@@ -56,17 +53,15 @@ pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: Str
 	}
 	messages.reset();
 
-	module.debug_dump();
 	// println!("\n\n\n");
 	// let tracker = codegen::optimization::optimize(&mut module);
 	// module.debug_dump();
 	// println!("\n\n\n");
 	// println!("{tracker:#?}");
-	println!();
 
 	//Not parallelizable
 	let binary_path = Path::new("./output.executable");
-	let elf = codegen::amd64::elf::construct_elf(module);
+	let elf = codegen::amd64::elf::construct_elf();
 	std::fs::write("./shared/executable.x64", elf).unwrap();
 	// generate_code(
 	// 	&mut messages,

@@ -1,4 +1,3 @@
-use crate::codegen::amd64::assembler::{Assembler, Register32};
-use crate::codegen::{ir::IrModule, literal::Literal32};
+use crate::codegen::amd64::assembler::Assembler;
 
-pub fn generate(module: IrModule, assembler: &mut Assembler) {}
+pub fn generate(assembler: &mut Assembler) {}

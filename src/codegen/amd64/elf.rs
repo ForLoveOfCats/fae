@@ -2,7 +2,6 @@ use std::mem::{size_of, transmute};
 
 use crate::codegen::amd64::assembler::{Assembler, Register32};
 use crate::codegen::amd64::codegen;
-use crate::codegen::ir::IrModule;
 
 const ENTRY_ADDRESS: u64 = 0x40000;
 const PAGE_SIZE: u64 = 4096;
@@ -98,7 +97,7 @@ impl ProgramHeader {
 	}
 }
 
-pub fn construct_elf(module: IrModule) -> Vec<u8> {
+pub fn construct_elf() -> Vec<u8> {
 	let mut data = Vec::new();
 
 	let elf_header = ElfHeader::new();
@@ -115,7 +114,7 @@ pub fn construct_elf(module: IrModule) -> Vec<u8> {
 	}
 
 	let mut assembler = Assembler::new(&mut data);
-	codegen::generate(module, &mut assembler);
+	codegen::generate(&mut assembler);
 	assembler.move_literal32_to_register32(0, Register32::Edi); // Return code
 	assembler.move_literal32_to_register32(0x3c, Register32::Eax); // Exit syscall
 	assembler.syscall();

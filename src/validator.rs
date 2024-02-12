@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::codegen::ir::IrModule;
 use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
@@ -31,8 +30,6 @@ pub struct Context<'a, 'b, 'c> {
 	pub symbols: &'b mut Symbols<'a>,
 
 	pub generic_parameters: &'c GenericParameters<'a>,
-
-	pub ir: &'b mut IrModule,
 }
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
@@ -64,8 +61,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			symbols: self.symbols,
 
 			generic_parameters: self.generic_parameters,
-
-			ir: self.ir,
 		}
 	}
 
@@ -94,8 +89,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			symbols: self.symbols,
 
 			generic_parameters,
-
-			ir: self.ir,
 		}
 	}
 
@@ -630,7 +623,6 @@ pub fn validate<'a>(
 	c_include_store: &mut CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	ir: &mut IrModule,
 	parsed_files: &'a [tree::File<'a>],
 ) {
 	let mut function_generic_usages = Vec::new();
@@ -689,7 +681,6 @@ pub fn validate<'a>(
 			function_initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
 			generic_parameters: &blank_generic_parameters,
-			ir,
 		};
 
 		validate_block(context, &parsed_file.block, true);
@@ -818,7 +809,6 @@ fn validate_root_consts<'a>(
 		symbols.duplicate(&layer.symbols);
 		let old_symbols_len = symbols.len();
 
-		let mut ssa = IrModule::new();
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut context = Context {
 			file_index,
@@ -835,11 +825,9 @@ fn validate_root_consts<'a>(
 			function_initial_symbols_len: symbols.len(),
 			symbols,
 			generic_parameters: &blank_generic_parameters,
-			ir: &mut ssa,
 		};
 
 		validate_block_consts(&mut context, &parsed_file.block);
-		assert_eq!(context.ir.instruction_count(), 0); // TODO: const-evaluation
 		std::mem::forget(context);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
@@ -1492,8 +1480,6 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		return;
 	};
 
-	context.ir.start_function();
-
 	let generics = context.function_store.shapes[function_shape_index].generics.clone();
 	let mut scope = context.child_scope_with_generic_parameters(&generics);
 	scope.function_initial_symbols_len = scope.symbols.len();
@@ -1674,8 +1660,6 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 }
 
 fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
-	let memory_slot = context.ir.next_memory_slot();
-
 	let mut expression = validate_expression(context, &statement.item.expression);
 
 	let type_id = match &statement.item.parsed_type {
