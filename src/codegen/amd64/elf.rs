@@ -116,8 +116,8 @@ pub fn construct_elf(module: IrModule) -> Vec<u8> {
 
 	let mut assembler = Assembler::new(&mut data);
 	codegen::generate(module, &mut assembler);
-	assembler.move_intermediate32_to_register32(0, Register32::Edi); // Return code
-	assembler.move_intermediate32_to_register32(0x3c, Register32::Eax); // Exit syscall
+	assembler.move_literal32_to_register32(0, Register32::Edi); // Return code
+	assembler.move_literal32_to_register32(0x3c, Register32::Eax); // Exit syscall
 	assembler.syscall();
 	println!("Generated Assembly:\n{assembler}");
 	let code_size = data.len() - program_header_table_start;

@@ -1,4 +1,4 @@
-use crate::codegen::intermediate::Intermediate32;
+use crate::codegen::literal::Literal32;
 
 pub struct Assembler<'a> {
 	bytes: &'a mut Vec<u8>,
@@ -62,27 +62,19 @@ impl<'a> Assembler<'a> {
 		*self.bytes.last_mut().unwrap() += value;
 	}
 
-	pub fn move_intermediate32_to_register32(
-		&mut self,
-		intermediate: impl Into<Intermediate32>,
-		destination_register: Register32,
-	) {
+	pub fn move_literal32_to_register32(&mut self, literal: impl Into<Literal32>, destination_register: Register32) {
 		self.register_32_rex_prefix(destination_register);
 		self.bytes.push(0xb8);
 		self.plus_rd(destination_register);
-		self.bytes.extend_from_slice(&intermediate.into().0);
+		self.bytes.extend_from_slice(&literal.into().0);
 		self.finalize_instruction();
 	}
 
-	pub fn add_intermediate32_to_register32(
-		&mut self,
-		intermediate: impl Into<Intermediate32>,
-		destination_register: Register32,
-	) {
-		let intermediate = intermediate.into();
+	pub fn add_literal32_to_register32(&mut self, literal: impl Into<Literal32>, destination_register: Register32) {
+		let literal = literal.into();
 		if destination_register == Register32::Eax {
 			self.bytes.push(0x05);
-			self.bytes.extend_from_slice(&intermediate.0);
+			self.bytes.extend_from_slice(&literal.0);
 			self.finalize_instruction();
 			return;
 		}
@@ -90,7 +82,7 @@ impl<'a> Assembler<'a> {
 		let rm = self.register32_rm_encoding(destination_register);
 		self.bytes.push(0x81);
 		self.mod_rm(AddressingMode::RegisterDirect, 0, rm);
-		self.bytes.extend_from_slice(&intermediate.0);
+		self.bytes.extend_from_slice(&literal.0);
 		self.finalize_instruction();
 	}
 
@@ -281,16 +273,3 @@ pub enum Register64 {
 	R14 = 14,
 	R15 = 15,
 }
-
-// pub enum Intermediate {
-// 	Intermediate8([u8; 1]),
-// 	Intermediate16([u8; 2]),
-// 	Intermediate32([u8; 4]),
-// }
-
-// pub enum Instruction {
-// 	AddIntermediateToRegister {
-// 		intermediate: Intermediate,
-// 		destination_register: Register64
-// 	}
-// }

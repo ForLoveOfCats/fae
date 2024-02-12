@@ -857,7 +857,7 @@ fn resolve_block_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if crate::ENABLE_STANDARD_LIBRARY && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let path = PathSegments {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
@@ -913,7 +913,7 @@ fn resolve_block_non_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if crate::ENABLE_STANDARD_LIBRARY && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let path = PathSegments {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
@@ -1492,6 +1492,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		return;
 	};
 
+	context.ir.start_function();
+
 	let generics = context.function_store.shapes[function_shape_index].generics.clone();
 	let mut scope = context.child_scope_with_generic_parameters(&generics);
 	scope.function_initial_symbols_len = scope.symbols.len();
@@ -1672,6 +1674,8 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 }
 
 fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
+	let memory_slot = context.ir.next_memory_slot();
+
 	let mut expression = validate_expression(context, &statement.item.expression);
 
 	let type_id = match &statement.item.parsed_type {

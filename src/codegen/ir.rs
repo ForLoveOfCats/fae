@@ -1,5 +1,8 @@
-use crate::codegen::intermediate::*;
+use crate::codegen::literal::*;
 use crate::type_store::NumericKind;
+
+use crate::codegen::intermediate::IntermediateMetadata;
+use crate::codegen::memory_slot::{FmtDisplayMemorySlot, MemorySlot, MemorySlotMetadata};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
@@ -28,51 +31,51 @@ pub enum InstructionKind {
 	},
 
 	Move8 {
-		value: Intermediate8,
-		destination: MemorySlot,
+		value: Literal8,
+		destination: Destination,
 	},
 
 	Move16 {
-		value: Intermediate16,
-		destination: MemorySlot,
+		value: Literal16,
+		destination: Destination,
 	},
 
 	Move32 {
-		value: Intermediate32,
-		destination: MemorySlot,
+		value: Literal32,
+		destination: Destination,
 	},
 
 	Move64 {
-		value: Intermediate64,
-		destination: MemorySlot,
+		value: Literal64,
+		destination: Destination,
 	},
 
 	Add {
 		kind: NumericKind,
 		left: Source,
 		right: Source,
-		destination: MemorySlot,
+		destination: Destination,
 	},
 
 	Subtract {
 		kind: NumericKind,
 		left: Source,
 		right: Source,
-		destination: MemorySlot,
+		destination: Destination,
 	},
 
 	Multiply {
 		kind: NumericKind,
 		left: Source,
 		right: Source,
-		destination: MemorySlot,
+		destination: Destination,
 	},
 
 	Divide {
 		kind: NumericKind,
 		left: Source,
 		right: Source,
-		destination: MemorySlot,
+		destination: Destination,
 	},
 
 	Call {
@@ -174,7 +177,7 @@ impl Instruction {
 		slots
 	}
 
-	pub fn destination(self) -> Option<MemorySlot> {
+	pub fn destination(self) -> Option<Destination> {
 		match self.kind {
 			InstructionKind::Function { .. }
 			| InstructionKind::Branch { .. }
@@ -237,20 +240,20 @@ impl std::fmt::Display for PrimativeSize {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Source {
-	Intermediate8(Intermediate8),
-	Intermediate16(Intermediate16),
-	Intermediate32(Intermediate32),
-	Intermediate64(Intermediate64),
+	Literal8(Literal8),
+	Literal16(Literal16),
+	Literal32(Literal32),
+	Literal64(Literal64),
 	MemorySlot(MemorySlot),
 }
 
 impl Source {
 	pub fn primative_size(self, module: &IrModule) -> PrimativeSize {
 		match self {
-			Source::Intermediate8(_) => PrimativeSize::Ps8,
-			Source::Intermediate16(_) => PrimativeSize::Ps16,
-			Source::Intermediate32(_) => PrimativeSize::Ps32,
-			Source::Intermediate64(_) => PrimativeSize::Ps64,
+			Source::Literal8(_) => PrimativeSize::Ps8,
+			Source::Literal16(_) => PrimativeSize::Ps16,
+			Source::Literal32(_) => PrimativeSize::Ps32,
+			Source::Literal64(_) => PrimativeSize::Ps64,
 			Source::MemorySlot(slot) => slot.primative_size(module),
 		}
 	}
@@ -269,91 +272,87 @@ impl From<MemorySlot> for Source {
 	}
 }
 
-impl From<Intermediate8> for Source {
-	fn from(value: Intermediate8) -> Source {
-		Source::Intermediate8(value)
+impl From<Literal8> for Source {
+	fn from(value: Literal8) -> Source {
+		Source::Literal8(value)
 	}
 }
 
-impl From<Intermediate16> for Source {
-	fn from(value: Intermediate16) -> Source {
-		Source::Intermediate16(value)
+impl From<Literal16> for Source {
+	fn from(value: Literal16) -> Source {
+		Source::Literal16(value)
 	}
 }
 
-impl From<Intermediate32> for Source {
-	fn from(value: Intermediate32) -> Source {
-		Source::Intermediate32(value)
+impl From<Literal32> for Source {
+	fn from(value: Literal32) -> Source {
+		Source::Literal32(value)
 	}
 }
 
-impl From<Intermediate64> for Source {
-	fn from(value: Intermediate64) -> Source {
-		Source::Intermediate64(value)
+impl From<Literal64> for Source {
+	fn from(value: Literal64) -> Source {
+		Source::Literal64(value)
 	}
 }
 
 pub struct FmtDisplaySource<'a> {
 	source: Source,
-	borrowed_metadata: &'a [SlotMetadata],
+	borrowed_metadata: &'a [MemorySlotMetadata],
 }
 
 // This is a damn mess, belch
 impl<'a> std::fmt::Display for FmtDisplaySource<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self.source {
-			Source::Intermediate8(intermediate) => write!(f, "{intermediate}"),
-			Source::Intermediate16(intermediate) => write!(f, "{intermediate}"),
-			Source::Intermediate32(intermediate) => write!(f, "{intermediate}"),
-			Source::Intermediate64(intermediate) => write!(f, "{intermediate}"),
+			Source::Literal8(literal) => write!(f, "{literal}"),
+			Source::Literal16(literal) => write!(f, "{literal}"),
+			Source::Literal32(literal) => write!(f, "{literal}"),
+			Source::Literal64(literal) => write!(f, "{literal}"),
 			Source::MemorySlot(slot) => FmtDisplayMemorySlot { slot, borrowed_metadata: self.borrowed_metadata }.fmt(f),
 		}
 	}
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct MemorySlot {
-	pub index: u16,
+#[derive(Debug, Clone, Copy)]
+pub enum Destination {
+	MemorySlot(MemorySlot),
 }
 
-impl MemorySlot {
-	pub fn index(self) -> usize {
-		self.index as usize
-	}
-
+impl Destination {
 	pub fn primative_size(self, module: &IrModule) -> PrimativeSize {
-		module.current_function().memory_slots[self.index()].primative_size
+		match self {
+			Destination::MemorySlot(slot) => slot.primative_size(module),
+		}
 	}
 
-	pub fn display(self, module: &IrModule) -> FmtDisplayMemorySlot {
-		FmtDisplayMemorySlot {
-			slot: self,
+	pub fn display(self, module: &IrModule) -> FmtDisplayDestination {
+		FmtDisplayDestination {
+			destination: self,
 			borrowed_metadata: module.current_function().memory_slots.as_slice(),
 		}
 	}
 }
 
-pub struct FmtDisplayMemorySlot<'a> {
-	slot: MemorySlot,
-	borrowed_metadata: &'a [SlotMetadata],
-}
-
-impl<'a> std::fmt::Display for FmtDisplayMemorySlot<'a> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		let metadata = self.borrowed_metadata[self.slot.index()];
-		write!(f, "${}_{}", self.slot.index, metadata.primative_size)
+impl From<MemorySlot> for Destination {
+	fn from(value: MemorySlot) -> Destination {
+		Destination::MemorySlot(value)
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct SlotMetadata {
-	primative_size: PrimativeSize,
-	// Used by the optimizer to track if the previously inspected (in reverse function order) operation
-	// to this memory slot was a write instead of a read
-	pub next_forward_operation_is_write: bool,
+pub struct FmtDisplayDestination<'a> {
+	destination: Destination,
+	borrowed_metadata: &'a [MemorySlotMetadata],
 }
 
-impl SlotMetadata {}
+// This is a damn mess, belch
+impl<'a> std::fmt::Display for FmtDisplayDestination<'a> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self.destination {
+			Destination::MemorySlot(slot) => FmtDisplayMemorySlot { slot, borrowed_metadata: self.borrowed_metadata }.fmt(f),
+		}
+	}
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Label {
@@ -392,7 +391,8 @@ impl std::fmt::Display for Function {
 pub struct FunctionData {
 	pub next_label: u32,
 	pub next_control_flow_id: u32,
-	pub memory_slots: Vec<SlotMetadata>,
+	pub memory_slots: Vec<MemorySlotMetadata>,
+	pub intermediate_slots: Vec<IntermediateMetadata>,
 }
 
 #[derive(Debug)]
@@ -425,6 +425,7 @@ impl IrModule {
 			next_label: 0,
 			next_control_flow_id: 0,
 			memory_slots: Vec::new(),
+			intermediate_slots: Vec::new(),
 		};
 		self.functions.push(data);
 
@@ -456,10 +457,10 @@ impl IrModule {
 		label
 	}
 
-	pub fn next_memory_slot(&mut self, size: PrimativeSize) -> MemorySlot {
+	pub fn next_memory_slot(&mut self) -> MemorySlot {
 		let current_function = self.current_function_mut();
 		let index = current_function.memory_slots.len() as u16;
-		let metadata = SlotMetadata { primative_size: size, next_forward_operation_is_write: false };
+		let metadata = MemorySlotMetadata { primative_size: None, next_forward_operation_is_write: false };
 		current_function.memory_slots.push(metadata);
 		MemorySlot { index }
 	}
@@ -474,17 +475,17 @@ impl IrModule {
 		let instruction = Instruction { kind, removed: false };
 		instruction.check_sizes_match(self);
 
-		let mut source_slots_buffer = [MemorySlot::default(); 2];
-		let source_slots = instruction.source_slots(&mut source_slots_buffer);
-		let destination = instruction.destination();
+		// let mut source_slots_buffer = [MemorySlot::default(); 2];
+		// let source_slots = instruction.source_slots(&mut source_slots_buffer);
+		// let destination = instruction.destination();
 
-		for source_slot in source_slots {
-			if let Some(destination) = destination {
-				if source_slot.index == destination.index {
-					continue;
-				}
-			}
-		}
+		// for source_slot in source_slots {
+		// 	if let Some(destination) = destination {
+		// 		if source_slot.index == destination.index {
+		// 			continue;
+		// 		}
+		// 	}
+		// }
 
 		self.instructions.push(instruction);
 	}

@@ -11,9 +11,11 @@ use crate::validator::{validate, CIncludeStore, FunctionStore, RootLayers};
 pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: String) -> Option<PathBuf> {
 	// Can be folded into parallel parsing, ish
 	let mut files = Vec::new();
-	if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
-		eprintln!("Error loading standard library files: {}", err);
-		return None;
+	if crate::ENABLE_STANDARD_LIBRARY {
+		if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
+			eprintln!("Error loading standard library files: {}", err);
+			return None;
+		}
 	}
 	if let Err(err) = load_all_files(path, &mut files) {
 		eprintln!("Error loading source files: {}", err);
@@ -55,11 +57,11 @@ pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: Str
 	messages.reset();
 
 	module.debug_dump();
-	println!("\n\n\n");
-	let tracker = codegen::optimization::optimize(&mut module);
-	module.debug_dump();
-	println!("\n\n\n");
-	println!("{tracker:#?}");
+	// println!("\n\n\n");
+	// let tracker = codegen::optimization::optimize(&mut module);
+	// module.debug_dump();
+	// println!("\n\n\n");
+	// println!("{tracker:#?}");
 	println!();
 
 	//Not parallelizable

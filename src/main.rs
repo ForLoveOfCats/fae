@@ -22,6 +22,9 @@ use std::{ffi::OsStr, path::Path};
 
 use project::build_project;
 
+// TODO: Re-enable standard library
+pub const ENABLE_STANDARD_LIBRARY: bool = false;
+
 fn main() {
 	let mut args = std::env::args_os().skip(1);
 	if args.next().as_deref() == Some(OsStr::new("t")) {
@@ -33,7 +36,7 @@ fn main() {
 	let mut stderr = std::io::stderr();
 	let project_path = Path::new("./example");
 	let root_name = "example".to_owned();
-	let Some(binary_path) = build_project(&mut stderr, project_path, root_name) else {
+	let Some(_binary_path) = build_project(&mut stderr, project_path, root_name) else {
 		return;
 	};
 

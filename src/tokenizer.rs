@@ -1,5 +1,5 @@
-use super::error::{Messages, ParseResult};
-use super::span::Span;
+use crate::error::{Messages, ParseResult};
+use crate::span::Span;
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

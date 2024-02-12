@@ -1,8 +1,7 @@
 use std::ops::Range;
 
-use crate::codegen::ir::{FlowControlId, Source};
-
-use super::ir::{FunctionData, Instruction, InstructionKind, IrModule, MemorySlot};
+use crate::codegen::ir::{Destination, FlowControlId, FunctionData, Instruction, InstructionKind, IrModule, Source};
+use crate::codegen::memory_slot::MemorySlot;
 
 pub fn optimize(module: &mut IrModule) -> Tracker {
 	let mut tracker = Tracker { overwritten_slot_writes_removals: 0 };
@@ -122,7 +121,7 @@ fn mark_removed_if_overwritten_slot_write(
 		}
 	}
 
-	let Some(destination) = instruction.destination() else {
+	let Some(Destination::MemorySlot(destination)) = instruction.destination() else {
 		return;
 	};
 
