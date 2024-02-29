@@ -1,11 +1,16 @@
 use crate::codegen::literal::Literal32;
 
+enum PrintEntry {
+	Note { note: &'static str },
+	Instruction { length: usize, label: String },
+}
+
 pub struct Assembler<'a> {
 	bytes: &'a mut Vec<u8>,
 	initial_bytes_len: usize,
 
 	current_instruction_start_offset: usize,
-	lengths: Vec<usize>,
+	print_sequence: Vec<PrintEntry>,
 }
 
 impl<'a> Assembler<'a> {
@@ -15,12 +20,19 @@ impl<'a> Assembler<'a> {
 			bytes,
 			initial_bytes_len,
 			current_instruction_start_offset: initial_bytes_len,
-			lengths: Vec::new(),
+			print_sequence: Vec::new(),
 		}
 	}
 
-	fn finalize_instruction(&mut self) {
-		self.lengths.push(self.bytes.len() - self.current_instruction_start_offset);
+	pub fn note(&mut self, note: &'static str) {
+		self.print_sequence.push(PrintEntry::Note { note });
+	}
+
+	fn finalize_instruction(&mut self, label: impl FnOnce() -> String) {
+		let length = self.bytes.len() - self.current_instruction_start_offset;
+		let label = label();
+
+		self.print_sequence.push(PrintEntry::Instruction { length, label });
 		self.current_instruction_start_offset = self.bytes.len();
 	}
 
@@ -30,9 +42,21 @@ impl<'a> Assembler<'a> {
 		self.bytes.push(prefix);
 	}
 
-	fn register_32_rex_prefix(&mut self, register: Register32) {
+	fn runtime_rex_prefix(&mut self, w: bool, r: bool, x: bool, b: bool) {
+		const MARKER: u8 = 0b0100 << 4;
+		let prefix = MARKER | (w as u8) << 3 | (r as u8) << 2 | (x as u8) << 1 | (b as u8);
+		self.bytes.push(prefix);
+	}
+
+	fn register32_rex_prefix(&mut self, register: Register32) {
 		if register as u8 >= 8 {
 			self.rex_prefix::<false, false, false, true>();
+		}
+	}
+
+	fn register64_rex_prefix(&mut self, register: Register64) {
+		if register as u8 >= 8 {
+			self.rex_prefix::<true, false, false, true>();
 		}
 	}
 
@@ -42,17 +66,69 @@ impl<'a> Assembler<'a> {
 		self.bytes.push(mod_rm);
 	}
 
-	fn register32_rm_encoding(&mut self, register: Register32) -> u8 {
-		let register = register as u8;
-		if register >= 8 {
+	// Call before pushing any other opcode bytes
+	fn register32_rm_encoding(&mut self, destination: Register32) -> u8 {
+		let destination = destination as u8;
+
+		if destination >= 8 {
 			self.rex_prefix::<false, false, false, true>();
-			register - 8
+			destination - 8
 		} else {
-			register
+			destination
 		}
 	}
 
-	// make sure to add mod_rm before instruction if using register >= r8w
+	// Call before pushing any other opcode bytes
+	fn register32_reg_rm_encoding(&mut self, source: Register32, destination: Register32) -> (u8, u8) {
+		let mut source = source as u8;
+		let mut destination = destination as u8;
+
+		let mut r = false;
+		let mut b = false;
+		if source >= 8 {
+			r = true;
+			source -= 8;
+		}
+		if destination >= 8 {
+			b = true;
+			destination -= 8;
+		}
+
+		self.runtime_rex_prefix(false, r, false, b);
+		(source, destination)
+	}
+
+	// Call before pushing any other opcode bytes
+	fn register64_rm_encoding(&mut self, destination: Register64) -> u8 {
+		let destination = destination as u8;
+		if destination >= 8 {
+			self.rex_prefix::<false, false, false, true>();
+			destination - 8
+		} else {
+			destination
+		}
+	}
+
+	// Call before pushing any other opcode bytes
+	fn register64_reg_rm_encoding(&mut self, source: Register64, destination: Register64) -> (u8, u8) {
+		let mut source = source as u8;
+		let mut destination = destination as u8;
+
+		let mut r = false;
+		let mut b = false;
+		if source >= 8 {
+			r = true;
+			source -= 8;
+		}
+		if destination >= 8 {
+			b = true;
+			destination -= 8;
+		}
+
+		self.runtime_rex_prefix(true, r, false, b);
+		(source, destination)
+	}
+
 	fn plus_rd(&mut self, register: Register32) {
 		let mut value = register as u8;
 		if value >= 8 {
@@ -62,12 +138,29 @@ impl<'a> Assembler<'a> {
 		*self.bytes.last_mut().unwrap() += value;
 	}
 
+	fn plus_rq(&mut self, register: Register64) {
+		let mut value = register as u8;
+		if value >= 8 {
+			value -= 8;
+		}
+
+		*self.bytes.last_mut().unwrap() += value;
+	}
+
+	pub fn push_register64(&mut self, source_register: Register64) {
+		self.register64_rm_encoding(source_register);
+		self.bytes.push(0x50);
+		self.plus_rq(source_register);
+		self.finalize_instruction(|| format!("push_register64 {source_register}"));
+	}
+
 	pub fn move_literal32_to_register32(&mut self, literal: impl Into<Literal32>, destination_register: Register32) {
-		self.register_32_rex_prefix(destination_register);
+		let literal = literal.into();
+		self.register32_rex_prefix(destination_register);
 		self.bytes.push(0xb8);
 		self.plus_rd(destination_register);
-		self.bytes.extend_from_slice(&literal.into().0);
-		self.finalize_instruction();
+		self.bytes.extend_from_slice(&literal.0);
+		self.finalize_instruction(|| format!("move_literal32_to_register32 {literal}, {destination_register}"));
 	}
 
 	pub fn add_literal32_to_register32(&mut self, literal: impl Into<Literal32>, destination_register: Register32) {
@@ -75,7 +168,7 @@ impl<'a> Assembler<'a> {
 		if destination_register == Register32::Eax {
 			self.bytes.push(0x05);
 			self.bytes.extend_from_slice(&literal.0);
-			self.finalize_instruction();
+			self.finalize_instruction(|| format!("add_literal32_to_register32 {literal}, {destination_register}"));
 			return;
 		}
 
@@ -83,13 +176,44 @@ impl<'a> Assembler<'a> {
 		self.bytes.push(0x81);
 		self.mod_rm(AddressingMode::RegisterDirect, 0, rm);
 		self.bytes.extend_from_slice(&literal.0);
-		self.finalize_instruction();
+		self.finalize_instruction(|| format!("add_literal32_to_register32 {literal}, {destination_register}"));
+	}
+
+	pub fn sub_literal32_to_register64(&mut self, literal: impl Into<Literal32>, destination_register: Register64) {
+		let literal = literal.into();
+		if destination_register == Register64::Rax {
+			self.rex_prefix::<true, false, false, false>();
+			self.bytes.push(0x2d);
+			self.bytes.extend_from_slice(&literal.0);
+			self.finalize_instruction(|| format!("sub_literal32_to_register64 {literal}, {destination_register}"));
+			return;
+		}
+
+		let mut rm = destination_register as u8;
+		if rm >= 8 {
+			self.rex_prefix::<true, false, false, true>();
+			rm -= 8;
+		} else {
+			self.rex_prefix::<true, false, false, false>();
+		};
+
+		self.bytes.push(0x81);
+		self.mod_rm(AddressingMode::RegisterDirect, 5, rm);
+		self.bytes.extend_from_slice(&literal.0);
+		self.finalize_instruction(|| format!("sub_literal32_to_register64 {literal}, {destination_register}"));
+	}
+
+	pub fn move_register64_to_register64(&mut self, source_register: Register64, destination_register: Register64) {
+		let (reg, rm) = self.register64_reg_rm_encoding(source_register, destination_register);
+		self.bytes.push(0x89);
+		self.mod_rm(AddressingMode::RegisterDirect, reg, rm);
+		self.finalize_instruction(|| format!("move_register64_to_register64 {source_register}, {destination_register}"));
 	}
 
 	pub fn syscall(&mut self) {
 		self.bytes.push(0x0f);
 		self.bytes.push(0x05);
-		self.finalize_instruction();
+		self.finalize_instruction(|| "syscall".to_owned());
 	}
 
 	#[cfg(test)]
@@ -132,8 +256,8 @@ impl<'a> Assembler<'a> {
 				println!("{RED}Actual did not match expected:{RESET}");
 			}
 
-			println!("{line_number:2}| Expected: {expected}");
-			println!("{line_number:2}| Actual:   {actual}");
+			println!("{line_number:2}| Expected: {expected:?}");
+			println!("{line_number:2}| Actual:   {actual:?}");
 			println!();
 
 			if mismatch {
@@ -166,18 +290,42 @@ impl<'a> Assembler<'a> {
 impl<'a> std::fmt::Display for Assembler<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let mut offset = self.initial_bytes_len;
-		for &length in &self.lengths {
+		for print_entry in &self.print_sequence {
+			let (length, label) = match print_entry {
+				PrintEntry::Note { note: text } => {
+					#[cfg(not(features = "test-support"))]
+					writeln!(f, "// {text}")?;
+					continue;
+				}
+
+				PrintEntry::Instruction { length, label } => (length, label),
+			};
+
 			let bytes = &self.bytes[offset..offset + length];
 			offset += length;
 
+			let mut spaces_written = 0;
 			for (index, byte) in bytes.iter().enumerate() {
 				write!(f, "{byte:02x}")?;
+				spaces_written += 2;
+
 				if index + 1 < bytes.len() {
 					write!(f, " ")?;
+					spaces_written += 1;
 				}
 			}
 
+			const MAX_BYTES: u32 = 15;
+			const MAX_SPACES: u32 = MAX_BYTES * 2 + MAX_BYTES;
+			#[cfg(not(test))]
+			for _ in spaces_written..MAX_SPACES {
+				write!(f, " ")?;
+			}
+
+			#[cfg(test)]
 			writeln!(f)?;
+			#[cfg(not(test))]
+			writeln!(f, "{label}")?;
 		}
 
 		Ok(())
@@ -232,6 +380,31 @@ pub enum Register16 {
 	R15w = 15,
 }
 
+impl std::fmt::Display for Register16 {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		use Register16::*;
+
+		match self {
+			Ax => f.write_str("Ax"),
+			Bx => f.write_str("Bx"),
+			Cx => f.write_str("Cx"),
+			Dx => f.write_str("Dx"),
+			Si => f.write_str("Si"),
+			Di => f.write_str("Di"),
+			Dp => f.write_str("Dp"),
+			Sp => f.write_str("Sp"),
+			R8w => f.write_str("R8w"),
+			R9w => f.write_str("R9w"),
+			R10w => f.write_str("R10w"),
+			R11w => f.write_str("R11w"),
+			R12w => f.write_str("R12w"),
+			R13w => f.write_str("R13w"),
+			R14w => f.write_str("R14w"),
+			R15w => f.write_str("R15w"),
+		}
+	}
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Register32 {
 	Eax = 0,
@@ -253,6 +426,31 @@ pub enum Register32 {
 	R15d = 15,
 }
 
+impl std::fmt::Display for Register32 {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		use Register32::*;
+
+		match self {
+			Eax => f.write_str("Eax"),
+			Ebx => f.write_str("Ebx"),
+			Ecx => f.write_str("Ecx"),
+			Edx => f.write_str("Edx"),
+			Esi => f.write_str("Esi"),
+			Edi => f.write_str("Edi"),
+			Ebp => f.write_str("Ebp"),
+			Esp => f.write_str("Esp"),
+			R8d => f.write_str("R8d"),
+			R9d => f.write_str("R9d"),
+			R10d => f.write_str("R10d"),
+			R11d => f.write_str("R11d"),
+			R12d => f.write_str("R12d"),
+			R13d => f.write_str("R13d"),
+			R14d => f.write_str("R14d"),
+			R15d => f.write_str("R15d"),
+		}
+	}
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Register64 {
 	Rax = 0,
@@ -272,4 +470,29 @@ pub enum Register64 {
 	R13 = 13,
 	R14 = 14,
 	R15 = 15,
+}
+
+impl std::fmt::Display for Register64 {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		use Register64::*;
+
+		match self {
+			Rax => f.write_str("Rax"),
+			Rbx => f.write_str("Rbx"),
+			Rcx => f.write_str("Rcx"),
+			Rdx => f.write_str("Rdx"),
+			Rsi => f.write_str("Rsi"),
+			Rdi => f.write_str("Rdi"),
+			Rbp => f.write_str("Rbp"),
+			Rsp => f.write_str("Rsp"),
+			R8 => f.write_str("R8"),
+			R9 => f.write_str("R9"),
+			R10 => f.write_str("R10"),
+			R11 => f.write_str("R11"),
+			R12 => f.write_str("R12"),
+			R13 => f.write_str("R13"),
+			R14 => f.write_str("R14"),
+			R15 => f.write_str("R15"),
+		}
+	}
 }

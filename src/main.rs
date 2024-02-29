@@ -4,11 +4,11 @@ mod error;
 #[macro_use]
 mod multi_line_string;
 
-// mod c_codegen; TODO Remove
+mod c_codegen; // TODO Remove
 mod codegen;
 mod color;
 mod file;
-mod ir; // TODO Remove
+mod ir;
 mod parser;
 mod project;
 mod span;

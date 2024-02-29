@@ -14,19 +14,19 @@ pub struct Literal64(pub [u8; 8]);
 
 impl std::fmt::Display for Literal8 {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{{{:#04x}}}_8", self.0[0])
+		write!(f, "{{{:#02}}}", self.0[0])
 	}
 }
 
 impl std::fmt::Display for Literal16 {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{{{:#04x} {:#04x}}}_16", self.0[1], self.0[0])
+		write!(f, "{{{:#02} {:#02}}}", self.0[1], self.0[0])
 	}
 }
 
 impl std::fmt::Display for Literal32 {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{{{:#04x} {:#04x} {:#04x} {:#04x}}}_32", self.0[3], self.0[2], self.0[1], self.0[0])
+		write!(f, "{{{:#02} {:#02} {:#02} {:#02}}}", self.0[3], self.0[2], self.0[1], self.0[0])
 	}
 }
 
@@ -34,7 +34,7 @@ impl std::fmt::Display for Literal64 {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		write!(
 			f,
-			"{{{:#04x} {:#04x} {:#04x} {:#04x} {:#04x} {:#04x} {:#04x} {:#04x}}}_64",
+			"{{{:#02} {:#02} {:#02} {:#02} {:#02} {:#02} {:#02} {:#02}}}",
 			self.0[7], self.0[6], self.0[5], self.0[4], self.0[3], self.0[2], self.0[1], self.0[0],
 		)
 	}
