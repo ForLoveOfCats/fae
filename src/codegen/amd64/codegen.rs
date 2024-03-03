@@ -1,9 +1,11 @@
 use crate::codegen::amd64::assembler::{Assembler, Register64};
 use crate::codegen::literal::Literal32;
 use crate::error::Messages;
-use crate::ir::FunctionId;
+use crate::ir::{Block, Expression, FunctionId, TypeArguments};
 use crate::type_store::TypeStore;
 use crate::validator::FunctionStore;
+
+use super::assembler::UnsizedRegister;
 
 pub fn generate<'a>(
 	messages: &mut Messages<'a>,
@@ -16,6 +18,22 @@ pub fn generate<'a>(
 	while let Some(function_id) = function_generate_queue.pop() {
 		generate_function(messages, type_store, function_store, assembler, function_id);
 	}
+}
+
+struct Context<'a, 'b> {
+	messages: &'b mut Messages<'a>,
+	type_store: &'b mut TypeStore<'a>,
+	function_store: &'b mut FunctionStore<'a>,
+	module_path: &'a [String],
+	function_type_arguments: &'b TypeArguments,
+	function_id: FunctionId,
+}
+
+impl<'a, 'b> Context<'a, 'b> {}
+
+enum Binding {
+	Register(UnsizedRegister),
+	Stack { offset: usize },
 }
 
 pub fn generate_function<'a>(
@@ -42,8 +60,43 @@ pub fn generate_function<'a>(
 		}
 	}
 
+	let block = shape.block.clone();
+	let module_path = shape.module_path;
+	let type_arguments = specialization.type_arguments.clone();
+
+	let mut context = Context {
+		messages,
+		type_store,
+		function_store,
+		module_path,
+		function_type_arguments: &type_arguments,
+		function_id,
+	};
+
 	assembler.note("Function prelude");
 	assembler.push_register64(Register64::Rbp);
 	assembler.move_register64_to_register64(Register64::Rsp, Register64::Rbp);
 	assembler.sub_literal32_to_register64(Literal32::from(32), Register64::Rsp); // TODO: Calculate stack usage
+
+	generate_block(&mut context, assembler, block.as_ref().unwrap());
+
+	assembler.note("Function shutdown");
+	assembler.leave();
+	assembler.ret_near();
+}
+
+fn generate_block(context: &mut Context, assembler: &mut Assembler, block: &Block) {
+	for statement in &block.statements {
+		match &statement.kind {
+			crate::ir::StatementKind::Expression(expression) => generate_expression(context, assembler, expression),
+
+			crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
+			crate::ir::StatementKind::Binding(_) => todo!("generate StatementKind::Binding"),
+			crate::ir::StatementKind::Return(_) => todo!("generate StatementKind::Return"),
+		};
+	}
+}
+
+fn generate_expression(context: &mut Context, assembler: &mut Assembler, expression: &Expression) -> Option<Binding> {
+	None
 }

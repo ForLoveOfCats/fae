@@ -210,6 +210,16 @@ impl<'a> Assembler<'a> {
 		self.finalize_instruction(|| format!("move_register64_to_register64 {source_register}, {destination_register}"));
 	}
 
+	pub fn leave(&mut self) {
+		self.bytes.push(0xc9);
+		self.finalize_instruction(|| "leave".to_owned());
+	}
+
+	pub fn ret_near(&mut self) {
+		self.bytes.push(0xc3);
+		self.finalize_instruction(|| "ret_near".to_owned());
+	}
+
 	pub fn syscall(&mut self) {
 		self.bytes.push(0x0f);
 		self.bytes.push(0x05);
@@ -337,7 +347,29 @@ pub enum AddressingMode {
 	// todo: more
 }
 
+#[repr(u8)]
+pub enum UnsizedRegister {
+	Uax = 0,
+	Ubx = 3,
+	Ucx = 1,
+	Udx = 2,
+	Usi = 6,
+	Udi = 7,
+	Udp = 5,
+	Usp = 4,
+
+	R8u = 8,
+	R9u = 9,
+	R10u = 10,
+	R11u = 11,
+	R12u = 12,
+	R13u = 13,
+	R14u = 14,
+	R15u = 15,
+}
+
 // #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+// #[repr(u8)]
 // pub enum Register8 {
 // 	//todo add H registers
 // 	Al = 0,
@@ -360,6 +392,7 @@ pub enum AddressingMode {
 // }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
 pub enum Register16 {
 	Ax = 0,
 	Bx = 3,
@@ -378,6 +411,12 @@ pub enum Register16 {
 	R13w = 13,
 	R14w = 14,
 	R15w = 15,
+}
+
+impl From<UnsizedRegister> for Register16 {
+	fn from(value: UnsizedRegister) -> Self {
+		unsafe { std::mem::transmute(value as u8) }
+	}
 }
 
 impl std::fmt::Display for Register16 {
@@ -406,6 +445,7 @@ impl std::fmt::Display for Register16 {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
 pub enum Register32 {
 	Eax = 0,
 	Ebx = 3,
@@ -424,6 +464,12 @@ pub enum Register32 {
 	R13d = 13,
 	R14d = 14,
 	R15d = 15,
+}
+
+impl From<UnsizedRegister> for Register32 {
+	fn from(value: UnsizedRegister) -> Self {
+		unsafe { std::mem::transmute(value as u8) }
+	}
 }
 
 impl std::fmt::Display for Register32 {
@@ -452,6 +498,7 @@ impl std::fmt::Display for Register32 {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
 pub enum Register64 {
 	Rax = 0,
 	Rbx = 3,
@@ -470,6 +517,12 @@ pub enum Register64 {
 	R13 = 13,
 	R14 = 14,
 	R15 = 15,
+}
+
+impl From<UnsizedRegister> for Register64 {
+	fn from(value: UnsizedRegister) -> Self {
+		unsafe { std::mem::transmute(value as u8) }
+	}
 }
 
 impl std::fmt::Display for Register64 {
