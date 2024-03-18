@@ -61,8 +61,9 @@ pub fn build_project(err_output: &mut impl WriteFmt, path: &Path, root_name: Str
 
 	//Not parallelizable
 	let binary_path = Path::new("./output.executable");
-	let elf = codegen::amd64::elf::construct_elf(&mut messages, &mut type_store, &mut function_store);
-	std::fs::write("./shared/executable.x64", elf).unwrap();
+	// let elf = codegen::amd64::elf::generate_elf(&mut messages, &mut type_store, &mut function_store);
+	let _elf = codegen::llvm::amd64::generate_elf(&mut messages, &mut type_store, &mut function_store);
+	// std::fs::write("./shared/executable.x64", elf).unwrap();
 	// generate_code(
 	// 	&mut messages,
 	// 	&c_include_store,

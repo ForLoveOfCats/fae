@@ -1,7 +1,7 @@
 use std::mem::{size_of, transmute};
 
 use crate::codegen::amd64::assembler::{Assembler, Register32};
-use crate::codegen::amd64::codegen;
+use crate::codegen::codegen::generate;
 use crate::error::Messages;
 use crate::type_store::TypeStore;
 use crate::validator::FunctionStore;
@@ -100,7 +100,7 @@ impl ProgramHeader {
 	}
 }
 
-pub fn construct_elf<'a>(
+pub fn generate_elf<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -121,7 +121,7 @@ pub fn construct_elf<'a>(
 	}
 
 	let mut assembler = Assembler::new(&mut data);
-	codegen::generate(messages, type_store, function_store, &mut assembler);
+	// generate(messages, type_store, function_store, &mut assembler);
 
 	assembler.note("Process exit");
 	assembler.move_literal32_to_register32(0, Register32::Edi); // Return code

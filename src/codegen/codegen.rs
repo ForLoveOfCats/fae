@@ -1,22 +1,20 @@
-use crate::codegen::amd64::assembler::{Assembler, Register64};
-use crate::codegen::literal::Literal32;
 use crate::error::Messages;
 use crate::ir::{Block, Expression, FunctionId, TypeArguments};
 use crate::type_store::TypeStore;
 use crate::validator::FunctionStore;
 
-use super::assembler::UnsizedRegister;
+use super::generator::Generator;
 
-pub fn generate<'a>(
+pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	assembler: &mut Assembler,
+	generator: &mut G,
 ) {
 	let main = function_store.main.unwrap();
 	let mut function_generate_queue = vec![main];
 	while let Some(function_id) = function_generate_queue.pop() {
-		generate_function(messages, type_store, function_store, assembler, function_id);
+		generate_function(messages, type_store, function_store, generator, function_id);
 	}
 }
 
@@ -31,16 +29,11 @@ struct Context<'a, 'b> {
 
 impl<'a, 'b> Context<'a, 'b> {}
 
-enum Binding {
-	Register(UnsizedRegister),
-	Stack { offset: usize },
-}
-
-pub fn generate_function<'a>(
+pub fn generate_function<'a, G: Generator>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	assembler: &mut Assembler,
+	generator: &mut G,
 	function_id: FunctionId,
 ) {
 	let shape = &mut function_store.shapes[function_id.function_shape_index];
@@ -73,22 +66,22 @@ pub fn generate_function<'a>(
 		function_id,
 	};
 
-	assembler.note("Function prelude");
-	assembler.push_register64(Register64::Rbp);
-	assembler.move_register64_to_register64(Register64::Rsp, Register64::Rbp);
-	assembler.sub_literal32_to_register64(Literal32::from(32), Register64::Rsp); // TODO: Calculate stack usage
+	// assembler.note("Function prelude");
+	// assembler.push_register64(Register64::Rbp);
+	// assembler.move_register64_to_register64(Register64::Rsp, Register64::Rbp);
+	// assembler.sub_literal32_to_register64(Literal32::from(32), Register64::Rsp); // TODO: Calculate stack usage
 
-	generate_block(&mut context, assembler, block.as_ref().unwrap());
+	generate_block(&mut context, generator, block.as_ref().unwrap());
 
-	assembler.note("Function shutdown");
-	assembler.leave();
-	assembler.ret_near();
+	// assembler.note("Function shutdown");
+	// assembler.leave();
+	// assembler.ret_near();
 }
 
-fn generate_block(context: &mut Context, assembler: &mut Assembler, block: &Block) {
+fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {
 	for statement in &block.statements {
 		match &statement.kind {
-			crate::ir::StatementKind::Expression(expression) => generate_expression(context, assembler, expression),
+			crate::ir::StatementKind::Expression(expression) => generate_expression(context, generator, expression),
 
 			crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
 			crate::ir::StatementKind::Binding(_) => todo!("generate StatementKind::Binding"),
@@ -97,6 +90,6 @@ fn generate_block(context: &mut Context, assembler: &mut Assembler, block: &Bloc
 	}
 }
 
-fn generate_expression(context: &mut Context, assembler: &mut Assembler, expression: &Expression) -> Option<Binding> {
+fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, expression: &Expression) -> Option<G::Binding> {
 	None
 }
