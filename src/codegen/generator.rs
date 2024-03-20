@@ -5,4 +5,6 @@ pub trait Generator {
 	type Binding;
 
 	fn start_function(&mut self, type_store: &TypeStore, name: &str, function: &Function);
+
+	fn finalize_generator(&mut self);
 }

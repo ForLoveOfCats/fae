@@ -18,6 +18,8 @@ pub fn generate<'a, G: Generator>(
 			generate_function(messages, type_store, function_store, generator, function_id);
 		}
 	}
+
+	generator.finalize_generator();
 }
 
 struct Context<'a, 'b> {
