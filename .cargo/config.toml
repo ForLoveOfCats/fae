@@ -1,0 +1,3 @@
+[env]
+# TODO: I'm annoyed I can't make this path relative, why?
+LLVM_SYS_170_PREFIX = "/home/julia/Stuff/llvm-prebuilt"

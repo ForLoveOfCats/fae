@@ -11,10 +11,12 @@ pub fn generate<'a, G: Generator>(
 	function_store: &mut FunctionStore<'a>,
 	generator: &mut G,
 ) {
-	let main = function_store.main.unwrap();
-	let mut function_generate_queue = vec![main];
-	while let Some(function_id) = function_generate_queue.pop() {
-		generate_function(messages, type_store, function_store, generator, function_id);
+	for function_shape_index in 0..function_store.shapes.len() {
+		let shape = &function_store.shapes[function_shape_index];
+		for specialization_index in 0..shape.specializations.len() {
+			let function_id = FunctionId { function_shape_index, specialization_index };
+			generate_function(messages, type_store, function_store, generator, function_id);
+		}
 	}
 }
 
@@ -52,6 +54,8 @@ pub fn generate_function<'a, G: Generator>(
 			return;
 		}
 	}
+
+	generator.start_function(type_store, shape.name.item, specialization);
 
 	let block = shape.block.clone();
 	let module_path = shape.module_path;
