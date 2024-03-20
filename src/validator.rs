@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
+use crate::cli_arguments::CliArguments;
 use crate::error::*;
 use crate::ir::*;
 use crate::span::Span;
@@ -10,6 +11,8 @@ use crate::type_store::*;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
+	pub cli_arguments: &'a CliArguments,
+
 	pub file_index: usize,
 	pub module_path: &'a [String],
 
@@ -41,6 +44,8 @@ impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
 impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	fn child_scope<'s>(&'s mut self) -> Context<'a, 's, 'c> {
 		Context {
+			cli_arguments: self.cli_arguments,
+
 			file_index: self.file_index,
 			module_path: self.module_path,
 
@@ -69,6 +74,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		generic_parameters: &'t GenericParameters<'a>,
 	) -> Context<'a, 's, 't> {
 		Context {
+			cli_arguments: self.cli_arguments,
+
 			file_index: self.file_index,
 			module_path: self.module_path,
 
@@ -618,6 +625,7 @@ impl<'a> FunctionStore<'a> {
 }
 
 pub fn validate<'a>(
+	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
 	c_include_store: &mut CIncludeStore<'a>,
@@ -629,7 +637,7 @@ pub fn validate<'a>(
 	let mut constants = Vec::new();
 
 	create_root_types(messages, type_store, root_layers, parsed_files);
-	resolve_root_type_imports(messages, root_layers, parsed_files);
+	resolve_root_type_imports(cli_arguments, messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
 	let mut readables = Readables::new();
@@ -646,6 +654,7 @@ pub fn validate<'a>(
 
 	let mut symbols = Symbols::new();
 	validate_root_consts(
+		cli_arguments,
 		messages,
 		root_layers,
 		c_include_store,
@@ -667,6 +676,7 @@ pub fn validate<'a>(
 
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let context = Context {
+			cli_arguments,
 			file_index,
 			module_path,
 			messages,
@@ -708,14 +718,19 @@ fn create_root_types<'a>(
 	}
 }
 
-fn resolve_root_type_imports<'a>(messages: &mut Messages, root_layers: &mut RootLayers<'a>, parsed_files: &[tree::File<'a>]) {
+fn resolve_root_type_imports<'a>(
+	cli_arguments: &CliArguments,
+	messages: &mut Messages,
+	root_layers: &mut RootLayers<'a>,
+	parsed_files: &[tree::File<'a>],
+) {
 	for parsed_file in parsed_files {
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
 
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
-		resolve_block_type_imports(messages, root_layers, &mut symbols, module_path, 0, block, true);
+		resolve_block_type_imports(cli_arguments, messages, root_layers, &mut symbols, module_path, 0, block, true);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
@@ -790,6 +805,7 @@ fn create_root_functions<'a>(
 }
 
 fn validate_root_consts<'a>(
+	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
 	c_include_store: &mut CIncludeStore<'a>,
@@ -811,6 +827,7 @@ fn validate_root_consts<'a>(
 
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut context = Context {
+			cli_arguments,
 			file_index,
 			module_path,
 			messages,
@@ -837,6 +854,7 @@ fn validate_root_consts<'a>(
 }
 
 fn resolve_block_type_imports<'a>(
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -845,7 +863,7 @@ fn resolve_block_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if crate::ENABLE_STANDARD_LIBRARY && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if cli_arguments.standard_library_enabled && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let path = PathSegments {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
@@ -893,6 +911,7 @@ fn resolve_import_for_block_types<'a>(
 
 // TODO: This function and its sibling below have terrible names, fix that
 fn resolve_block_non_type_imports<'a>(
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -901,7 +920,7 @@ fn resolve_block_non_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if crate::ENABLE_STANDARD_LIBRARY && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if cli_arguments.standard_library_enabled && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let path = PathSegments {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
@@ -1160,7 +1179,7 @@ fn fill_pre_existing_user_type_specializations<'a>(
 	}
 
 	for type_id in type_ids {
-		type_store.type_layout(type_id);
+		type_store.calculate_layout(type_id);
 	}
 }
 
@@ -1336,6 +1355,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 
 		resolve_block_type_imports(
+			context.cli_arguments,
 			context.messages,
 			context.root_layers,
 			context.symbols,
@@ -1359,6 +1379,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	}
 
 	resolve_block_non_type_imports(
+		context.cli_arguments,
 		context.messages,
 		context.root_layers,
 		context.symbols,

@@ -1,10 +1,11 @@
 use std::fs::read_dir;
 use std::io::{stderr, Write};
 
+use crate::cli_arguments::CliArguments;
 use crate::color::*;
 use crate::project::build_project;
 
-pub fn run_tests(args: Vec<String>) {
+pub fn run_tests(cli_arguments: &CliArguments) {
 	let mut successes: u64 = 0;
 	let mut failures = Vec::new();
 
@@ -16,7 +17,7 @@ pub fn run_tests(args: Vec<String>) {
 			continue;
 		}
 
-		let name = match entry.file_name().into_string() {
+		let test_name = match entry.file_name().into_string() {
 			Ok(name) => name,
 
 			Err(..) => {
@@ -25,11 +26,12 @@ pub fn run_tests(args: Vec<String>) {
 			}
 		};
 
-		if !args.is_empty() && !args.iter().any(|arg| name.contains(arg)) {
+		let specified_names = &cli_arguments.compiler_test_names;
+		if !specified_names.is_empty() && !specified_names.iter().any(|n| test_name.contains(n)) {
 			continue;
 		}
 
-		let message = format!("  Building test {name}");
+		let message = format!("  Building test {test_name}");
 		let line = "─".repeat(message.len());
 		eprintln!("\n┌{line}┐");
 		eprintln!("{CYAN}{message}{RESET}");
@@ -41,7 +43,7 @@ pub fn run_tests(args: Vec<String>) {
 		let panics = std::fs::metadata(entry.path().join("panics")).is_ok();
 		let mut error_output = String::new();
 
-		let Some(binary_path) = build_project(&mut error_output, &entry.path(), name.clone()) else {
+		let Some(binary_path) = build_project(cli_arguments, &mut error_output, &entry.path(), test_name.clone()) else {
 			if let Some(expected_error) = &expected_error {
 				if error_output.trim_end() == expected_error.trim_end() {
 					successes += 1;
@@ -51,14 +53,14 @@ pub fn run_tests(args: Vec<String>) {
 				eprintln!("{RED}Compiler test harness: Got different error messages than expected{RESET}\n");
 			}
 
-			failures.push(name);
+			failures.push(test_name);
 			eprint!("{error_output}");
 			continue;
 		};
 
 		if expected_error.is_some() {
 			eprintln!("{RED}Compiler test harness: Expected error messages but got none{RESET}");
-			failures.push(name);
+			failures.push(test_name);
 			continue;
 		}
 
@@ -67,12 +69,12 @@ pub fn run_tests(args: Vec<String>) {
 			.expect("Failed to launch test binary, this is probably an internal bug");
 
 		if panics && output.status.success() {
-			eprintln!("{RED}Test {name:?} was expected to end with failure exit code but didn't{RESET}");
-			failures.push(name);
+			eprintln!("{RED}Test {test_name:?} was expected to end with failure exit code but didn't{RESET}");
+			failures.push(test_name);
 			continue;
 		} else if !panics && !output.status.success() {
-			eprintln!("{RED}Test {name:?} ended with failure exit code{RESET}");
-			failures.push(name);
+			eprintln!("{RED}Test {test_name:?} ended with failure exit code{RESET}");
+			failures.push(test_name);
 			continue;
 		}
 
@@ -80,13 +82,13 @@ pub fn run_tests(args: Vec<String>) {
 			if output.stdout != expected_stdout.as_bytes() {
 				stderr().lock().write_all(&output.stdout).unwrap();
 				eprintln!("\n{RED}Compiler test harness: Got different stdout than expected{RESET}\n");
-				failures.push(name);
+				failures.push(test_name);
 				continue;
 			}
 		} else if !output.stdout.is_empty() {
 			stderr().lock().write_all(&output.stdout).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got stdout but didn't expect any{RESET}\n");
-			failures.push(name);
+			failures.push(test_name);
 			continue;
 		}
 
@@ -94,13 +96,13 @@ pub fn run_tests(args: Vec<String>) {
 			if output.stderr != expected_stderr.as_bytes() {
 				stderr().lock().write_all(&output.stderr).unwrap();
 				eprintln!("\n{RED}Compiler test harness: Got different stderr than expected{RESET}\n");
-				failures.push(name);
+				failures.push(test_name);
 				continue;
 			}
 		} else if !output.stderr.is_empty() {
 			stderr().lock().write_all(&output.stderr).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got stderr but didn't expect any{RESET}\n");
-			failures.push(name);
+			failures.push(test_name);
 			continue;
 		}
 

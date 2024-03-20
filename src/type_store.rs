@@ -876,6 +876,7 @@ impl<'a> TypeStore<'a> {
 						let mut max_field_alignment = 0;
 
 						for type_id in field_types {
+							self.calculate_layout(type_id);
 							let field_layout = self.type_layout(type_id);
 
 							if field_layout.alignment != 0 {
@@ -1162,7 +1163,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		if been_filled {
-			self.type_layout(type_id);
+			self.calculate_layout(type_id);
 		}
 
 		Some(type_id)

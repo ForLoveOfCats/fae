@@ -4,7 +4,8 @@ mod error;
 #[macro_use]
 mod multi_line_string;
 
-mod c_codegen; // TODO Remove
+mod c_codegen;
+mod cli_arguments;
 mod codegen;
 mod color;
 mod file;
@@ -18,25 +19,22 @@ mod tree;
 mod type_store;
 mod validator;
 
-use std::{ffi::OsStr, path::Path};
+use std::path::Path;
 
+use cli_arguments::parse_arguments;
 use project::build_project;
 
-// TODO: Re-enable standard library
-pub const ENABLE_STANDARD_LIBRARY: bool = false;
-
 fn main() {
-	let mut args = std::env::args_os().skip(1);
-	if args.next().as_deref() == Some(OsStr::new("t")) {
-		let args = args.map(|s| s.to_str().expect("test name arguments must be valid Unicode").to_owned());
-		test::run_tests(args.collect());
+	let cli_arguments = parse_arguments();
+	if cli_arguments.run_compiler_tests {
+		test::run_tests(&cli_arguments);
 		return;
 	}
 
 	let mut stderr = std::io::stderr();
 	let project_path = Path::new("./example");
 	let root_name = "example".to_owned();
-	let Some(_binary_path) = build_project(&mut stderr, project_path, root_name) else {
+	let Some(_binary_path) = build_project(&cli_arguments, &mut stderr, project_path, root_name) else {
 		return;
 	};
 

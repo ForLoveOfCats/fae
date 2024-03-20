@@ -58,7 +58,7 @@ pub fn classify_parameter_type(type_store: &TypeStore, type_id: TypeId) -> Parem
 			}
 
 			todo!()
-		},
+		}
 
 		TypeEntryKind::Pointer { .. } => ParemeterClass::Integer,
 
