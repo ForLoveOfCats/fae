@@ -859,16 +859,14 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn type_layout(&mut self, type_id: TypeId) -> Layout {
+	pub fn calculate_layout(&mut self, type_id: TypeId) {
 		match self.type_entries[type_id.index()].kind {
-			TypeEntryKind::BuiltinType { kind } => kind.layout(),
-
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let calculated_layout = match &self.user_types[shape_index].kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[specialization_index];
-						if let Some(layout) = specialization.layout {
-							return layout;
+						if specialization.layout.is_some() {
+							return;
 						}
 
 						// Belch
@@ -904,9 +902,24 @@ impl<'a> TypeStore<'a> {
 						shape.specializations[specialization_index].layout = Some(calculated_layout)
 					}
 				}
-
-				calculated_layout
 			}
+
+			_ => {}
+		}
+	}
+
+	pub fn type_layout(&self, type_id: TypeId) -> Layout {
+		match self.type_entries[type_id.index()].kind {
+			TypeEntryKind::BuiltinType { kind } => kind.layout(),
+
+			TypeEntryKind::UserType { shape_index, specialization_index } => match &self.user_types[shape_index].kind {
+				UserTypeKind::Struct { shape } => {
+					let specialization = &shape.specializations[specialization_index];
+					specialization
+						.layout
+						.expect("should have called `calculate_layout` before `type_layout`")
+				}
+			},
 
 			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
 
