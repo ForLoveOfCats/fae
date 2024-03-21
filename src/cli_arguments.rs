@@ -52,7 +52,7 @@ fn parse_tack_argument(cli_arguments: &mut CliArguments, any_errors: &mut bool, 
 			eprintln!("  --codegen-legacy-c: Use the original C transpile codegen backend (default)");
 			eprintln!("  --codegen-llvm: Use the new LLVM codegen backend");
 			eprintln!("  --std-enabled: Enable use of the Fae standard library (default)");
-			eprintln!("  --std-disable: Disable use of the Fae standard library");
+			eprintln!("  --std-disabled: Disable use of the Fae standard library");
 			eprintln!("  --help: Print this help message");
 			std::process::exit(0);
 		}

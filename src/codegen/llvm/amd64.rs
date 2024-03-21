@@ -24,12 +24,12 @@ pub fn generate_elf<'a>(
 
 	let triple = TargetTriple::create("x86_64-pc-linux-gnu");
 	let target = Target::from_triple(&triple).unwrap();
-	let machine = target
+	let _machine = target
 		.create_target_machine(&triple, "", "", OptimizationLevel::None, RelocMode::Default, CodeModel::Default)
 		.unwrap();
 
 	let path = Path::new("./fae.ll");
-	machine.write_to_file(&generator.module, FileType::Assembly, path).unwrap();
+	generator.module.print_to_file(path).unwrap();
 
 	vec![]
 }

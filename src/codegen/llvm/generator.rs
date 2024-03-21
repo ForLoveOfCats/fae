@@ -4,21 +4,21 @@ use inkwell::module::Module;
 
 use crate::codegen::generator::Generator;
 use crate::ir::Function;
-use crate::type_store::{TypeEntryKind, TypeStore};
+use crate::type_store::TypeStore;
 
 pub struct LLVMGenerator<'ctx> {
-	pub state: State,
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
 	pub builder: Builder<'ctx>,
+	state: State,
 }
 
 impl<'ctx> LLVMGenerator<'ctx> {
 	pub fn new(context: &'ctx Context) -> Self {
-		let state = State::InModule;
 		let module = context.create_module("fae_translation_unit_module");
 		let builder = context.create_builder();
-		LLVMGenerator { state, context, module, builder }
+		let state = State::InModule;
+		LLVMGenerator { context, module, builder, state }
 	}
 
 	fn finalize_function_if_in_function(&mut self) {
