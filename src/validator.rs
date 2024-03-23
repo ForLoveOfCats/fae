@@ -26,6 +26,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub root_layers: &'b RootLayers<'a>,
 
 	pub constants: &'b mut Vec<ConstantValue<'a>>,
+	pub initial_readables_len: usize,
 	pub readables: &'b mut Readables<'a>,
 
 	pub initial_symbols_len: usize,
@@ -37,6 +38,7 @@ pub struct Context<'a, 'b, 'c> {
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
 	fn drop(&mut self) {
+		self.readables.readables.truncate(self.initial_readables_len);
 		self.symbols.symbols.truncate(self.initial_symbols_len);
 	}
 }
@@ -59,6 +61,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			root_layers: self.root_layers,
 
 			constants: self.constants,
+			initial_readables_len: self.readables.len(),
 			readables: self.readables,
 
 			initial_symbols_len: self.symbols.len(),
@@ -89,6 +92,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			root_layers: self.root_layers,
 
 			constants: self.constants,
+			initial_readables_len: self.readables.len(),
 			readables: self.readables,
 
 			initial_symbols_len: self.symbols.len(),
@@ -356,6 +360,10 @@ pub struct Readables<'a> {
 impl<'a> Readables<'a> {
 	fn new() -> Self {
 		Readables { readables: Vec::new() }
+	}
+
+	pub fn len(&self) -> usize {
+		self.readables.len()
 	}
 
 	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
@@ -686,6 +694,7 @@ pub fn validate<'a>(
 			function_generic_usages: &mut function_generic_usages,
 			root_layers,
 			constants: &mut constants,
+			initial_readables_len: readables.len(),
 			readables: &mut readables,
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
@@ -837,6 +846,7 @@ fn validate_root_consts<'a>(
 			function_generic_usages,
 			root_layers,
 			constants,
+			initial_readables_len: readables.len(),
 			readables,
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
