@@ -1,6 +1,23 @@
 fn main() {
-	//let a: u32 = 1
-	other_function()
+	other_function(MyType {
+		a: 1
+		b: 2
+		c: 3
+		d: 4
+		e: 5
+		f: 6
+		g: 7
+	})
 }
 
-fn other_function() {}
+struct MyType {
+	a: i32
+	b: i32
+	c: f64
+	d: u8
+	e: f32
+	f: f32
+	g: f32
+}
+
+fn other_function(a: MyType) {}

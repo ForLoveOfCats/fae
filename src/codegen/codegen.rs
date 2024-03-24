@@ -57,7 +57,7 @@ pub fn generate_function<'a, G: Generator>(
 		}
 	}
 
-	generator.start_function(type_store, shape.name.item, specialization);
+	generator.start_function(type_store, specialization, shape.name.item);
 
 	let block = shape.block.clone();
 	let module_path = shape.module_path;

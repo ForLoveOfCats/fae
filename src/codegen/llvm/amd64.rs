@@ -5,6 +5,7 @@ use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Tar
 use inkwell::OptimizationLevel;
 
 use crate::codegen::codegen::generate;
+use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
 use crate::error::Messages;
 use crate::type_store::TypeStore;
@@ -18,7 +19,7 @@ pub fn generate_elf<'a>(
 	Target::initialize_x86(&InitializationConfig::default());
 
 	let context = Context::create();
-	let mut generator = LLVMGenerator::new(&context);
+	let mut generator = LLVMGenerator::<SysvAbi>::new(&context);
 
 	generate(messages, type_store, function_store, &mut generator);
 

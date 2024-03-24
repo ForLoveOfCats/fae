@@ -1,8 +1,20 @@
 use crate::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
+#[derive(Debug, Clone, Copy)]
+pub struct Class {
+	pub kind: ClassKind,
+	pub size: u8,
+}
+
+impl std::default::Default for Class {
+	fn default() -> Self {
+		Class { kind: ClassKind::NoClass, size: 0 }
+	}
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Class {
+pub enum ClassKind {
 	Integer,
 	SSE,
 	SSEUp,
@@ -16,48 +28,42 @@ pub enum Class {
 #[inline]
 pub fn classification_buffer() -> [Class; 8] {
 	[
-		Class::NoClass,
-		Class::NoClass,
-		Class::NoClass,
-		Class::NoClass,
-		Class::NoClass,
-		Class::NoClass,
-		Class::NoClass,
-		Class::NoClass,
+		Class::default(),
+		Class::default(),
+		Class::default(),
+		Class::default(),
+		Class::default(),
+		Class::default(),
+		Class::default(),
+		Class::default(),
 	]
 }
 
 // Huge thanks to the Zig selfhost compiler for making the spec algorithm make sense
-// It's technically more efficient to pass the buffer around by value but slices are so convenient
 pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8], type_id: TypeId) -> &'buf [Class] {
 	let entry = type_store.type_entries[type_id.index()];
 
 	match entry.kind {
 		TypeEntryKind::BuiltinType { kind } => match kind {
 			PrimativeKind::Bool => {
-				buffer[0] = Class::Integer;
+				buffer[0] = Class { kind: ClassKind::Integer, size: 1 };
 				return &buffer[..1];
 			}
 
-			PrimativeKind::Numeric(kind) => match kind {
-				NumericKind::I8
-				| NumericKind::I16
-				| NumericKind::I32
-				| NumericKind::I64
-				| NumericKind::U8
-				| NumericKind::U16
-				| NumericKind::U32
-				| NumericKind::U64
-				| NumericKind::USize => {
-					buffer[0] = Class::Integer;
-					return &buffer[..1];
-				}
+			PrimativeKind::Numeric(kind) => {
+				let class = match kind {
+					NumericKind::I8 | NumericKind::U8 => Class { kind: ClassKind::Integer, size: 1 },
+					NumericKind::I16 | NumericKind::U16 => Class { kind: ClassKind::Integer, size: 2 },
+					NumericKind::I32 | NumericKind::U32 => Class { kind: ClassKind::Integer, size: 4 },
+					NumericKind::I64 | NumericKind::U64 | NumericKind::USize => Class { kind: ClassKind::Integer, size: 8 },
 
-				NumericKind::F32 | NumericKind::F64 => {
-					buffer[0] = Class::SSE;
-					return &buffer[..1];
-				}
-			},
+					NumericKind::F32 => Class { kind: ClassKind::SSE, size: 4 },
+					NumericKind::F64 => Class { kind: ClassKind::SSE, size: 8 },
+				};
+
+				buffer[0] = class;
+				return &buffer[..1];
+			}
 
 			PrimativeKind::AnyCollapse | PrimativeKind::Void | PrimativeKind::UntypedInteger | PrimativeKind::UntypedDecimal => {
 				unreachable!()
@@ -70,7 +76,7 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 			// 1. If the size of an object is larger than eight eightbytes, or it contains unaligned fields, it has class MEMORY.
 			// Fae does not currently support unaligned/packed struct fields, so we don't need to worry about that
 			if aggregate_layout.size > 8 * 8 {
-				buffer[0] = Class::Memory;
+				buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
 				return &buffer[..1];
 			}
 
@@ -93,39 +99,44 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 
 				let mut field_buffer = classification_buffer();
 				let field_classes = classify_type(type_store, &mut field_buffer, field.type_id);
-				assert!(field_classes[0] != Class::NoClass, "{:?}", field_classes[0]);
+				assert!(field_classes[0].kind != ClassKind::NoClass, "{:?}", field_classes[0]);
 
 				if field_layout.size + combine_size <= 8 {
 					// Combine with prior fields to make an eightbyte
 
 					// (a) If both classes are equal, this is the resulting class.
-					if buffer[buffer_index] == field_classes[0] {
-						assert_eq!(field_classes.len(), 1, "{}", field_classes.len()) // Is this correct?
+					if buffer[buffer_index].kind == field_classes[0].kind {
+						assert_eq!(field_classes.len(), 1, "{}", field_classes.len());
+						buffer[buffer_index].size += field_classes[0].size;
 					}
 					// (b) If one of the classes is NO_CLASS, the resulting class is the other class.
-					else if buffer[buffer_index] == Class::NoClass {
+					else if buffer[buffer_index].kind == ClassKind::NoClass {
 						buffer[buffer_index] = field_classes[0];
 					}
 					// (c) If one of the classes is MEMORY, the result is the MEMORY class.
-					else if buffer[buffer_index] == Class::Memory || field_classes[0] == Class::Memory {
-						buffer[buffer_index] = Class::Memory;
+					else if buffer[buffer_index].kind == ClassKind::Memory || field_classes[0].kind == ClassKind::Memory {
+						buffer[buffer_index] = Class { kind: ClassKind::Memory, size: 8 };
 					}
 					// (d) If one of the classes is INTEGER, the result is the INTEGER.
-					else if buffer[buffer_index] == Class::Integer || field_classes[0] == Class::Integer {
-						buffer[buffer_index] = Class::Integer;
+					else if buffer[buffer_index].kind == ClassKind::Integer || field_classes[0].kind == ClassKind::Integer {
+						assert_eq!(field_classes.len(), 1);
+						let size = buffer[buffer_index].size + field_classes[0].size;
+						buffer[buffer_index] = Class { kind: ClassKind::Integer, size };
 					}
 					// (e) If one of the classes is X87, X87UP, COMPLEX_X87 class, MEMORY is used as class.
-					else if buffer[buffer_index] == Class::X87
-						|| buffer[buffer_index] == Class::X87Up
-						|| buffer[buffer_index] == Class::ComplexX87
-						|| field_classes[0] == Class::X87
-						|| field_classes[0] == Class::X87Up
-						|| field_classes[0] == Class::ComplexX87
+					else if buffer[buffer_index].kind == ClassKind::X87
+						|| buffer[buffer_index].kind == ClassKind::X87Up
+						|| buffer[buffer_index].kind == ClassKind::ComplexX87
+						|| field_classes[0].kind == ClassKind::X87
+						|| field_classes[0].kind == ClassKind::X87Up
+						|| field_classes[0].kind == ClassKind::ComplexX87
 					{
-						buffer[buffer_index] = Class::Memory;
+						buffer[buffer_index] = Class { kind: ClassKind::Memory, size: 8 };
 					}
 					// (f) Otherwise class SSE is used.
-					buffer[buffer_index] = Class::SSE;
+					else {
+						buffer[buffer_index] = Class { kind: ClassKind::SSE, size: field_layout.size as u8 };
+					}
 
 					combine_size += field_layout.size;
 					assert!(combine_size <= 8, "{combine_size}");
@@ -157,45 +168,43 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 			let mut contains_sse_up = false;
 			for (index, &class) in buffer.iter().enumerate() {
 				// (a) If one of the classes is MEMORY, the whole argument is passed in memory.
-				if class == Class::Memory {
-					buffer[0] = Class::Memory;
+				if class.kind == ClassKind::Memory {
+					buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
 					return &buffer[..1];
 				}
 
 				// (b) If X87UP is not preceded by X87, the whole argument is passed in memory.
-				if class == Class::X87Up && index > 0 && buffer[index - 1] != Class::X87 {
-					buffer[0] = Class::Memory;
+				if class.kind == ClassKind::X87Up && index > 0 && buffer[index - 1].kind != ClassKind::X87 {
+					buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
 					return &buffer[..1];
 				}
 
-				if class == Class::SSEUp {
-					contains_sse_up = true;
-				}
+				contains_sse_up |= class.kind == ClassKind::SSEUp;
 			}
 
 			// (c) If the size of the aggregate exceeds two eightbytes and the first eightbyte isn’t SSE or any
 			// other eightbyte isn’t SSEUP, the whole argument is passed in memory.
-			let first_eightbyte_sse = buffer[0] == Class::SSE;
+			let first_eightbyte_sse = buffer[0].kind == ClassKind::SSE;
 			if aggregate_layout.size > 16 && (!first_eightbyte_sse || !contains_sse_up) {
-				buffer[0] = Class::Memory;
+				buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
 				return &buffer[..1];
 			}
 
 			// (d) If SSEUP is not preceded by SSE or SSEUP, it is converted to SSE.
 			for index in 0..buffer.len() {
 				let has_preceeding = index > 0;
-				if buffer[index] == Class::SSEUp && has_preceeding {
+				if buffer[index].kind == ClassKind::SSEUp && has_preceeding {
 					let preceding = buffer[index - 1];
-					if preceding == Class::SSE || preceding == Class::SSEUp {
-						buffer[index] = Class::SSE;
+					if !(preceding.kind == ClassKind::SSE || preceding.kind == ClassKind::SSEUp) {
+						buffer[index] = Class { kind: ClassKind::SSE, size: buffer[index].size };
 					}
 				}
 			}
 
 			let mut contents_len = buffer.len();
 			for (index, &class) in buffer.iter().enumerate() {
-				if class == Class::NoClass {
-					contents_len = index + 1;
+				if class.kind == ClassKind::NoClass {
+					contents_len = index;
 					break;
 				}
 			}
@@ -204,13 +213,13 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 		}
 
 		TypeEntryKind::Pointer { .. } => {
-			buffer[0] = Class::Integer;
+			buffer[0] = Class { kind: ClassKind::Integer, size: 8 };
 			return &buffer[..1];
 		}
 
 		TypeEntryKind::Slice(_) => {
-			buffer[0] = Class::Integer;
-			buffer[1] = Class::Integer;
+			buffer[0] = Class { kind: ClassKind::Integer, size: 8 };
+			buffer[1] = Class { kind: ClassKind::Integer, size: 8 };
 			return &buffer[..2];
 		}
 
