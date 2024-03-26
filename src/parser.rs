@@ -586,6 +586,11 @@ fn parse_type_arguments<'a>(
 fn parse_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Vec<Node<Expression<'a>>>>> {
 	let open_paren_token = tokenizer.expect(messages, TokenKind::OpenParen)?;
 
+	let multi_line = tokenizer.peek_kind() == Ok(TokenKind::Newline);
+	if multi_line {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
+
 	let mut expressions = Vec::new();
 	while !reached_close_paren(tokenizer) {
 		expressions.push(parse_expression(messages, tokenizer, true)?);
@@ -594,7 +599,16 @@ fn parse_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 			break;
 		}
 
-		tokenizer.expect(messages, TokenKind::Comma)?;
+		if multi_line {
+			if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+				tokenizer.expect(messages, TokenKind::Comma)?;
+			}
+			if tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+				tokenizer.expect(messages, TokenKind::Newline)?;
+			}
+		} else if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
+			tokenizer.expect(messages, TokenKind::Comma)?;
+		}
 	}
 
 	let close_paren_token = tokenizer.expect(messages, TokenKind::CloseParen)?;
@@ -629,7 +643,9 @@ fn parse_struct_initializer<'a>(
 			if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
 				tokenizer.expect(messages, TokenKind::Comma)?;
 			}
-			tokenizer.expect(messages, TokenKind::Newline)?;
+			if tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+				tokenizer.expect(messages, TokenKind::Newline)?;
+			}
 		} else if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 			tokenizer.expect(messages, TokenKind::Comma)?;
 		}
