@@ -89,9 +89,10 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 		match &statement.kind {
 			crate::ir::StatementKind::Expression(expression) => generate_expression(context, generator, expression),
 
-			crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
-			crate::ir::StatementKind::Binding(_) => todo!("generate StatementKind::Binding"),
-			crate::ir::StatementKind::Return(_) => todo!("generate StatementKind::Return"),
+			// crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
+			// crate::ir::StatementKind::Binding(_) => todo!("generate StatementKind::Binding"),
+			// crate::ir::StatementKind::Return(_) => todo!("generate StatementKind::Return"),
+			_ => None,
 		};
 	}
 }
