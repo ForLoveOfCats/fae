@@ -1,4 +1,5 @@
 use inkwell::attributes::Attribute;
+use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
@@ -6,9 +7,9 @@ use inkwell::values::FunctionValue;
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
-use crate::codegen::llvm::generator::AttributeKinds;
+use crate::codegen::llvm::generator::{AttributeKinds, Location};
 use crate::ir::Function;
-use crate::type_store::{TypeId, TypeStore};
+use crate::type_store::TypeStore;
 
 pub trait LLVMAbi<'ctx> {
 	fn new() -> Self;
@@ -18,7 +19,9 @@ pub trait LLVMAbi<'ctx> {
 		type_store: &TypeStore,
 		context: &'ctx Context,
 		module: &mut Module<'ctx>,
+		builder: &mut Builder<'ctx>,
 		attribute_kinds: &AttributeKinds,
+		locations: &mut Vec<Location>,
 		function: &Function,
 		name: &str,
 	) -> FunctionValue<'ctx>;
@@ -131,13 +134,16 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		type_store: &TypeStore,
 		context: &'ctx Context,
 		module: &mut Module<'ctx>,
+		builder: &mut Builder<'ctx>,
 		attribute_kinds: &AttributeKinds,
+		locations: &mut Vec<Location>,
 		function: &Function,
 		name: &str,
 	) -> FunctionValue<'ctx> {
 		self.return_type_buffer.clear();
 		self.parameter_type_buffer.clear();
 		self.attribute_buffer.clear();
+		locations.clear();
 
 		if !function.return_type.is_void(type_store) {
 			let mut classes_buffer = sysv_abi::classification_buffer();

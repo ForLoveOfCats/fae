@@ -1,10 +1,5 @@
 fn main() {
 	other_function(
-		SmallType {
-			a: 1
-			b: 2
-			c: 3
-		}
 		LargeType {
 			a: 1
 			b: 2
@@ -33,6 +28,6 @@ struct LargeType {
 	g: f32
 }
 
-fn other_function(a: SmallType, b: LargeType): LargeType {
+fn other_function(b: LargeType): LargeType {
 	return b
 }
