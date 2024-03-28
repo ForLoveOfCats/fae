@@ -1,4 +1,5 @@
 use inkwell::attributes::Attribute;
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -7,7 +8,7 @@ use inkwell::values::FunctionValue;
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
-use crate::codegen::llvm::generator::{AttributeKinds, Location};
+use crate::codegen::llvm::generator::{AttributeKinds, LLVMTypes, Location};
 use crate::ir::Function;
 use crate::type_store::TypeStore;
 
@@ -21,10 +22,16 @@ pub trait LLVMAbi<'ctx> {
 		module: &mut Module<'ctx>,
 		builder: &mut Builder<'ctx>,
 		attribute_kinds: &AttributeKinds,
+		llvm_types: &LLVMTypes<'ctx>,
 		locations: &mut Vec<Location>,
 		function: &Function,
 		name: &str,
-	) -> FunctionValue<'ctx>;
+	) -> BuiltFunction<'ctx>;
+}
+
+pub struct BuiltFunction<'ctx> {
+	pub llvm_function: FunctionValue<'ctx>,
+	pub entry_block: BasicBlock<'ctx>,
 }
 
 struct ParameterAttribute {
@@ -35,11 +42,16 @@ struct ParameterAttribute {
 pub struct SysvAbi<'ctx> {
 	return_type_buffer: Vec<BasicTypeEnum<'ctx>>,
 	parameter_type_buffer: Vec<BasicMetadataTypeEnum<'ctx>>,
+	parameter_basic_type_buffer: Vec<BasicTypeEnum<'ctx>>,
 	attribute_buffer: Vec<ParameterAttribute>,
 }
 
 impl<'ctx> SysvAbi<'ctx> {
-	fn map_classes_into_return_type_buffer<'a>(&mut self, context: &'ctx Context, iterator: impl Iterator<Item = &'a Class>) {
+	fn map_classes_into_basic_type_buffer<'a>(
+		context: &'ctx Context,
+		buffer: &mut Vec<BasicTypeEnum<'ctx>>,
+		iterator: impl Iterator<Item = &'a Class>,
+	) {
 		for class in iterator {
 			match class.kind {
 				sysv_abi::ClassKind::Integer => {
@@ -50,7 +62,7 @@ impl<'ctx> SysvAbi<'ctx> {
 						8 => context.i64_type(),
 						unknown_size => panic!("{unknown_size}"),
 					};
-					self.return_type_buffer.push(BasicTypeEnum::IntType(llvm_type));
+					buffer.push(BasicTypeEnum::IntType(llvm_type));
 				}
 
 				sysv_abi::ClassKind::SSE | sysv_abi::ClassKind::SSEUp => {
@@ -60,13 +72,13 @@ impl<'ctx> SysvAbi<'ctx> {
 						8 => context.f64_type(),
 						unknown_size => panic!("{unknown_size}"),
 					};
-					self.return_type_buffer.push(BasicTypeEnum::FloatType(llvm_type));
+					buffer.push(BasicTypeEnum::FloatType(llvm_type));
 				}
 
 				sysv_abi::ClassKind::Memory => {
 					assert_eq!(class.size, 8);
 					let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
-					self.return_type_buffer.push(BasicTypeEnum::PointerType(ptr_type));
+					buffer.push(BasicTypeEnum::PointerType(ptr_type));
 				}
 
 				sysv_abi::ClassKind::X87
@@ -125,6 +137,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		SysvAbi {
 			return_type_buffer: Vec::new(),
 			parameter_type_buffer: Vec::new(),
+			parameter_basic_type_buffer: Vec::new(),
 			attribute_buffer: Vec::new(),
 		}
 	}
@@ -136,11 +149,11 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		module: &mut Module<'ctx>,
 		builder: &mut Builder<'ctx>,
 		attribute_kinds: &AttributeKinds,
+		llvm_types: &LLVMTypes<'ctx>,
 		locations: &mut Vec<Location>,
 		function: &Function,
 		name: &str,
-	) -> FunctionValue<'ctx> {
-		self.return_type_buffer.clear();
+	) -> BuiltFunction<'ctx> {
 		self.parameter_type_buffer.clear();
 		self.attribute_buffer.clear();
 		locations.clear();
@@ -149,7 +162,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, function.return_type);
 
-			self.map_classes_into_return_type_buffer(context, classes.iter());
+			self.return_type_buffer.clear();
+			Self::map_classes_into_basic_type_buffer(context, &mut self.return_type_buffer, classes.iter());
 
 			if let Some(Class { kind: ClassKind::Memory, .. }) = classes.first() {
 				assert_eq!(classes.len(), 1);
@@ -164,6 +178,10 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			}
 		}
 
+		// TODO: Store and rename this
+		let mut compositions = Vec::new();
+		self.parameter_basic_type_buffer.clear();
+
 		for parameter in &function.parameters {
 			let layout = type_store.type_layout(parameter.type_id);
 			if layout.size <= 0 {
@@ -173,6 +191,13 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, parameter.type_id);
 			self.map_classes_into_parameter_type_buffer(context, classes.iter());
+
+			let initial_type_len = self.parameter_basic_type_buffer.len();
+			Self::map_classes_into_basic_type_buffer(context, &mut self.parameter_basic_type_buffer, classes.iter());
+			let range = initial_type_len..self.parameter_basic_type_buffer.len();
+			let composition = context.struct_type(&self.parameter_basic_type_buffer[range], false);
+			let actual_struct = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
+			compositions.push((composition, actual_struct));
 		}
 
 		let fn_type = if self.return_type_buffer.is_empty() {
@@ -187,11 +212,23 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		};
 
 		let llvm_function = module.add_function(name, fn_type, None);
-
 		for attribute in &self.attribute_buffer {
 			llvm_function.add_attribute(inkwell::attributes::AttributeLoc::Param(attribute.index), attribute.attribute);
 		}
 
-		llvm_function
+		let entry_block = context.append_basic_block(llvm_function, "");
+		builder.position_at_end(entry_block);
+
+		for (composition, actual_struct) in compositions {
+			let alloca = builder.build_alloca(actual_struct, "").unwrap();
+
+			for index in 0..composition.count_fields() {
+				let ptr = builder.build_struct_gep(composition, alloca, index as u32, "").unwrap();
+				let parameter = llvm_function.get_nth_param(index as u32).unwrap();
+				builder.build_store(ptr, parameter).unwrap();
+			}
+		}
+
+		BuiltFunction { llvm_function, entry_block }
 	}
 }
