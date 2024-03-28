@@ -43,26 +43,34 @@ pub fn run_tests(cli_arguments: &CliArguments) {
 		let panics = std::fs::metadata(entry.path().join("panics")).is_ok();
 		let mut error_output = String::new();
 
-		let Some(binary_path) = build_project(cli_arguments, &mut error_output, &entry.path(), test_name.clone()) else {
+		let built_project = build_project(cli_arguments, &mut error_output, &entry.path(), test_name.clone());
+		let mut test_failed = false;
+
+		if built_project.any_messages {
 			if let Some(expected_error) = &expected_error {
-				if error_output.trim_end() == expected_error.trim_end() {
+				if error_output.trim_end() != expected_error.trim_end() {
+					eprintln!("{RED}Compiler test harness: Got different error/warning messages than expected{RESET}\n");
+					eprint!("{error_output}");
+					test_failed = true;
+				} else if built_project.binary_path.is_none() {
 					successes += 1;
 					continue;
 				}
-
-				eprintln!("{RED}Compiler test harness: Got different error messages than expected{RESET}\n");
+			} else {
+				eprintln!("{RED}Compiler test harness: Got error/warning messages but did not expect any{RESET}\n");
+				eprint!("{error_output}");
+				test_failed = true;
 			}
+		} else if expected_error.is_some() {
+			eprintln!("{RED}Compiler test harness: Expected error/warning messages but got none{RESET}");
+			test_failed = true;
+		}
 
+		let Some(binary_path) = built_project.binary_path else {
+			eprintln!("{RED}Compiler test harness: Failed to build test, did not produce a binary to run{RESET}\n");
 			failures.push(test_name);
-			eprint!("{error_output}");
 			continue;
 		};
-
-		if expected_error.is_some() {
-			eprintln!("{RED}Compiler test harness: Expected error messages but got none{RESET}");
-			failures.push(test_name);
-			continue;
-		}
 
 		let output = std::process::Command::new(&binary_path)
 			.output()
@@ -70,26 +78,22 @@ pub fn run_tests(cli_arguments: &CliArguments) {
 
 		if panics && output.status.success() {
 			eprintln!("{RED}Test {test_name:?} was expected to end with failure exit code but didn't{RESET}");
-			failures.push(test_name);
-			continue;
+			test_failed = true;
 		} else if !panics && !output.status.success() {
 			eprintln!("{RED}Test {test_name:?} ended with failure exit code{RESET}");
-			failures.push(test_name);
-			continue;
+			test_failed = true;
 		}
 
 		if let Some(expected_stdout) = expected_stdout {
 			if output.stdout != expected_stdout.as_bytes() {
 				stderr().lock().write_all(&output.stdout).unwrap();
 				eprintln!("\n{RED}Compiler test harness: Got different stdout than expected{RESET}\n");
-				failures.push(test_name);
-				continue;
+				test_failed = true;
 			}
 		} else if !output.stdout.is_empty() {
 			stderr().lock().write_all(&output.stdout).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got stdout but didn't expect any{RESET}\n");
-			failures.push(test_name);
-			continue;
+			test_failed = true;
 		}
 
 		if let Some(expected_stderr) = expected_stderr {
@@ -102,11 +106,14 @@ pub fn run_tests(cli_arguments: &CliArguments) {
 		} else if !output.stderr.is_empty() {
 			stderr().lock().write_all(&output.stderr).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got stderr but didn't expect any{RESET}\n");
-			failures.push(test_name);
-			continue;
+			test_failed = true;
 		}
 
-		successes += 1;
+		if test_failed {
+			failures.push(test_name);
+		} else {
+			successes += 1;
+		}
 	}
 
 	let success = format!("  Ran {successes} test(s) successfully");

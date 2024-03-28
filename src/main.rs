@@ -34,9 +34,7 @@ fn main() {
 	let mut stderr = std::io::stderr();
 	let project_path = Path::new("./example");
 	let root_name = "example".to_owned();
-	let Some(_binary_path) = build_project(&cli_arguments, &mut stderr, project_path, root_name) else {
-		return;
-	};
+	let _built_project = build_project(&cli_arguments, &mut stderr, project_path, root_name);
 
 	// TODO: Run executable
 }

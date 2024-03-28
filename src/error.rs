@@ -97,6 +97,10 @@ impl<'a> Messages<'a> {
 		self.any_errors
 	}
 
+	pub fn any_messages(&self) -> bool {
+		!self.messages.is_empty()
+	}
+
 	pub fn message(&mut self, message: Message) {
 		self.any_errors |= message.kind == MessageKind::Error;
 		self.messages.push(message);

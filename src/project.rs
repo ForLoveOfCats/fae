@@ -9,25 +9,31 @@ use crate::parser::parse_file;
 use crate::type_store::TypeStore;
 use crate::validator::{validate, CIncludeStore, FunctionStore, RootLayers};
 
+pub struct BuiltProject {
+	pub binary_path: Option<PathBuf>,
+	pub any_errors: bool,
+	pub any_messages: bool,
+}
+
 pub fn build_project(
 	cli_arguments: &CliArguments,
 	err_output: &mut impl WriteFmt,
 	path: &Path,
 	root_name: String,
-) -> Option<PathBuf> {
+) -> BuiltProject {
 	// Can be folded into parallel parsing, ish
 	let mut files = Vec::new();
 	if cli_arguments.standard_library_enabled {
 		if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
-			eprintln!("Error loading standard library files: {}", err);
-			return None;
+			panic!("Error loading standard library files: {}", err);
 		}
 	}
 	if let Err(err) = load_all_files(path, &mut files) {
-		eprintln!("Error loading source files: {}", err);
-		return None;
+		panic!("Error loading source files: {}", err);
 	}
 
+	let mut any_errors = false;
+	let mut any_messages = false;
 	let mut messages = Messages::new(&files);
 
 	//Parallelizable
@@ -36,7 +42,8 @@ pub fn build_project(
 		parsed_files.push(parse_file(&mut messages, file));
 	}
 
-	let any_parse_errors = messages.any_errors();
+	any_errors |= messages.any_errors();
+	any_messages |= messages.any_messages();
 	messages.print_messages(err_output, "Parse");
 	messages.reset();
 
@@ -55,14 +62,16 @@ pub fn build_project(
 		&parsed_files,
 	);
 
+	any_errors |= messages.any_errors();
+	any_messages |= messages.any_messages();
 	messages.print_messages(err_output, "Validation");
-	if any_parse_errors || messages.any_errors() {
-		return None;
-	}
 	messages.reset();
+	if any_errors {
+		return BuiltProject { binary_path: None, any_messages, any_errors };
+	}
 
 	//Not parallelizable
-	let binary_path = Path::new("./output.executable");
+	let binary_path = PathBuf::from("./output.executable");
 	match cli_arguments.codegen_backend {
 		CodegenBackend::LegacyC => {
 			c_codegen::generate_code(
@@ -71,19 +80,24 @@ pub fn build_project(
 				&mut type_store,
 				&mut function_store,
 				c_codegen::OptimizationLevel::None,
-				binary_path,
+				&binary_path,
 				c_codegen::DebugCodegen::OnFailure,
 			);
 		}
 
 		CodegenBackend::LLVM => {
 			let _elf = codegen::llvm::amd64::generate_elf(&mut messages, &mut type_store, &mut function_store);
+			assert!(!messages.any_errors());
+			any_errors |= messages.any_errors();
+			any_messages |= messages.any_messages();
+			return BuiltProject { binary_path: None, any_messages, any_errors };
 			// std::fs::write("./shared/executable.x64", elf).unwrap();
 		}
 	}
 	// let elf = codegen::amd64::elf::generate_elf(&mut messages, &mut type_store, &mut function_store);
 
 	assert!(!messages.any_errors());
-
-	Some(binary_path.to_path_buf())
+	any_errors |= messages.any_errors();
+	any_messages |= messages.any_messages();
+	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 }
