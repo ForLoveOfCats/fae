@@ -96,6 +96,9 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 
 			for field in &specialization.fields {
 				let field_layout = type_store.type_layout(field.type_id);
+				if field_layout.size <= 0 {
+					continue;
+				}
 
 				let mut field_buffer = classification_buffer();
 				let field_classes = classify_type(type_store, &mut field_buffer, field.type_id);

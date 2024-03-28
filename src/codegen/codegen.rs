@@ -11,6 +11,8 @@ pub fn generate<'a, G: Generator>(
 	function_store: &mut FunctionStore<'a>,
 	generator: &mut G,
 ) {
+	generator.register_type_descriptions(type_store);
+
 	for function_shape_index in 0..function_store.shapes.len() {
 		let shape = &function_store.shapes[function_shape_index];
 		for specialization_index in 0..shape.specializations.len() {
@@ -41,9 +43,11 @@ pub fn generate_function<'a, G: Generator>(
 	function_id: FunctionId,
 ) {
 	let shape = &mut function_store.shapes[function_id.function_shape_index];
-	assert!(shape.extern_attribute.is_none(), "{:?}", shape.extern_attribute);
-	let specialization = &mut shape.specializations[function_id.specialization_index];
+	if shape.extern_attribute.is_some() {
+		return;
+	}
 
+	let specialization = &mut shape.specializations[function_id.specialization_index];
 	assert!(!specialization.been_generated);
 	specialization.been_generated = true;
 
@@ -59,9 +63,11 @@ pub fn generate_function<'a, G: Generator>(
 
 	generator.start_function(type_store, specialization, shape.name.item);
 
-	let block = shape.block.clone();
 	let module_path = shape.module_path;
 	let type_arguments = specialization.type_arguments.clone();
+	let Some(block) = shape.block.clone() else {
+		unreachable!("{shape:?}");
+	};
 
 	let mut context = Context {
 		messages,
@@ -72,7 +78,7 @@ pub fn generate_function<'a, G: Generator>(
 		function_id,
 	};
 
-	generate_block(&mut context, generator, block.as_ref().unwrap());
+	generate_block(&mut context, generator, block.as_ref());
 }
 
 fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {

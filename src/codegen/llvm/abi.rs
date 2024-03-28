@@ -145,7 +145,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		self.attribute_buffer.clear();
 		locations.clear();
 
-		if !function.return_type.is_void(type_store) {
+		if type_store.type_layout(function.return_type).size > 0 {
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, function.return_type);
 
@@ -165,6 +165,11 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		}
 
 		for parameter in &function.parameters {
+			let layout = type_store.type_layout(parameter.type_id);
+			if layout.size <= 0 {
+				continue;
+			}
+
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, parameter.type_id);
 			self.map_classes_into_parameter_type_buffer(context, classes.iter());

@@ -262,7 +262,7 @@ impl PrimativeKind {
 
 	pub fn layout(self) -> Layout {
 		match self {
-			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0 },
+			PrimativeKind::AnyCollapse => unreachable!(),
 			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
