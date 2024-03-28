@@ -3,7 +3,7 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::FunctionValue;
 use inkwell::AddressSpace;
 
@@ -39,10 +39,16 @@ struct ParameterAttribute {
 	attribute: Attribute,
 }
 
+struct ParameterComposition<'ctx> {
+	composition_struct: StructType<'ctx>,
+	actual_type: BasicTypeEnum<'ctx>,
+}
+
 pub struct SysvAbi<'ctx> {
 	return_type_buffer: Vec<BasicTypeEnum<'ctx>>,
 	parameter_type_buffer: Vec<BasicMetadataTypeEnum<'ctx>>,
 	parameter_basic_type_buffer: Vec<BasicTypeEnum<'ctx>>,
+	parameter_composition_buffer: Vec<ParameterComposition<'ctx>>,
 	attribute_buffer: Vec<ParameterAttribute>,
 }
 
@@ -138,6 +144,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			return_type_buffer: Vec::new(),
 			parameter_type_buffer: Vec::new(),
 			parameter_basic_type_buffer: Vec::new(),
+			parameter_composition_buffer: Vec::new(),
 			attribute_buffer: Vec::new(),
 		}
 	}
@@ -178,9 +185,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			}
 		}
 
-		// TODO: Store and rename this
-		let mut compositions = Vec::new();
 		self.parameter_basic_type_buffer.clear();
+		self.parameter_composition_buffer.clear();
 
 		for parameter in &function.parameters {
 			let layout = type_store.type_layout(parameter.type_id);
@@ -195,9 +201,11 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			let initial_type_len = self.parameter_basic_type_buffer.len();
 			Self::map_classes_into_basic_type_buffer(context, &mut self.parameter_basic_type_buffer, classes.iter());
 			let range = initial_type_len..self.parameter_basic_type_buffer.len();
-			let composition = context.struct_type(&self.parameter_basic_type_buffer[range], false);
-			let actual_struct = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
-			compositions.push((composition, actual_struct));
+
+			let composition_struct = context.struct_type(&self.parameter_basic_type_buffer[range], false);
+			let actual_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
+			let composition = ParameterComposition { composition_struct, actual_type };
+			self.parameter_composition_buffer.push(composition);
 		}
 
 		let fn_type = if self.return_type_buffer.is_empty() {
@@ -219,8 +227,9 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		let entry_block = context.append_basic_block(llvm_function, "");
 		builder.position_at_end(entry_block);
 
-		for (composition, actual_struct) in compositions {
-			let alloca = builder.build_alloca(actual_struct, "").unwrap();
+		for composition in &self.parameter_composition_buffer {
+			let alloca = builder.build_alloca(composition.actual_type, "").unwrap();
+			let composition = composition.composition_struct;
 
 			for index in 0..composition.count_fields() {
 				let ptr = builder.build_struct_gep(composition, alloca, index as u32, "").unwrap();
