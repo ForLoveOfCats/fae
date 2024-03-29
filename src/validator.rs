@@ -1,3 +1,4 @@
+use core::panic;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -26,7 +27,8 @@ pub struct Context<'a, 'b, 'c> {
 	pub root_layers: &'b RootLayers<'a>,
 
 	pub constants: &'b mut Vec<ConstantValue<'a>>,
-	pub initial_readables_len: usize,
+	pub initial_readables_starting_index: usize,
+	pub initial_readables_overall_len: usize,
 	pub readables: &'b mut Readables<'a>,
 
 	pub initial_symbols_len: usize,
@@ -38,7 +40,8 @@ pub struct Context<'a, 'b, 'c> {
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
 	fn drop(&mut self) {
-		self.readables.readables.truncate(self.initial_readables_len);
+		self.readables.readables.truncate(self.initial_readables_overall_len);
+		self.readables.starting_index = self.initial_readables_starting_index;
 		self.symbols.symbols.truncate(self.initial_symbols_len);
 	}
 }
@@ -61,7 +64,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			root_layers: self.root_layers,
 
 			constants: self.constants,
-			initial_readables_len: self.readables.len(),
+			initial_readables_starting_index: self.readables.starting_index,
+			initial_readables_overall_len: self.readables.overall_len(),
 			readables: self.readables,
 
 			initial_symbols_len: self.symbols.len(),
@@ -72,10 +76,10 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		}
 	}
 
-	fn child_scope_with_generic_parameters<'s, 't>(
-		&'s mut self,
-		generic_parameters: &'t GenericParameters<'a>,
-	) -> Context<'a, 's, 't> {
+	fn child_scope_for_function<'s, 't>(&'s mut self, generic_parameters: &'t GenericParameters<'a>) -> Context<'a, 's, 't> {
+		let initial_readables_starting_index = self.readables.starting_index;
+		self.readables.starting_index = self.readables.overall_len();
+
 		Context {
 			cli_arguments: self.cli_arguments,
 
@@ -92,7 +96,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			root_layers: self.root_layers,
 
 			constants: self.constants,
-			initial_readables_len: self.readables.len(),
+			initial_readables_starting_index,
+			initial_readables_overall_len: self.readables.overall_len(),
 			readables: self.readables,
 
 			initial_symbols_len: self.symbols.len(),
@@ -354,26 +359,27 @@ impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 
 #[derive(Debug, Clone)]
 pub struct Readables<'a> {
+	starting_index: usize,
 	readables: Vec<Readable<'a>>,
 }
 
 impl<'a> Readables<'a> {
 	fn new() -> Self {
-		Readables { readables: Vec::new() }
+		Readables { starting_index: 0, readables: Vec::new() }
 	}
 
-	pub fn len(&self) -> usize {
+	pub fn overall_len(&self) -> usize {
 		self.readables.len()
 	}
 
 	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
-		let index = self.readables.len();
+		let index = self.readables.len() - self.starting_index;
 		self.readables.push(Readable { name, type_id, kind });
 		index
 	}
 
 	fn get(&mut self, index: usize) -> Option<Readable<'a>> {
-		self.readables.get(index).copied()
+		self.readables.get(index + self.starting_index).copied()
 	}
 }
 
@@ -682,6 +688,9 @@ pub fn validate<'a>(
 		let layer = root_layers.create_module_path(module_path);
 		symbols.duplicate(&layer.symbols);
 
+		readables.starting_index = 0;
+		readables.readables.clear();
+
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let context = Context {
 			cli_arguments,
@@ -694,7 +703,8 @@ pub fn validate<'a>(
 			function_generic_usages: &mut function_generic_usages,
 			root_layers,
 			constants: &mut constants,
-			initial_readables_len: readables.len(),
+			initial_readables_starting_index: readables.starting_index,
+			initial_readables_overall_len: readables.overall_len(),
 			readables: &mut readables,
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
@@ -834,6 +844,9 @@ fn validate_root_consts<'a>(
 		symbols.duplicate(&layer.symbols);
 		let old_symbols_len = symbols.len();
 
+		readables.starting_index = 0;
+		readables.readables.clear();
+
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut context = Context {
 			cli_arguments,
@@ -846,7 +859,8 @@ fn validate_root_consts<'a>(
 			function_generic_usages,
 			root_layers,
 			constants,
-			initial_readables_len: readables.len(),
+			initial_readables_starting_index: readables.starting_index,
+			initial_readables_overall_len: readables.overall_len(),
 			readables,
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
@@ -855,6 +869,8 @@ fn validate_root_consts<'a>(
 		};
 
 		validate_block_consts(&mut context, &parsed_file.block);
+		assert_eq!(context.readables.overall_len(), 0);
+		assert_eq!(context.readables.starting_index, 0);
 		std::mem::forget(context);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
@@ -1232,6 +1248,10 @@ fn create_block_functions<'a>(
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Function(statement) = statement {
+			let original_readables_starting_index = readables.starting_index;
+			let original_readables_overall_len = readables.overall_len();
+			readables.starting_index = readables.overall_len();
+
 			let scope = symbols.child_scope();
 			let function_initial_symbols_len = scope.symbols.len();
 			let function_shape_index = function_store.shapes.len();
@@ -1290,7 +1310,7 @@ fn create_block_functions<'a>(
 			};
 
 			let mut parameters = Vec::new();
-			for parameter in &statement.parameters {
+			for (index, parameter) in statement.parameters.iter().enumerate() {
 				let type_id = type_store.lookup_type(
 					messages,
 					function_store,
@@ -1315,6 +1335,7 @@ fn create_block_functions<'a>(
 
 				let name = parameter.item.name.item;
 				let readable_index = readables.push(name, type_id, readable_kind);
+				assert_eq!(readable_index, index);
 
 				let name = parameter.item.name;
 				parameters.push(ParameterShape { name, type_id, is_mutable, readable_index });
@@ -1340,6 +1361,9 @@ fn create_block_functions<'a>(
 			let span = Some(statement.name.span);
 			let symbol = Symbol { name: name.item, kind, span };
 			symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+
+			readables.readables.truncate(original_readables_overall_len);
+			readables.starting_index = original_readables_starting_index;
 		}
 	}
 }
@@ -1512,7 +1536,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	};
 
 	let generics = context.function_store.shapes[function_shape_index].generics.clone();
-	let mut scope = context.child_scope_with_generic_parameters(&generics);
+	let mut scope = context.child_scope_for_function(&generics);
 	scope.function_initial_symbols_len = scope.symbols.len();
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
@@ -1529,7 +1553,14 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		let shape = &scope.function_store.shapes[function_shape_index];
 		let parameter_shape = &shape.parameters[index];
 
-		let readable_index = parameter_shape.readable_index;
+		let stored_readable_index = parameter_shape.readable_index;
+		assert_eq!(stored_readable_index, index);
+		let kind = match parameter.is_mutable {
+			false => ReadableKind::Let,
+			true => ReadableKind::Mut,
+		};
+		let readable_index = scope.readables.push(parameter.name.item, parameter_shape.type_id, kind);
+		assert_eq!(readable_index, stored_readable_index);
 		let kind = match parameter.is_mutable {
 			false => SymbolKind::Let { readable_index },
 			true => SymbolKind::Mut { readable_index },
@@ -2072,9 +2103,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		}
 	};
 
-	let readable = match context.readables.get(readable_index) {
-		Some(readable) => readable,
-		None => return Expression::any_collapse(context.type_store, span),
+	let Some(readable) = context.readables.get(readable_index) else {
+		panic!("Symbol pointed to unknown readable index {readable_index}, {read:?}");
 	};
 
 	let mutable = readable.kind == ReadableKind::Mut;
