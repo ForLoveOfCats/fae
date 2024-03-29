@@ -2,20 +2,21 @@ use inkwell::attributes::Attribute;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::Module;
+use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
-use inkwell::values::FunctionValue;
+use inkwell::values::{BasicValueEnum, FunctionValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
-use crate::codegen::llvm::generator::{AttributeKinds, LLVMTypes, Location};
-use crate::ir::Function;
+use crate::codegen::llvm::generator::{AttributeKinds, LLVMTypes};
+use crate::ir::{Function, FunctionShape};
+use crate::tree::ExternAttribute;
 use crate::type_store::TypeStore;
 
 pub trait LLVMAbi<'ctx> {
 	fn new() -> Self;
 
-	fn build_function(
+	fn define_function(
 		&mut self,
 		type_store: &TypeStore,
 		context: &'ctx Context,
@@ -23,15 +24,15 @@ pub trait LLVMAbi<'ctx> {
 		builder: &mut Builder<'ctx>,
 		attribute_kinds: &AttributeKinds,
 		llvm_types: &LLVMTypes<'ctx>,
-		locations: &mut Vec<Location>,
+		function_shape: &FunctionShape,
 		function: &Function,
-		name: &str,
-	) -> BuiltFunction<'ctx>;
+	) -> DefinedFunction<'ctx>;
 }
 
-pub struct BuiltFunction<'ctx> {
+pub struct DefinedFunction<'ctx> {
 	pub llvm_function: FunctionValue<'ctx>,
-	pub entry_block: BasicBlock<'ctx>,
+	pub argument_values: Vec<BasicValueEnum<'ctx>>,
+	pub entry_block: Option<BasicBlock<'ctx>>, // None for extern functions
 }
 
 struct ParameterAttribute {
@@ -149,7 +150,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		}
 	}
 
-	fn build_function(
+	fn define_function(
 		&mut self,
 		type_store: &TypeStore,
 		context: &'ctx Context,
@@ -157,13 +158,11 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		builder: &mut Builder<'ctx>,
 		attribute_kinds: &AttributeKinds,
 		llvm_types: &LLVMTypes<'ctx>,
-		locations: &mut Vec<Location>,
+		function_shape: &FunctionShape,
 		function: &Function,
-		name: &str,
-	) -> BuiltFunction<'ctx> {
+	) -> DefinedFunction<'ctx> {
 		self.parameter_type_buffer.clear();
 		self.attribute_buffer.clear();
-		locations.clear();
 
 		if type_store.type_layout(function.return_type).size > 0 {
 			let mut classes_buffer = sysv_abi::classification_buffer();
@@ -219,7 +218,19 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			}
 		};
 
-		let llvm_function = module.add_function(name, fn_type, None);
+		if let Some(extern_attribute) = function_shape.extern_attribute {
+			if let ExternAttribute::Name(name) = extern_attribute.item {
+				let llvm_function = module.add_function(name, fn_type, Some(Linkage::AvailableExternally));
+				return DefinedFunction {
+					llvm_function,
+					argument_values: Vec::new(),
+					entry_block: None,
+				};
+			}
+			unreachable!("{function_shape:?}, {function:?}, {extern_attribute:?}");
+		}
+
+		let llvm_function = module.add_function(function_shape.name.item, fn_type, None);
 		for attribute in &self.attribute_buffer {
 			llvm_function.add_attribute(inkwell::attributes::AttributeLoc::Param(attribute.index), attribute.attribute);
 		}
@@ -227,8 +238,10 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		let entry_block = context.append_basic_block(llvm_function, "");
 		builder.position_at_end(entry_block);
 
+		let mut argument_values = Vec::with_capacity(self.parameter_composition_buffer.len());
 		for composition in &self.parameter_composition_buffer {
 			let alloca = builder.build_alloca(composition.actual_type, "").unwrap();
+			argument_values.push(BasicValueEnum::PointerValue(alloca));
 			let composition = composition.composition_struct;
 
 			for index in 0..composition.count_fields() {
@@ -238,6 +251,10 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			}
 		}
 
-		BuiltFunction { llvm_function, entry_block }
+		DefinedFunction {
+			llvm_function,
+			argument_values,
+			entry_block: Some(entry_block),
+		}
 	}
 }

@@ -334,7 +334,7 @@ pub struct Function<'a> {
 	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
 	pub been_queued: bool,
-	pub been_generated: bool,
+	pub been_generated: bool, // TODO: Remove
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -1,5 +1,5 @@
 use crate::error::Messages;
-use crate::ir::{Block, Expression, FunctionId, TypeArguments};
+use crate::ir::{Block, Expression, FunctionId, FunctionShape, TypeArguments};
 use crate::type_store::TypeStore;
 use crate::validator::FunctionStore;
 
@@ -12,12 +12,17 @@ pub fn generate<'a, G: Generator>(
 	generator: &mut G,
 ) {
 	generator.register_type_descriptions(type_store);
+	generator.register_functions(type_store, function_store);
 
 	for function_shape_index in 0..function_store.shapes.len() {
 		let shape = &function_store.shapes[function_shape_index];
+		if shape.extern_attribute.is_some() {
+			continue;
+		}
+
 		for specialization_index in 0..shape.specializations.len() {
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(messages, type_store, function_store, generator, function_id);
+			generate_function(messages, type_store, function_store, generator, shape, function_id);
 		}
 	}
 
@@ -27,7 +32,7 @@ pub fn generate<'a, G: Generator>(
 struct Context<'a, 'b> {
 	messages: &'b mut Messages<'a>,
 	type_store: &'b mut TypeStore<'a>,
-	function_store: &'b mut FunctionStore<'a>,
+	function_store: &'b FunctionStore<'a>,
 	module_path: &'a [String],
 	function_type_arguments: &'b TypeArguments,
 	function_id: FunctionId,
@@ -38,20 +43,11 @@ impl<'a, 'b> Context<'a, 'b> {}
 pub fn generate_function<'a, G: Generator>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
-	function_store: &mut FunctionStore<'a>,
+	function_store: &FunctionStore<'a>,
 	generator: &mut G,
+	shape: &FunctionShape<'a>,
 	function_id: FunctionId,
 ) {
-	let shape = &mut function_store.shapes[function_id.function_shape_index];
-	if shape.extern_attribute.is_some() {
-		return;
-	}
-
-	let specialization = &mut shape.specializations[function_id.specialization_index];
-	assert!(!specialization.been_generated);
-	specialization.been_generated = true;
-
-	let shape = &function_store.shapes[function_id.function_shape_index];
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	for type_argument in specialization.type_arguments.ids() {
@@ -61,7 +57,7 @@ pub fn generate_function<'a, G: Generator>(
 		}
 	}
 
-	generator.start_function(type_store, specialization, shape.name.item);
+	generator.start_function(type_store, specialization, function_id);
 
 	let module_path = shape.module_path;
 	let type_arguments = specialization.type_arguments.clone();

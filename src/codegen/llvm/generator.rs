@@ -3,15 +3,17 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicTypeEnum, PointerType, StructType};
-use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::values::BasicValueEnum;
 use inkwell::AddressSpace;
 
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::LLVMAbi;
-use crate::ir::Function;
+use crate::ir::{Function, FunctionId};
+use crate::tree::ExternAttribute;
 use crate::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::validator::FunctionStore;
 
-use super::abi::BuiltFunction;
+use super::abi::DefinedFunction;
 
 pub struct AttributeKinds {
 	pub sret: u32,
@@ -37,12 +39,7 @@ enum State {
 }
 
 pub struct Binding {
-	location_index: u32,
-}
-
-pub enum Location<'ctx> {
-	Pointer(PointerValue<'ctx>),
-	BasicValue(BasicValueEnum<'ctx>),
+	value_index: u32,
 }
 
 pub struct LLVMTypes<'ctx> {
@@ -113,13 +110,13 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 	pub module: Module<'ctx>,
 	pub builder: Builder<'ctx>,
 
-	state: State,
-
 	abi: ABI,
 	attribute_kinds: AttributeKinds,
-
 	llvm_types: LLVMTypes<'ctx>,
-	locations: Vec<Location<'ctx>>,
+
+	state: State,
+	functions: Vec<Vec<DefinedFunction<'ctx>>>,
+	values: Vec<BasicValueEnum<'ctx>>,
 
 	_marker: std::marker::PhantomData<ABI>,
 }
@@ -135,13 +132,13 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			module,
 			builder,
 
-			state: State::InModule,
-
 			abi: ABI::new(),
 			attribute_kinds: AttributeKinds::new(),
-
 			llvm_types,
-			locations: Vec::new(),
+
+			state: State::InModule,
+			functions: Vec::new(),
+			values: Vec::new(),
 
 			_marker: std::marker::PhantomData::default(),
 		}
@@ -151,6 +148,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 		if self.state == (State::InFunction { void_returning: true }) {
 			self.builder.build_return(None).unwrap();
 		}
+		self.state = State::InModule;
 	}
 }
 
@@ -190,20 +188,51 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		}
 	}
 
-	fn start_function(&mut self, type_store: &TypeStore, function: &Function, name: &str) {
+	fn register_functions(&mut self, type_store: &TypeStore, function_store: &FunctionStore) {
+		assert_eq!(self.functions.len(), 0);
+
+		for function_shape_index in 0..function_store.shapes.len() {
+			let shape = &function_store.shapes[function_shape_index];
+			if let Some(extern_attribute) = shape.extern_attribute {
+				if let ExternAttribute::Intrinsic = extern_attribute.item {
+					self.functions.push(Vec::new());
+					continue;
+				}
+			}
+
+			let mut specializations = Vec::with_capacity(shape.specializations.len());
+
+			for specialization_index in 0..shape.specializations.len() {
+				let specialization = &shape.specializations[specialization_index];
+				let defined_function = self.abi.define_function(
+					type_store,
+					&self.context,
+					&mut self.module,
+					&mut self.builder,
+					&self.attribute_kinds,
+					&self.llvm_types,
+					shape,
+					specialization,
+				);
+
+				specializations.push(defined_function);
+			}
+
+			self.functions.push(specializations);
+		}
+	}
+
+	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId) {
 		self.finalize_function_if_in_function();
 
-		let BuiltFunction { llvm_function, entry_block } = self.abi.build_function(
-			type_store,
-			&self.context,
-			&mut self.module,
-			&mut self.builder,
-			&self.attribute_kinds,
-			&self.llvm_types,
-			&mut self.locations,
-			function,
-			name,
-		);
+		let defined_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let entry_block = defined_function
+			.entry_block
+			.expect("Should only be None for extern functions");
+		self.builder.position_at_end(entry_block);
+
+		self.values.clear();
+		self.values.extend_from_slice(&defined_function.argument_values);
 
 		let void_returning = function.return_type.is_void(type_store);
 		self.state = State::InFunction { void_returning };
