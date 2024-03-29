@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: Remove when amd64 backend is developed further
+
 use std::mem::{size_of, transmute};
 
 use crate::codegen::amd64::assembler::{Assembler, Register32};

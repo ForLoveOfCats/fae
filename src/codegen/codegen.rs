@@ -90,6 +90,6 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 	}
 }
 
-fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, expression: &Expression) -> Option<G::Binding> {
+fn generate_expression<G: Generator>(_context: &mut Context, _generator: &mut G, _expression: &Expression) -> Option<G::Binding> {
 	None
 }

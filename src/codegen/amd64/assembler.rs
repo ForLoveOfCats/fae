@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: Remove when amd64 backend is developed further
+
 use crate::codegen::literal::Literal32;
 
 enum PrintEntry {

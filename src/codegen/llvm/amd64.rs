@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use inkwell::context::Context;
-use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple};
+use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetTriple};
 use inkwell::OptimizationLevel;
 
 use crate::codegen::codegen::generate;
