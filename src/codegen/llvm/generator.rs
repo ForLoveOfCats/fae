@@ -3,7 +3,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicTypeEnum, PointerType, StructType};
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicValueEnum, PointerValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::generator::Generator;
@@ -38,7 +38,26 @@ enum State {
 	InFunction { void_returning: bool },
 }
 
-type Binding<'ctx> = BasicValueEnum<'ctx>;
+#[derive(Debug, Clone, Copy)]
+pub enum Binding<'ctx> {
+	Value(BasicValueEnum<'ctx>),
+
+	Pointer {
+		pointer: PointerValue<'ctx>,
+		pointed_type: BasicTypeEnum<'ctx>,
+	},
+}
+
+impl<'ctx> Binding<'ctx> {
+	fn to_value(self, builder: &mut Builder<'ctx>) -> BasicValueEnum<'ctx> {
+		let (pointer, pointed_type) = match self {
+			Binding::Value(value) => return value,
+			Binding::Pointer { pointer, pointed_type } => (pointer, pointed_type),
+		};
+
+		builder.build_load(pointed_type, pointer, "").unwrap()
+	}
+}
 
 pub struct LLVMTypes<'ctx> {
 	pub opaque_pointer: PointerType<'ctx>,
@@ -114,7 +133,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 
 	state: State,
 	functions: Vec<Vec<DefinedFunction<'ctx>>>,
-	values: Vec<Option<BasicValueEnum<'ctx>>>,
+	values: Vec<Option<Binding<'ctx>>>,
 
 	_marker: std::marker::PhantomData<ABI>,
 }
@@ -237,7 +256,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_integer_value(&mut self, kind: NumericKind, value: i128) -> Self::Binding {
-		match kind {
+		let value = match kind {
 			NumericKind::I8 | NumericKind::U8 => BasicValueEnum::IntValue(self.context.i8_type().const_int(value as u64, false)),
 
 			NumericKind::I16 | NumericKind::U16 => {
@@ -255,7 +274,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			NumericKind::F32 => BasicValueEnum::FloatValue(self.context.f32_type().const_float(value as f64)),
 
 			NumericKind::F64 => BasicValueEnum::FloatValue(self.context.f64_type().const_float(value as f64)),
-		}
+		};
+
+		Binding::Value(value)
 	}
 
 	fn generate_struct_literal(
@@ -264,14 +285,26 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		specialization_index: usize,
 		fields: &[Self::Binding],
 	) -> Self::Binding {
+		// TODO: Avoid this creating this vec every time
+		let mut values = Vec::with_capacity(fields.len());
+		for field in fields {
+			values.push(field.to_value(&mut self.builder));
+		}
+
 		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].unwrap();
-		let struct_value = struct_type.const_named_struct(fields);
-		BasicValueEnum::StructValue(struct_value)
+		let struct_value = struct_type.const_named_struct(&values);
+		Binding::Value(BasicValueEnum::StructValue(struct_value))
 	}
 
 	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Binding<'ctx>]) -> Option<Binding<'ctx>> {
+		// TODO: Avoid this creating this vec every time
+		let mut values = Vec::with_capacity(arguments.len());
+		for argument in arguments {
+			values.push(argument.to_value(&mut self.builder));
+		}
+
 		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
-		self.abi.call_function(&mut self.builder, function, arguments)
+		self.abi.call_function(&mut self.builder, function, &values)
 	}
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
@@ -290,6 +323,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			return;
 		};
 
+		let value = value.to_value(&mut self.builder);
 		self.builder.build_return(Some(&value)).unwrap();
 	}
 

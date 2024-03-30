@@ -8,7 +8,7 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
-use crate::codegen::llvm::generator::{AttributeKinds, LLVMTypes};
+use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMTypes};
 use crate::ir::{Function, FunctionShape};
 use crate::tree::ExternAttribute;
 use crate::type_store::TypeStore;
@@ -33,7 +33,7 @@ pub trait LLVMAbi<'ctx> {
 		builder: &mut Builder<'ctx>,
 		function: &DefinedFunction<'ctx>,
 		arguments: &[BasicValueEnum<'ctx>],
-	) -> Option<BasicValueEnum<'ctx>>;
+	) -> Option<generator::Binding<'ctx>>;
 }
 
 #[derive(Clone, Copy)]
@@ -46,7 +46,7 @@ pub enum FunctionReturnType<'ctx> {
 pub struct DefinedFunction<'ctx> {
 	pub llvm_function: FunctionValue<'ctx>,
 	pub return_type: FunctionReturnType<'ctx>,
-	pub argument_values: Vec<Option<BasicValueEnum<'ctx>>>,
+	pub argument_values: Vec<Option<generator::Binding<'ctx>>>,
 	pub entry_block: Option<BasicBlock<'ctx>>, // None for extern functions
 }
 
@@ -271,12 +271,14 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				continue;
 			}
 
-			let alloca = builder.build_alloca(composition.actual_type, "").unwrap();
-			argument_values.push(Some(BasicValueEnum::PointerValue(alloca)));
+			let pointer = builder.build_alloca(composition.actual_type, "").unwrap();
+			let pointed_type = BasicTypeEnum::StructType(composition.composition_struct);
+			let binding = generator::Binding::Pointer { pointer, pointed_type };
+			argument_values.push(Some(binding));
 			let composition = composition.composition_struct;
 
 			for index in 0..composition.count_fields() {
-				let ptr = builder.build_struct_gep(composition, alloca, index as u32, "").unwrap();
+				let ptr = builder.build_struct_gep(composition, pointer, index as u32, "").unwrap();
 				let parameter = llvm_function.get_nth_param(index as u32).unwrap();
 				builder.build_store(ptr, parameter).unwrap();
 			}
@@ -295,7 +297,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		builder: &mut Builder<'ctx>,
 		function: &DefinedFunction<'ctx>,
 		arguments: &[BasicValueEnum<'ctx>],
-	) -> Option<BasicValueEnum<'ctx>> {
+	) -> Option<generator::Binding<'ctx>> {
 		self.argument_value_buffer.clear();
 
 		let mut sret_alloca = None;
@@ -321,10 +323,14 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		match function.return_type {
 			FunctionReturnType::Void => None,
 
-			FunctionReturnType::ByValue { .. } => Some(callsite_value.try_as_basic_value().left().unwrap()),
+			FunctionReturnType::ByValue { .. } => {
+				let value = callsite_value.try_as_basic_value().left().unwrap();
+				Some(generator::Binding::Value(value))
+			}
 
-			FunctionReturnType::ByPointer { .. } => {
-				Some(BasicValueEnum::PointerValue(sret_alloca.expect("Must be Some if returning by pointer")))
+			FunctionReturnType::ByPointer { pointed_type } => {
+				let pointer = sret_alloca.expect("Must be Some if returning by pointer");
+				Some(generator::Binding::Pointer { pointer, pointed_type })
 			}
 		}
 	}
