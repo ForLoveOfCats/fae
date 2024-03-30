@@ -1,5 +1,30 @@
 fn main() {
-	other_function()
+	other_function(
+		SmallType {
+			a: 1
+			b: 2
+			c: 3
+		}
+	)
+
+
+	/*other_function(
+		SmallType {
+			a: 1
+			b: 2
+			c: 3
+		}
+		LargeType {
+			a: 1
+			b: 2
+			c: 3
+			d: 4
+			e: 5
+			f: 6
+			g: 7
+		}
+		3
+	)*/
 }
 
 struct SmallType {
@@ -18,14 +43,6 @@ struct LargeType {
 	g: f32
 }
 
-fn other_function(): LargeType {
-	return LargeType {
-		a: 1
-		b: 1
-		c: 1
-		d: 1
-		e: 1
-		f: 1
-		g: 1
-	}
+fn other_function(a: SmallType): SmallType {
+	return a
 }

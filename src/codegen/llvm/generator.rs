@@ -236,6 +236,39 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.state = State::InFunction { void_returning };
 	}
 
+	fn generate_integer_value(&mut self, kind: NumericKind, value: i128) -> Self::Binding {
+		match kind {
+			NumericKind::I8 | NumericKind::U8 => BasicValueEnum::IntValue(self.context.i8_type().const_int(value as u64, false)),
+
+			NumericKind::I16 | NumericKind::U16 => {
+				BasicValueEnum::IntValue(self.context.i16_type().const_int(value as u64, false))
+			}
+
+			NumericKind::I32 | NumericKind::U32 => {
+				BasicValueEnum::IntValue(self.context.i32_type().const_int(value as u64, false))
+			}
+
+			NumericKind::I64 | NumericKind::U64 | NumericKind::USize => {
+				BasicValueEnum::IntValue(self.context.i64_type().const_int(value as u64, false))
+			}
+
+			NumericKind::F32 => BasicValueEnum::FloatValue(self.context.f32_type().const_float(value as f64)),
+
+			NumericKind::F64 => BasicValueEnum::FloatValue(self.context.f64_type().const_float(value as f64)),
+		}
+	}
+
+	fn generate_struct_literal(
+		&mut self,
+		shape_index: usize,
+		specialization_index: usize,
+		fields: &[Self::Binding],
+	) -> Self::Binding {
+		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].unwrap();
+		let struct_value = struct_type.const_named_struct(fields);
+		BasicValueEnum::StructValue(struct_value)
+	}
+
 	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Binding<'ctx>]) -> Option<Binding<'ctx>> {
 		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		self.abi.call_function(&mut self.builder, function, arguments)

@@ -1,6 +1,6 @@
 use crate::error::Messages;
-use crate::ir::{Block, Expression, ExpressionKind, FunctionId, FunctionShape, TypeArguments};
-use crate::type_store::TypeStore;
+use crate::ir::{Block, Expression, ExpressionKind, FunctionId, FunctionShape, IntegerValue, StructLiteral, TypeArguments};
+use crate::type_store::{TypeEntryKind, TypeStore};
 use crate::validator::FunctionStore;
 
 use super::generator::Generator;
@@ -96,7 +96,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::If(_) => todo!("generate expression If"),
 
-		ExpressionKind::IntegerValue(_) => todo!("generate expression IntegerValue"),
+		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
 
 		ExpressionKind::DecimalValue(_) => todo!("generate expression DecimalValue"),
 
@@ -108,19 +108,9 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::ArrayLiteral(_) => todo!("generate expression ArrayLiteral"),
 
-		ExpressionKind::StructLiteral(_) => todo!("generate expression StructLiteral"),
+		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal),
 
-		ExpressionKind::Call(call) => {
-			// TODO: Reuse this vec between calls
-			let mut arguments = Vec::with_capacity(call.arguments.len());
-			for argument in &call.arguments {
-				if let Some(binding) = generate_expression(context, generator, argument) {
-					arguments.push(binding);
-				}
-			}
-
-			generator.generate_call(call.function_id, &arguments)
-		}
+		ExpressionKind::Call(call) => generate_call(context, generator, call),
 
 		ExpressionKind::Read(_) => todo!("generate expression Read"),
 
@@ -136,4 +126,55 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::AnyCollapse => unreachable!(),
 	}
+}
+
+fn generate_integer_value<G: Generator>(context: &mut Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
+	let kind = value.collapsed().numeric_kind(context.type_store).unwrap();
+	Some(generator.generate_integer_value(kind, value.value()))
+}
+
+fn generate_struct_literal<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	literal: &StructLiteral,
+) -> Option<G::Binding> {
+	// TODO: Avoid this creating this vec every time
+	let mut fields = Vec::with_capacity(literal.field_initializers.len());
+	for initalizer in &literal.field_initializers {
+		if let Some(step) = generate_expression(context, generator, &initalizer.expression) {
+			fields.push(step);
+		}
+	}
+
+	let layout = context.type_store.type_layout(literal.type_id);
+	if layout.size <= 0 {
+		assert_eq!(fields.len(), 0);
+		None
+	} else {
+		assert!(!fields.is_empty());
+
+		let entry = context.type_store.type_entries[literal.type_id.index()];
+		let (shape_index, specialization_index) = match entry.kind {
+			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+			_ => unreachable!("{:?}", entry.kind),
+		};
+
+		Some(generator.generate_struct_literal(shape_index, specialization_index, &fields))
+	}
+}
+
+fn generate_call<G: Generator>(
+	context: &mut Context<'_, '_>,
+	generator: &mut G,
+	call: &crate::ir::Call<'_>,
+) -> Option<G::Binding> {
+	// TODO: Avoid this creating this vec every time
+	let mut arguments = Vec::with_capacity(call.arguments.len());
+	for argument in &call.arguments {
+		if let Some(binding) = generate_expression(context, generator, argument) {
+			arguments.push(binding);
+		}
+	}
+
+	generator.generate_call(call.function_id, &arguments)
 }

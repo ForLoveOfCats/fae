@@ -38,6 +38,28 @@ impl TypeId {
 		range.contains(&self.entry) || self.is_any_collapse(type_store)
 	}
 
+	pub fn numeric_kind(self, type_store: &TypeStore) -> Option<NumericKind> {
+		if !self.is_numeric(type_store) {
+			return None;
+		}
+
+		const BUFFER: &[NumericKind] = &[
+			NumericKind::I8,
+			NumericKind::I16,
+			NumericKind::I32,
+			NumericKind::I64,
+			NumericKind::U8,
+			NumericKind::U16,
+			NumericKind::U32,
+			NumericKind::U64,
+			NumericKind::USize,
+			NumericKind::F32,
+			NumericKind::F64,
+		];
+
+		Some(BUFFER[self.index() - type_store.i8_type_id.index()])
+	}
+
 	pub fn is_pointer(self, type_store: &TypeStore) -> bool {
 		let entry = type_store.type_entries[self.index()];
 		matches!(entry.kind, TypeEntryKind::Pointer { .. })
