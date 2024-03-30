@@ -114,7 +114,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 
 	state: State,
 	functions: Vec<Vec<DefinedFunction<'ctx>>>,
-	values: Vec<BasicValueEnum<'ctx>>,
+	values: Vec<Option<BasicValueEnum<'ctx>>>,
 
 	_marker: std::marker::PhantomData<ABI>,
 }
@@ -274,7 +274,30 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.abi.call_function(&mut self.builder, function, arguments)
 	}
 
+	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
+		self.values[readable_index]
+	}
+
+	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>) {
+		let value_index = self.values.len();
+		self.values.push(value);
+		assert_eq!(value_index, readable_index);
+	}
+
+	fn generate_return(&mut self, value: Option<Self::Binding>) {
+		let Some(value) = value else {
+			self.builder.build_return(None).unwrap();
+			return;
+		};
+
+		self.builder.build_return(Some(&value)).unwrap();
+	}
+
 	fn finalize_generator(&mut self) {
 		self.finalize_function_if_in_function();
+		if let Err(error) = self.module.verify() {
+			eprintln!("{}", error.to_str().unwrap());
+			std::process::exit(-1);
+		}
 	}
 }

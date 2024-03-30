@@ -3,7 +3,7 @@ use crate::type_store::{NumericKind, TypeStore};
 use crate::validator::FunctionStore;
 
 pub trait Generator {
-	type Binding;
+	type Binding: Clone + Copy;
 
 	fn register_type_descriptions(&mut self, type_store: &mut TypeStore);
 
@@ -21,6 +21,12 @@ pub trait Generator {
 	) -> Self::Binding;
 
 	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Self::Binding]) -> Option<Self::Binding>;
+
+	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
+
+	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>);
+
+	fn generate_return(&mut self, value: Option<Self::Binding>);
 
 	fn finalize_generator(&mut self);
 }

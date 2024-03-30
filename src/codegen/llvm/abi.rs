@@ -46,7 +46,7 @@ pub enum FunctionReturnType<'ctx> {
 pub struct DefinedFunction<'ctx> {
 	pub llvm_function: FunctionValue<'ctx>,
 	pub return_type: FunctionReturnType<'ctx>,
-	pub argument_values: Vec<BasicValueEnum<'ctx>>,
+	pub argument_values: Vec<Option<BasicValueEnum<'ctx>>>,
 	pub entry_block: Option<BasicBlock<'ctx>>, // None for extern functions
 }
 
@@ -58,6 +58,7 @@ struct ParameterAttribute {
 struct ParameterComposition<'ctx> {
 	composition_struct: StructType<'ctx>,
 	actual_type: BasicTypeEnum<'ctx>,
+	size: i64,
 }
 
 pub struct SysvAbi<'ctx> {
@@ -212,8 +213,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		self.parameter_composition_buffer.clear();
 
 		for parameter in &function.parameters {
-			let layout = type_store.type_layout(parameter.type_id);
-			if layout.size <= 0 {
+			let size = type_store.type_layout(parameter.type_id).size;
+			if size <= 0 {
 				continue;
 			}
 
@@ -227,7 +228,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 			let composition_struct = context.struct_type(&self.parameter_basic_type_buffer[range], false);
 			let actual_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
-			let composition = ParameterComposition { composition_struct, actual_type };
+			let composition = ParameterComposition { composition_struct, actual_type, size };
 			self.parameter_composition_buffer.push(composition);
 		}
 
@@ -265,8 +266,13 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 		let mut argument_values = Vec::with_capacity(self.parameter_composition_buffer.len());
 		for composition in &self.parameter_composition_buffer {
+			if composition.size <= 0 {
+				argument_values.push(None);
+				continue;
+			}
+
 			let alloca = builder.build_alloca(composition.actual_type, "").unwrap();
-			argument_values.push(BasicValueEnum::PointerValue(alloca));
+			argument_values.push(Some(BasicValueEnum::PointerValue(alloca)));
 			let composition = composition.composition_struct;
 
 			for index in 0..composition.count_fields() {

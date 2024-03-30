@@ -1,5 +1,8 @@
 use crate::error::Messages;
-use crate::ir::{Block, Expression, ExpressionKind, FunctionId, FunctionShape, IntegerValue, StructLiteral, TypeArguments};
+use crate::ir::{
+	Binding, Block, Call, Expression, ExpressionKind, FunctionId, FunctionShape, IntegerValue, Read, Return, StructLiteral,
+	TypeArguments,
+};
 use crate::type_store::{TypeEntryKind, TypeStore};
 use crate::validator::FunctionStore;
 
@@ -80,12 +83,15 @@ pub fn generate_function<'a, G: Generator>(
 fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {
 	for statement in &block.statements {
 		match &statement.kind {
-			crate::ir::StatementKind::Expression(expression) => generate_expression(context, generator, expression),
+			crate::ir::StatementKind::Expression(expression) => {
+				generate_expression(context, generator, expression);
+			}
 
-			// crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
-			// crate::ir::StatementKind::Binding(_) => todo!("generate StatementKind::Binding"),
-			// crate::ir::StatementKind::Return(_) => todo!("generate StatementKind::Return"),
-			_ => None,
+			crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
+
+			crate::ir::StatementKind::Binding(binding) => generate_binding(context, generator, binding),
+
+			crate::ir::StatementKind::Return(statement) => generate_return(context, generator, statement),
 		};
 	}
 }
@@ -112,7 +118,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::Call(call) => generate_call(context, generator, call),
 
-		ExpressionKind::Read(_) => todo!("generate expression Read"),
+		ExpressionKind::Read(read) => generate_read(generator, read),
 
 		ExpressionKind::FieldRead(_) => todo!("generate expression FieldRead"),
 
@@ -163,11 +169,7 @@ fn generate_struct_literal<G: Generator>(
 	}
 }
 
-fn generate_call<G: Generator>(
-	context: &mut Context<'_, '_>,
-	generator: &mut G,
-	call: &crate::ir::Call<'_>,
-) -> Option<G::Binding> {
+fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
 	// TODO: Avoid this creating this vec every time
 	let mut arguments = Vec::with_capacity(call.arguments.len());
 	for argument in &call.arguments {
@@ -177,4 +179,23 @@ fn generate_call<G: Generator>(
 	}
 
 	generator.generate_call(call.function_id, &arguments)
+}
+
+fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {
+	generator.generate_read(read.readable_index)
+}
+
+fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
+	let value = generate_expression(context, generator, &binding.expression);
+	generator.generate_binding(binding.readable_index, value);
+}
+
+fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {
+	let Some(expression) = &statement.expression else {
+		generator.generate_return(None);
+		return;
+	};
+
+	let value = generate_expression(context, generator, expression);
+	generator.generate_return(value);
 }
