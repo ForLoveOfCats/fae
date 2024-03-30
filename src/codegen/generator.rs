@@ -11,5 +11,7 @@ pub trait Generator {
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId);
 
+	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Self::Binding]) -> Option<Self::Binding>;
+
 	fn finalize_generator(&mut self);
 }

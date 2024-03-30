@@ -4,7 +4,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
@@ -27,10 +27,25 @@ pub trait LLVMAbi<'ctx> {
 		function_shape: &FunctionShape,
 		function: &Function,
 	) -> DefinedFunction<'ctx>;
+
+	fn call_function(
+		&mut self,
+		builder: &mut Builder<'ctx>,
+		function: &DefinedFunction<'ctx>,
+		arguments: &[BasicValueEnum<'ctx>],
+	) -> Option<BasicValueEnum<'ctx>>;
+}
+
+#[derive(Clone, Copy)]
+pub enum FunctionReturnType<'ctx> {
+	Void,
+	ByValue { value_type: BasicTypeEnum<'ctx> },
+	ByPointer { pointed_type: BasicTypeEnum<'ctx> }, // sret
 }
 
 pub struct DefinedFunction<'ctx> {
 	pub llvm_function: FunctionValue<'ctx>,
+	pub return_type: FunctionReturnType<'ctx>,
 	pub argument_values: Vec<BasicValueEnum<'ctx>>,
 	pub entry_block: Option<BasicBlock<'ctx>>, // None for extern functions
 }
@@ -51,6 +66,7 @@ pub struct SysvAbi<'ctx> {
 	parameter_basic_type_buffer: Vec<BasicTypeEnum<'ctx>>,
 	parameter_composition_buffer: Vec<ParameterComposition<'ctx>>,
 	attribute_buffer: Vec<ParameterAttribute>,
+	argument_value_buffer: Vec<BasicMetadataValueEnum<'ctx>>,
 }
 
 impl<'ctx> SysvAbi<'ctx> {
@@ -147,6 +163,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			parameter_basic_type_buffer: Vec::new(),
 			parameter_composition_buffer: Vec::new(),
 			attribute_buffer: Vec::new(),
+			argument_value_buffer: Vec::new(),
 		}
 	}
 
@@ -161,14 +178,15 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		function_shape: &FunctionShape,
 		function: &Function,
 	) -> DefinedFunction<'ctx> {
+		self.return_type_buffer.clear();
 		self.parameter_type_buffer.clear();
 		self.attribute_buffer.clear();
 
-		if type_store.type_layout(function.return_type).size > 0 {
+		let return_type = if type_store.type_layout(function.return_type).size > 0 {
+			let return_type = llvm_types.type_to_basic_type_enum(context, type_store, function.return_type);
+
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, function.return_type);
-
-			self.return_type_buffer.clear();
 			Self::map_classes_into_basic_type_buffer(context, &mut self.return_type_buffer, classes.iter());
 
 			if let Some(Class { kind: ClassKind::Memory, .. }) = classes.first() {
@@ -181,8 +199,14 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				let attribute = context.create_enum_attribute(attribute_kinds.sret, 0);
 				self.attribute_buffer.push(ParameterAttribute { index: 0, attribute });
 				self.return_type_buffer.clear(); // Make us use void return type
+
+				FunctionReturnType::ByPointer { pointed_type: return_type }
+			} else {
+				FunctionReturnType::ByValue { value_type: return_type }
 			}
-		}
+		} else {
+			FunctionReturnType::Void
+		};
 
 		self.parameter_basic_type_buffer.clear();
 		self.parameter_composition_buffer.clear();
@@ -223,6 +247,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				let llvm_function = module.add_function(name, fn_type, Some(Linkage::AvailableExternally));
 				return DefinedFunction {
 					llvm_function,
+					return_type,
 					argument_values: Vec::new(),
 					entry_block: None,
 				};
@@ -253,8 +278,59 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 		DefinedFunction {
 			llvm_function,
+			return_type,
 			argument_values,
 			entry_block: Some(entry_block),
 		}
+	}
+
+	fn call_function(
+		&mut self,
+		builder: &mut Builder<'ctx>,
+		function: &DefinedFunction<'ctx>,
+		arguments: &[BasicValueEnum<'ctx>],
+	) -> Option<BasicValueEnum<'ctx>> {
+		self.argument_value_buffer.clear();
+
+		let mut sret_alloca = None;
+		match function.return_type {
+			FunctionReturnType::ByPointer { pointed_type } => {
+				let alloca = builder.build_alloca(pointed_type, "").unwrap();
+				self.argument_value_buffer.push(BasicMetadataValueEnum::PointerValue(alloca));
+				sret_alloca = Some(alloca);
+			}
+
+			_ => {}
+		}
+
+		for &value in arguments {
+			let argument = basic_value_enum_to_basic_metadata_value_enum(value);
+			self.argument_value_buffer.push(argument);
+		}
+
+		let callsite_value = builder
+			.build_direct_call(function.llvm_function, &self.argument_value_buffer, "")
+			.unwrap();
+
+		match function.return_type {
+			FunctionReturnType::Void => None,
+
+			FunctionReturnType::ByValue { .. } => Some(callsite_value.try_as_basic_value().left().unwrap()),
+
+			FunctionReturnType::ByPointer { .. } => {
+				Some(BasicValueEnum::PointerValue(sret_alloca.expect("Must be Some if returning by pointer")))
+			}
+		}
+	}
+}
+
+fn basic_value_enum_to_basic_metadata_value_enum<'ctx>(value: BasicValueEnum<'ctx>) -> BasicMetadataValueEnum<'ctx> {
+	match value {
+		BasicValueEnum::ArrayValue(value) => BasicMetadataValueEnum::ArrayValue(value),
+		BasicValueEnum::IntValue(value) => BasicMetadataValueEnum::IntValue(value),
+		BasicValueEnum::FloatValue(value) => BasicMetadataValueEnum::FloatValue(value),
+		BasicValueEnum::PointerValue(value) => BasicMetadataValueEnum::PointerValue(value),
+		BasicValueEnum::StructValue(value) => BasicMetadataValueEnum::StructValue(value),
+		BasicValueEnum::VectorValue(value) => BasicMetadataValueEnum::VectorValue(value),
 	}
 }

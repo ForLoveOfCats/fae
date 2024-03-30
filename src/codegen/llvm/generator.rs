@@ -38,9 +38,7 @@ enum State {
 	InFunction { void_returning: bool },
 }
 
-pub struct Binding {
-	value_index: u32,
-}
+type Binding<'ctx> = BasicValueEnum<'ctx>;
 
 pub struct LLVMTypes<'ctx> {
 	pub opaque_pointer: PointerType<'ctx>,
@@ -153,7 +151,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 }
 
 impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
-	type Binding = Binding;
+	type Binding = Binding<'ctx>;
 
 	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
@@ -236,6 +234,11 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let void_returning = function.return_type.is_void(type_store);
 		self.state = State::InFunction { void_returning };
+	}
+
+	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Binding<'ctx>]) -> Option<Binding<'ctx>> {
+		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		self.abi.call_function(&mut self.builder, function, arguments)
 	}
 
 	fn finalize_generator(&mut self) {

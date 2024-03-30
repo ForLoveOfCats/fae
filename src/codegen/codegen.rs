@@ -1,5 +1,5 @@
 use crate::error::Messages;
-use crate::ir::{Block, Expression, FunctionId, FunctionShape, TypeArguments};
+use crate::ir::{Block, Expression, ExpressionKind, FunctionId, FunctionShape, TypeArguments};
 use crate::type_store::TypeStore;
 use crate::validator::FunctionStore;
 
@@ -90,6 +90,50 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 	}
 }
 
-fn generate_expression<G: Generator>(_context: &mut Context, _generator: &mut G, _expression: &Expression) -> Option<G::Binding> {
-	None
+fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, expression: &Expression) -> Option<G::Binding> {
+	match &expression.kind {
+		ExpressionKind::Block(_) => todo!("generate expression Block"),
+
+		ExpressionKind::If(_) => todo!("generate expression If"),
+
+		ExpressionKind::IntegerValue(_) => todo!("generate expression IntegerValue"),
+
+		ExpressionKind::DecimalValue(_) => todo!("generate expression DecimalValue"),
+
+		ExpressionKind::BooleanLiteral(_) => todo!("generate expression BooleanLiteral"),
+
+		ExpressionKind::CodepointLiteral(_) => todo!("generate expression CodepointLiteral"),
+
+		ExpressionKind::StringLiteral(_) => todo!("generate expression StringLiteral"),
+
+		ExpressionKind::ArrayLiteral(_) => todo!("generate expression ArrayLiteral"),
+
+		ExpressionKind::StructLiteral(_) => todo!("generate expression StructLiteral"),
+
+		ExpressionKind::Call(call) => {
+			// TODO: Reuse this vec between calls
+			let mut arguments = Vec::with_capacity(call.arguments.len());
+			for argument in &call.arguments {
+				if let Some(binding) = generate_expression(context, generator, argument) {
+					arguments.push(binding);
+				}
+			}
+
+			generator.generate_call(call.function_id, &arguments)
+		}
+
+		ExpressionKind::Read(_) => todo!("generate expression Read"),
+
+		ExpressionKind::FieldRead(_) => todo!("generate expression FieldRead"),
+
+		ExpressionKind::UnaryOperation(_) => todo!("generate expression UnaryOperation"),
+
+		ExpressionKind::BinaryOperation(_) => todo!("generate expression BinaryOperation"),
+
+		ExpressionKind::SliceMutableToImmutable(_) => todo!("generate expression SliceMutableToImmutable"),
+
+		ExpressionKind::Void => None,
+
+		ExpressionKind::AnyCollapse => unreachable!(),
+	}
 }
