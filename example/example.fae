@@ -1,5 +1,27 @@
+struct SmallType {
+	a: i32
+	b: i32
+	c: f64
+}
+
+struct LargeType {
+	a: i32
+	b: i32
+	c: f64
+	d: u8
+	e: f32
+	f: f32
+	g: f32
+}
+
 fn main() {
-	other_function(
+	simple_function(SmallType {
+		a: 40
+		b: 41
+		c: 42
+	})
+
+	complicated_function(
 		LargeType {
 			a: 1
 			b: 2
@@ -19,22 +41,10 @@ fn main() {
 	)
 }
 
-struct SmallType {
-	a: i32
-	b: i32
-	c: f64
+fn simple_function(a: SmallType): SmallType {
+	return a
 }
 
-struct LargeType {
-	a: i32
-	b: i32
-	c: f64
-	d: u8
-	e: f32
-	f: f32
-	g: f32
-}
-
-fn other_function(a: LargeType, b: i32, c: f32, d: SmallType): LargeType {
+fn complicated_function(a: LargeType, b: i32, c: f32, d: SmallType): LargeType {
 	return a
 }

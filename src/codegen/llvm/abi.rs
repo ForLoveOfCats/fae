@@ -30,17 +30,26 @@ pub trait LLVMAbi<'ctx> {
 
 	fn call_function(
 		&mut self,
+		context: &'ctx Context,
 		builder: &mut Builder<'ctx>,
 		function: &DefinedFunction<'ctx>,
 		arguments: &[Option<generator::Binding<'ctx>>],
 	) -> Option<generator::Binding<'ctx>>;
+
+	fn return_value(
+		&mut self,
+		context: &'ctx Context,
+		builder: &mut Builder<'ctx>,
+		function: &DefinedFunction<'ctx>,
+		value: Option<generator::Binding<'ctx>>,
+	);
 }
 
 #[derive(Clone, Copy)]
 pub enum FunctionReturnType<'ctx> {
 	Void,
 	ByValue { value_type: BasicTypeEnum<'ctx> },
-	ByPointer { pointed_type: BasicTypeEnum<'ctx> }, // sret
+	ByPointer { pointed_type: BasicTypeEnum<'ctx>, layout: Layout }, // sret
 }
 
 pub struct DefinedFunction<'ctx> {
@@ -210,7 +219,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				self.attribute_buffer.push(ParameterAttribute { index: 0, attribute });
 				self.return_type_buffer.clear(); // Make us use void return type
 
-				FunctionReturnType::ByPointer { pointed_type: return_type }
+				let layout = type_store.type_layout(function.return_type);
+				FunctionReturnType::ByPointer { pointed_type: return_type, layout }
 			} else {
 				FunctionReturnType::ByValue { value_type: return_type }
 			}
@@ -245,7 +255,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				self.parameter_information_buffer.push(information);
 			} else if is_by_pointer {
 				assert_eq!(slice.len(), 1);
-				let pointed_type = slice[0];
+				let pointed_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
 				let information = Some(ParameterInformation::ByPointer { pointed_type, layout });
 				self.parameter_information_buffer.push(information);
 			} else {
@@ -291,7 +301,12 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		builder.position_at_end(entry_block);
 
 		let mut initial_values = Vec::with_capacity(self.parameter_information_buffer.len());
-		let mut parameter_index = 0;
+		let mut parameter_index = if matches!(return_type, FunctionReturnType::ByPointer { .. }) {
+			1 // Skip processing first parameter, it is the invisible sret pointer
+		} else {
+			0
+		};
+
 		for information in &self.parameter_information_buffer {
 			let Some(information) = information else {
 				initial_values.push(None);
@@ -310,7 +325,6 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 				&ParameterInformation::ByPointer { pointed_type, .. } => {
 					let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
-					assert!(parameter.is_pointer_value()); // Unsure if the below call is UB if not pointer so assert to be safe
 					let pointer = parameter.into_pointer_value();
 					let binding = generator::Binding::Pointer { pointer, pointed_type };
 					initial_values.push(Some(binding));
@@ -348,6 +362,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 	fn call_function(
 		&mut self,
+		context: &'ctx Context,
 		builder: &mut Builder<'ctx>,
 		function: &DefinedFunction<'ctx>,
 		arguments: &[Option<generator::Binding<'ctx>>],
@@ -356,7 +371,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 		let mut sret_alloca = None;
 		match function.return_type {
-			FunctionReturnType::ByPointer { pointed_type } => {
+			FunctionReturnType::ByPointer { pointed_type, .. } => {
 				let alloca = builder.build_alloca(pointed_type, "").unwrap();
 				self.argument_value_buffer.push(BasicMetadataValueEnum::PointerValue(alloca));
 				sret_alloca = Some(alloca);
@@ -387,8 +402,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 						generator::Binding::Pointer { pointer, pointed_type: ty } => {
 							assert_eq!(pointed_type, ty);
 							let alloca = builder.build_alloca(pointed_type, "").unwrap();
+							let size = context.i64_type().const_int(layout.size as u64, false);
 							let align = layout.alignment as u32;
-							let size = pointed_type.size_of().unwrap();
 							builder.build_memcpy(alloca, align, pointer, align, size).unwrap();
 							let argument = BasicMetadataValueEnum::PointerValue(alloca);
 							self.argument_value_buffer.push(argument);
@@ -439,9 +454,49 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				Some(generator::Binding::Value(value))
 			}
 
-			FunctionReturnType::ByPointer { pointed_type } => {
+			FunctionReturnType::ByPointer { pointed_type, .. } => {
 				let pointer = sret_alloca.expect("Must be Some if returning by pointer");
 				Some(generator::Binding::Pointer { pointer, pointed_type })
+			}
+		}
+	}
+
+	fn return_value(
+		&mut self,
+		context: &'ctx Context,
+		builder: &mut Builder<'ctx>,
+		function: &DefinedFunction<'ctx>,
+		value: Option<generator::Binding<'ctx>>,
+	) {
+		match function.return_type {
+			FunctionReturnType::Void => {
+				assert!(value.is_none(), "{value:?}");
+				builder.build_return(None).unwrap();
+			}
+
+			FunctionReturnType::ByValue { .. } => {
+				let value = value.unwrap().to_value(builder);
+				builder.build_return(Some(&value)).unwrap();
+			}
+
+			FunctionReturnType::ByPointer { pointed_type, layout } => {
+				let first_parameter = function.llvm_function.get_nth_param(0).unwrap();
+				let sret_pointer = first_parameter.into_pointer_value();
+
+				match value.unwrap() {
+					generator::Binding::Value(value) => {
+						builder.build_store(sret_pointer, value).unwrap();
+					}
+
+					generator::Binding::Pointer { pointer, pointed_type: ty } => {
+						assert_eq!(pointed_type, ty);
+						let size = context.i64_type().const_int(layout.size as u64, false);
+						let align = layout.alignment as u32;
+						builder.build_memcpy(sret_pointer, align, pointer, align, size).unwrap();
+					}
+				}
+
+				builder.build_return(None).unwrap();
 			}
 		}
 	}

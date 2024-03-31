@@ -26,7 +26,7 @@ pub trait Generator {
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>);
 
-	fn generate_return(&mut self, value: Option<Self::Binding>);
+	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);
 
 	fn finalize_generator(&mut self);
 }

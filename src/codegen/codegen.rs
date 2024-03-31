@@ -191,10 +191,10 @@ fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, bind
 
 fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {
 	let Some(expression) = &statement.expression else {
-		generator.generate_return(None);
+		generator.generate_return(context.function_id, None);
 		return;
 	};
 
 	let value = generate_expression(context, generator, expression);
-	generator.generate_return(value);
+	generator.generate_return(context.function_id, value);
 }

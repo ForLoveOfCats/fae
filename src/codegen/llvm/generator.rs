@@ -298,7 +298,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Option<Binding<'ctx>>]) -> Option<Binding<'ctx>> {
 		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
-		self.abi.call_function(&mut self.builder, function, &arguments)
+		self.abi.call_function(self.context, &mut self.builder, function, &arguments)
 	}
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
@@ -311,14 +311,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		assert_eq!(value_index, readable_index);
 	}
 
-	fn generate_return(&mut self, value: Option<Self::Binding>) {
-		let Some(value) = value else {
-			self.builder.build_return(None).unwrap();
-			return;
-		};
-
-		let value = value.to_value(&mut self.builder);
-		self.builder.build_return(Some(&value)).unwrap();
+	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {
+		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		self.abi.return_value(&self.context, &mut self.builder, function, value);
 	}
 
 	fn finalize_generator(&mut self) {
