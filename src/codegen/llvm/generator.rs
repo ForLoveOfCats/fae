@@ -49,7 +49,7 @@ pub enum Binding<'ctx> {
 }
 
 impl<'ctx> Binding<'ctx> {
-	fn to_value(self, builder: &mut Builder<'ctx>) -> BasicValueEnum<'ctx> {
+	pub fn to_value(self, builder: &mut Builder<'ctx>) -> BasicValueEnum<'ctx> {
 		let (pointer, pointed_type) = match self {
 			Binding::Value(value) => return value,
 			Binding::Pointer { pointer, pointed_type } => (pointer, pointed_type),
@@ -249,7 +249,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.builder.position_at_end(entry_block);
 
 		self.values.clear();
-		self.values.extend_from_slice(&defined_function.argument_values);
+		self.values.extend_from_slice(&defined_function.initial_values);
 
 		let void_returning = function.return_type.is_void(type_store);
 		self.state = State::InFunction { void_returning };
@@ -296,15 +296,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Binding::Value(BasicValueEnum::StructValue(struct_value))
 	}
 
-	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Binding<'ctx>]) -> Option<Binding<'ctx>> {
-		// TODO: Avoid this creating this vec every time
-		let mut values = Vec::with_capacity(arguments.len());
-		for argument in arguments {
-			values.push(argument.to_value(&mut self.builder));
-		}
-
+	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Option<Binding<'ctx>>]) -> Option<Binding<'ctx>> {
 		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
-		self.abi.call_function(&mut self.builder, function, &values)
+		self.abi.call_function(&mut self.builder, function, &arguments)
 	}
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
@@ -329,9 +323,5 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn finalize_generator(&mut self) {
 		self.finalize_function_if_in_function();
-		if let Err(error) = self.module.verify() {
-			eprintln!("{}", error.to_str().unwrap());
-			std::process::exit(-1);
-		}
 	}
 }

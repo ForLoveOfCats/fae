@@ -11,7 +11,7 @@ use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
 use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMTypes};
 use crate::ir::{Function, FunctionShape};
 use crate::tree::ExternAttribute;
-use crate::type_store::TypeStore;
+use crate::type_store::{Layout, TypeStore};
 
 pub trait LLVMAbi<'ctx> {
 	fn new() -> Self;
@@ -32,7 +32,7 @@ pub trait LLVMAbi<'ctx> {
 		&mut self,
 		builder: &mut Builder<'ctx>,
 		function: &DefinedFunction<'ctx>,
-		arguments: &[BasicValueEnum<'ctx>],
+		arguments: &[Option<generator::Binding<'ctx>>],
 	) -> Option<generator::Binding<'ctx>>;
 }
 
@@ -46,7 +46,8 @@ pub enum FunctionReturnType<'ctx> {
 pub struct DefinedFunction<'ctx> {
 	pub llvm_function: FunctionValue<'ctx>,
 	pub return_type: FunctionReturnType<'ctx>,
-	pub argument_values: Vec<Option<generator::Binding<'ctx>>>,
+	pub parameter_information: Vec<Option<ParameterInformation<'ctx>>>,
+	pub initial_values: Vec<Option<generator::Binding<'ctx>>>,
 	pub entry_block: Option<BasicBlock<'ctx>>, // None for extern functions
 }
 
@@ -55,17 +56,25 @@ struct ParameterAttribute {
 	attribute: Attribute,
 }
 
-struct ParameterComposition<'ctx> {
-	composition_struct: StructType<'ctx>,
-	actual_type: BasicTypeEnum<'ctx>,
-	size: i64,
+#[derive(Clone)]
+pub enum ParameterInformation<'ctx> {
+	BareValue,
+	ByPointer { pointed_type: BasicTypeEnum<'ctx>, layout: Layout },
+	Composition(ParameterComposition<'ctx>),
+}
+
+#[derive(Clone)]
+pub struct ParameterComposition<'ctx> {
+	pub composition_struct: StructType<'ctx>,
+	pub actual_type: BasicTypeEnum<'ctx>,
+	pub layout: Layout,
 }
 
 pub struct SysvAbi<'ctx> {
 	return_type_buffer: Vec<BasicTypeEnum<'ctx>>,
 	parameter_type_buffer: Vec<BasicMetadataTypeEnum<'ctx>>,
 	parameter_basic_type_buffer: Vec<BasicTypeEnum<'ctx>>,
-	parameter_composition_buffer: Vec<ParameterComposition<'ctx>>,
+	parameter_information_buffer: Vec<Option<ParameterInformation<'ctx>>>,
 	attribute_buffer: Vec<ParameterAttribute>,
 	argument_value_buffer: Vec<BasicMetadataValueEnum<'ctx>>,
 }
@@ -162,7 +171,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			return_type_buffer: Vec::new(),
 			parameter_type_buffer: Vec::new(),
 			parameter_basic_type_buffer: Vec::new(),
-			parameter_composition_buffer: Vec::new(),
+			parameter_information_buffer: Vec::new(),
 			attribute_buffer: Vec::new(),
 			argument_value_buffer: Vec::new(),
 		}
@@ -210,11 +219,12 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		};
 
 		self.parameter_basic_type_buffer.clear();
-		self.parameter_composition_buffer.clear();
+		self.parameter_information_buffer.clear();
 
 		for parameter in &function.parameters {
-			let size = type_store.type_layout(parameter.type_id).size;
-			if size <= 0 {
+			let layout = type_store.type_layout(parameter.type_id);
+			if layout.size <= 0 {
+				self.parameter_information_buffer.push(None);
 				continue;
 			}
 
@@ -224,12 +234,27 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 			let initial_type_len = self.parameter_basic_type_buffer.len();
 			Self::map_classes_into_basic_type_buffer(context, &mut self.parameter_basic_type_buffer, classes.iter());
-			let range = initial_type_len..self.parameter_basic_type_buffer.len();
+			let slice = &self.parameter_basic_type_buffer[initial_type_len..];
 
-			let composition_struct = context.struct_type(&self.parameter_basic_type_buffer[range], false);
-			let actual_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
-			let composition = ParameterComposition { composition_struct, actual_type, size };
-			self.parameter_composition_buffer.push(composition);
+			let is_bare_value = classes.len() == 1 && classes[0].kind != ClassKind::Memory;
+			let is_by_pointer = classes.len() == 1 && classes[0].kind == ClassKind::Memory;
+
+			if is_bare_value {
+				assert_eq!(slice.len(), 1);
+				let information = Some(ParameterInformation::BareValue);
+				self.parameter_information_buffer.push(information);
+			} else if is_by_pointer {
+				assert_eq!(slice.len(), 1);
+				let pointed_type = slice[0];
+				let information = Some(ParameterInformation::ByPointer { pointed_type, layout });
+				self.parameter_information_buffer.push(information);
+			} else {
+				let composition_struct = context.struct_type(slice, false);
+				let actual_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter.type_id);
+				let composition = ParameterComposition { composition_struct, actual_type, layout };
+				let information = Some(ParameterInformation::Composition(composition));
+				self.parameter_information_buffer.push(information);
+			}
 		}
 
 		let fn_type = if self.return_type_buffer.is_empty() {
@@ -249,7 +274,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				return DefinedFunction {
 					llvm_function,
 					return_type,
-					argument_values: Vec::new(),
+					parameter_information: self.parameter_information_buffer.clone(),
+					initial_values: Vec::new(),
 					entry_block: None,
 				};
 			}
@@ -264,30 +290,58 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		let entry_block = context.append_basic_block(llvm_function, "");
 		builder.position_at_end(entry_block);
 
-		let mut argument_values = Vec::with_capacity(self.parameter_composition_buffer.len());
-		for composition in &self.parameter_composition_buffer {
-			if composition.size <= 0 {
-				argument_values.push(None);
+		let mut initial_values = Vec::with_capacity(self.parameter_information_buffer.len());
+		let mut parameter_index = 0;
+		for information in &self.parameter_information_buffer {
+			let Some(information) = information else {
+				initial_values.push(None);
+				parameter_index += 1;
 				continue;
-			}
+			};
+
+			let composition = match information {
+				ParameterInformation::BareValue => {
+					let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
+					let binding = generator::Binding::Value(parameter);
+					initial_values.push(Some(binding));
+					parameter_index += 1;
+					continue;
+				}
+
+				&ParameterInformation::ByPointer { pointed_type, .. } => {
+					let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
+					assert!(parameter.is_pointer_value()); // Unsure if the below call is UB if not pointer so assert to be safe
+					let pointer = parameter.into_pointer_value();
+					let binding = generator::Binding::Pointer { pointer, pointed_type };
+					initial_values.push(Some(binding));
+					parameter_index += 1;
+					continue;
+				}
+
+				ParameterInformation::Composition(composition) => composition,
+			};
+
+			assert!(composition.layout.size > 0, "{:?}", composition.layout);
 
 			let pointer = builder.build_alloca(composition.actual_type, "").unwrap();
 			let pointed_type = BasicTypeEnum::StructType(composition.composition_struct);
 			let binding = generator::Binding::Pointer { pointer, pointed_type };
-			argument_values.push(Some(binding));
+			initial_values.push(Some(binding));
 			let composition = composition.composition_struct;
 
-			for index in 0..composition.count_fields() {
-				let ptr = builder.build_struct_gep(composition, pointer, index as u32, "").unwrap();
-				let parameter = llvm_function.get_nth_param(index as u32).unwrap();
+			for field_index in 0..composition.count_fields() as u32 {
+				let ptr = builder.build_struct_gep(composition, pointer, field_index, "").unwrap();
+				let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
 				builder.build_store(ptr, parameter).unwrap();
+				parameter_index += 1;
 			}
 		}
 
 		DefinedFunction {
 			llvm_function,
 			return_type,
-			argument_values,
+			parameter_information: self.parameter_information_buffer.clone(),
+			initial_values,
 			entry_block: Some(entry_block),
 		}
 	}
@@ -296,7 +350,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		&mut self,
 		builder: &mut Builder<'ctx>,
 		function: &DefinedFunction<'ctx>,
-		arguments: &[BasicValueEnum<'ctx>],
+		arguments: &[Option<generator::Binding<'ctx>>],
 	) -> Option<generator::Binding<'ctx>> {
 		self.argument_value_buffer.clear();
 
@@ -311,9 +365,66 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			_ => {}
 		}
 
-		for &value in arguments {
-			let argument = basic_value_enum_to_basic_metadata_value_enum(value);
-			self.argument_value_buffer.push(argument);
+		assert_eq!(arguments.len(), function.parameter_information.len());
+		for (&value, information) in arguments.iter().zip(function.parameter_information.iter()) {
+			let (Some(value), Some(information)) = (value, information) else {
+				assert_eq!(value.is_none(), information.is_none());
+				continue;
+			};
+
+			let composition = match information {
+				ParameterInformation::Composition(composition) => composition,
+
+				&ParameterInformation::ByPointer { pointed_type, layout } => {
+					match value {
+						generator::Binding::Value(value) => {
+							let alloca = builder.build_alloca(pointed_type, "").unwrap();
+							builder.build_store(alloca, value).unwrap();
+							let argument = BasicMetadataValueEnum::PointerValue(alloca);
+							self.argument_value_buffer.push(argument);
+						}
+
+						generator::Binding::Pointer { pointer, pointed_type: ty } => {
+							assert_eq!(pointed_type, ty);
+							let alloca = builder.build_alloca(pointed_type, "").unwrap();
+							let align = layout.alignment as u32;
+							let size = pointed_type.size_of().unwrap();
+							builder.build_memcpy(alloca, align, pointer, align, size).unwrap();
+							let argument = BasicMetadataValueEnum::PointerValue(alloca);
+							self.argument_value_buffer.push(argument);
+						}
+					};
+
+					continue;
+				}
+
+				ParameterInformation::BareValue => {
+					let value = value.to_value(builder);
+					let argument = basic_value_enum_to_basic_metadata_value_enum(value);
+					self.argument_value_buffer.push(argument);
+					continue;
+				}
+			};
+
+			let pointer = match value {
+				generator::Binding::Value(value) => {
+					let alloca = builder.build_alloca(value.get_type(), "").unwrap();
+					builder.build_store(alloca, value).unwrap();
+					alloca
+				}
+
+				generator::Binding::Pointer { pointer, .. } => pointer,
+			};
+
+			let composition_field_count = composition.composition_struct.count_fields();
+			let composition = composition.composition_struct;
+			for field_index in 0..composition_field_count {
+				let field_type = composition.get_field_type_at_index(field_index).unwrap();
+				let field_pointer = builder.build_struct_gep(composition, pointer, field_index, "").unwrap();
+				let value = builder.build_load(field_type, field_pointer, "").unwrap();
+				let argument = basic_value_enum_to_basic_metadata_value_enum(value);
+				self.argument_value_buffer.push(argument);
+			}
 		}
 
 		let callsite_value = builder

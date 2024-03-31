@@ -20,7 +20,7 @@ pub trait Generator {
 		fields: &[Self::Binding],
 	) -> Self::Binding;
 
-	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Self::Binding]) -> Option<Self::Binding>;
+	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Option<Self::Binding>]) -> Option<Self::Binding>;
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
 

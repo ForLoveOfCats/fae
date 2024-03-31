@@ -173,9 +173,8 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 	// TODO: Avoid this creating this vec every time
 	let mut arguments = Vec::with_capacity(call.arguments.len());
 	for argument in &call.arguments {
-		if let Some(binding) = generate_expression(context, generator, argument) {
-			arguments.push(binding);
-		}
+		let binding = generate_expression(context, generator, argument);
+		arguments.push(binding);
 	}
 
 	generator.generate_call(call.function_id, &arguments)

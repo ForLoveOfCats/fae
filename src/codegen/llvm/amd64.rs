@@ -32,5 +32,10 @@ pub fn generate_elf<'a>(
 	let path = Path::new("./fae.ll");
 	generator.module.print_to_file(path).unwrap();
 
+	if let Err(error) = generator.module.verify() {
+		eprintln!("{}", error.to_str().unwrap());
+		std::process::exit(-1);
+	}
+
 	vec![]
 }
