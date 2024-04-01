@@ -19,7 +19,9 @@ mod tree;
 mod type_store;
 mod validator;
 
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
+use std::process::Command;
 
 use cli_arguments::parse_arguments;
 use project::build_project;
@@ -34,7 +36,17 @@ fn main() {
 	let mut stderr = std::io::stderr();
 	let project_path = Path::new("./example");
 	let root_name = "example".to_owned();
-	let _built_project = build_project(&cli_arguments, &mut stderr, project_path, root_name);
+	let built_project = build_project(&cli_arguments, &mut stderr, project_path, root_name);
 
-	// TODO: Run executable
+	let Some(binary_path) = built_project.binary_path else {
+		std::process::exit(-1);
+	};
+
+	let mut command = Command::new(binary_path);
+	let mut child = command.spawn().unwrap();
+	let status = child.wait().unwrap();
+
+	if !status.success() {
+		eprintln!("Child process exited with code {}", status.into_raw())
+	}
 }

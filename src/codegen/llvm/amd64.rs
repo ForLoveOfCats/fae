@@ -1,7 +1,8 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use inkwell::context::Context;
-use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetTriple};
+use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple};
 use inkwell::OptimizationLevel;
 
 use crate::codegen::codegen::generate;
@@ -11,11 +12,11 @@ use crate::error::Messages;
 use crate::type_store::TypeStore;
 use crate::validator::FunctionStore;
 
-pub fn generate_elf<'a>(
+pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-) -> Vec<u8> {
+) -> PathBuf {
 	Target::initialize_x86(&InitializationConfig::default());
 
 	let context = Context::create();
@@ -25,17 +26,37 @@ pub fn generate_elf<'a>(
 
 	let triple = TargetTriple::create("x86_64-pc-linux-gnu");
 	let target = Target::from_triple(&triple).unwrap();
-	let _machine = target
+	let machine = target
 		.create_target_machine(&triple, "", "", OptimizationLevel::None, RelocMode::Default, CodeModel::Default)
 		.unwrap();
 
-	let path = Path::new("./fae.ll");
-	generator.module.print_to_file(path).unwrap();
-
+	generator.module.print_to_file(Path::new("./fae.ll")).unwrap();
 	if let Err(error) = generator.module.verify() {
 		eprintln!("{}", error.to_str().unwrap());
 		std::process::exit(-1);
 	}
 
-	vec![]
+	let object_path = Path::new("./fae_object.o");
+	machine
+		.write_to_file(&generator.module, FileType::Object, object_path)
+		.unwrap();
+
+	let path = PathBuf::from("./fae_executable.x64");
+	let mut lld = Command::new("ld.lld")
+		.arg(object_path)
+		.arg("/usr/lib/crt1.o")
+		.arg("/usr/lib/crti.o")
+		.arg("/usr/lib/crtn.o")
+		.arg("/usr/lib/libc.so")
+		.arg("-dynamic-linker")
+		.arg("/lib64/ld-linux-x86-64.so.2")
+		.arg("-o")
+		.arg(&path)
+		.spawn()
+		.unwrap();
+
+	let status = lld.wait().unwrap();
+	assert!(status.success());
+
+	path
 }

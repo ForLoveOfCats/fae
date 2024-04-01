@@ -1,9 +1,13 @@
+extern "puts"
+fn puts(pointer: u64)
+
 generic T
 struct MyType {
 	field: T
 }
 
 fn main() {
+	puts(0)
 	function<f32>(MyType<f32>{ field: 42 }, 2)
 }
 

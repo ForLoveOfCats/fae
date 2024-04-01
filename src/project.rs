@@ -71,9 +71,9 @@ pub fn build_project(
 	}
 
 	//Not parallelizable
-	let binary_path = PathBuf::from("./output.executable");
 	match cli_arguments.codegen_backend {
 		CodegenBackend::LegacyC => {
+			let binary_path = PathBuf::from("./output.executable");
 			c_codegen::generate_code(
 				&mut messages,
 				&c_include_store,
@@ -83,21 +83,19 @@ pub fn build_project(
 				&binary_path,
 				c_codegen::DebugCodegen::OnFailure,
 			);
-		}
 
-		CodegenBackend::LLVM => {
-			let _elf = codegen::llvm::amd64::generate_elf(&mut messages, &mut type_store, &mut function_store);
 			assert!(!messages.any_errors());
 			any_errors |= messages.any_errors();
 			any_messages |= messages.any_messages();
-			return BuiltProject { binary_path: None, any_messages, any_errors };
-			// std::fs::write("./shared/executable.x64", elf).unwrap();
+			BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
+		}
+
+		CodegenBackend::LLVM => {
+			let binary_path = codegen::llvm::amd64::generate_code(&mut messages, &mut type_store, &mut function_store);
+			assert!(!messages.any_errors());
+			any_errors |= messages.any_errors();
+			any_messages |= messages.any_messages();
+			BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 		}
 	}
-	// let elf = codegen::amd64::elf::generate_elf(&mut messages, &mut type_store, &mut function_store);
-
-	assert!(!messages.any_errors());
-	any_errors |= messages.any_errors();
-	any_messages |= messages.any_messages();
-	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 }

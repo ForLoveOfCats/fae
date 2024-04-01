@@ -281,7 +281,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 		if let Some(extern_attribute) = function_shape.extern_attribute {
 			if let ExternAttribute::Name(name) = extern_attribute.item {
-				let llvm_function = module.add_function(name, fn_type, Some(Linkage::AvailableExternally));
+				let llvm_function = module.add_function(name, fn_type, Some(Linkage::External));
 				return DefinedFunction {
 					llvm_function,
 					return_type,
