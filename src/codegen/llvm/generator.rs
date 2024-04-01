@@ -132,7 +132,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 	llvm_types: LLVMTypes<'ctx>,
 
 	state: State,
-	functions: Vec<Vec<DefinedFunction<'ctx>>>,
+	functions: Vec<Vec<Option<DefinedFunction<'ctx>>>>,
 	values: Vec<Option<Binding<'ctx>>>,
 
 	_marker: std::marker::PhantomData<ABI>,
@@ -221,6 +221,11 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 			for specialization_index in 0..shape.specializations.len() {
 				let specialization = &shape.specializations[specialization_index];
+				if specialization.generic_poisioned {
+					specializations.push(None);
+					continue;
+				}
+
 				let defined_function = self.abi.define_function(
 					type_store,
 					&self.context,
@@ -232,7 +237,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					specialization,
 				);
 
-				specializations.push(defined_function);
+				specializations.push(Some(defined_function));
 			}
 
 			self.functions.push(specializations);
@@ -242,7 +247,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId) {
 		self.finalize_function_if_in_function();
 
-		let defined_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let defined_function = maybe_function.as_ref().unwrap();
 		let entry_block = defined_function
 			.entry_block
 			.expect("Should only be None for extern functions");
@@ -297,7 +303,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Option<Binding<'ctx>>]) -> Option<Binding<'ctx>> {
-		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let function = maybe_function.as_ref().unwrap();
 		self.abi.call_function(self.context, &mut self.builder, function, &arguments)
 	}
 
@@ -312,7 +319,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {
-		let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let function = maybe_function.as_ref().unwrap();
 		self.abi.return_value(&self.context, &mut self.builder, function, value);
 	}
 

@@ -331,6 +331,7 @@ impl TypeArguments {
 #[derive(Debug, Clone)]
 pub struct Function<'a> {
 	pub type_arguments: TypeArguments,
+	pub generic_poisioned: bool,
 	pub parameters: Vec<Parameter<'a>>,
 	pub return_type: TypeId,
 	pub been_queued: bool,

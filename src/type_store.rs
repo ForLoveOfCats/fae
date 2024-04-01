@@ -855,7 +855,8 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn calculate_layout(&mut self, type_id: TypeId) {
-		match self.type_entries[type_id.index()].kind {
+		let entry = self.type_entries[type_id.index()];
+		match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let calculated_layout = match &self.user_types[shape_index].kind {
 					UserTypeKind::Struct { shape } => {
@@ -886,8 +887,10 @@ impl<'a> TypeStore<'a> {
 							size = (size / max_field_alignment) * max_field_alignment + max_field_alignment;
 						}
 
-						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.push(description);
+						if !entry.generic_poisoned {
+							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+							self.user_type_generate_order.push(description);
+						}
 
 						Layout { size, alignment: max_field_alignment }
 					}

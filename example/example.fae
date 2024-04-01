@@ -1,50 +1,17 @@
-struct SmallType {
-	a: i32
-	b: i32
-	c: f64
-}
-
-struct LargeType {
-	a: i32
-	b: i32
-	c: f64
-	d: u8
-	e: f32
-	f: f32
-	g: f32
+generic T
+struct MyType {
+	field: T
 }
 
 fn main() {
-	simple_function(SmallType {
-		a: 40
-		b: 41
-		c: 42
-	})
-
-	complicated_function(
-		LargeType {
-			a: 1
-			b: 2
-			c: 3
-			d: 4
-			e: 5
-			f: 6
-			g: 7
-		}
-		4
-		5
-		SmallType {
-			a: 1
-			b: 2
-			c: 3
-		}
-	)
+	function<f32>(MyType<f32>{ field: 42 }, 2)
 }
 
-fn simple_function(a: SmallType): SmallType {
-	return a
+generic T
+fn function(arg: MyType<T>, b: T) {
+	other_function<T>(b)
 }
 
-fn complicated_function(a: LargeType, b: i32, c: f32, d: SmallType): LargeType {
-	return a
-}
+
+generic T
+fn other_function(arg: T) {}

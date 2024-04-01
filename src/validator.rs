@@ -522,7 +522,7 @@ impl<'a> FunctionStore<'a> {
 		}
 
 		let shape = &self.shapes[function_shape_index];
-		let type_arguments_generic_poisoned = type_arguments
+		let generic_poisioned = type_arguments
 			.ids()
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
@@ -560,6 +560,7 @@ impl<'a> FunctionStore<'a> {
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
 			type_arguments: type_arguments.clone(),
+			generic_poisioned,
 			parameters,
 			return_type,
 			been_queued: false,
@@ -568,7 +569,7 @@ impl<'a> FunctionStore<'a> {
 		let shape = &mut self.shapes[function_shape_index];
 		shape.specializations.push(concrete);
 
-		if type_arguments_generic_poisoned {
+		if generic_poisioned {
 			let usage = GenericUsage::Function { type_arguments, function_shape_index };
 			generic_usages.push(usage)
 		} else {

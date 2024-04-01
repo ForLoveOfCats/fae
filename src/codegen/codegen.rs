@@ -152,14 +152,26 @@ fn generate_struct_literal<G: Generator>(
 		}
 	}
 
-	let layout = context.type_store.type_layout(literal.type_id);
+	let mut generic_usages = Vec::new();
+	let type_id = context.type_store.specialize_with_function_generics(
+		context.messages,
+		context.function_store,
+		context.module_path,
+		&mut generic_usages,
+		context.function_id.function_shape_index,
+		context.function_type_arguments,
+		literal.type_id,
+	);
+	assert_eq!(generic_usages.len(), 0);
+
+	let layout = context.type_store.type_layout(type_id);
 	if layout.size <= 0 {
 		assert_eq!(fields.len(), 0);
 		None
 	} else {
 		assert!(!fields.is_empty());
 
-		let entry = context.type_store.type_entries[literal.type_id.index()];
+		let entry = context.type_store.type_entries[type_id.index()];
 		let (shape_index, specialization_index) = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 			_ => unreachable!("{:?}", entry.kind),
@@ -170,6 +182,14 @@ fn generate_struct_literal<G: Generator>(
 }
 
 fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
+	let function_id = context.function_store.specialize_with_function_generics(
+		context.messages,
+		context.type_store,
+		call.function_id,
+		context.function_id.function_shape_index,
+		context.function_type_arguments,
+	);
+
 	// TODO: Avoid this creating this vec every time
 	let mut arguments = Vec::with_capacity(call.arguments.len());
 	for argument in &call.arguments {
@@ -177,7 +197,7 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 		arguments.push(binding);
 	}
 
-	generator.generate_call(call.function_id, &arguments)
+	generator.generate_call(function_id, &arguments)
 }
 
 fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {
