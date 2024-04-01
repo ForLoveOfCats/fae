@@ -65,6 +65,16 @@ impl TypeId {
 		matches!(entry.kind, TypeEntryKind::Pointer { .. })
 	}
 
+	pub fn is_primative(self, type_store: &TypeStore) -> bool {
+		let entry = type_store.type_entries[self.entry as usize];
+		match entry.kind {
+			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::Pointer { .. } => true,
+			TypeEntryKind::UserType { .. } | TypeEntryKind::Slice(_) => false,
+			TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
+			TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
+		}
+	}
+
 	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
 		let entry = type_store.type_entries[self.entry as usize];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {

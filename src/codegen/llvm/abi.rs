@@ -65,14 +65,14 @@ struct ParameterAttribute {
 	attribute: Attribute,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ParameterInformation<'ctx> {
 	BareValue,
 	ByPointer { pointed_type: BasicTypeEnum<'ctx>, layout: Layout },
 	Composition(ParameterComposition<'ctx>),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ParameterComposition<'ctx> {
 	pub composition_struct: StructType<'ctx>,
 	pub actual_type: BasicTypeEnum<'ctx>,
@@ -246,7 +246,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			Self::map_classes_into_basic_type_buffer(context, &mut self.parameter_basic_type_buffer, classes.iter());
 			let slice = &self.parameter_basic_type_buffer[initial_type_len..];
 
-			let is_bare_value = classes.len() == 1 && classes[0].kind != ClassKind::Memory;
+			let is_non_memory = classes.len() == 1 && classes[0].kind != ClassKind::Memory;
+			let is_bare_value = is_non_memory && parameter.type_id.is_primative(type_store);
 			let is_by_pointer = classes.len() == 1 && classes[0].kind == ClassKind::Memory;
 
 			if is_bare_value {
