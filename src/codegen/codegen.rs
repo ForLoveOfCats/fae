@@ -1,7 +1,7 @@
 use crate::error::Messages;
 use crate::ir::{
-	Binding, Block, Call, Expression, ExpressionKind, FunctionId, FunctionShape, IntegerValue, Read, Return, StructLiteral,
-	TypeArguments,
+	Binding, Block, Call, Expression, ExpressionKind, FunctionId, FunctionShape, IntegerValue, Read, Return, StringLiteral,
+	StructLiteral, TypeArguments,
 };
 use crate::type_store::{TypeEntryKind, TypeStore};
 use crate::validator::FunctionStore;
@@ -110,7 +110,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::CodepointLiteral(_) => todo!("generate expression CodepointLiteral"),
 
-		ExpressionKind::StringLiteral(_) => todo!("generate expression StringLiteral"),
+		ExpressionKind::StringLiteral(literal) => generate_string_literal(generator, literal),
 
 		ExpressionKind::ArrayLiteral(_) => todo!("generate expression ArrayLiteral"),
 
@@ -137,6 +137,10 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 fn generate_integer_value<G: Generator>(context: &mut Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
 	let kind = value.collapsed().numeric_kind(context.type_store).unwrap();
 	Some(generator.generate_integer_value(kind, value.value()))
+}
+
+fn generate_string_literal<G: Generator>(generator: &mut G, value: &StringLiteral) -> Option<G::Binding> {
+	Some(generator.generate_string_literal(&value.value))
 }
 
 fn generate_struct_literal<G: Generator>(

@@ -285,6 +285,18 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Binding::Value(value)
 	}
 
+	fn generate_string_literal(&mut self, text: &str) -> Self::Binding {
+		let global = self.builder.build_global_string_ptr(text, "").unwrap();
+		let pointer = global.as_pointer_value();
+		let len = self.context.i64_type().const_int(text.len() as u64, false);
+
+		let a = BasicValueEnum::PointerValue(pointer);
+		let b = BasicValueEnum::IntValue(len);
+		let slice = self.llvm_types.slice_struct.const_named_struct(&[a, b]);
+
+		Binding::Value(BasicValueEnum::StructValue(slice))
+	}
+
 	fn generate_struct_literal(
 		&mut self,
 		shape_index: usize,

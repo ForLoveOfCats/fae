@@ -1,21 +1,7 @@
 extern "puts"
-fn puts(pointer: u64)
+fn puts(string: []u8)
 
-generic T
-struct MyType {
-	field: T
+fn main(): i32 {
+	puts("Hello from LLVM!")
+	return 0
 }
-
-fn main() {
-	puts(0)
-	function<f32>(MyType<f32>{ field: 42 }, 2)
-}
-
-generic T
-fn function(arg: MyType<T>, b: T) {
-	other_function<T>(b)
-}
-
-
-generic T
-fn other_function(arg: T) {}

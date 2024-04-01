@@ -13,6 +13,8 @@ pub trait Generator {
 
 	fn generate_integer_value(&mut self, kind: NumericKind, value: i128) -> Self::Binding;
 
+	fn generate_string_literal(&mut self, text: &str) -> Self::Binding;
+
 	fn generate_struct_literal(
 		&mut self,
 		shape_index: usize,
