@@ -1,5 +1,3 @@
-#c_include_system "stdlib.h"
-
 extern "malloc"
 fn malloc(size: usize): &mut u8
 

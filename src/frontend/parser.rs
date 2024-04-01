@@ -121,15 +121,6 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 
 			Token { kind: TokenKind::CloseBrace, .. } => break,
 
-			Token { kind: TokenKind::Word, text: "#c_include_system", .. } => {
-				disallow_attributes(messages, attributes, token.span, "A C include");
-				if let Ok(statement) = parse_c_include_system(messages, tokenizer) {
-					items.push(Statement::CIncludeSystem(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
 			_ => {
 				disallow_attributes(messages, attributes, token.span, "An expression");
 				if let Ok(expression) = parse_expression(messages, tokenizer, true) {
@@ -1123,12 +1114,6 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 	} else {
 		Ok(())
 	}
-}
-
-fn parse_c_include_system<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<&'a str>> {
-	tokenizer.expect_word(messages, "#c_include_system")?;
-	let string = tokenizer.expect(messages, TokenKind::String)?;
-	Ok(Node::new(string.text.trim(), string.span))
 }
 
 fn reached_close_paren(tokenizer: &mut Tokenizer) -> bool {

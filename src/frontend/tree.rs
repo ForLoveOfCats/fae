@@ -319,8 +319,6 @@ pub enum Statement<'a> {
 	Binding(Box<Node<Binding<'a>>>),
 
 	Return(Box<Node<Return<'a>>>),
-
-	CIncludeSystem(Node<&'a str>),
 }
 
 impl<'a> Statement<'a> {
@@ -337,7 +335,6 @@ impl<'a> Statement<'a> {
 			Const(statement) => statement.span,
 			Binding(statement) => statement.span,
 			Return(statement) => statement.span,
-			CIncludeSystem(statement) => statement.span,
 		}
 	}
 
@@ -353,7 +350,6 @@ impl<'a> Statement<'a> {
 			Const(..) => "A const definition",
 			Binding(..) => "A binding definition",
 			Return(..) => "A return statement",
-			CIncludeSystem(..) => "A C include statement",
 		}
 	}
 }

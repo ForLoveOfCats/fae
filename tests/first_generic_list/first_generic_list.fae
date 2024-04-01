@@ -1,7 +1,5 @@
 import fae::stdout::print_i64, print_string, print_newline
 
-#c_include_system "stdlib.h"
-
 extern "realloc"
 fn realloc(ptr: &mut u8, new_size: usize): &mut u8
 

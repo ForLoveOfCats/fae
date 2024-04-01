@@ -7,7 +7,6 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::*;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::*;
-use crate::frontend::validator::{CInclude, CIncludeStore};
 
 const CC: &str = "clang";
 const DEBUG_SOURCE_DUMP_PATH: &str = "./output.c";
@@ -94,7 +93,6 @@ impl std::fmt::Display for Step {
 
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
-	c_include_store: &CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	optimization_level: OptimizationLevel,
@@ -147,10 +145,6 @@ pub fn generate_code<'a>(
 
 	generate_initial_output(&mut output).unwrap();
 
-	for include in &c_include_store.includes {
-		generate_include(include, &mut output).unwrap();
-	}
-
 	for &description in &type_store.user_type_generate_order {
 		forward_declare_user_type(type_store, description, &mut output).unwrap();
 	}
@@ -195,12 +189,6 @@ fn dump_codegen(output: &str) {
 
 fn generate_initial_output(output: Output) -> Result<()> {
 	writeln!(output, "{}", include_str!("./initial_output.c"))
-}
-
-fn generate_include(include: &CInclude, output: Output) -> Result<()> {
-	match include {
-		CInclude::System(include) => writeln!(output, "#include \"{}\"\n", include),
-	}
 }
 
 fn forward_declare_user_type(

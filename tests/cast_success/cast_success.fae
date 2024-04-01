@@ -1,7 +1,5 @@
 import fae::stdout::print_u64, print_usize, print_newline
 
-#c_include_system "stdlib.h"
-
 extern "calloc"
 fn c_raw_calloc(count: usize, size: usize): &mut u8
 

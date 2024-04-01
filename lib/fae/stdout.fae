@@ -1,6 +1,3 @@
-#c_include_system "stdio.h"
-
-
 extern "printf"
 fn c_printf_str(format: &u8, len: i64, str: &u8)
 

@@ -8,7 +8,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::parser::parse_file;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::type_store::TypeStore;
-use crate::frontend::validator::{validate, CIncludeStore};
+use crate::frontend::validator::validate;
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,
@@ -49,7 +49,6 @@ pub fn build_project(
 	messages.reset();
 
 	//Partially parallelizable
-	let mut c_include_store = CIncludeStore::new();
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
 	let mut root_layers = RootLayers::new(root_name);
@@ -57,7 +56,6 @@ pub fn build_project(
 		cli_arguments,
 		&mut messages,
 		&mut root_layers,
-		&mut c_include_store,
 		&mut type_store,
 		&mut function_store,
 		&parsed_files,
@@ -77,7 +75,6 @@ pub fn build_project(
 			let binary_path = PathBuf::from("./output.executable");
 			codegen::legacy_c::generate_code(
 				&mut messages,
-				&c_include_store,
 				&mut type_store,
 				&mut function_store,
 				codegen::legacy_c::OptimizationLevel::None,

@@ -20,7 +20,6 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub messages: &'b mut Messages<'a>,
 
-	pub c_include_store: &'b mut CIncludeStore<'a>,
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b mut FunctionStore<'a>,
 	pub function_generic_usages: &'b mut Vec<GenericUsage>,
@@ -57,7 +56,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			messages: self.messages,
 
-			c_include_store: self.c_include_store,
 			type_store: self.type_store,
 			function_store: self.function_store,
 			function_generic_usages: self.function_generic_usages,
@@ -89,7 +87,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			messages: self.messages,
 
-			c_include_store: self.c_include_store,
 			type_store: self.type_store,
 			function_store: self.function_store,
 			function_generic_usages: self.function_generic_usages,
@@ -166,36 +163,10 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	}
 }
 
-#[derive(Debug)]
-pub struct CIncludeStore<'a> {
-	pub includes: Vec<CInclude<'a>>,
-}
-
-impl<'a> CIncludeStore<'a> {
-	pub fn new() -> Self {
-		CIncludeStore { includes: Vec::new() }
-	}
-
-	fn push_system(&mut self, include: &'a str) {
-		let include = CInclude::System(include);
-		if self.includes.contains(&include) {
-			return;
-		}
-
-		self.includes.push(include);
-	}
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum CInclude<'a> {
-	System(&'a str),
-}
-
 pub fn validate<'a>(
 	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
-	c_include_store: &mut CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	parsed_files: &'a [tree::File<'a>],
@@ -224,7 +195,6 @@ pub fn validate<'a>(
 		cli_arguments,
 		messages,
 		root_layers,
-		c_include_store,
 		type_store,
 		function_store,
 		&mut function_generic_usages,
@@ -250,7 +220,6 @@ pub fn validate<'a>(
 			file_index,
 			module_path,
 			messages,
-			c_include_store,
 			type_store,
 			function_store,
 			function_generic_usages: &mut function_generic_usages,
@@ -380,7 +349,6 @@ fn validate_root_consts<'a>(
 	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
-	c_include_store: &mut CIncludeStore<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
@@ -406,7 +374,6 @@ fn validate_root_consts<'a>(
 			file_index,
 			module_path,
 			messages,
-			c_include_store,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -580,8 +547,7 @@ fn create_block_types<'a>(
 				tree::Statement::Import(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Function(..)
-				| tree::Statement::Const(..)
-				| tree::Statement::CIncludeSystem(..) => {}
+				| tree::Statement::Const(..) => {}
 			}
 		}
 
@@ -1055,10 +1021,6 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				let boxed_return = Box::new(Return { span, expression });
 				let kind = StatementKind::Return(boxed_return);
 				statements.push(Statement { type_id, kind })
-			}
-
-			tree::Statement::CIncludeSystem(statement) => {
-				context.c_include_store.push_system(statement.item);
 			}
 		}
 	}
