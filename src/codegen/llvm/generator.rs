@@ -324,6 +324,26 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.values[readable_index]
 	}
 
+	fn generate_field_read(&mut self, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
+		let index = field_index as u32;
+		let (pointer, pointed_type) = match base {
+			Binding::Value(value) => {
+				let pointed_type = value.get_type();
+				let alloca = self.builder.build_alloca(pointed_type, "").unwrap();
+				self.builder.build_store(alloca, value).unwrap();
+				(alloca, pointed_type)
+			}
+
+			Binding::Pointer { pointer, pointed_type } => (pointer, pointed_type),
+		};
+
+		let pointed_struct = pointed_type.into_struct_type();
+		let field_type = pointed_struct.get_field_type_at_index(index).unwrap();
+		let field_pointer = self.builder.build_struct_gep(pointed_type, pointer, index, "").unwrap();
+
+		Some(Binding::Pointer { pointer: field_pointer, pointed_type: field_type })
+	}
+
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>) {
 		let value_index = self.values.len();
 		self.values.push(value);

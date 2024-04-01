@@ -1,7 +1,11 @@
 extern "puts"
-fn puts(string: []u8)
+fn puts(string: &u8)
+
+fn print(string: []u8) {
+	puts(string.pointer)
+}
 
 fn main(): i32 {
-	puts("Hello from LLVM!")
+	print("Woooo LLVM")
 	return 0
 }

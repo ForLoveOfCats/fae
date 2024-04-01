@@ -26,6 +26,8 @@ pub trait Generator {
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
 
+	fn generate_field_read(&mut self, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
+
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>);
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);

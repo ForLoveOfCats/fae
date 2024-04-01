@@ -1,7 +1,7 @@
 use crate::error::Messages;
 use crate::ir::{
-	Binding, Block, Call, Expression, ExpressionKind, FunctionId, FunctionShape, IntegerValue, Read, Return, StringLiteral,
-	StructLiteral, TypeArguments,
+	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
+	StringLiteral, StructLiteral, TypeArguments,
 };
 use crate::type_store::{TypeEntryKind, TypeStore};
 use crate::validator::FunctionStore;
@@ -120,7 +120,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::Read(read) => generate_read(generator, read),
 
-		ExpressionKind::FieldRead(_) => todo!("generate expression FieldRead"),
+		ExpressionKind::FieldRead(read) => generate_field_read(context, generator, read),
 
 		ExpressionKind::UnaryOperation(_) => todo!("generate expression UnaryOperation"),
 
@@ -206,6 +206,14 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 
 fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {
 	generator.generate_read(read.readable_index)
+}
+
+fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, read: &FieldRead) -> Option<G::Binding> {
+	let Some(base) = generate_expression(context, generator, &read.base) else {
+		return None;
+	};
+
+	generator.generate_field_read(base, read.field_index)
 }
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
