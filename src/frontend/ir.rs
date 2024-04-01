@@ -25,19 +25,6 @@ pub struct Import<'a> {
 	pub segments: Vec<Node<&'a str>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Readable<'a> {
-	pub name: &'a str,
-	pub type_id: TypeId,
-	pub kind: ReadableKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReadableKind {
-	Let,
-	Mut,
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct GenericParameter<'a> {
 	pub name: Node<&'a str>,

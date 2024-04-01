@@ -6,7 +6,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::*;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
-use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
+use crate::frontend::symbols::{ReadableKind, Readables, Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::Node;
 use crate::frontend::tree::{self, BinaryOperator, PathSegments};
 use crate::frontend::type_store::*;
@@ -163,32 +163,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
 		self.type_store.collapse_to(self.messages, self.function_store, to, from)
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct Readables<'a> {
-	starting_index: usize,
-	readables: Vec<Readable<'a>>,
-}
-
-impl<'a> Readables<'a> {
-	fn new() -> Self {
-		Readables { starting_index: 0, readables: Vec::new() }
-	}
-
-	pub fn overall_len(&self) -> usize {
-		self.readables.len()
-	}
-
-	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
-		let index = self.readables.len() - self.starting_index;
-		self.readables.push(Readable { name, type_id, kind });
-		index
-	}
-
-	fn get(&mut self, index: usize) -> Option<Readable<'a>> {
-		self.readables.get(index + self.starting_index).copied()
 	}
 }
 

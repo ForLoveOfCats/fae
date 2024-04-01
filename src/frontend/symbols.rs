@@ -167,3 +167,42 @@ impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 		self.symbols.symbols.truncate(self.initial_symbols_len);
 	}
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Readable<'a> {
+	pub name: &'a str,
+	pub type_id: TypeId,
+	pub kind: ReadableKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadableKind {
+	Let,
+	Mut,
+}
+
+#[derive(Debug, Clone)]
+pub struct Readables<'a> {
+	pub starting_index: usize,
+	pub readables: Vec<Readable<'a>>,
+}
+
+impl<'a> Readables<'a> {
+	pub fn new() -> Self {
+		Readables { starting_index: 0, readables: Vec::new() }
+	}
+
+	pub fn overall_len(&self) -> usize {
+		self.readables.len()
+	}
+
+	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
+		let index = self.readables.len() - self.starting_index;
+		self.readables.push(Readable { name, type_id, kind });
+		index
+	}
+
+	pub fn get(&mut self, index: usize) -> Option<Readable<'a>> {
+		self.readables.get(index + self.starting_index).copied()
+	}
+}
