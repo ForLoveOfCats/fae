@@ -1,12 +1,12 @@
-use core::panic;
-use std::ops::Range;
 use std::rc::Rc;
 
 use crate::cli_arguments::CliArguments;
 use crate::frontend::error::*;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::*;
+use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
+use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::Node;
 use crate::frontend::tree::{self, BinaryOperator, PathSegments};
 use crate::frontend::type_store::*;
@@ -166,198 +166,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	}
 }
 
-#[derive(Debug)]
-pub struct RootLayers<'a> {
-	layers: Vec<RootLayer<'a>>,
-	root_name: String,
-}
-
-impl<'a> RootLayers<'a> {
-	pub fn new(root_name: String) -> Self {
-		RootLayers { layers: Vec::new(), root_name }
-	}
-
-	fn layer_for_module_path(&self, messages: &mut Messages, path: &[Node<&'a str>]) -> Option<&RootLayer<'a>> {
-		assert!(!path.is_empty());
-		let mut layers = &self.layers;
-
-		for (piece_index, piece) in path.iter().enumerate() {
-			let layer = match layers.iter().position(|x| x.name == piece.item) {
-				Some(index) => &layers[index],
-
-				None => {
-					messages.message(error!("Cannot find module layer for path segment").span(piece.span));
-					return None;
-				}
-			};
-
-			if piece_index + 1 == path.len() {
-				return Some(layer);
-			}
-			layers = &layer.children;
-		}
-
-		unreachable!()
-	}
-
-	fn create_module_path(&mut self, path: &'a [String]) -> &mut RootLayer<'a> {
-		assert!(!path.is_empty());
-		let mut layers = &mut self.layers;
-
-		for (piece_index, piece) in path.iter().enumerate() {
-			let layer = match layers.iter().position(|x| x.name == *piece) {
-				Some(index) => &mut layers[index],
-
-				None => {
-					layers.push(RootLayer::new(piece));
-					layers.last_mut().unwrap()
-				}
-			};
-
-			if piece_index + 1 == path.len() {
-				return layer;
-			}
-			layers = &mut layer.children;
-		}
-
-		unreachable!();
-	}
-
-	fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		assert!(path.len() > 1);
-		let layer = self.layer_for_module_path(messages, &path.segments[..path.len() - 1])?;
-		layer.lookup_root_symbol(messages, &[*path.segments.last().unwrap()])
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct Symbols<'a> {
-	symbols: Vec<Symbol<'a>>,
-}
-
-impl<'a> Symbols<'a> {
-	fn new() -> Self {
-		Symbols { symbols: Vec::new() }
-	}
-
-	fn len(&self) -> usize {
-		self.symbols.len()
-	}
-
-	fn is_empty(&self) -> bool {
-		self.symbols.is_empty()
-	}
-
-	fn duplicate(&mut self, other: &Symbols<'a>) {
-		self.symbols.clear();
-		self.symbols.extend_from_slice(&other.symbols);
-	}
-
-	fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
-		SymbolsScope { initial_symbols_len: self.len(), symbols: self }
-	}
-
-	fn push_symbol(&mut self, messages: &mut Messages, function_initial_symbol_len: usize, symbol: Symbol<'a>) {
-		let is_binding = matches!(symbol.kind, SymbolKind::Let { .. } | SymbolKind::Mut { .. });
-
-		if !is_binding {
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
-				// `symbol.span` should only be None for builtin types, yes it's a hack, shush
-				messages.message(
-					error!("Duplicate symbol `{}`", symbol.name)
-						.span_if_some(symbol.span)
-						.note_if_some(found.span, "Original symbol here"),
-				);
-			}
-		}
-
-		// Pushing the symbol even if duplicate seems to be a better failure state for following errors
-		self.symbols.push(symbol);
-	}
-
-	fn push_imported_symbol(
-		&mut self,
-		messages: &mut Messages,
-		function_initial_symbol_len: usize,
-		symbol: Symbol<'a>,
-		import_span: Option<Span>,
-	) {
-		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
-			messages.message(
-				error!("Import conflicts with existing symbol `{}`", found.name)
-					.span_if_some(import_span)
-					.note_if_some(found.span, "Existing symbol here"),
-			);
-		} else {
-			self.symbols.push(symbol);
-		}
-	}
-
-	fn find_local_symbol_matching_name(&self, function_initial_symbol_len: usize, name: &str) -> Option<Symbol<'a>> {
-		let mut index = self.symbols.len();
-		for &symbol in self.symbols.iter().rev() {
-			index -= 1;
-
-			if symbol.name == name {
-				if index < function_initial_symbol_len {
-					match symbol.kind {
-						SymbolKind::Function { .. }
-						| SymbolKind::Type { .. }
-						| SymbolKind::Const { .. }
-						| SymbolKind::BuiltinType { .. } => {}
-
-						_ => break,
-					}
-				}
-
-				return Some(symbol);
-			}
-		}
-
-		None
-	}
-
-	pub fn lookup_symbol(
-		&self,
-		messages: &mut Messages,
-		root_layers: &RootLayers<'a>,
-		type_store: &TypeStore<'a>,
-		function_initial_symbol_len: usize,
-		path: &PathSegments<'a>,
-	) -> Option<Symbol<'a>> {
-		assert!(!path.is_empty());
-
-		if let [segment] = path.segments.as_slice() {
-			let name = segment.item;
-
-			let primatives = &type_store.primative_type_symbols;
-			if let Some(&found) = primatives.iter().find(|symbol| symbol.name == name) {
-				return Some(found);
-			}
-
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, name) {
-				return Some(found);
-			}
-
-			messages.message(error!("No symbol `{name}` in the current scope").span(segment.span));
-			None
-		} else {
-			root_layers.lookup_path_symbol(messages, path)
-		}
-	}
-}
-
-struct SymbolsScope<'a, 'b> {
-	initial_symbols_len: usize,
-	symbols: &'b mut Symbols<'a>,
-}
-
-impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
-	fn drop(&mut self) {
-		self.symbols.symbols.truncate(self.initial_symbols_len);
-	}
-}
-
 #[derive(Debug, Clone)]
 pub struct Readables<'a> {
 	starting_index: usize,
@@ -381,54 +189,6 @@ impl<'a> Readables<'a> {
 
 	fn get(&mut self, index: usize) -> Option<Readable<'a>> {
 		self.readables.get(index + self.starting_index).copied()
-	}
-}
-
-#[derive(Debug)]
-pub struct RootLayer<'a> {
-	name: &'a str,
-	children: Vec<RootLayer<'a>>,
-	symbols: Symbols<'a>,
-	importable_types_range: Range<usize>,
-	importable_functions_range: Range<usize>,
-	importable_consts_range: Range<usize>,
-}
-
-impl<'a> RootLayer<'a> {
-	fn new(name: &'a str) -> Self {
-		RootLayer {
-			name,
-			children: Vec::new(),
-			symbols: Symbols::new(),
-			importable_types_range: 0..0,
-			importable_functions_range: 0..0,
-			importable_consts_range: 0..0,
-		}
-	}
-
-	fn lookup_root_symbol(&self, messages: &mut Messages, segments: &[tree::Node<&'a str>]) -> Option<Symbol<'a>> {
-		assert_eq!(segments.len(), 1);
-
-		let segment = &segments[0];
-		let name = segment.item;
-		let found = self.symbols.symbols.iter().find(|symbol| symbol.name == name);
-
-		if found.is_none() {
-			messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
-		}
-		found.copied()
-	}
-
-	fn importable_types(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_types_range.clone()]
-	}
-
-	fn importable_functions(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_functions_range.clone()]
-	}
-
-	fn importable_consts(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_consts_range.clone()]
 	}
 }
 

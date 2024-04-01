@@ -6,8 +6,9 @@ use crate::frontend::error::{Messages, WriteFmt};
 use crate::frontend::file::load_all_files;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::parser::parse_file;
+use crate::frontend::root_layers::RootLayers;
 use crate::frontend::type_store::TypeStore;
-use crate::frontend::validator::{validate, CIncludeStore, RootLayers};
+use crate::frontend::validator::{validate, CIncludeStore};
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,
