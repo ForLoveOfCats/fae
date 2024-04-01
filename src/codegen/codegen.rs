@@ -1,12 +1,11 @@
+use crate::codegen::generator::Generator;
 use crate::error::Messages;
+use crate::function_store::FunctionStore;
 use crate::ir::{
 	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
 	StringLiteral, StructLiteral, TypeArguments,
 };
 use crate::type_store::{TypeEntryKind, TypeStore};
-use crate::validator::FunctionStore;
-
-use super::generator::Generator;
 
 pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,

@@ -5,9 +5,10 @@ use crate::cli_arguments::{CliArguments, CodegenBackend};
 use crate::codegen;
 use crate::error::{Messages, WriteFmt};
 use crate::file::load_all_files;
+use crate::function_store::FunctionStore;
 use crate::parser::parse_file;
 use crate::type_store::TypeStore;
-use crate::validator::{validate, CIncludeStore, FunctionStore, RootLayers};
+use crate::validator::{validate, CIncludeStore, RootLayers};
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,

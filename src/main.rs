@@ -9,6 +9,7 @@ mod cli_arguments;
 mod codegen;
 mod color;
 mod file;
+mod function_store;
 mod ir;
 mod parser;
 mod project;

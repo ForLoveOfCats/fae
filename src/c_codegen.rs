@@ -3,10 +3,11 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::error::Messages;
+use crate::function_store::FunctionStore;
 use crate::ir::*;
 use crate::tree::BinaryOperator;
 use crate::type_store::*;
-use crate::validator::{CInclude, CIncludeStore, FunctionStore};
+use crate::validator::{CInclude, CIncludeStore};
 
 const CC: &str = "clang";
 const DEBUG_SOURCE_DUMP_PATH: &str = "./output.c";

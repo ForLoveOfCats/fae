@@ -7,13 +7,11 @@ use inkwell::values::{BasicValueEnum, PointerValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::generator::Generator;
-use crate::codegen::llvm::abi::LLVMAbi;
+use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
+use crate::function_store::FunctionStore;
 use crate::ir::{Function, FunctionId};
 use crate::tree::ExternAttribute;
 use crate::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
-use crate::validator::FunctionStore;
-
-use super::abi::DefinedFunction;
 
 pub struct AttributeKinds {
 	pub sret: u32,

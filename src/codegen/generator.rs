@@ -1,6 +1,6 @@
+use crate::function_store::FunctionStore;
 use crate::ir::{Function, FunctionId};
 use crate::type_store::{NumericKind, TypeStore};
-use crate::validator::FunctionStore;
 
 pub trait Generator {
 	type Binding: Clone + Copy;

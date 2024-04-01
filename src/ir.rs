@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::rc::Rc;
 
 use crate::error::Messages;
+use crate::function_store::FunctionStore;
 use crate::span::Span;
 use crate::tree::{BinaryOperator, ExternAttribute, Node};
 use crate::type_store::*;
-use crate::validator::FunctionStore;
 
 /*
  * The current structure of the IR utilizes nested `Box`-es and `Vec`-es which is rather inefficient

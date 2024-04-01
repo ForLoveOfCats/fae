@@ -9,8 +9,8 @@ use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
 use crate::error::Messages;
+use crate::function_store::FunctionStore;
 use crate::type_store::TypeStore;
-use crate::validator::FunctionStore;
 
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
