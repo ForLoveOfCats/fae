@@ -1,11 +1,11 @@
 use crate::codegen::generator::Generator;
-use crate::error::Messages;
-use crate::function_store::FunctionStore;
-use crate::ir::{
+use crate::frontend::error::Messages;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::ir::{
 	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
-	StringLiteral, StructLiteral, TypeArguments,
+	StatementKind, StringLiteral, StructLiteral, TypeArguments,
 };
-use crate::type_store::{TypeEntryKind, TypeStore};
+use crate::frontend::type_store::{TypeEntryKind, TypeStore};
 
 pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
@@ -82,15 +82,15 @@ pub fn generate_function<'a, G: Generator>(
 fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {
 	for statement in &block.statements {
 		match &statement.kind {
-			crate::ir::StatementKind::Expression(expression) => {
+			StatementKind::Expression(expression) => {
 				generate_expression(context, generator, expression);
 			}
 
-			crate::ir::StatementKind::Block(_) => todo!("generate StatementKind::Block"),
+			StatementKind::Block(_) => todo!("generate StatementKind::Block"),
 
-			crate::ir::StatementKind::Binding(binding) => generate_binding(context, generator, binding),
+			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
 
-			crate::ir::StatementKind::Return(statement) => generate_return(context, generator, statement),
+			StatementKind::Return(statement) => generate_return(context, generator, statement),
 		};
 	}
 }

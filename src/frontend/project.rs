@@ -1,14 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::c_codegen;
 use crate::cli_arguments::{CliArguments, CodegenBackend};
 use crate::codegen;
-use crate::error::{Messages, WriteFmt};
-use crate::file::load_all_files;
-use crate::function_store::FunctionStore;
-use crate::parser::parse_file;
-use crate::type_store::TypeStore;
-use crate::validator::{validate, CIncludeStore, RootLayers};
+use crate::frontend::error::{Messages, WriteFmt};
+use crate::frontend::file::load_all_files;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::parser::parse_file;
+use crate::frontend::type_store::TypeStore;
+use crate::frontend::validator::{validate, CIncludeStore, RootLayers};
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,
@@ -75,14 +74,14 @@ pub fn build_project(
 	match cli_arguments.codegen_backend {
 		CodegenBackend::LegacyC => {
 			let binary_path = PathBuf::from("./output.executable");
-			c_codegen::generate_code(
+			codegen::legacy_c::generate_code(
 				&mut messages,
 				&c_include_store,
 				&mut type_store,
 				&mut function_store,
-				c_codegen::OptimizationLevel::None,
+				codegen::legacy_c::OptimizationLevel::None,
 				&binary_path,
-				c_codegen::DebugCodegen::OnFailure,
+				codegen::legacy_c::DebugCodegen::OnFailure,
 			);
 
 			assert!(!messages.any_errors());

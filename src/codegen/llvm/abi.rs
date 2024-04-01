@@ -9,9 +9,9 @@ use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
 use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMTypes};
-use crate::ir::{Function, FunctionShape};
-use crate::tree::ExternAttribute;
-use crate::type_store::{Layout, TypeStore};
+use crate::frontend::ir::{Function, FunctionShape};
+use crate::frontend::tree::ExternAttribute;
+use crate::frontend::type_store::{Layout, TypeStore};
 
 pub trait LLVMAbi<'ctx> {
 	fn new() -> Self;

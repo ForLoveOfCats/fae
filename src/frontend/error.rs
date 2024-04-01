@@ -1,7 +1,7 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::file::SourceFile;
-use crate::span::Span;
+use crate::frontend::file::SourceFile;
+use crate::frontend::span::Span;
 
 pub const TABULATOR_SIZE: usize = 4;
 
@@ -275,14 +275,14 @@ impl Message {
 #[macro_export]
 macro_rules! error {
 	($($arg:tt)*) => {
-		$crate::error::Message::error(format!( $($arg)* ))
+		$crate::frontend::error::Message::error(format!( $($arg)* ))
 	}
 }
 
 #[macro_export]
 macro_rules! warning {
 	($($arg:tt)*) => {
-		$crate::error::Message::warning(format!( $($arg)* ))
+		$crate::frontend::error::Message::warning(format!( $($arg)* ))
 	}
 }
 
@@ -305,7 +305,7 @@ impl Note {
 #[macro_export]
 macro_rules! note {
 	($span:expr, $($arg:tt)*) => {
-		$crate::error::Note::new($span, format!( $($arg)* ))
+		$crate::frontend::error::Note::new($span, format!( $($arg)* ))
 	}
 }
 

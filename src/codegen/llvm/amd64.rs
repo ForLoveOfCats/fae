@@ -8,9 +8,9 @@ use inkwell::OptimizationLevel;
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
-use crate::error::Messages;
-use crate::function_store::FunctionStore;
-use crate::type_store::TypeStore;
+use crate::frontend::error::Messages;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,

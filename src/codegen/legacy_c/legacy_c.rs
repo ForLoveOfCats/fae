@@ -2,12 +2,12 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use crate::error::Messages;
-use crate::function_store::FunctionStore;
-use crate::ir::*;
-use crate::tree::BinaryOperator;
-use crate::type_store::*;
-use crate::validator::{CInclude, CIncludeStore};
+use crate::frontend::error::Messages;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::ir::*;
+use crate::frontend::tree::BinaryOperator;
+use crate::frontend::type_store::*;
+use crate::frontend::validator::{CInclude, CIncludeStore};
 
 const CC: &str = "clang";
 const DEBUG_SOURCE_DUMP_PATH: &str = "./output.c";
@@ -573,9 +573,9 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let shape = &context.function_store.shapes[function_id.function_shape_index];
 	if let Some(extern_attribute) = shape.extern_attribute {
 		match extern_attribute.item {
-			crate::tree::ExternAttribute::Name(name) => write!(output, "{name}")?,
+			crate::frontend::tree::ExternAttribute::Name(name) => write!(output, "{name}")?,
 
-			crate::tree::ExternAttribute::Intrinsic => {
+			crate::frontend::tree::ExternAttribute::Intrinsic => {
 				generate_intrinsic(context, call, function_id, output)?;
 				writeln!(output, ";")?;
 				return Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }));

@@ -1,9 +1,9 @@
-use crate::error::Messages;
-use crate::ir::{
+use crate::frontend::error::Messages;
+use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
 };
-use crate::span::Span;
-use crate::type_store::TypeStore;
+use crate::frontend::span::Span;
+use crate::frontend::type_store::TypeStore;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {

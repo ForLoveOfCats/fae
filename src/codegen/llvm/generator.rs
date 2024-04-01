@@ -8,10 +8,10 @@ use inkwell::AddressSpace;
 
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
-use crate::function_store::FunctionStore;
-use crate::ir::{Function, FunctionId};
-use crate::tree::ExternAttribute;
-use crate::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::tree::ExternAttribute;
+use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
 	pub sret: u32,

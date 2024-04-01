@@ -1,5 +1,5 @@
-use crate::error::{Messages, ParseResult};
-use crate::span::Span;
+use crate::frontend::error::{Messages, ParseResult};
+use crate::frontend::span::Span;
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

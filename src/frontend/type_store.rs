@@ -1,12 +1,12 @@
-use crate::error::Messages;
-use crate::function_store::FunctionStore;
-use crate::ir::{
+use crate::frontend::error::Messages;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::ir::{
 	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, SliceMutableToImmutable, Symbol, SymbolKind,
 	TypeArguments,
 };
-use crate::span::Span;
-use crate::tree::{self, Node};
-use crate::validator::{RootLayers, Symbols};
+use crate::frontend::span::Span;
+use crate::frontend::tree::{self, Node};
+use crate::frontend::validator::{RootLayers, Symbols};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TypeId {

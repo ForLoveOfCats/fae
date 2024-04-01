@@ -231,7 +231,7 @@ impl<'a> Assembler<'a> {
 	#[cfg(test)]
 	pub fn expect(&self, expected: &str) {
 		use crate::color::*;
-		use crate::error::WriteFmt;
+		use crate::frontend::error::WriteFmt;
 
 		let mut actual = String::new();
 		write!(&mut actual, "{self}");
@@ -281,7 +281,7 @@ impl<'a> Assembler<'a> {
 	#[cfg(test)]
 	#[allow(unused)]
 	pub fn dump_test_case(&self) {
-		use crate::error::WriteFmt;
+		use crate::frontend::error::WriteFmt;
 
 		let mut actual = String::new();
 		write!(&mut actual, "{self}");

@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use crate::error::{Messages, ParseResult};
-use crate::file::SourceFile;
-use crate::span::Span;
-use crate::tokenizer::{Token, TokenKind, Tokenizer};
-use crate::tree::*;
+use crate::frontend::error::{Messages, ParseResult};
+use crate::frontend::file::SourceFile;
+use crate::frontend::span::Span;
+use crate::frontend::tokenizer::{Token, TokenKind, Tokenizer};
+use crate::frontend::tree::*;
 
 pub fn parse_file<'a>(messages: &mut Messages, file: &'a SourceFile) -> File<'a> {
 	let mut tokenizer = Tokenizer::new(file.index, &file.source);

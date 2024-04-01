@@ -3,13 +3,13 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::cli_arguments::CliArguments;
-use crate::error::*;
-use crate::function_store::FunctionStore;
-use crate::ir::*;
-use crate::span::Span;
-use crate::tree::Node;
-use crate::tree::{self, BinaryOperator, PathSegments};
-use crate::type_store::*;
+use crate::frontend::error::*;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::ir::*;
+use crate::frontend::span::Span;
+use crate::frontend::tree::Node;
+use crate::frontend::tree::{self, BinaryOperator, PathSegments};
+use crate::frontend::type_store::*;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {

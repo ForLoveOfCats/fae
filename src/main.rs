@@ -1,31 +1,18 @@
 #[macro_use]
-mod error;
-
-#[macro_use]
 mod multi_line_string;
 
-mod c_codegen;
 mod cli_arguments;
 mod codegen;
 mod color;
-mod file;
-mod function_store;
-mod ir;
-mod parser;
-mod project;
-mod span;
+mod frontend;
 mod test;
-mod tokenizer;
-mod tree;
-mod type_store;
-mod validator;
 
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Command;
 
 use cli_arguments::parse_arguments;
-use project::build_project;
+use frontend::project::build_project;
 
 fn main() {
 	let cli_arguments = parse_arguments();

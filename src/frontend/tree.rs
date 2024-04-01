@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use crate::file::SourceFile;
-use crate::span::Span;
-use crate::tokenizer::Token;
+use crate::frontend::file::SourceFile;
+use crate::frontend::span::Span;
+use crate::frontend::tokenizer::Token;
 
 #[derive(Debug)]
 pub struct File<'a> {

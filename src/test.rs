@@ -3,7 +3,7 @@ use std::io::{stderr, Write};
 
 use crate::cli_arguments::CliArguments;
 use crate::color::*;
-use crate::project::build_project;
+use crate::frontend::project::build_project;
 
 pub fn run_tests(cli_arguments: &CliArguments) {
 	let mut successes: u64 = 0;

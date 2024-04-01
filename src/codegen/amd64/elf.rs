@@ -4,9 +4,9 @@ use std::mem::{size_of, transmute};
 
 use crate::codegen::amd64::assembler::{Assembler, Register32};
 use crate::codegen::codegen::generate;
-use crate::error::Messages;
-use crate::function_store::FunctionStore;
-use crate::type_store::TypeStore;
+use crate::frontend::error::Messages;
+use crate::frontend::function_store::FunctionStore;
+use crate::frontend::type_store::TypeStore;
 
 const ENTRY_ADDRESS: u64 = 0x40000;
 const PAGE_SIZE: u64 = 4096;
