@@ -1,0 +1,17 @@
+Validation error: ./tests/main_signature_mismatch/main_signature_mismatch.fae, line 1: Main function may not have any generic type parameters
+  1| generic T, E
+             ^^^^
+
+Validation error: ./tests/main_signature_mismatch/main_signature_mismatch.fae, line 2: Main function may not have any parameters
+  2| fn main(argc: i32, argv: &&u8): i32 {
+             ^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/main_signature_mismatch/main_signature_mismatch.fae, line 2: Main function may not have a non-void return type
+  2| fn main(argc: i32, argv: &&u8): i32 {
+                                     ^^^
+
+Validation error: ./lib/fae/start.fae, line 3: Expected 2 type arguments, got 0
+  3|     ::main()
+         ^^^^^^^^
+
+Validation error: Missing main function

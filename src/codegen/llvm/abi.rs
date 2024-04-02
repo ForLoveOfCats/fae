@@ -293,7 +293,13 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			unreachable!("{function_shape:?}, {function:?}, {extern_attribute:?}");
 		}
 
-		let llvm_function = module.add_function(function_shape.name.item, fn_type, None);
+		let name = if let Some(export_attribute) = function_shape.export_attribute {
+			export_attribute.item.name
+		} else {
+			""
+		};
+
+		let llvm_function = module.add_function(name, fn_type, None);
 		for attribute in &self.attribute_buffer {
 			llvm_function.add_attribute(inkwell::attributes::AttributeLoc::Param(attribute.index), attribute.attribute);
 		}

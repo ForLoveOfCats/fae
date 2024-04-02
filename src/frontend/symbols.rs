@@ -135,9 +135,12 @@ impl<'a> Symbols<'a> {
 		function_initial_symbol_len: usize,
 		path: &PathSegments<'a>,
 	) -> Option<Symbol<'a>> {
-		assert!(!path.is_empty());
+		let segments = match path {
+			PathSegments::Path { segments } => Some(segments.as_slice()),
+			PathSegments::MainModule { .. } => return root_layers.lookup_path_symbol(messages, path),
+		};
 
-		if let [segment] = path.segments.as_slice() {
+		if let Some([segment]) = segments {
 			let name = segment.item;
 
 			let primatives = &type_store.primative_type_symbols;

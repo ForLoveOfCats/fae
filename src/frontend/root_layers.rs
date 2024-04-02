@@ -8,18 +8,26 @@ use crate::frontend::tree::{Node, PathSegments};
 pub struct RootLayers<'a> {
 	pub layers: Vec<RootLayer<'a>>,
 	pub root_name: String,
+	pub root_layer_index: usize,
 }
 
 impl<'a> RootLayers<'a> {
 	pub fn new(root_name: String) -> Self {
-		RootLayers { layers: Vec::new(), root_name }
+		RootLayers { layers: Vec::new(), root_name, root_layer_index: usize::MAX }
 	}
 
-	pub fn layer_for_module_path(&self, messages: &mut Messages, path: &[Node<&'a str>]) -> Option<&RootLayer<'a>> {
-		assert!(!path.is_empty());
+	pub fn layer_for_path(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<&RootLayer<'a>> {
+		match path {
+			PathSegments::Path { segments } => self.layer_for_module_path(messages, segments),
+			PathSegments::MainModule { .. } => Some(&self.layers[self.root_layer_index]),
+		}
+	}
+
+	fn layer_for_module_path(&self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<&RootLayer<'a>> {
+		assert!(!segments.is_empty());
 		let mut layers = &self.layers;
 
-		for (piece_index, piece) in path.iter().enumerate() {
+		for (piece_index, piece) in segments.iter().enumerate() {
 			let layer = match layers.iter().position(|x| x.name == piece.item) {
 				Some(index) => &layers[index],
 
@@ -29,7 +37,7 @@ impl<'a> RootLayers<'a> {
 				}
 			};
 
-			if piece_index + 1 == path.len() {
+			if piece_index + 1 == segments.len() {
 				return Some(layer);
 			}
 			layers = &layer.children;
@@ -40,8 +48,22 @@ impl<'a> RootLayers<'a> {
 
 	pub fn create_module_path(&mut self, path: &'a [String]) -> &mut RootLayer<'a> {
 		assert!(!path.is_empty());
-		let mut layers = &mut self.layers;
+		if let [piece] = &path {
+			if *piece == self.root_name {
+				// Dumb indexing to satisfy borrow checker
+				for index in 0..self.layers.len() {
+					if self.layers[index].name == self.root_name {
+						return &mut self.layers[index];
+					}
+				}
 
+				self.root_layer_index = self.layers.len();
+				self.layers.push(RootLayer::new(piece));
+				return self.layers.last_mut().unwrap();
+			}
+		}
+
+		let mut layers = &mut self.layers;
 		for (piece_index, piece) in path.iter().enumerate() {
 			let layer = match layers.iter().position(|x| x.name == *piece) {
 				Some(index) => &mut layers[index],
@@ -62,9 +84,19 @@ impl<'a> RootLayers<'a> {
 	}
 
 	pub fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		assert!(path.len() > 1);
-		let layer = self.layer_for_module_path(messages, &path.segments[..path.len() - 1])?;
-		layer.lookup_root_symbol(messages, &[*path.segments.last().unwrap()])
+		match path {
+			PathSegments::Path { segments } => {
+				assert!(segments.len() > 1);
+				let layer = self.layer_for_module_path(messages, &segments[..segments.len() - 1])?;
+				layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
+			}
+
+			&PathSegments::MainModule { symbol_name } => {
+				let layer = &self.layers[self.root_layer_index];
+				// dbg!(&self.layers);
+				layer.lookup_root_symbol(messages, &[symbol_name])
+			}
+		}
 	}
 }
 

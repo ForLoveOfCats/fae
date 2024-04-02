@@ -275,7 +275,7 @@ fn parse_expression_atom<'a>(
 			return parse_number(messages, tokenizer);
 		}
 
-		TokenKind::Word => {
+		TokenKind::Word | TokenKind::DoubleColon => {
 			match peeked.text {
 				"if" => return parse_if(messages, tokenizer),
 
@@ -719,6 +719,11 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 				attributes.extern_attribute = Some(parse_extern_attribute(messages, tokenizer)?);
 			}
 
+			"export" => {
+				check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
+				attributes.export_attribute = Some(parse_export_attribute(messages, tokenizer)?);
+			}
+
 			_ => break,
 		}
 	}
@@ -766,6 +771,16 @@ fn parse_extern_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 	Ok(Node::new(attribute, span))
 }
 
+fn parse_export_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<ExportAttribute<'a>>> {
+	let export_token = tokenizer.expect_word(messages, "export")?;
+	let name_token = tokenizer.expect(messages, TokenKind::String)?;
+	tokenizer.expect(messages, TokenKind::Newline)?;
+
+	let attribute = ExportAttribute { name: &name_token.text };
+	let span = export_token.span + name_token.span;
+	Ok(Node::new(attribute, span))
+}
+
 fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Import<'a>>> {
 	let import_token = tokenizer.expect_word(messages, "import")?;
 
@@ -807,12 +822,22 @@ fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 		return Err(());
 	}
 
-	let path_segments = PathSegments { segments };
+	let path_segments = PathSegments::Path { segments };
 	let item = Import { path_segments, symbol_names };
 	Ok(Node { item, span })
 }
 
 fn parse_path_segments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<PathSegments<'a>>> {
+	if tokenizer.peek_kind() == Ok(TokenKind::DoubleColon) {
+		let double_colon = tokenizer.expect(messages, TokenKind::DoubleColon)?;
+		let symbol_token = tokenizer.expect(messages, TokenKind::Word)?;
+
+		let symbol_name = Node::from_token(symbol_token.text, symbol_token);
+		let path = PathSegments::MainModule { symbol_name };
+		let span = double_colon.span + symbol_token.span;
+		return Ok(Node::new(path, span));
+	}
+
 	let mut segments = Vec::new();
 	loop {
 		let segment_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -828,7 +853,7 @@ fn parse_path_segments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	}
 
 	let span = segments.first().unwrap().span + segments.last().unwrap().span;
-	Ok(Node::new(PathSegments { segments }, span))
+	Ok(Node::new(PathSegments::Path { segments }, span))
 }
 
 fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Type<'a>>> {
@@ -911,6 +936,7 @@ fn parse_function_declaration<'a>(
 		None => Vec::new(),
 	};
 	let extern_attribute = attributes.extern_attribute;
+	let export_attribute = attributes.export_attribute;
 
 	tokenizer.expect_word(messages, "fn")?;
 
@@ -936,6 +962,7 @@ fn parse_function_declaration<'a>(
 	Ok(Function {
 		generics,
 		extern_attribute,
+		export_attribute,
 		name,
 		parameters,
 		parsed_type,

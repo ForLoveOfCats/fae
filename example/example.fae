@@ -5,7 +5,6 @@ fn print(string: []u8) {
 	puts(string.pointer)
 }
 
-fn main(): i32 {
-	print("Woooo LLVM")
-	return 0
+fn main() {
+	print("Hello World!")
 }

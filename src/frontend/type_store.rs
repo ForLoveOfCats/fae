@@ -1018,9 +1018,7 @@ impl<'a> TypeStore<'a> {
 			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
 		};
 
-		assert!(!path_segments.item.segments.is_empty());
 		let symbol = symbols.lookup_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
-
 		let shape_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_id } => {
 				if !type_arguments.is_empty() {

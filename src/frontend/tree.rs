@@ -11,20 +11,11 @@ pub struct File<'a> {
 	pub block: Block<'a>,
 }
 
+//TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
 #[derive(Debug)]
-pub struct PathSegments<'a> {
-	//TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
-	pub segments: Vec<Node<&'a str>>,
-}
-
-impl<'a> PathSegments<'a> {
-	pub fn len(&self) -> usize {
-		self.segments.len()
-	}
-
-	pub fn is_empty(&self) -> bool {
-		self.segments.is_empty()
-	}
+pub enum PathSegments<'a> {
+	Path { segments: Vec<Node<&'a str>> },
+	MainModule { symbol_name: Node<&'a str> },
 }
 
 #[derive(Debug)]
@@ -49,17 +40,27 @@ pub enum ExternAttribute<'a> {
 	Intrinsic,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ExportAttribute<'a> {
+	pub name: &'a str,
+}
+
 #[derive(Debug)]
 pub struct Attributes<'a> {
 	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
+	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
 }
 
 impl<'a> Attributes<'a> {
 	pub const FIELD_COUNT: usize = 2;
 
 	pub fn blank() -> Self {
-		Attributes { generic_attribute: None, extern_attribute: None }
+		Attributes {
+			generic_attribute: None,
+			extern_attribute: None,
+			export_attribute: None,
+		}
 	}
 
 	pub fn attribute_spans<'b>(&self, buffer: &'b mut [Span]) -> &'b [Span] {
@@ -73,6 +74,7 @@ impl<'a> Attributes<'a> {
 		let mut index = 0;
 		push_potential_span(&self.generic_attribute, buffer, &mut index);
 		push_potential_span(&self.extern_attribute, buffer, &mut index);
+		push_potential_span(&self.export_attribute, buffer, &mut index);
 
 		&buffer[0..index]
 	}
@@ -115,6 +117,7 @@ pub struct Field<'a> {
 pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
+	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
 	pub name: Node<&'a str>,
 	pub parameters: Vec<Node<Parameter<'a>>>,
 	pub parsed_type: Option<Node<Type<'a>>>,

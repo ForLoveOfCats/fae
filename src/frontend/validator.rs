@@ -182,7 +182,7 @@ pub fn validate<'a>(
 	let mut constants = Vec::new();
 
 	create_root_types(messages, type_store, root_layers, parsed_files);
-	resolve_root_type_imports(cli_arguments, messages, root_layers, parsed_files);
+	resolve_root_type_imports(messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
 	let mut readables = Readables::new();
@@ -267,19 +267,14 @@ fn create_root_types<'a>(
 	}
 }
 
-fn resolve_root_type_imports<'a>(
-	cli_arguments: &CliArguments,
-	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
-	parsed_files: &[tree::File<'a>],
-) {
+fn resolve_root_type_imports<'a>(messages: &mut Messages, root_layers: &mut RootLayers<'a>, parsed_files: &[tree::File<'a>]) {
 	for parsed_file in parsed_files {
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
 
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
-		resolve_block_type_imports(cli_arguments, messages, root_layers, &mut symbols, module_path, 0, block, true);
+		resolve_block_type_imports(messages, root_layers, &mut symbols, module_path, 0, block, true);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
@@ -409,7 +404,6 @@ fn validate_root_consts<'a>(
 }
 
 fn resolve_block_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -418,8 +412,8 @@ fn resolve_block_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if cli_arguments.standard_library_enabled && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
-		let path = PathSegments {
+	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+		let path = PathSegments::Path {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
@@ -445,7 +439,7 @@ fn resolve_import_for_block_types<'a>(
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
 ) {
-	let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
+	let layer = match root_layers.layer_for_path(messages, path) {
 		Some(found) if found.symbols.is_empty() => return,
 		Some(found) => found,
 		_ => return,
@@ -466,7 +460,6 @@ fn resolve_import_for_block_types<'a>(
 
 // TODO: This function and its sibling below have terrible names, fix that
 fn resolve_block_non_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -475,8 +468,8 @@ fn resolve_block_non_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if cli_arguments.standard_library_enabled && is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
-		let path = PathSegments {
+	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+		let path = PathSegments::Path {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
 		resolve_import_for_non_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
@@ -502,7 +495,7 @@ fn resolve_import_for_non_block_types<'a>(
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
 ) {
-	let layer = match root_layers.layer_for_module_path(messages, &path.segments) {
+	let layer = match root_layers.layer_for_path(messages, path) {
 		Some(found) if found.symbols.is_empty() => return,
 		Some(found) => found,
 		_ => return,
@@ -880,6 +873,7 @@ fn create_block_functions<'a>(
 				is_main,
 				generics,
 				statement.extern_attribute,
+				statement.export_attribute,
 				parameters,
 				return_type,
 			);
@@ -917,7 +911,6 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 
 		resolve_block_type_imports(
-			context.cli_arguments,
 			context.messages,
 			context.root_layers,
 			context.symbols,
@@ -941,7 +934,6 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	}
 
 	resolve_block_non_type_imports(
-		context.cli_arguments,
 		context.messages,
 		context.root_layers,
 		context.symbols,
@@ -1147,7 +1139,51 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	assert!(shape.generic_usages.is_empty());
 	shape.generic_usages = generic_usages;
 
+	let type_parameters_iter = shape.generics.explicit_parameters().iter();
+	let type_parameter_span = type_parameters_iter.fold(None, |sum, p| match sum {
+		Some(sum) => Some(sum + p.name.span),
+		None => Some(p.name.span),
+	});
+
 	if shape.is_main {
+		assert_eq!(shape.generics.implicit_len(), 0);
+		let has_return_type = !shape.return_type.is_void(context.type_store);
+
+		let export_span = shape.export_attribute.map(|a| a.span);
+
+		let parameters = statement.parameters.iter();
+		let parameter_span = parameters.fold(None, |sum, p| match sum {
+			Some(sum) => Some(sum + p.span),
+			None => Some(p.span),
+		});
+
+		if let Some(export_span) = export_span {
+			let message = error!("Main function may not have an export attribute");
+			context.message(message.span(export_span));
+		}
+
+		if let Some(type_parameter_span) = type_parameter_span {
+			let message = error!("Main function may not have any generic type parameters");
+			context.message(message.span(type_parameter_span));
+		}
+
+		if let Some(parameter_span) = parameter_span {
+			let message = error!("Main function may not have any parameters");
+			context.message(message.span(parameter_span));
+		}
+
+		if has_return_type {
+			let message = error!("Main function may not have a non-void return type");
+			let node = statement.parsed_type.as_ref().unwrap(); // Must have parsed type to have non-void
+			context.message(message.span(node.span));
+			return;
+		}
+
+		if type_parameter_span.is_some() {
+			// Not part of main `if` block as to keep relative order of messages
+			return;
+		}
+
 		let result = context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
@@ -1169,6 +1205,21 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			let function_id = FunctionId { function_shape_index, specialization_index };
 			context.function_store.main = Some(function_id);
 		}
+	} else if shape.export_attribute.is_some() {
+		if let Some(type_parameter_span) = type_parameter_span {
+			let message = error!("Exported function may not have any generic type parameters");
+			context.message(message.span(type_parameter_span));
+		}
+
+		context.function_store.get_or_add_specialization(
+			context.messages,
+			context.type_store,
+			context.module_path,
+			context.function_generic_usages,
+			function_shape_index,
+			None,
+			TypeArguments::new_from_explicit(Vec::new()),
+		);
 	}
 }
 

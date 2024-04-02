@@ -24,13 +24,11 @@ pub fn build_project(
 ) -> BuiltProject {
 	// Can be folded into parallel parsing, ish
 	let mut files = Vec::new();
-	if cli_arguments.standard_library_enabled {
-		if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
-			panic!("Error loading standard library files: {}", err);
-		}
-	}
 	if let Err(err) = load_all_files(path, &mut files) {
 		panic!("Error loading source files: {}", err);
+	}
+	if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
+		panic!("Error loading standard library files: {}", err);
 	}
 
 	let mut any_errors = false;

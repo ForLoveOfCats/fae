@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::span::Span;
-use crate::frontend::tree::{BinaryOperator, ExternAttribute, Node};
+use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, Node};
 use crate::frontend::type_store::*;
 
 /*
@@ -51,6 +51,10 @@ impl<'a> GenericParameters<'a> {
 
 	pub fn parameters(&self) -> &[GenericParameter<'a>] {
 		&self.parameters
+	}
+
+	pub fn explicit_parameters(&self) -> &[GenericParameter<'a>] {
+		&self.parameters[0..self.explicit_len]
 	}
 
 	pub fn explicit_len(&self) -> usize {
@@ -144,6 +148,7 @@ pub struct FunctionShape<'a> {
 	pub is_main: bool,
 
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
+	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
 
 	pub generics: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape<'a>>,
@@ -168,6 +173,7 @@ impl<'a> FunctionShape<'a> {
 		is_main: bool,
 		generics: GenericParameters<'a>,
 		extern_attribute: Option<Node<ExternAttribute<'a>>>,
+		export_attribute: Option<Node<ExportAttribute<'a>>>,
 		parameters: Vec<ParameterShape<'a>>,
 		return_type: TypeId,
 	) -> Self {
@@ -177,6 +183,7 @@ impl<'a> FunctionShape<'a> {
 			file_index,
 			is_main,
 			extern_attribute,
+			export_attribute,
 			generics,
 			parameters,
 			return_type,

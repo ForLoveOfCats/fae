@@ -5,7 +5,6 @@ pub struct CliArguments {
 	pub run_compiler_tests: bool,
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
-	pub standard_library_enabled: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,7 +21,6 @@ pub fn parse_arguments() -> CliArguments {
 		run_compiler_tests: false,
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LegacyC,
-		standard_library_enabled: true,
 	};
 
 	while let Some((index, arg)) = iterator.next() {
@@ -59,9 +57,6 @@ fn parse_tack_argument(cli_arguments: &mut CliArguments, any_errors: &mut bool, 
 
 		Some("--codegen-legacy-c") => cli_arguments.codegen_backend = CodegenBackend::LegacyC,
 		Some("--codegen-llvm") => cli_arguments.codegen_backend = CodegenBackend::LLVM,
-
-		Some("--std-enabled") => cli_arguments.standard_library_enabled = true,
-		Some("--std-disabled") => cli_arguments.standard_library_enabled = false,
 
 		Some(arg) => {
 			eprintln!("Unknown cli argument {arg:?}");
