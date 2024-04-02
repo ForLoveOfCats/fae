@@ -1,0 +1,7 @@
+intrinsic
+fn my_intrinsic()
+
+fn main() {
+	my_intrinsic()
+}
+

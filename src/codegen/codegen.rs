@@ -5,7 +5,6 @@ use crate::frontend::ir::{
 	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
 	StatementKind, StringLiteral, StructLiteral, TypeArguments,
 };
-use crate::frontend::tree::{ExternAttribute, Node};
 use crate::frontend::type_store::{TypeEntryKind, TypeStore};
 
 pub fn generate<'a, G: Generator>(
@@ -19,7 +18,7 @@ pub fn generate<'a, G: Generator>(
 
 	for function_shape_index in 0..function_store.shapes.len() {
 		let shape = &function_store.shapes[function_shape_index];
-		if shape.extern_attribute.is_some() {
+		if shape.extern_attribute.is_some() || shape.intrinsic_attribute.is_some() {
 			continue;
 		}
 
@@ -188,7 +187,7 @@ fn generate_struct_literal<G: Generator>(
 fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
 	let is_intrinsic = {
 		let shape = &context.function_store.shapes[call.function_id.function_shape_index];
-		matches!(shape.extern_attribute, Some(Node { item: ExternAttribute::Intrinsic, .. }))
+		shape.intrinsic_attribute.is_some()
 	};
 
 	if is_intrinsic {

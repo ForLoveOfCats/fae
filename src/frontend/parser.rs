@@ -714,6 +714,11 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 				attributes.generic_attribute = Some(parse_generic_attribute(messages, tokenizer)?);
 			}
 
+			"intrinsic" => {
+				check_duplicate_attribute(messages, &attributes.intrinsic_attribute, "intrinsic", peeked.span)?;
+				attributes.intrinsic_attribute = Some(parse_intrinsic_attribute(messages, tokenizer)?);
+			}
+
 			"extern" => {
 				check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
 				attributes.extern_attribute = Some(parse_extern_attribute(messages, tokenizer)?);
@@ -754,20 +759,22 @@ fn parse_generic_attribute<'a>(
 	Ok(Node::new(generic_atttribute, span))
 }
 
+fn parse_intrinsic_attribute<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+) -> ParseResult<Node<IntrinsicAttribute>> {
+	let intrinsic_token = tokenizer.expect_word(messages, "intrinsic")?;
+	tokenizer.expect(messages, TokenKind::Newline)?;
+	Ok(Node::from_token(IntrinsicAttribute, intrinsic_token))
+}
+
 fn parse_extern_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<ExternAttribute<'a>>> {
 	let extern_token = tokenizer.expect_word(messages, "extern")?;
-
-	let (name_span, attribute) = if tokenizer.peek_kind() == Ok(TokenKind::Word) {
-		let token = tokenizer.expect_word(messages, "intrinsic")?;
-		(token.span, ExternAttribute::Intrinsic)
-	} else {
-		let token = tokenizer.expect(messages, TokenKind::String)?;
-		(token.span, ExternAttribute::Name(token.text))
-	};
-
+	let name_token = tokenizer.expect(messages, TokenKind::String)?;
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let span = extern_token.span + name_span;
+	let attribute = ExternAttribute { name: name_token.text };
+	let span = extern_token.span + name_token.span;
 	Ok(Node::new(attribute, span))
 }
 
@@ -935,6 +942,7 @@ fn parse_function_declaration<'a>(
 		Some(attribute) => attribute.item.names,
 		None => Vec::new(),
 	};
+	let intrinsic_attribute = attributes.intrinsic_attribute;
 	let extern_attribute = attributes.extern_attribute;
 	let export_attribute = attributes.export_attribute;
 
@@ -953,7 +961,7 @@ fn parse_function_declaration<'a>(
 		None
 	};
 
-	let block = if attributes.extern_attribute.is_some() {
+	let block = if extern_attribute.is_some() || intrinsic_attribute.is_some() {
 		None
 	} else {
 		Some(parse_block(messages, tokenizer)?)
@@ -961,6 +969,7 @@ fn parse_function_declaration<'a>(
 
 	Ok(Function {
 		generics,
+		intrinsic_attribute,
 		extern_attribute,
 		export_attribute,
 		name,

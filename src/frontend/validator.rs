@@ -864,6 +864,14 @@ fn create_block_functions<'a>(
 
 			drop(scope);
 
+			let in_std = module_path.first().map(|s| s == "fae").unwrap_or(false);
+			if !in_std {
+				if let Some(intrinsic_attribute) = statement.intrinsic_attribute {
+					let error = error!("Function may not be annotated as an intrinsic outside the standard library");
+					messages.message(error.span(intrinsic_attribute.span));
+				}
+			}
+
 			let name = statement.name;
 			let is_main = module_path == [root_layers.root_name.as_str()] && name.item == "main";
 			let shape = FunctionShape::new(
@@ -872,6 +880,7 @@ fn create_block_functions<'a>(
 				file_index,
 				is_main,
 				generics,
+				statement.intrinsic_attribute,
 				statement.extern_attribute,
 				statement.export_attribute,
 				parameters,
@@ -1049,7 +1058,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 }
 
 fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>) {
-	if statement.extern_attribute.is_some() {
+	if statement.extern_attribute.is_some() || statement.intrinsic_attribute.is_some() {
 		// Note: Signature has already been checked in `create_block_functions`
 		return;
 	}

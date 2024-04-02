@@ -10,7 +10,6 @@ use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
-use crate::frontend::tree::ExternAttribute;
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
@@ -208,11 +207,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		for function_shape_index in 0..function_store.shapes.len() {
 			let shape = &function_store.shapes[function_shape_index];
-			if let Some(extern_attribute) = shape.extern_attribute {
-				if let ExternAttribute::Intrinsic = extern_attribute.item {
-					self.functions.push(Vec::new());
-					continue;
-				}
+			if shape.intrinsic_attribute.is_some() {
+				self.functions.push(Vec::new());
+				continue;
 			}
 
 			let mut specializations = Vec::with_capacity(shape.specializations.len());

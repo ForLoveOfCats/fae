@@ -10,7 +10,6 @@ use inkwell::AddressSpace;
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
 use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
-use crate::frontend::tree::ExternAttribute;
 use crate::frontend::type_store::{Layout, TypeStore};
 
 pub trait LLVMAbi<'ctx> {
@@ -280,17 +279,15 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		};
 
 		if let Some(extern_attribute) = function_shape.extern_attribute {
-			if let ExternAttribute::Name(name) = extern_attribute.item {
-				let llvm_function = module.add_function(name, fn_type, Some(Linkage::External));
-				return DefinedFunction {
-					llvm_function,
-					return_type,
-					parameter_information: self.parameter_information_buffer.clone(),
-					initial_values: Vec::new(),
-					entry_block: None,
-				};
-			}
-			unreachable!("{function_shape:?}, {function:?}, {extern_attribute:?}");
+			let name = extern_attribute.item.name;
+			let llvm_function = module.add_function(name, fn_type, Some(Linkage::External));
+			return DefinedFunction {
+				llvm_function,
+				return_type,
+				parameter_information: self.parameter_information_buffer.clone(),
+				initial_values: Vec::new(),
+				entry_block: None,
+			};
 		}
 
 		let name = if let Some(export_attribute) = function_shape.export_attribute {

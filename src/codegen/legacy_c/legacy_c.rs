@@ -345,6 +345,7 @@ fn generate_function<'a>(
 ) -> Result<()> {
 	let shape = &mut function_store.shapes[function_id.function_shape_index];
 	assert!(shape.extern_attribute.is_none(), "{:?}", shape.extern_attribute);
+	assert!(shape.intrinsic_attribute.is_none());
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
 	assert!(!specialization.been_generated);
@@ -534,7 +535,7 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 	let shape = &mut context.function_store.shapes[function_id.function_shape_index];
 	let specialization = &mut shape.specializations[function_id.specialization_index];
 
-	if !specialization.been_generated && shape.extern_attribute.is_none() {
+	if !specialization.been_generated && shape.extern_attribute.is_none() && shape.intrinsic_attribute.is_none() {
 		if !specialization.been_queued {
 			specialization.been_queued = true;
 			context.function_generate_queue.push(function_id);
@@ -560,15 +561,11 @@ fn generate_call(context: &mut Context, call: &Call, output: Output) -> Result<O
 
 	let shape = &context.function_store.shapes[function_id.function_shape_index];
 	if let Some(extern_attribute) = shape.extern_attribute {
-		match extern_attribute.item {
-			crate::frontend::tree::ExternAttribute::Name(name) => write!(output, "{name}")?,
-
-			crate::frontend::tree::ExternAttribute::Intrinsic => {
-				generate_intrinsic(context, call, function_id, output)?;
-				writeln!(output, ";")?;
-				return Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }));
-			}
-		}
+		write!(output, "{}", extern_attribute.item.name)?;
+	} else if shape.intrinsic_attribute.is_some() {
+		generate_intrinsic(context, call, function_id, output)?;
+		writeln!(output, ";")?;
+		return Ok(maybe_id.map(|temp_id| Step::Temp { temp_id }));
 	} else {
 		generate_functon_id(function_id, output)?;
 	}
