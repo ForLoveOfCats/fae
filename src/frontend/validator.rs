@@ -1611,7 +1611,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	}
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
-	let kind = ExpressionKind::Call(Call { name, function_id, arguments });
+	let kind = ExpressionKind::Call(Call { span, name, function_id, arguments });
 	Expression { span, type_id: return_type, mutable: true, returns, kind }
 }
 

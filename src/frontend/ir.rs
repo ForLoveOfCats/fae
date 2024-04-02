@@ -468,6 +468,10 @@ impl IntegerValue {
 		IntegerValue { value, span, collapse: None }
 	}
 
+	pub fn new_collapsed(value: i128, span: Span, collapse: TypeId) -> IntegerValue {
+		IntegerValue { value, span, collapse: Some(collapse) }
+	}
+
 	pub fn value(&self) -> i128 {
 		self.value
 	}
@@ -663,6 +667,7 @@ pub struct FieldInitializer<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Call<'a> {
+	pub span: Span,
 	pub name: &'a str,
 	pub function_id: FunctionId,
 	pub arguments: Vec<Expression<'a>>,

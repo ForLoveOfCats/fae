@@ -5,6 +5,7 @@ use crate::frontend::ir::{
 	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
 	StatementKind, StringLiteral, StructLiteral, TypeArguments,
 };
+use crate::frontend::tree::{ExternAttribute, Node};
 use crate::frontend::type_store::{TypeEntryKind, TypeStore};
 
 pub fn generate<'a, G: Generator>(
@@ -185,6 +186,15 @@ fn generate_struct_literal<G: Generator>(
 }
 
 fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
+	let is_intrinsic = {
+		let shape = &context.function_store.shapes[call.function_id.function_shape_index];
+		matches!(shape.extern_attribute, Some(Node { item: ExternAttribute::Intrinsic, .. }))
+	};
+
+	if is_intrinsic {
+		return generate_intrinsic(context, generator, call);
+	}
+
 	let function_id = context.function_store.specialize_with_function_generics(
 		context.messages,
 		context.type_store,
@@ -228,4 +238,32 @@ fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, state
 
 	let value = generate_expression(context, generator, expression);
 	generator.generate_return(context.function_id, value);
+}
+
+fn generate_intrinsic<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
+	let span = call.span;
+	let function_id = call.function_id;
+
+	let shape = &context.function_store.shapes[function_id.function_shape_index];
+	let specialization = &shape.specializations[function_id.specialization_index];
+
+	match call.name {
+		"size_of" => {
+			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			let type_id = specialization.type_arguments.explicit_ids()[0];
+			let size = context.type_store.type_layout(type_id).size as i128;
+			let integer = IntegerValue::new_collapsed(size, span, context.type_store.i64_type_id());
+			generate_integer_value(context, generator, &integer)
+		}
+
+		"alignment_of" => {
+			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			let type_id = specialization.type_arguments.explicit_ids()[0];
+			let alignment = context.type_store.type_layout(type_id).alignment as i128;
+			let integer = IntegerValue::new_collapsed(alignment, span, context.type_store.i64_type_id());
+			generate_integer_value(context, generator, &integer)
+		}
+
+		_ => unreachable!(),
+	}
 }
