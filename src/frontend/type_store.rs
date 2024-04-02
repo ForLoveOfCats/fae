@@ -606,8 +606,10 @@ impl<'a> TypeStore<'a> {
 				}
 
 				let type_id = self.decimal_type_id;
+				let mutable = from.mutable;
+				let returns = from.returns;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
-				*from = Expression { span: from.span, type_id, mutable: from.mutable, kind };
+				*from = Expression { span: from.span, type_id, mutable, returns, kind };
 				return Some(true);
 			}
 
@@ -749,10 +751,11 @@ impl<'a> TypeStore<'a> {
 
 					// TODO: This replace is a dumb solution
 					let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
+					let returns = expression.returns;
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
 					let conversion = Box::new(SliceMutableToImmutable { type_id, expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
-					*from = Expression { span: from.span, type_id, mutable: false, kind };
+					*from = Expression { span: from.span, type_id, mutable: false, returns, kind };
 					return Some(true);
 				}
 			}

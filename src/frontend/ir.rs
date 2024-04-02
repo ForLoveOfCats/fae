@@ -306,6 +306,7 @@ pub struct FunctionId {
 #[derive(Debug, Clone)]
 pub struct Block<'a> {
 	pub type_id: TypeId,
+	pub returns: bool,
 	pub statements: Vec<Statement<'a>>,
 }
 
@@ -353,6 +354,7 @@ pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
 	pub mutable: bool,
+	pub returns: bool,
 	pub kind: ExpressionKind<'a>,
 }
 
@@ -361,7 +363,8 @@ impl<'a> Expression<'a> {
 		Expression {
 			span,
 			type_id: type_store.any_collapse_type_id(),
-			mutable: true, // TODO: Think about this harder?
+			mutable: true,
+			returns: false, // TODO: This could cause erronious error messages?
 			kind: ExpressionKind::AnyCollapse,
 		}
 	}
@@ -371,6 +374,7 @@ impl<'a> Expression<'a> {
 			span,
 			type_id: type_store.void_type_id(),
 			mutable: true, // TODO: Think about this harder?
+			returns: false,
 			kind: ExpressionKind::Void,
 		}
 	}
