@@ -124,9 +124,15 @@ pub struct Function<'a> {
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
 	pub name: Node<&'a str>,
-	pub parameters: Vec<Node<Parameter<'a>>>,
+	pub parameters: Parameters<'a>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub block: Option<Node<Block<'a>>>,
+}
+
+#[derive(Debug)]
+pub struct Parameters<'a> {
+	pub parameters: Vec<Node<Parameter<'a>>>,
+	pub c_varargs: Option<Span>,
 }
 
 #[derive(Debug)]

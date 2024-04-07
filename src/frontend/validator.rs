@@ -831,7 +831,7 @@ fn create_block_functions<'a>(
 			};
 
 			let mut parameters = Vec::new();
-			for (index, parameter) in statement.parameters.iter().enumerate() {
+			for (index, parameter) in statement.parameters.parameters.iter().enumerate() {
 				let type_id = type_store.lookup_type(
 					messages,
 					function_store,
@@ -872,6 +872,14 @@ fn create_block_functions<'a>(
 				}
 			}
 
+			let c_varargs = statement.parameters.c_varargs.is_some();
+			if let Some(varargs_span) = statement.parameters.c_varargs {
+				if statement.extern_attribute.is_none() {
+					let error = error!("Function must be an extern to accept C varargs");
+					messages.message(error.span(varargs_span));
+				}
+			}
+
 			let name = statement.name;
 			let is_main = module_path == [root_layers.root_name.as_str()] && name.item == "main";
 			let shape = FunctionShape::new(
@@ -884,6 +892,7 @@ fn create_block_functions<'a>(
 				statement.extern_attribute,
 				statement.export_attribute,
 				parameters,
+				c_varargs,
 				return_type,
 			);
 			function_store.shapes.push(shape);
@@ -1088,7 +1097,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		scope.push_symbol(symbol);
 	}
 
-	for (index, parameter) in statement.parameters.iter().enumerate() {
+	for (index, parameter) in statement.parameters.parameters.iter().enumerate() {
 		let span = parameter.span;
 		let parameter = &parameter.item;
 
@@ -1160,7 +1169,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 		let export_span = shape.export_attribute.map(|a| a.span);
 
-		let parameters = statement.parameters.iter();
+		let parameters = statement.parameters.parameters.iter();
 		let parameter_span = parameters.fold(None, |sum, p| match sum {
 			Some(sum) => Some(sum + p.span),
 			None => Some(p.span),
@@ -1609,7 +1618,29 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		}
 	}
 
-	if arguments.len() != specialization.parameters.len() {
+	if shape.c_varargs {
+		if arguments.len() < specialization.parameters.len() {
+			let error = error!("Expected at least {} arguments, got {}", specialization.parameters.len(), arguments.len());
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		let mut vararg_error = false;
+		let remaining_arguments = &arguments[specialization.parameters.len()..];
+		for argument in remaining_arguments {
+			let is_integer = argument.type_id.is_untyped_integer(context.type_store);
+			let is_decimal = argument.type_id.is_untyped_decimal(context.type_store);
+			if is_integer || is_decimal {
+				let error = error!("Cannot pass untyped numeral as vararg, try casting it to a concrete type first");
+				context.message(error.span(argument.span));
+				vararg_error = true;
+			}
+		}
+
+		if vararg_error {
+			return Expression::any_collapse(context.type_store, span);
+		}
+	} else if arguments.len() != specialization.parameters.len() {
 		let error = error!("Expected {} arguments, got {}", specialization.parameters.len(), arguments.len());
 		context.message(error.span(span));
 		return Expression::any_collapse(context.type_store, span);

@@ -36,7 +36,13 @@ enum State {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Binding<'ctx> {
+pub struct Binding<'ctx> {
+	pub type_id: TypeId,
+	pub kind: BindingKind<'ctx>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BindingKind<'ctx> {
 	Value(BasicValueEnum<'ctx>),
 
 	Pointer {
@@ -47,9 +53,9 @@ pub enum Binding<'ctx> {
 
 impl<'ctx> Binding<'ctx> {
 	pub fn to_value(self, builder: &mut Builder<'ctx>) -> BasicValueEnum<'ctx> {
-		let (pointer, pointed_type) = match self {
-			Binding::Value(value) => return value,
-			Binding::Pointer { pointer, pointed_type } => (pointer, pointed_type),
+		let (pointer, pointed_type) = match self.kind {
+			BindingKind::Value(value) => return value,
+			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
 		};
 
 		builder.build_load(pointed_type, pointer, "").unwrap()
@@ -256,8 +262,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.state = State::InFunction { void_returning };
 	}
 
-	fn generate_integer_value(&mut self, kind: NumericKind, value: i128) -> Self::Binding {
-		let value = match kind {
+	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding {
+		let value = match type_id.numeric_kind(type_store).unwrap() {
 			NumericKind::I8 | NumericKind::U8 => BasicValueEnum::IntValue(self.context.i8_type().const_int(value as u64, false)),
 
 			NumericKind::I16 | NumericKind::U16 => {
@@ -277,10 +283,11 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			NumericKind::F64 => BasicValueEnum::FloatValue(self.context.f64_type().const_float(value as f64)),
 		};
 
-		Binding::Value(value)
+		let kind = BindingKind::Value(value);
+		Binding { type_id, kind }
 	}
 
-	fn generate_string_literal(&mut self, text: &str) -> Self::Binding {
+	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
 		let global = self.builder.build_global_string_ptr(text, "").unwrap();
 		let pointer = global.as_pointer_value();
 		let len = self.context.i64_type().const_int(text.len() as u64, false);
@@ -289,11 +296,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let b = BasicValueEnum::IntValue(len);
 		let slice = self.llvm_types.slice_struct.const_named_struct(&[a, b]);
 
-		Binding::Value(BasicValueEnum::StructValue(slice))
+		let type_id = type_store.string_type_id();
+		let kind = BindingKind::Value(BasicValueEnum::StructValue(slice));
+		Binding { type_id, kind }
 	}
 
 	fn generate_struct_literal(
 		&mut self,
+		type_id: TypeId,
 		shape_index: usize,
 		specialization_index: usize,
 		fields: &[Self::Binding],
@@ -306,37 +316,53 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].unwrap();
 		let struct_value = struct_type.const_named_struct(&values);
-		Binding::Value(BasicValueEnum::StructValue(struct_value))
+		let kind = BindingKind::Value(BasicValueEnum::StructValue(struct_value));
+		Binding { type_id, kind }
 	}
 
-	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Option<Binding<'ctx>>]) -> Option<Binding<'ctx>> {
+	fn generate_call(
+		&mut self,
+		type_store: &TypeStore,
+		function_id: FunctionId,
+		arguments: &[Option<Binding<'ctx>>],
+	) -> Option<Binding<'ctx>> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
-		self.abi.call_function(self.context, &mut self.builder, function, &arguments)
+		self.abi
+			.call_function(type_store, self.context, &mut self.builder, &self.llvm_types, function, &arguments)
 	}
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
 		self.values[readable_index]
 	}
 
-	fn generate_field_read(&mut self, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
+	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
 		let index = field_index as u32;
-		let (pointer, pointed_type) = match base {
-			Binding::Value(value) => {
+		let (pointer, pointed_type) = match base.kind {
+			BindingKind::Value(value) => {
 				let pointed_type = value.get_type();
 				let alloca = self.builder.build_alloca(pointed_type, "").unwrap();
 				self.builder.build_store(alloca, value).unwrap();
 				(alloca, pointed_type)
 			}
 
-			Binding::Pointer { pointer, pointed_type } => (pointer, pointed_type),
+			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
 		};
 
 		let pointed_struct = pointed_type.into_struct_type();
 		let field_type = pointed_struct.get_field_type_at_index(index).unwrap();
 		let field_pointer = self.builder.build_struct_gep(pointed_type, pointer, index, "").unwrap();
 
-		Some(Binding::Pointer { pointer: field_pointer, pointed_type: field_type })
+		let type_id = if let Some(_) = base.type_id.as_slice(type_store) {
+			type_store.usize_type_id()
+		} else if let Some(struct_type) = base.type_id.as_struct(type_store) {
+			struct_type.fields[field_index].type_id
+		} else {
+			unreachable!("{:#?}", &type_store.type_entries[base.type_id.index()]);
+		};
+
+		let kind = BindingKind::Pointer { pointer: field_pointer, pointed_type: field_type };
+		Some(Binding { type_id, kind })
 	}
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>) {

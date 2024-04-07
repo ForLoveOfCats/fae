@@ -109,7 +109,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::CodepointLiteral(_) => todo!("generate expression CodepointLiteral"),
 
-		ExpressionKind::StringLiteral(literal) => generate_string_literal(generator, literal),
+		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
 
 		ExpressionKind::ArrayLiteral(_) => todo!("generate expression ArrayLiteral"),
 
@@ -133,13 +133,12 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 	}
 }
 
-fn generate_integer_value<G: Generator>(context: &mut Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
-	let kind = value.collapsed().numeric_kind(context.type_store).unwrap();
-	Some(generator.generate_integer_value(kind, value.value()))
+fn generate_integer_value<G: Generator>(context: &Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
+	Some(generator.generate_integer_value(context.type_store, value.collapsed(), value.value()))
 }
 
-fn generate_string_literal<G: Generator>(generator: &mut G, value: &StringLiteral) -> Option<G::Binding> {
-	Some(generator.generate_string_literal(&value.value))
+fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, value: &StringLiteral) -> Option<G::Binding> {
+	Some(generator.generate_string_literal(context.type_store, &value.value))
 }
 
 fn generate_struct_literal<G: Generator>(
@@ -180,7 +179,7 @@ fn generate_struct_literal<G: Generator>(
 			_ => unreachable!("{:?}", entry.kind),
 		};
 
-		Some(generator.generate_struct_literal(shape_index, specialization_index, &fields))
+		Some(generator.generate_struct_literal(type_id, shape_index, specialization_index, &fields))
 	}
 }
 
@@ -209,7 +208,7 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 		arguments.push(binding);
 	}
 
-	generator.generate_call(function_id, &arguments)
+	generator.generate_call(context.type_store, function_id, &arguments)
 }
 
 fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {
@@ -221,7 +220,7 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 		return None;
 	};
 
-	generator.generate_field_read(base, read.field_index)
+	generator.generate_field_read(context.type_store, base, read.field_index)
 }
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {

@@ -1,6 +1,6 @@
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
-use crate::frontend::type_store::{NumericKind, TypeStore};
+use crate::frontend::type_store::{TypeId, TypeStore};
 
 pub trait Generator {
 	type Binding: Clone + Copy;
@@ -11,22 +11,28 @@ pub trait Generator {
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId);
 
-	fn generate_integer_value(&mut self, kind: NumericKind, value: i128) -> Self::Binding;
+	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding;
 
-	fn generate_string_literal(&mut self, text: &str) -> Self::Binding;
+	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding;
 
 	fn generate_struct_literal(
 		&mut self,
+		type_id: TypeId,
 		shape_index: usize,
 		specialization_index: usize,
 		fields: &[Self::Binding],
 	) -> Self::Binding;
 
-	fn generate_call(&mut self, function_id: FunctionId, arguments: &[Option<Self::Binding>]) -> Option<Self::Binding>;
+	fn generate_call(
+		&mut self,
+		type_store: &TypeStore,
+		function_id: FunctionId,
+		arguments: &[Option<Self::Binding>],
+	) -> Option<Self::Binding>;
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
 
-	fn generate_field_read(&mut self, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
+	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>);
 

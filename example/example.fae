@@ -1,10 +1,12 @@
-extern "puts"
-fn puts(string: &u8)
+import fae::libc::printf
+import fae::stdout::print_f64, print_newline
 
-fn print(string: []u8) {
-	puts(string.pointer)
+fn number(): i32 {
+	return 42
 }
 
 fn main() {
-	print("Hello World!")
+	printf("Hello there: %d, %s\n".pointer, number(), "varargs!".pointer)
+	print_f64(4)
+	print_newline()
 }

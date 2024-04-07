@@ -979,10 +979,11 @@ fn parse_function_declaration<'a>(
 	})
 }
 
-fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Vec<Node<Parameter<'a>>>> {
+fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Parameters<'a>> {
 	tokenizer.expect(messages, TokenKind::OpenParen)?;
 
 	let mut parameters = Vec::new();
+	let mut c_vararg = None;
 
 	while !reached_close_paren(tokenizer) {
 		let is_mutable = match tokenizer.peek() {
@@ -993,6 +994,14 @@ fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 
 			_ => false,
 		};
+
+		if tokenizer.peek_kind() == Ok(TokenKind::Period) {
+			let a = tokenizer.expect(messages, TokenKind::Period)?;
+			let b = tokenizer.expect(messages, TokenKind::Period)?;
+			let c = tokenizer.expect(messages, TokenKind::Period)?;
+			c_vararg = Some(a.span + b.span + c.span);
+			break;
+		}
 
 		let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 		check_not_reserved(messages, name_token, "parameter name")?;
@@ -1015,7 +1024,7 @@ fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 
 	tokenizer.expect(messages, TokenKind::CloseParen)?;
 
-	Ok(parameters)
+	Ok(Parameters { parameters, c_varargs: c_vararg })
 }
 
 fn parse_struct_declaration<'a>(

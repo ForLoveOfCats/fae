@@ -1,0 +1,2 @@
+extern "printf"
+fn printf(pointer: &u8, ...)

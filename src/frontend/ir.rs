@@ -153,6 +153,7 @@ pub struct FunctionShape<'a> {
 
 	pub generics: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape<'a>>,
+	pub c_varargs: bool,
 	pub return_type: TypeId,
 	pub block: Option<Rc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
@@ -177,6 +178,7 @@ impl<'a> FunctionShape<'a> {
 		extern_attribute: Option<Node<ExternAttribute<'a>>>,
 		export_attribute: Option<Node<ExportAttribute<'a>>>,
 		parameters: Vec<ParameterShape<'a>>,
+		c_varargs: bool,
 		return_type: TypeId,
 	) -> Self {
 		FunctionShape {
@@ -189,6 +191,7 @@ impl<'a> FunctionShape<'a> {
 			export_attribute,
 			generics,
 			parameters,
+			c_varargs,
 			return_type,
 			block: None,
 			generic_usages: Vec::new(),

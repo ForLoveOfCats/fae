@@ -1,17 +1,12 @@
-extern "printf"
-fn c_printf_str(format: &u8, len: i64, str: &u8)
+import fae::libc::printf
 
 fn print_string(text: []u8) {
-	c_printf_str("%.*s\0".pointer, text.len, text.pointer)
+	printf("%.*s\0".pointer, text.len, text.pointer)
 }
-
-extern "printf"
-fn c_printf_newline(format: &u8)
 
 fn print_newline() {
-	c_printf_newline("\n\0".pointer)
+	printf("\n\0".pointer)
 }
-
 
 fn print_bool(arg: bool) {
 	mut as_text = "false"
@@ -22,91 +17,51 @@ fn print_bool(arg: bool) {
 	print_string(as_text)
 }
 
-
-extern "printf"
-fn c_printf_i8(format: &u8, arg: i8)
-
 fn print_i8(arg: i8) {
-	c_printf_i8("%hd\0".pointer, arg)
+	printf("%hd\0".pointer, arg)
 }
-
-extern "printf"
-fn c_printf_i16(format: &u8, arg: i16)
 
 fn print_i16(arg: i16) {
-	c_printf_i16("%hd\0".pointer, arg)
+	printf("%hd\0".pointer, arg)
 }
-
-extern "printf"
-fn c_printf_i32(format: &u8, arg: i32)
 
 fn print_i32(arg: i32) {
-	c_printf_i32("%d\0".pointer, arg)
+	printf("%d\0".pointer, arg)
 }
-
-extern "printf"
-fn c_printf_i64(format: &u8, arg: i64)
 
 fn print_i64(arg: i64) {
-	c_printf_i64("%ld\0".pointer, arg)
+	printf("%ld\0".pointer, arg)
 }
-
-
-extern "printf"
-fn c_printf_u8(format: &u8, arg: u8)
 
 fn print_u8(arg: u8) {
-	c_printf_u8("%hu\0".pointer, arg)
+	printf("%hu\0".pointer, arg)
 }
-
-extern "printf"
-fn c_printf_u16(format: &u8, arg: u16)
 
 fn print_u16(arg: u16) {
-	c_printf_u16("%hu\0".pointer, arg)
+	printf("%hu\0".pointer, arg)
 }
-
-extern "printf"
-fn c_printf_u32(format: &u8, arg: u32)
 
 fn print_u32(arg: u32) {
-	c_printf_u32("%u\0".pointer, arg)
+	printf("%u\0".pointer, arg)
 }
-
-extern "printf"
-fn c_printf_u64(format: &u8, arg: u64)
 
 fn print_u64(arg: u64) {
-	c_printf_u64("%lu\0".pointer, arg)
+	printf("%lu\0".pointer, arg)
 }
-
-
-extern "printf"
-fn c_printf_usize(format: &u8, arg: usize)
 
 fn print_usize(arg: usize) {
-	c_printf_usize("%lu\0".pointer, arg)
+	printf("%lu\0".pointer, arg)
 }
 
-/*
 generic T
 fn print_pointer(arg: &T) {
-	// TODO: Add casts
-	c_printf_usize("%ld\0".pointer, arg.(usize))
+	printf("%ld\0".pointer, arg.(usize))
 }
-*/
-
-
-extern "printf"
-fn c_printf_f32(format: &u8, arg: f32)
 
 fn print_f32(arg: f32) {
-	c_printf_f32("%f\0".pointer, arg)
+	printf("%f\0".pointer, arg)
 }
 
-extern "printf"
-fn c_printf_f64(format: &u8, arg: f64)
-
 fn print_f64(arg: f64) {
-	c_printf_f64("%f\0".pointer, arg)
+	printf("%f\0".pointer, arg)
 }
