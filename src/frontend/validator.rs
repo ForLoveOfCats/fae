@@ -1,3 +1,4 @@
+use std::collections::{hash_map, HashMap};
 use std::rc::Rc;
 
 use crate::cli_arguments::CliArguments;
@@ -26,6 +27,7 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub root_layers: &'b RootLayers<'a>,
 
+	pub externs: &'b mut HashMap<String, Span>,
 	pub constants: &'b mut Vec<ConstantValue<'a>>,
 	pub initial_readables_starting_index: usize,
 	pub initial_readables_overall_len: usize,
@@ -63,6 +65,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			root_layers: self.root_layers,
 
+			externs: self.externs,
 			constants: self.constants,
 			initial_readables_starting_index: self.readables.starting_index,
 			initial_readables_overall_len: self.readables.overall_len(),
@@ -99,6 +102,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			root_layers: self.root_layers,
 
+			externs: self.externs,
 			constants: self.constants,
 			initial_readables_starting_index,
 			initial_readables_overall_len: self.readables.overall_len(),
@@ -179,9 +183,10 @@ pub fn validate<'a>(
 	parsed_files: &'a [tree::File<'a>],
 ) {
 	let mut function_generic_usages = Vec::new();
+	let mut externs = HashMap::new();
 	let mut constants = Vec::new();
 
-	create_root_types(messages, type_store, root_layers, parsed_files);
+	create_root_types(messages, root_layers, type_store, parsed_files);
 	resolve_root_type_imports(messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
@@ -192,6 +197,7 @@ pub fn validate<'a>(
 		type_store,
 		function_store,
 		&mut function_generic_usages,
+		&mut externs,
 		&mut readables,
 		parsed_files,
 	);
@@ -205,6 +211,7 @@ pub fn validate<'a>(
 		type_store,
 		function_store,
 		&mut function_generic_usages,
+		&mut externs,
 		&mut constants,
 		&mut readables,
 		parsed_files,
@@ -231,6 +238,7 @@ pub fn validate<'a>(
 			function_store,
 			function_generic_usages: &mut function_generic_usages,
 			root_layers,
+			externs: &mut externs,
 			constants: &mut constants,
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
@@ -252,8 +260,8 @@ pub fn validate<'a>(
 
 fn create_root_types<'a>(
 	messages: &mut Messages,
-	type_store: &mut TypeStore<'a>,
 	root_layers: &mut RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
@@ -317,6 +325,7 @@ fn create_root_functions<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	externs: &mut HashMap<String, Span>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
@@ -330,10 +339,11 @@ fn create_root_functions<'a>(
 
 		create_block_functions(
 			messages,
+			root_layers,
 			type_store,
 			function_store,
 			generic_usages,
-			root_layers,
+			externs,
 			readables,
 			&mut symbols,
 			parsed_file.module_path,
@@ -355,6 +365,7 @@ fn validate_root_consts<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
+	externs: &mut HashMap<String, Span>,
 	constants: &mut Vec<ConstantValue<'a>>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
@@ -381,6 +392,7 @@ fn validate_root_consts<'a>(
 			function_store,
 			function_generic_usages,
 			root_layers,
+			externs,
 			constants,
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
@@ -756,10 +768,11 @@ fn report_cyclic_user_type<'a>(
 
 fn create_block_functions<'a>(
 	messages: &mut Messages<'a>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	root_layers: &RootLayers<'a>,
+	externs: &mut HashMap<String, Span>,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -881,6 +894,19 @@ fn create_block_functions<'a>(
 			}
 
 			let name = statement.name;
+			if let Some(Node { item: extern_attribute, .. }) = statement.extern_attribute {
+				match externs.entry(extern_attribute.name.to_string()) {
+					hash_map::Entry::Occupied(occupied) => {
+						let error = error!("Duplicate extern function declaration").span(name.span);
+						messages.message(error.note(note!(*occupied.get(), "Other declaration here")));
+					}
+
+					hash_map::Entry::Vacant(entry) => {
+						entry.insert(name.span);
+					}
+				}
+			}
+
 			let is_main = module_path == [root_layers.root_name.as_str()] && name.item == "main";
 			let shape = FunctionShape::new(
 				name,
@@ -964,10 +990,11 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	if !is_root {
 		create_block_functions(
 			context.messages,
+			context.root_layers,
 			context.type_store,
 			context.function_store,
 			context.function_generic_usages,
-			context.root_layers,
+			context.externs,
 			context.readables,
 			context.symbols,
 			context.module_path,

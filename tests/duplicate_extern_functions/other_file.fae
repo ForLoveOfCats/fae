@@ -1,0 +1,2 @@
+extern "made_up_function"
+fn function_two()

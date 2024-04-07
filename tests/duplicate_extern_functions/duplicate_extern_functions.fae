@@ -1,0 +1,4 @@
+fn main() {}
+
+extern "made_up_function"
+fn function_one()
