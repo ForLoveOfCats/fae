@@ -184,15 +184,6 @@ fn generate_struct_literal<G: Generator>(
 }
 
 fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
-	let is_intrinsic = {
-		let shape = &context.function_store.shapes[call.function_id.function_shape_index];
-		shape.intrinsic_attribute.is_some()
-	};
-
-	if is_intrinsic {
-		return generate_intrinsic(context, generator, call);
-	}
-
 	let function_id = context.function_store.specialize_with_function_generics(
 		context.messages,
 		context.type_store,
@@ -200,6 +191,15 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 		context.function_id.function_shape_index,
 		context.function_type_arguments,
 	);
+
+	let is_intrinsic = {
+		let shape = &context.function_store.shapes[function_id.function_shape_index];
+		shape.intrinsic_attribute.is_some()
+	};
+
+	if is_intrinsic {
+		return generate_intrinsic(context, generator, function_id, call);
+	}
 
 	// TODO: Avoid this creating this vec every time
 	let mut arguments = Vec::with_capacity(call.arguments.len());
@@ -238,9 +238,13 @@ fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, state
 	generator.generate_return(context.function_id, value);
 }
 
-fn generate_intrinsic<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
+fn generate_intrinsic<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	function_id: FunctionId,
+	call: &Call,
+) -> Option<G::Binding> {
 	let span = call.span;
-	let function_id = call.function_id;
 
 	let shape = &context.function_store.shapes[function_id.function_shape_index];
 	let specialization = &shape.specializations[function_id.specialization_index];
