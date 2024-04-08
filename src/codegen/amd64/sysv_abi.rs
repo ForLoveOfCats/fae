@@ -16,6 +16,7 @@ impl std::default::Default for Class {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClassKind {
 	Integer,
+	Pointer,
 	SSE,
 	SSEUp,
 	X87,
@@ -138,6 +139,9 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 					}
 					// (f) Otherwise class SSE is used.
 					else {
+						// A pointer is already 8 bytes so we should never see one flow through this if-else ladder
+						assert_ne!(buffer[buffer_index].kind, ClassKind::Pointer);
+						assert_ne!(field_classes[0].kind, ClassKind::Pointer);
 						buffer[buffer_index] = Class { kind: ClassKind::SSE, size: field_layout.size as u8 };
 					}
 
@@ -216,12 +220,12 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 		}
 
 		TypeEntryKind::Pointer { .. } => {
-			buffer[0] = Class { kind: ClassKind::Integer, size: 8 };
+			buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
 			return &buffer[..1];
 		}
 
 		TypeEntryKind::Slice(_) => {
-			buffer[0] = Class { kind: ClassKind::Integer, size: 8 };
+			buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
 			buffer[1] = Class { kind: ClassKind::Integer, size: 8 };
 			return &buffer[..2];
 		}

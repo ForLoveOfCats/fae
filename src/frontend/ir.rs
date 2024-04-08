@@ -140,7 +140,7 @@ impl GenericUsage {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FunctionShape<'a> {
 	pub name: Node<&'a str>,
 	pub module_path: &'a [String],

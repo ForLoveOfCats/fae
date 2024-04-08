@@ -2,14 +2,15 @@ use inkwell::attributes::Attribute;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::types::{BasicTypeEnum, PointerType, StructType};
+use inkwell::types::{BasicType, BasicTypeEnum, PointerType, StructType};
 use inkwell::values::{BasicValueEnum, PointerValue};
-use inkwell::AddressSpace;
+use inkwell::{AddressSpace, IntPredicate};
 
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::span::Span;
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
@@ -51,6 +52,11 @@ pub enum BindingKind<'ctx> {
 	},
 }
 
+struct ValuePointer<'ctx> {
+	pointer: PointerValue<'ctx>,
+	pointed_type: BasicTypeEnum<'ctx>,
+}
+
 impl<'ctx> Binding<'ctx> {
 	pub fn to_value(self, builder: &mut Builder<'ctx>) -> BasicValueEnum<'ctx> {
 		let (pointer, pointed_type) = match self.kind {
@@ -74,7 +80,7 @@ impl<'ctx> LLVMTypes<'ctx> {
 		let opaque_pointer = context.i8_type().ptr_type(AddressSpace::default());
 		let slice_struct = context.struct_type(
 			&[
-				BasicTypeEnum::IntType(context.i64_type()),
+				BasicTypeEnum::PointerType(opaque_pointer),
 				BasicTypeEnum::IntType(context.i64_type()),
 			],
 			false,
@@ -169,6 +175,19 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			self.builder.build_return(None).unwrap();
 		}
 		self.state = State::InModule;
+	}
+
+	fn value_pointer(&mut self, binding: Binding<'ctx>) -> ValuePointer<'ctx> {
+		match binding.kind {
+			BindingKind::Value(value) => {
+				let pointed_type = value.get_type();
+				let pointer = self.builder.build_alloca(pointed_type, "").unwrap();
+				self.builder.build_store(pointer, value).unwrap();
+				ValuePointer { pointer, pointed_type }
+			}
+
+			BindingKind::Pointer { pointer, pointed_type } => ValuePointer { pointer, pointed_type },
+		}
 	}
 }
 
@@ -338,17 +357,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
 		let index = field_index as u32;
-		let (pointer, pointed_type) = match base.kind {
-			BindingKind::Value(value) => {
-				let pointed_type = value.get_type();
-				let alloca = self.builder.build_alloca(pointed_type, "").unwrap();
-				self.builder.build_store(alloca, value).unwrap();
-				(alloca, pointed_type)
-			}
 
-			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
-		};
-
+		let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
 		let pointed_struct = pointed_type.into_struct_type();
 		let field_type = pointed_struct.get_field_type_at_index(index).unwrap();
 		let field_pointer = self.builder.build_struct_gep(pointed_type, pointer, index, "").unwrap();
@@ -363,6 +373,53 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let kind = BindingKind::Pointer { pointer: field_pointer, pointed_type: field_type };
 		Some(Binding { type_id, kind })
+	}
+
+	fn generate_slice_index(
+		&mut self,
+		type_store: &TypeStore,
+		item_type: TypeId,
+		base: Self::Binding,
+		index: Self::Binding,
+		_index_span: Span,
+	) -> Option<Self::Binding> {
+		let original_block = self.builder.get_insert_block().unwrap();
+		let success_block = self.context.insert_basic_block_after(original_block, "");
+		let failure_block = self.context.insert_basic_block_after(original_block, "bounds_check_failure");
+
+		let pointed_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, item_type);
+		let ValuePointer { pointer: value_pointer, pointed_type: struct_type } = self.value_pointer(base);
+
+		let pointer_type = pointed_type.ptr_type(AddressSpace::default());
+		let pointer_pointer = self.builder.build_struct_gep(struct_type, value_pointer, 0, "").unwrap();
+		let pointer_value = self.builder.build_load(pointer_type, pointer_pointer, "").unwrap();
+		let pointer = pointer_value.into_pointer_value();
+
+		let i64_type = self.context.i64_type();
+		let len_pointer = self.builder.build_struct_gep(struct_type, value_pointer, 1, "").unwrap();
+		let len = self.builder.build_load(i64_type, len_pointer, "").unwrap().into_int_value();
+
+		let index = index.to_value(&mut self.builder).into_int_value();
+
+		let zero = i64_type.const_int(0, false);
+		let greater_than_zero = self.builder.build_int_compare(IntPredicate::SGT, index, zero, "").unwrap();
+		let less_than_len = self.builder.build_int_compare(IntPredicate::SLT, index, len, "").unwrap();
+		let in_bounds = self.builder.build_and(greater_than_zero, less_than_len, "").unwrap();
+
+		self.builder
+			.build_conditional_branch(in_bounds, success_block, failure_block)
+			.unwrap();
+
+		self.builder.position_at_end(failure_block);
+		self.builder.build_unconditional_branch(success_block).unwrap(); // TODO: Generate call to failure function
+
+		self.builder.position_at_end(success_block);
+
+		let indicies = &[index];
+		let adjusted = unsafe { self.builder.build_gep(pointed_type, pointer, indicies, "").unwrap() };
+
+		let kind = BindingKind::Pointer { pointer: adjusted, pointed_type };
+		Some(Binding { type_id: item_type, kind })
 	}
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>) {

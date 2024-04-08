@@ -1,6 +1,22 @@
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::span::Span;
 use crate::frontend::type_store::{TypeId, TypeStore};
+
+/*
+TODO: Move more zero-sized-type handling logic out of generator implementations and
+into the codegen driver. The primary roadblock currently is that the validator cannot
+fully reason about which values are zero-sized as generic types have an unknown size
+so it is forced to emit readable indicies for zero-sized bindings. This then requires that the
+generator know that these indicies do not have a runtime value and it virally infects all
+expression handling logic.
+
+Perhaps the validator can process all function specializations and generate readable
+indicies at that point so it can skip zero-sized bindings. This would require the validator to
+emit pre-specialized IR for each function version which seems necessary for const-eval
+anyway so that is probably the path forward. This should be done at the same time as
+a significant IR flattening to make it cheaper to construct and interpret.
+*/
 
 pub trait Generator {
 	type Binding: Clone + Copy;
@@ -33,6 +49,15 @@ pub trait Generator {
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
+
+	fn generate_slice_index(
+		&mut self,
+		type_store: &TypeStore,
+		item_type: TypeId,
+		base: Self::Binding,
+		index: Self::Binding,
+		index_span: Span,
+	) -> Option<Self::Binding>;
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>);
 

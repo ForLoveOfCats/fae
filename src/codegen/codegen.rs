@@ -3,7 +3,7 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
-	StatementKind, StringLiteral, StructLiteral, TypeArguments,
+	StatementKind, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
 };
 use crate::frontend::type_store::{TypeEntryKind, TypeStore};
 
@@ -121,7 +121,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::FieldRead(read) => generate_field_read(context, generator, read),
 
-		ExpressionKind::UnaryOperation(_) => todo!("generate expression UnaryOperation"),
+		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation),
 
 		ExpressionKind::BinaryOperation(_) => todo!("generate expression BinaryOperation"),
 
@@ -221,6 +221,34 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 	};
 
 	generator.generate_field_read(context.type_store, base, read.field_index)
+}
+
+fn generate_unary_operation<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	operation: &UnaryOperation,
+) -> Option<G::Binding> {
+	let expression = generate_expression(context, generator, &operation.expression)?;
+
+	match &operation.op {
+		UnaryOperator::Negate => todo!("UnaryOperator::Negate"),
+
+		UnaryOperator::Invert => todo!("UnaryOperator::Invert"),
+
+		UnaryOperator::AddressOf => todo!("UnaryOperator::AddressOf"),
+
+		UnaryOperator::AddressOfMut => todo!("UnaryOperator::AddressOfMut"),
+
+		UnaryOperator::Dereference => todo!("UnaryOperator::Dereference"),
+
+		UnaryOperator::Cast { .. } => todo!("UnaryOperator::Cast"),
+
+		UnaryOperator::Index { index_expression } => {
+			let span = index_expression.span;
+			let index_expression = generate_expression(context, generator, index_expression).unwrap();
+			generator.generate_slice_index(context.type_store, operation.type_id, expression, index_expression, span)
+		}
+	}
 }
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {

@@ -129,7 +129,7 @@ impl<'ctx> SysvAbi<'ctx> {
 					buffer.push(BasicTypeEnum::FloatType(llvm_type));
 				}
 
-				sysv_abi::ClassKind::Memory => {
+				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
 					assert_eq!(class.size, 8);
 					let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
 					buffer.push(BasicTypeEnum::PointerType(ptr_type));
@@ -169,7 +169,7 @@ impl<'ctx> SysvAbi<'ctx> {
 					self.parameter_type_buffer.push(BasicMetadataTypeEnum::FloatType(llvm_type));
 				}
 
-				sysv_abi::ClassKind::Memory => {
+				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
 					assert_eq!(class.size, 8);
 					let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
 					self.parameter_type_buffer.push(BasicMetadataTypeEnum::PointerType(ptr_type));
