@@ -10,7 +10,7 @@ use inkwell::AddressSpace;
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
 use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
-use crate::frontend::type_store::{Layout, TypeId, TypeStore};
+use crate::frontend::type_store::{Layout, NumericKind, TypeId, TypeStore};
 
 pub trait LLVMAbi<'ctx> {
 	fn new() -> Self;
@@ -518,8 +518,21 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 					continue;
 				};
 
-				let information = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id);
-				self.generate_parameter(context, builder, argument, &information.unwrap());
+				let constructed = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id);
+				let information = constructed.unwrap();
+
+				if let ParameterInformation::BareValue { type_id } = information {
+					// TODO: Add f16 once added to the language
+					if type_id.numeric_kind(type_store) == Some(NumericKind::F32) {
+						let float = argument.to_value(builder).into_float_value();
+						let double = builder.build_float_cast(float, context.f64_type(), "").unwrap();
+						let argument = BasicMetadataValueEnum::FloatValue(double);
+						self.argument_value_buffer.push(argument);
+						continue;
+					}
+				}
+
+				self.generate_parameter(context, builder, argument, &information);
 			}
 		}
 

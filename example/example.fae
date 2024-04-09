@@ -1,5 +1,5 @@
 import fae::libc::printf
-import fae::stdout::print_u8, print_f64, print_newline
+import fae::stdout::print_u8, print_f32, print_newline
 
 fn number(): i32 {
 	return -42
@@ -9,6 +9,6 @@ fn main() {
 	printf("Hello there: %d, %s\n".pointer, number(), "varargs!".pointer)
 	print_u8("Abc"[0])
 	print_newline()
-	print_f64(4)
+	print_f32(4)
 	print_newline()
 }
