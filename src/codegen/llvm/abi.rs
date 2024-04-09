@@ -129,6 +129,16 @@ impl<'ctx> SysvAbi<'ctx> {
 					buffer.push(BasicTypeEnum::FloatType(llvm_type));
 				}
 
+				sysv_abi::ClassKind::SSECombine => {
+					// The element type doesn't really matter, it's going to be reinterpreted anyway
+					let llvm_type = match class.size {
+						4 => context.f16_type().vec_type(2),
+						8 => context.f16_type().vec_type(4),
+						unknown_size => panic!("{unknown_size}"),
+					};
+					buffer.push(BasicTypeEnum::VectorType(llvm_type));
+				}
+
 				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
 					assert_eq!(class.size, 8);
 					let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
@@ -145,6 +155,7 @@ impl<'ctx> SysvAbi<'ctx> {
 		}
 	}
 
+	// It would be really nice to deduplicate this with `map_classes_into_basic_type_buffer`
 	fn map_classes_into_parameter_type_buffer<'a>(&mut self, context: &'ctx Context, iterator: impl Iterator<Item = &'a Class>) {
 		for class in iterator {
 			match class.kind {
@@ -167,6 +178,16 @@ impl<'ctx> SysvAbi<'ctx> {
 						unknown_size => panic!("{unknown_size}"),
 					};
 					self.parameter_type_buffer.push(BasicMetadataTypeEnum::FloatType(llvm_type));
+				}
+
+				sysv_abi::ClassKind::SSECombine => {
+					// The element type doesn't really matter, it's going to be reinterpreted anyway
+					let llvm_type = match class.size {
+						4 => context.f16_type().vec_type(2),
+						8 => context.f16_type().vec_type(4),
+						unknown_size => panic!("{unknown_size}"),
+					};
+					self.parameter_type_buffer.push(BasicMetadataTypeEnum::VectorType(llvm_type));
 				}
 
 				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {

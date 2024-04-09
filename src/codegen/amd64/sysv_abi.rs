@@ -18,6 +18,7 @@ pub enum ClassKind {
 	Integer,
 	Pointer,
 	SSE,
+	SSECombine,
 	SSEUp,
 	X87,
 	X87Up,
@@ -111,6 +112,10 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 					// (a) If both classes are equal, this is the resulting class.
 					if buffer[buffer_index].kind == field_classes[0].kind {
 						assert_eq!(field_classes.len(), 1, "{}", field_classes.len());
+						if buffer[buffer_index].kind == ClassKind::SSE {
+							// Doesn't get confused by SSEUP as that can never be less than 8 bytes
+							buffer[buffer_index].kind = ClassKind::SSECombine;
+						}
 						buffer[buffer_index].size += field_classes[0].size;
 					}
 					// (b) If one of the classes is NO_CLASS, the resulting class is the other class.
