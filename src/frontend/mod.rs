@@ -4,6 +4,7 @@ pub mod error;
 pub mod file;
 pub mod function_store;
 pub mod ir;
+pub mod lang_items;
 pub mod parser;
 pub mod project;
 pub mod root_layers;

@@ -1,4 +1,4 @@
-Validation error: ./lib/fae/start.fae, line 3: Expected 2 type arguments, got 0
+Validation error: ./lib/fae/runtime.fae, line 3: Expected 2 type arguments, got 0
   3|     ::main()
          ^^^^^^^^
 

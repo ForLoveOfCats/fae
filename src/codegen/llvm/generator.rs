@@ -10,6 +10,7 @@ use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
@@ -306,6 +307,17 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Binding { type_id, kind }
 	}
 
+	fn generate_decimal_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: f64) -> Self::Binding {
+		let value = match type_id.numeric_kind(type_store).unwrap() {
+			NumericKind::F32 => BasicValueEnum::FloatValue(self.context.f32_type().const_float(value)),
+			NumericKind::F64 => BasicValueEnum::FloatValue(self.context.f64_type().const_float(value)),
+			kind => unreachable!("{kind}"),
+		};
+
+		let kind = BindingKind::Value(value);
+		Binding { type_id, kind }
+	}
+
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
 		let global = self.builder.build_global_string_ptr(text, "").unwrap();
 		let pointer = global.as_pointer_value();
@@ -375,8 +387,113 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Some(Binding { type_id, kind })
 	}
 
+	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding {
+		let pointer = self.value_pointer(base);
+		let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer.pointer));
+		Binding { type_id: pointer_type_id, kind }
+	}
+
+	// TODO: Write integration test case for casts
+	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
+		let from = base.to_value(&mut self.builder);
+		let from_pointer = from.is_pointer_value();
+		let to_pointer = to.is_pointer(type_store);
+
+		// Pointer to pointer, nop
+		if from_pointer && to_pointer {
+			let kind = BindingKind::Value(from);
+			return Binding { type_id: to, kind };
+		}
+
+		let from_int = from.is_int_value();
+
+		// Int to pointer
+		if from_int && to_pointer {
+			let int = from.into_int_value();
+			let pointer_type = self.llvm_types.opaque_pointer;
+			let pointer = self.builder.build_int_to_ptr(int, pointer_type, "").unwrap();
+
+			let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer));
+			return Binding { type_id: to, kind };
+		}
+
+		let to_kind = to.numeric_kind(type_store).unwrap();
+		use NumericKind::*;
+		let (to_int_type, to_float_type) = match to_kind {
+			I8 | U8 => (Some(self.context.i8_type()), None),
+			I16 | U16 => (Some(self.context.i16_type()), None),
+			I32 | U32 => (Some(self.context.i32_type()), None),
+			I64 | U64 | USize => (Some(self.context.i64_type()), None),
+			F32 => (None, Some(self.context.f32_type())),
+			F64 => (None, Some(self.context.f64_type())),
+		};
+
+		// Pointer to int
+		if from_pointer {
+			if let Some(to_type) = to_int_type {
+				let int = self.builder.build_ptr_to_int(from.into_pointer_value(), to_type, "").unwrap();
+				let kind = BindingKind::Value(BasicValueEnum::IntValue(int));
+				return Binding { type_id: to, kind };
+			}
+		}
+
+		// Int to int
+		if from_int {
+			if let Some(to_type) = to_int_type {
+				let int = self.builder.build_int_cast(from.into_int_value(), to_type, "").unwrap();
+				let kind = BindingKind::Value(BasicValueEnum::IntValue(int));
+				return Binding { type_id: to, kind };
+			}
+		}
+
+		let from_kind = base.type_id.numeric_kind(type_store).unwrap();
+
+		// Int to float
+		if from_int {
+			if let Some(to_type) = to_float_type {
+				let int = from.into_int_value();
+				let float = if from_kind.is_signed() {
+					self.builder.build_signed_int_to_float(int, to_type, "").unwrap()
+				} else {
+					self.builder.build_unsigned_int_to_float(int, to_type, "").unwrap()
+				};
+				let kind = BindingKind::Value(BasicValueEnum::FloatValue(float));
+				return Binding { type_id: to, kind };
+			}
+		}
+
+		let from_float = from.is_float_value();
+
+		// Float to int
+		if from_float {
+			if let Some(to_type) = to_int_type {
+				let float = from.into_float_value();
+				let int = if to_kind.is_signed() {
+					self.builder.build_float_to_signed_int(float, to_type, "").unwrap()
+				} else {
+					self.builder.build_float_to_unsigned_int(float, to_type, "").unwrap()
+				};
+				let kind = BindingKind::Value(BasicValueEnum::IntValue(int));
+				return Binding { type_id: to, kind };
+			}
+		}
+
+		// Float to float
+		if from_float {
+			if let Some(to_type) = to_float_type {
+				let float = from.into_float_value();
+				let float = self.builder.build_float_cast(float, to_type, "").unwrap();
+				let kind = BindingKind::Value(BasicValueEnum::FloatValue(float));
+				return Binding { type_id: to, kind };
+			}
+		}
+
+		unreachable!()
+	}
+
 	fn generate_slice_index(
 		&mut self,
+		lang_items: &LangItems,
 		type_store: &TypeStore,
 		item_type: TypeId,
 		base: Self::Binding,
@@ -402,7 +519,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let index = index.to_value(&mut self.builder).into_int_value();
 
 		let zero = i64_type.const_int(0, false);
-		let greater_than_zero = self.builder.build_int_compare(IntPredicate::SGT, index, zero, "").unwrap();
+		let greater_than_zero = self.builder.build_int_compare(IntPredicate::SGE, index, zero, "").unwrap();
 		let less_than_len = self.builder.build_int_compare(IntPredicate::SLT, index, len, "").unwrap();
 		let in_bounds = self.builder.build_and(greater_than_zero, less_than_len, "").unwrap();
 
@@ -411,7 +528,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			.unwrap();
 
 		self.builder.position_at_end(failure_block);
-		self.builder.build_unconditional_branch(success_block).unwrap(); // TODO: Generate call to failure function
+		self.generate_call(type_store, lang_items.slice_bound_check_failure.unwrap(), &[]);
+		self.builder.build_unreachable().unwrap();
 
 		self.builder.position_at_end(success_block);
 

@@ -1,0 +1,11 @@
+export "main"
+fn fae_main(argc: i32, argc: &&u8): i32 {
+	::main()
+	return 0
+}
+
+#lang "slice_bound_check_failure"
+fn slice_bound_check_failure() {
+	fae::libc::puts("Bounds check failure".pointer)
+	fae::libc::exit(-1)
+}

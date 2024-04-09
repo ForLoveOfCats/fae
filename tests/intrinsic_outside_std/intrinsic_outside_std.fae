@@ -1,4 +1,4 @@
-intrinsic
+#intrinsic
 fn my_intrinsic()
 
 fn main() {

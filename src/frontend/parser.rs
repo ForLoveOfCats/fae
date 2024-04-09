@@ -708,28 +708,42 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 	let mut attributes = Attributes::blank();
 
 	while let Ok(peeked) = tokenizer.peek() {
-		match peeked.text {
-			"generic" => {
-				check_duplicate_attribute(messages, &attributes.generic_attribute, "generic", peeked.span)?;
-				attributes.generic_attribute = Some(parse_generic_attribute(messages, tokenizer)?);
-			}
+		if peeked.kind == TokenKind::Word {
+			match peeked.text {
+				"generic" => {
+					check_duplicate_attribute(messages, &attributes.generic_attribute, "generic", peeked.span)?;
+					attributes.generic_attribute = Some(parse_generic_attribute(messages, tokenizer)?);
+				}
 
-			"intrinsic" => {
-				check_duplicate_attribute(messages, &attributes.intrinsic_attribute, "intrinsic", peeked.span)?;
-				attributes.intrinsic_attribute = Some(parse_intrinsic_attribute(messages, tokenizer)?);
-			}
+				"extern" => {
+					check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
+					attributes.extern_attribute = Some(parse_extern_attribute(messages, tokenizer)?);
+				}
 
-			"extern" => {
-				check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
-				attributes.extern_attribute = Some(parse_extern_attribute(messages, tokenizer)?);
-			}
+				"export" => {
+					check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
+					attributes.export_attribute = Some(parse_export_attribute(messages, tokenizer)?);
+				}
 
-			"export" => {
-				check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
-				attributes.export_attribute = Some(parse_export_attribute(messages, tokenizer)?);
+				_ => break,
 			}
+		} else if peeked.kind == TokenKind::PoundSign {
+			tokenizer.expect(messages, TokenKind::PoundSign)?;
+			match tokenizer.peek().map(|t| t.text) {
+				Ok("intrinsic") => {
+					check_duplicate_attribute(messages, &attributes.intrinsic_attribute, "intrinsic", peeked.span)?;
+					attributes.intrinsic_attribute = Some(parse_intrinsic_attribute(messages, tokenizer, peeked.span)?);
+				}
 
-			_ => break,
+				Ok("lang") => {
+					check_duplicate_attribute(messages, &attributes.lang_attribute, "lang", peeked.span)?;
+					attributes.lang_attribute = Some(parse_lang_attribute(messages, tokenizer, peeked.span)?);
+				}
+
+				_ => break,
+			}
+		} else {
+			break;
 		}
 	}
 
@@ -759,15 +773,6 @@ fn parse_generic_attribute<'a>(
 	Ok(Node::new(generic_atttribute, span))
 }
 
-fn parse_intrinsic_attribute<'a>(
-	messages: &mut Messages,
-	tokenizer: &mut Tokenizer<'a>,
-) -> ParseResult<Node<IntrinsicAttribute>> {
-	let intrinsic_token = tokenizer.expect_word(messages, "intrinsic")?;
-	tokenizer.expect(messages, TokenKind::Newline)?;
-	Ok(Node::from_token(IntrinsicAttribute, intrinsic_token))
-}
-
 fn parse_extern_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<ExternAttribute<'a>>> {
 	let extern_token = tokenizer.expect_word(messages, "extern")?;
 	let name_token = tokenizer.expect(messages, TokenKind::String)?;
@@ -785,6 +790,31 @@ fn parse_export_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 
 	let attribute = ExportAttribute { name: &name_token.text };
 	let span = export_token.span + name_token.span;
+	Ok(Node::new(attribute, span))
+}
+
+fn parse_intrinsic_attribute<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	pound_sign_span: Span,
+) -> ParseResult<Node<IntrinsicAttribute>> {
+	let intrinsic_token = tokenizer.expect_word(messages, "intrinsic")?;
+	tokenizer.expect(messages, TokenKind::Newline)?;
+	let span = pound_sign_span + intrinsic_token.span;
+	Ok(Node::new(IntrinsicAttribute, span))
+}
+
+fn parse_lang_attribute<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	pound_sign_span: Span,
+) -> ParseResult<Node<LangAttribute<'a>>> {
+	let lang_token = tokenizer.expect_word(messages, "lang")?;
+	let name_token = tokenizer.expect(messages, TokenKind::String)?;
+	tokenizer.expect(messages, TokenKind::Newline)?;
+
+	let attribute = LangAttribute { name: &name_token.text };
+	let span = pound_sign_span + lang_token.span + name_token.span;
 	Ok(Node::new(attribute, span))
 }
 
@@ -942,9 +972,10 @@ fn parse_function_declaration<'a>(
 		Some(attribute) => attribute.item.names,
 		None => Vec::new(),
 	};
-	let intrinsic_attribute = attributes.intrinsic_attribute;
 	let extern_attribute = attributes.extern_attribute;
 	let export_attribute = attributes.export_attribute;
+	let intrinsic_attribute = attributes.intrinsic_attribute;
+	let lang_attribute = attributes.lang_attribute;
 
 	tokenizer.expect_word(messages, "fn")?;
 
@@ -969,9 +1000,10 @@ fn parse_function_declaration<'a>(
 
 	Ok(Function {
 		generics,
-		intrinsic_attribute,
 		extern_attribute,
 		export_attribute,
+		intrinsic_attribute,
+		lang_attribute,
 		name,
 		parameters,
 		parsed_type,

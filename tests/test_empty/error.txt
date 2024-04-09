@@ -1,4 +1,4 @@
-Validation error: ./lib/fae/start.fae, line 3: No symbol `main` in root of module `test_empty`
+Validation error: ./lib/fae/runtime.fae, line 3: No symbol `main` in root of module `test_empty`
   3|     ::main()
            ^^^^
 

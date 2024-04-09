@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::cli_arguments::{CliArguments, CodegenBackend};
-use crate::codegen;
+use crate::codegen::{legacy_c, llvm};
 use crate::frontend::error::{Messages, WriteFmt};
 use crate::frontend::file::load_all_files;
 use crate::frontend::function_store::FunctionStore;
+use crate::frontend::lang_items::LangItems;
 use crate::frontend::parser::parse_file;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::type_store::TypeStore;
@@ -47,12 +48,14 @@ pub fn build_project(
 	messages.reset();
 
 	//Partially parallelizable
+	let mut lang_items = LangItems::new();
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
 	let mut root_layers = RootLayers::new(root_name);
 	validate(
 		cli_arguments,
 		&mut messages,
+		&mut lang_items,
 		&mut root_layers,
 		&mut type_store,
 		&mut function_store,
@@ -71,13 +74,13 @@ pub fn build_project(
 	match cli_arguments.codegen_backend {
 		CodegenBackend::LegacyC => {
 			let binary_path = PathBuf::from("./output.executable");
-			codegen::legacy_c::generate_code(
+			legacy_c::generate_code(
 				&mut messages,
 				&mut type_store,
 				&mut function_store,
-				codegen::legacy_c::OptimizationLevel::None,
+				legacy_c::OptimizationLevel::None,
 				&binary_path,
-				codegen::legacy_c::DebugCodegen::OnFailure,
+				legacy_c::DebugCodegen::OnFailure,
 			);
 
 			assert!(!messages.any_errors());
@@ -87,7 +90,7 @@ pub fn build_project(
 		}
 
 		CodegenBackend::LLVM => {
-			let binary_path = codegen::llvm::amd64::generate_code(&mut messages, &mut type_store, &mut function_store);
+			let binary_path = llvm::amd64::generate_code(&mut messages, &lang_items, &mut type_store, &mut function_store);
 			assert!(!messages.any_errors());
 			any_errors |= messages.any_errors();
 			any_messages |= messages.any_messages();

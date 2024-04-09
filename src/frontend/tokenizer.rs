@@ -45,6 +45,7 @@ pub enum TokenKind {
 	Period,
 	Comma,
 	Ampersand,
+	PoundSign,
 
 	Exclamation,
 }
@@ -93,6 +94,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::Period => "'.'",
 			TokenKind::Comma => "','",
 			TokenKind::Ampersand => "'&'",
+			TokenKind::PoundSign => "'#'",
 
 			TokenKind::Exclamation => "'!'",
 		};
@@ -297,6 +299,8 @@ impl<'a> Tokenizer<'a> {
 			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1, self.file_index)),
 
 			[b'&', ..] => Ok(Token::new("&", Ampersand, self.offset, self.offset + 1, self.file_index)),
+
+			[b'#', ..] => Ok(Token::new("#", PoundSign, self.offset, self.offset + 1, self.file_index)),
 
 			[b'\'', ..] => {
 				let start_index = self.offset;

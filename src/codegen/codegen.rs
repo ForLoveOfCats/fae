@@ -2,13 +2,15 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	Binding, Block, Call, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read, Return,
-	StatementKind, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
+	Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read,
+	Return, StatementKind, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
 };
+use crate::frontend::lang_items::LangItems;
 use crate::frontend::type_store::{TypeEntryKind, TypeStore};
 
 pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
+	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generator: &mut G,
@@ -24,7 +26,7 @@ pub fn generate<'a, G: Generator>(
 
 		for specialization_index in 0..shape.specializations.len() {
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(messages, type_store, function_store, generator, shape, function_id);
+			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
 		}
 	}
 
@@ -33,6 +35,7 @@ pub fn generate<'a, G: Generator>(
 
 struct Context<'a, 'b> {
 	messages: &'b mut Messages<'a>,
+	lang_items: &'b LangItems,
 	type_store: &'b mut TypeStore<'a>,
 	function_store: &'b FunctionStore<'a>,
 	module_path: &'a [String],
@@ -44,6 +47,7 @@ impl<'a, 'b> Context<'a, 'b> {}
 
 pub fn generate_function<'a, G: Generator>(
 	messages: &mut Messages<'a>,
+	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generator: &mut G,
@@ -69,6 +73,7 @@ pub fn generate_function<'a, G: Generator>(
 
 	let mut context = Context {
 		messages,
+		lang_items,
 		type_store,
 		function_store,
 		module_path,
@@ -103,7 +108,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
 
-		ExpressionKind::DecimalValue(_) => todo!("generate expression DecimalValue"),
+		ExpressionKind::DecimalValue(value) => generate_decimal_value(context, generator, value),
 
 		ExpressionKind::BooleanLiteral(_) => todo!("generate expression BooleanLiteral"),
 
@@ -135,6 +140,10 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 fn generate_integer_value<G: Generator>(context: &Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
 	Some(generator.generate_integer_value(context.type_store, value.collapsed(), value.value()))
+}
+
+fn generate_decimal_value<G: Generator>(context: &Context, generator: &mut G, value: &DecimalValue) -> Option<G::Binding> {
+	Some(generator.generate_decimal_value(context.type_store, value.collapsed(), value.value()))
 }
 
 fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, value: &StringLiteral) -> Option<G::Binding> {
@@ -235,18 +244,25 @@ fn generate_unary_operation<G: Generator>(
 
 		UnaryOperator::Invert => todo!("UnaryOperator::Invert"),
 
-		UnaryOperator::AddressOf => todo!("UnaryOperator::AddressOf"),
-
-		UnaryOperator::AddressOfMut => todo!("UnaryOperator::AddressOfMut"),
+		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => {
+			Some(generator.generate_address_of(expression, operation.type_id))
+		}
 
 		UnaryOperator::Dereference => todo!("UnaryOperator::Dereference"),
 
-		UnaryOperator::Cast { .. } => todo!("UnaryOperator::Cast"),
+		&UnaryOperator::Cast { type_id: to } => Some(generator.generate_cast(context.type_store, expression, to)),
 
 		UnaryOperator::Index { index_expression } => {
 			let span = index_expression.span;
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			generator.generate_slice_index(context.type_store, operation.type_id, expression, index_expression, span)
+			generator.generate_slice_index(
+				context.lang_items,
+				context.type_store,
+				operation.type_id,
+				expression,
+				index_expression,
+				span,
+			)
 		}
 	}
 }

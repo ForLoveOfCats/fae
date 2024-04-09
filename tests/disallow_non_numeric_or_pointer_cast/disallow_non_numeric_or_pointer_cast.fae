@@ -1,0 +1,11 @@
+fn main() {
+	let abc = Abc {}
+	1.(Abc)
+	1.(i32).(Abc)
+	abc.(i32)
+	abc.(Def)
+}
+
+struct Abc {}
+
+struct Def {}

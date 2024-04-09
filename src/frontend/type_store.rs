@@ -229,6 +229,14 @@ impl NumericKind {
 			NumericKind::F64 => Layout { size: 8, alignment: 8 },
 		}
 	}
+
+	pub fn is_signed(self) -> bool {
+		match self {
+			NumericKind::I8 | NumericKind::I16 | NumericKind::I32 | NumericKind::I64 => true,
+			NumericKind::U8 | NumericKind::U16 | NumericKind::U32 | NumericKind::U64 | NumericKind::USize => false,
+			NumericKind::F32 | NumericKind::F64 => true,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

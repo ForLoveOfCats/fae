@@ -1,5 +1,6 @@
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::type_store::{TypeId, TypeStore};
 
@@ -29,6 +30,8 @@ pub trait Generator {
 
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding;
 
+	fn generate_decimal_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: f64) -> Self::Binding;
+
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding;
 
 	fn generate_struct_literal(
@@ -50,8 +53,13 @@ pub trait Generator {
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
 
+	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding;
+
+	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding;
+
 	fn generate_slice_index(
 		&mut self,
+		lang_items: &LangItems,
 		type_store: &TypeStore,
 		item_type: TypeId,
 		base: Self::Binding,

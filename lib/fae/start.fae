@@ -1,5 +1,0 @@
-export "main"
-fn fae_main(argc: i32, argc: &&u8): i32 {
-	::main()
-	return 0
-}

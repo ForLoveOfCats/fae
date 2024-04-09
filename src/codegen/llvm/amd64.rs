@@ -10,10 +10,12 @@ use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
+use crate::frontend::lang_items::LangItems;
 use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
+	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 ) -> PathBuf {
@@ -22,7 +24,7 @@ pub fn generate_code<'a>(
 	let context = Context::create();
 	let mut generator = LLVMGenerator::<SysvAbi>::new(&context);
 
-	generate(messages, type_store, function_store, &mut generator);
+	generate(messages, lang_items, type_store, function_store, &mut generator);
 
 	let triple = TargetTriple::create("x86_64-pc-linux-gnu");
 	let target = Target::from_triple(&triple).unwrap();

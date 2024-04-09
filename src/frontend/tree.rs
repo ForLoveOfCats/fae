@@ -29,13 +29,10 @@ pub struct Import<'a> {
 	pub symbol_names: Vec<Node<&'a str>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GenericAttribute<'a> {
 	pub names: Vec<Node<&'a str>>,
 }
-
-#[derive(Debug, Clone, Copy)]
-pub struct IntrinsicAttribute;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ExternAttribute<'a> {
@@ -47,12 +44,21 @@ pub struct ExportAttribute<'a> {
 	pub name: &'a str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
+pub struct IntrinsicAttribute;
+
+#[derive(Debug, Clone, Copy)]
+pub struct LangAttribute<'a> {
+	pub name: &'a str,
+}
+
+#[derive(Debug, Clone)]
 pub struct Attributes<'a> {
 	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
-	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
+	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
+	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 }
 
 impl<'a> Attributes<'a> {
@@ -61,9 +67,10 @@ impl<'a> Attributes<'a> {
 	pub fn blank() -> Self {
 		Attributes {
 			generic_attribute: None,
-			intrinsic_attribute: None,
 			extern_attribute: None,
 			export_attribute: None,
+			intrinsic_attribute: None,
+			lang_attribute: None,
 		}
 	}
 
@@ -120,9 +127,10 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
-	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
+	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
+	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 	pub name: Node<&'a str>,
 	pub parameters: Parameters<'a>,
 	pub parsed_type: Option<Node<Type<'a>>>,

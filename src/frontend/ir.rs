@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::span::Span;
-use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, Node};
+use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
 
 /*
@@ -147,9 +147,10 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
-	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
+	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
+	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 
 	pub generics: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape<'a>>,
@@ -174,9 +175,10 @@ impl<'a> FunctionShape<'a> {
 		file_index: usize,
 		is_main: bool,
 		generics: GenericParameters<'a>,
-		intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 		extern_attribute: Option<Node<ExternAttribute<'a>>>,
 		export_attribute: Option<Node<ExportAttribute<'a>>>,
+		intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
+		lang_attribute: Option<Node<LangAttribute<'a>>>,
 		parameters: Vec<ParameterShape<'a>>,
 		c_varargs: bool,
 		return_type: TypeId,
@@ -186,9 +188,10 @@ impl<'a> FunctionShape<'a> {
 			module_path,
 			file_index,
 			is_main,
-			intrinsic_attribute,
 			extern_attribute,
 			export_attribute,
+			intrinsic_attribute,
+			lang_attribute,
 			generics,
 			parameters,
 			c_varargs,

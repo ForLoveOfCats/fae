@@ -1,2 +1,14 @@
+// TODO: Linux (*nix?) specific, add conditional compliation
+const STDERR_FILE_NUMBER = 2
+
+extern "exit"
+fn exit(code: i32)
+
+extern "fprintf"
+fn fprintf(stream: &void, pointer: &u8, ...)
+
 extern "printf"
 fn printf(pointer: &u8, ...)
+
+extern "puts"
+fn puts(pointer: &u8)

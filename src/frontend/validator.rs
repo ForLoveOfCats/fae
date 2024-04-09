@@ -5,6 +5,7 @@ use crate::cli_arguments::CliArguments;
 use crate::frontend::error::*;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::*;
+use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{ReadableKind, Readables, Symbol, SymbolKind, Symbols};
@@ -27,6 +28,7 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub root_layers: &'b RootLayers<'a>,
 
+	pub lang_items: &'b mut LangItems,
 	pub externs: &'b mut HashMap<String, Span>,
 	pub constants: &'b mut Vec<ConstantValue<'a>>,
 	pub initial_readables_starting_index: usize,
@@ -65,6 +67,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			root_layers: self.root_layers,
 
+			lang_items: self.lang_items,
 			externs: self.externs,
 			constants: self.constants,
 			initial_readables_starting_index: self.readables.starting_index,
@@ -102,6 +105,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			root_layers: self.root_layers,
 
+			lang_items: self.lang_items,
 			externs: self.externs,
 			constants: self.constants,
 			initial_readables_starting_index,
@@ -177,6 +181,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 pub fn validate<'a>(
 	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
+	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -207,6 +212,7 @@ pub fn validate<'a>(
 	validate_root_consts(
 		cli_arguments,
 		messages,
+		lang_items,
 		root_layers,
 		type_store,
 		function_store,
@@ -238,6 +244,7 @@ pub fn validate<'a>(
 			function_store,
 			function_generic_usages: &mut function_generic_usages,
 			root_layers,
+			lang_items,
 			externs: &mut externs,
 			constants: &mut constants,
 			initial_readables_starting_index: readables.starting_index,
@@ -361,6 +368,7 @@ fn create_root_functions<'a>(
 fn validate_root_consts<'a>(
 	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
+	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -392,6 +400,7 @@ fn validate_root_consts<'a>(
 			function_store,
 			function_generic_usages,
 			root_layers,
+			lang_items,
 			externs,
 			constants,
 			initial_readables_starting_index: readables.starting_index,
@@ -914,9 +923,10 @@ fn create_block_functions<'a>(
 				file_index,
 				is_main,
 				generics,
-				statement.intrinsic_attribute,
 				statement.extern_attribute,
 				statement.export_attribute,
+				statement.intrinsic_attribute,
+				statement.lang_attribute,
 				parameters,
 				c_varargs,
 				return_type,
@@ -1099,6 +1109,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		return;
 	}
 
+	// TODO: Rip this out, like yesterday
 	let function_shape_index = context.symbols.symbols.iter().rev().find_map(|symbol| {
 		if let SymbolKind::Function { function_shape_index } = symbol.kind {
 			if symbol.name == statement.name.item {
@@ -1265,6 +1276,31 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			None,
 			TypeArguments::new_from_explicit(Vec::new()),
 		);
+	} else if let Some(lang_attribute) = &shape.lang_attribute {
+		let lang_name = lang_attribute.item.name;
+		let lang_span = lang_attribute.span;
+
+		if let Some(type_parameter_span) = type_parameter_span {
+			let message = error!("Lang item function may not have any generic type parameters");
+			context.message(message.span(type_parameter_span));
+		}
+
+		let result = context.function_store.get_or_add_specialization(
+			context.messages,
+			context.type_store,
+			context.module_path,
+			context.function_generic_usages,
+			function_shape_index,
+			None,
+			TypeArguments::new_from_explicit(Vec::new()),
+		);
+
+		if let Some(FunctionSpecializationResult { specialization_index, .. }) = result {
+			let function_id = FunctionId { function_shape_index, specialization_index };
+			context
+				.lang_items
+				.register_lang_function(context.messages, function_id, lang_name, lang_span);
+		}
 	}
 }
 
@@ -1973,6 +2009,27 @@ fn validate_cast<'a>(
 				context.collapse_to(context.type_store.usize_type_id(), &mut expression);
 			}
 		}
+	} else {
+		let error = if from_numeric || from_pointer {
+			assert!(!to_numeric);
+			assert!(!to_pointer);
+			let to = context.type_name(to_type_id);
+			error!("Cannot cast to a value which is not numeric or a pointer")
+				.note(note!(parsed_type.span, "Attempted to cast to type {to}"))
+		} else if to_numeric || to_pointer {
+			assert!(!from_numeric);
+			assert!(!from_pointer);
+			let from = context.type_name(from_type_id);
+			error!("Cannot cast from a value which is not numeric or a pointer")
+				.note(note!(expression.span, "Attempted to cast from type {from}"))
+		} else {
+			let to = context.type_name(to_type_id);
+			let from = context.type_name(from_type_id);
+			error!("Cannot cast between values which are not numeric or a pointer")
+				.note(note!(expression.span, "Attempted to cast from type {from}"))
+				.note(note!(parsed_type.span, "Attempted to cast to type {to}"))
+		};
+		context.message(error.span(span));
 	}
 
 	let type_id = to_type_id;
