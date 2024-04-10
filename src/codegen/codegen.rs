@@ -3,7 +3,7 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId,
-	FunctionShape, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StringLiteral, StructLiteral,
+	FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StringLiteral, StructLiteral,
 	TypeArguments, UnaryOperation, UnaryOperator,
 };
 use crate::frontend::lang_items::LangItems;
@@ -86,6 +86,7 @@ pub fn generate_function<'a, G: Generator>(
 	generate_block(&mut context, generator, block.as_ref());
 }
 
+// TODO: Handle scope alloc lifetime
 fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {
 	for statement in &block.statements {
 		match &statement.kind {
@@ -104,15 +105,18 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, expression: &Expression) -> Option<G::Binding> {
 	match &expression.kind {
-		ExpressionKind::Block(_) => todo!("generate expression Block"),
+		ExpressionKind::Block(block) => {
+			generate_block(context, generator, block);
+			None
+		}
 
-		ExpressionKind::If(_) => todo!("generate expression If"),
+		ExpressionKind::If(if_expression) => generate_if(context, generator, if_expression),
 
 		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
 
 		ExpressionKind::DecimalValue(value) => generate_decimal_value(context, generator, value),
 
-		ExpressionKind::BooleanLiteral(_) => todo!("generate expression BooleanLiteral"),
+		&ExpressionKind::BooleanLiteral(literal) => generate_boolean_literal(context, generator, literal),
 
 		ExpressionKind::CodepointLiteral(_) => todo!("generate expression CodepointLiteral"),
 
@@ -142,12 +146,25 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 	}
 }
 
+fn generate_if<G: Generator>(context: &mut Context, generator: &mut G, if_expression: &If) -> Option<G::Binding> {
+	let condition = generate_expression(context, generator, &if_expression.condition).unwrap();
+	generator.generate_if(condition, |generator| {
+		generate_expression(context, generator, &if_expression.body);
+	});
+
+	None
+}
+
 fn generate_integer_value<G: Generator>(context: &Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
 	Some(generator.generate_integer_value(context.type_store, value.collapsed(), value.value()))
 }
 
 fn generate_decimal_value<G: Generator>(context: &Context, generator: &mut G, value: &DecimalValue) -> Option<G::Binding> {
 	Some(generator.generate_decimal_value(context.type_store, value.collapsed(), value.value()))
+}
+
+fn generate_boolean_literal<G: Generator>(context: &Context, generator: &mut G, literal: bool) -> Option<G::Binding> {
+	Some(generator.generate_boolean_literal(context.type_store, literal))
 }
 
 fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, literal: &StringLiteral) -> Option<G::Binding> {

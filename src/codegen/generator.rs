@@ -28,9 +28,13 @@ pub trait Generator {
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId);
 
+	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self));
+
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding;
 
 	fn generate_decimal_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: f64) -> Self::Binding;
+
+	fn generate_boolean_literal(&mut self, type_store: &TypeStore, literal: bool) -> Self::Binding;
 
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding;
 

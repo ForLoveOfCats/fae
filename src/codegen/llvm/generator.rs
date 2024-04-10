@@ -282,6 +282,25 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.state = State::InFunction { void_returning };
 	}
 
+	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self)) {
+		let original_block = self.builder.get_insert_block().unwrap();
+		let if_block = self.context.insert_basic_block_after(original_block, "if_block");
+		let following_block = self.context.insert_basic_block_after(original_block, "");
+
+		let condition = condition.to_value(&mut self.builder).into_int_value();
+		let zero = self.context.i8_type().const_zero();
+		let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
+		self.builder
+			.build_conditional_branch(flag, if_block, following_block)
+			.unwrap();
+
+		self.builder.position_at_end(if_block);
+		body_callback(self);
+		self.builder.build_unconditional_branch(following_block).unwrap();
+
+		self.builder.position_at_end(following_block);
+	}
+
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding {
 		let value = match type_id.numeric_kind(type_store).unwrap() {
 			NumericKind::I8 | NumericKind::U8 => BasicValueEnum::IntValue(self.context.i8_type().const_int(value as u64, false)),
@@ -316,6 +335,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let kind = BindingKind::Value(value);
 		Binding { type_id, kind }
+	}
+
+	fn generate_boolean_literal(&mut self, type_store: &TypeStore, literal: bool) -> Self::Binding {
+		let value = self.context.i8_type().const_int(literal as u64, false);
+		let kind = BindingKind::Value(BasicValueEnum::IntValue(value));
+		Binding { type_id: type_store.bool_type_id(), kind }
 	}
 
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
