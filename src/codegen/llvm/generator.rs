@@ -470,7 +470,23 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Binding { type_id: pointer_type_id, kind }
 	}
 
-	// TODO: Write integration test case for casts
+	fn generate_dereference(&mut self, type_store: &TypeStore, base: Self::Binding, pointed_type_id: TypeId) -> Self::Binding {
+		let pointer = match base.kind {
+			BindingKind::Value(value) => value.into_pointer_value(),
+
+			BindingKind::Pointer { pointer, pointed_type } => {
+				let value = self.builder.build_load(pointed_type, pointer, "").unwrap();
+				value.into_pointer_value()
+			}
+		};
+
+		let pointed_type = self
+			.llvm_types
+			.type_to_basic_type_enum(&self.context, type_store, pointed_type_id);
+		let kind = BindingKind::Pointer { pointer, pointed_type };
+		Binding { type_id: pointed_type_id, kind }
+	}
+
 	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
 		let from = base.to_value(&mut self.builder);
 		let from_pointer = from.is_pointer_value();

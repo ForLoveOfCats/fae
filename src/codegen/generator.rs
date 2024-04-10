@@ -67,6 +67,8 @@ pub trait Generator {
 
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding;
 
+	fn generate_dereference(&mut self, type_store: &TypeStore, base: Self::Binding, pointed_type_id: TypeId) -> Self::Binding;
+
 	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding;
 
 	fn generate_slice_index(

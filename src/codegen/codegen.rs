@@ -284,7 +284,7 @@ fn generate_unary_operation<G: Generator>(
 			Some(generator.generate_address_of(expression, operation.type_id))
 		}
 
-		UnaryOperator::Dereference => todo!("UnaryOperator::Dereference"),
+		UnaryOperator::Dereference => Some(generator.generate_dereference(context.type_store, expression, operation.type_id)),
 
 		&UnaryOperator::Cast { type_id: to } => Some(generator.generate_cast(context.type_store, expression, to)),
 
