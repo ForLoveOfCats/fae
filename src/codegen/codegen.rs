@@ -2,11 +2,12 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	ArrayLiteral, Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape,
-	IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StringLiteral, StructLiteral, TypeArguments,
-	UnaryOperation, UnaryOperator,
+	ArrayLiteral, BinaryOperation, Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId,
+	FunctionShape, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StringLiteral, StructLiteral,
+	TypeArguments, UnaryOperation, UnaryOperator,
 };
 use crate::frontend::lang_items::LangItems;
+use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeEntryKind, TypeStore};
 
 pub fn generate<'a, G: Generator>(
@@ -129,7 +130,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation),
 
-		ExpressionKind::BinaryOperation(_) => todo!("generate expression BinaryOperation"),
+		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, generator, operation),
 
 		ExpressionKind::SliceMutableToImmutable(conversion) => {
 			generate_mutable_slice_to_immutable(context, generator, conversion)
@@ -285,6 +286,34 @@ fn generate_unary_operation<G: Generator>(
 	}
 }
 
+fn generate_binary_operation<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	operation: &BinaryOperation,
+) -> Option<G::Binding> {
+	match operation.op {
+		BinaryOperator::Assign => {
+			let left = generate_expression(context, generator, &operation.left).unwrap();
+			let right = generate_expression(context, generator, &operation.right).unwrap();
+			generator.generate_assign(context.type_store, left, right);
+			return None;
+		}
+
+		BinaryOperator::Add => todo!("BinaryOperator::Add"),
+		BinaryOperator::Sub => todo!("BinaryOperator::Sub"),
+		BinaryOperator::Mul => todo!("BinaryOperator::Mul"),
+		BinaryOperator::Div => todo!("BinaryOperator::Div"),
+		BinaryOperator::Equals => todo!("BinaryOperator::Equals"),
+		BinaryOperator::NotEquals => todo!("BinaryOperator::NotEquals"),
+		BinaryOperator::GreaterThan => todo!("BinaryOperator::GreaterThan"),
+		BinaryOperator::GreaterThanEquals => todo!("BinaryOperator::GreaterThanEquals"),
+		BinaryOperator::LessThan => todo!("BinaryOperator::LessThan"),
+		BinaryOperator::LessThanEquals => todo!("BinaryOperator::LessThanEquals"),
+		BinaryOperator::LogicalAnd => todo!("BinaryOperator::LogicalAnd"),
+		BinaryOperator::LogicalOr => todo!("BinaryOperator::LogicalOr"),
+	}
+}
+
 fn generate_mutable_slice_to_immutable<G: Generator>(
 	context: &mut Context,
 	generator: &mut G,
@@ -295,7 +324,7 @@ fn generate_mutable_slice_to_immutable<G: Generator>(
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
 	let value = generate_expression(context, generator, &binding.expression);
-	generator.generate_binding(binding.readable_index, value);
+	generator.generate_binding(binding.readable_index, value, binding.type_id);
 }
 
 fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {

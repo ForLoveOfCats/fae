@@ -397,13 +397,15 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			};
 		}
 
-		let name = if let Some(export_attribute) = function_shape.export_attribute {
-			export_attribute.item.name
+		let (name, linkage) = if let Some(export_attribute) = function_shape.export_attribute {
+			(export_attribute.item.name, Some(Linkage::DLLExport))
+		} else if function_shape.is_main {
+			("fae_user_main", Some(Linkage::Private))
 		} else {
-			""
+			(function_shape.name.item, Some(Linkage::Private))
 		};
 
-		let llvm_function = module.add_function(name, fn_type, None);
+		let llvm_function = module.add_function(name, fn_type, linkage);
 		for attribute in &self.attribute_buffer {
 			llvm_function.add_attribute(inkwell::attributes::AttributeLoc::Param(attribute.index), attribute.attribute);
 		}

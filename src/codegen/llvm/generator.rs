@@ -143,7 +143,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 
 	state: State,
 	functions: Vec<Vec<Option<DefinedFunction<'ctx>>>>,
-	values: Vec<Option<Binding<'ctx>>>,
+	readables: Vec<Option<Binding<'ctx>>>,
 
 	_marker: std::marker::PhantomData<ABI>,
 }
@@ -165,7 +165,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 
 			state: State::InModule,
 			functions: Vec::new(),
-			values: Vec::new(),
+			readables: Vec::new(),
 
 			_marker: std::marker::PhantomData::default(),
 		}
@@ -275,8 +275,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			.expect("Should only be None for extern functions");
 		self.builder.position_at_end(entry_block);
 
-		self.values.clear();
-		self.values.extend_from_slice(&defined_function.initial_values);
+		self.readables.clear();
+		self.readables.extend_from_slice(&defined_function.initial_values);
 
 		let void_returning = function.return_type.is_void(type_store);
 		self.state = State::InFunction { void_returning };
@@ -416,7 +416,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
-		self.values[readable_index]
+		self.readables[readable_index]
 	}
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
@@ -592,10 +592,47 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Some(Binding { type_id: item_type, kind })
 	}
 
-	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>) {
-		let value_index = self.values.len();
-		self.values.push(value);
-		assert_eq!(value_index, readable_index);
+	fn generate_assign(&mut self, type_store: &TypeStore, left: Self::Binding, right: Self::Binding) {
+		let left = match left.kind {
+			BindingKind::Pointer { pointer, .. } => pointer,
+			BindingKind::Value(value) => unreachable!("{value:?}"),
+		};
+
+		match right.kind {
+			BindingKind::Value(value) => {
+				self.builder.build_store(left, value).unwrap();
+			}
+
+			BindingKind::Pointer { pointer: right_pointer, .. } => {
+				let layout = type_store.type_layout(right.type_id);
+				dbg!(layout);
+				let align = layout.alignment as u32;
+				let size = self.context.i64_type().const_int(layout.size as u64, false);
+				self.builder.build_memcpy(left, align, right_pointer, align, size).unwrap();
+			}
+		}
+	}
+
+	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId) {
+		assert_eq!(self.readables.len(), readable_index);
+		let Some(value) = value else {
+			self.readables.push(None);
+			return;
+		};
+
+		let (pointer, pointed_type) = match value.kind {
+			BindingKind::Value(value) => {
+				let alloca = self.builder.build_alloca(value.get_type(), "").unwrap();
+				self.builder.build_store(alloca, value).unwrap();
+				(alloca, value.get_type())
+			}
+
+			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
+		};
+
+		let kind = BindingKind::Pointer { pointer, pointed_type };
+		let binding = Binding { type_id, kind };
+		self.readables.push(Some(binding));
 	}
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {

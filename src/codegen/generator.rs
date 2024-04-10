@@ -75,7 +75,9 @@ pub trait Generator {
 		index_span: Span,
 	) -> Option<Self::Binding>;
 
-	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>);
+	fn generate_assign(&mut self, type_store: &TypeStore, left: Self::Binding, right: Self::Binding);
+
+	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId);
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);
 
