@@ -1873,6 +1873,14 @@ fn validate_unary_operation<'a>(
 	let type_id = expression.type_id;
 	let returns = expression.returns;
 
+	if matches!(op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
+		if type_id.is_untyped_integer(context.type_store) || type_id.is_untyped_decimal(context.type_store) {
+			let error = error!("Cannot take address of untyped numeral, try casting it to a concrete type first");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	}
+
 	match op {
 		UnaryOperator::Negate => {
 			if !type_id.is_numeric(context.type_store) {
