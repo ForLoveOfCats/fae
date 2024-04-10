@@ -332,6 +332,58 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Binding { type_id, kind }
 	}
 
+	fn generate_array_literal(
+		&mut self,
+		type_store: &TypeStore,
+		elements: &[Self::Binding],
+		element_type_id: TypeId,
+		slice_type_id: TypeId,
+	) -> Self::Binding {
+		assert!(elements.len() > 0);
+
+		let element_type = self
+			.llvm_types
+			.type_to_basic_type_enum(self.context, type_store, element_type_id);
+		let array_type = element_type.array_type(elements.len() as u32);
+		let alloca = self.builder.build_alloca(array_type, "").unwrap();
+
+		let zero = self.context.i64_type().const_int(0, false);
+		for (index, element) in elements.iter().enumerate() {
+			let index = self.context.i64_type().const_int(index as u64, false);
+			let pointer = unsafe { self.builder.build_gep(array_type, alloca, &[zero, index], "").unwrap() };
+			match element.kind {
+				BindingKind::Value(value) => {
+					self.builder.build_store(pointer, value).unwrap();
+				}
+
+				BindingKind::Pointer { pointer: value_pointer, .. } => {
+					let layout = type_store.type_layout(element_type_id);
+					let align = layout.alignment as u32;
+					let size = self.context.i64_type().const_int(layout.size as u64, false);
+					self.builder.build_memcpy(pointer, align, value_pointer, align, size).unwrap();
+				}
+			}
+		}
+
+		let slice_type = self.llvm_types.slice_struct;
+		let slice_alloca = self.builder.build_alloca(slice_type, "").unwrap();
+
+		let pointer_pointer = self.builder.build_struct_gep(slice_type, slice_alloca, 0, "").unwrap();
+		let pointer_value = BasicValueEnum::PointerValue(alloca);
+		self.builder.build_store(pointer_pointer, pointer_value).unwrap();
+
+		let len_pointer = self.builder.build_struct_gep(slice_type, slice_alloca, 1, "").unwrap();
+		let len = self.context.i64_type().const_int(elements.len() as u64, false);
+		self.builder.build_store(len_pointer, BasicValueEnum::IntValue(len)).unwrap();
+
+		let pointed_type = self
+			.llvm_types
+			.type_to_basic_type_enum(self.context, type_store, slice_type_id);
+
+		let kind = BindingKind::Pointer { pointer: slice_alloca, pointed_type };
+		Binding { type_id: slice_type_id, kind }
+	}
+
 	fn generate_struct_literal(
 		&mut self,
 		type_id: TypeId,

@@ -34,6 +34,14 @@ pub trait Generator {
 
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding;
 
+	fn generate_array_literal(
+		&mut self,
+		type_store: &TypeStore,
+		elements: &[Self::Binding],
+		element_type_id: TypeId,
+		slice_type_id: TypeId,
+	) -> Self::Binding;
+
 	fn generate_struct_literal(
 		&mut self,
 		type_id: TypeId,

@@ -1,14 +1,16 @@
 import fae::libc::printf
-import fae::stdout::print_u8, print_f32, print_newline
-
-fn number(): i32 {
-	return -42
-}
+import fae::stdout::print_u8, print_i32, print_newline
 
 fn main() {
-	printf("Hello there: %d, %s\n".pointer, number(), "varargs!".pointer)
-	print_u8("Abc"[0])
+	let a = [1.(i32), 2, 3, 4, 5]
+	print_i32(a[0])
 	print_newline()
-	print_f32(4)
+	print_i32(a[1])
+	print_newline()
+	print_i32(a[2])
+	print_newline()
+	print_i32(a[3])
+	print_newline()
+	print_i32(a[4])
 	print_newline()
 }

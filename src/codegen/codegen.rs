@@ -2,8 +2,9 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IntegerValue, Read,
-	Return, StatementKind, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
+	ArrayLiteral, Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape,
+	IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StringLiteral, StructLiteral, TypeArguments,
+	UnaryOperation, UnaryOperator,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::type_store::{TypeEntryKind, TypeStore};
@@ -116,7 +117,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
 
-		ExpressionKind::ArrayLiteral(_) => todo!("generate expression ArrayLiteral"),
+		ExpressionKind::ArrayLiteral(literal) => generate_array_literal(context, generator, literal),
 
 		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal),
 
@@ -130,7 +131,9 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::BinaryOperation(_) => todo!("generate expression BinaryOperation"),
 
-		ExpressionKind::SliceMutableToImmutable(_) => todo!("generate expression SliceMutableToImmutable"),
+		ExpressionKind::SliceMutableToImmutable(conversion) => {
+			generate_mutable_slice_to_immutable(context, generator, conversion)
+		}
 
 		ExpressionKind::Void => None,
 
@@ -146,8 +149,23 @@ fn generate_decimal_value<G: Generator>(context: &Context, generator: &mut G, va
 	Some(generator.generate_decimal_value(context.type_store, value.collapsed(), value.value()))
 }
 
-fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, value: &StringLiteral) -> Option<G::Binding> {
-	Some(generator.generate_string_literal(context.type_store, &value.value))
+fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, literal: &StringLiteral) -> Option<G::Binding> {
+	Some(generator.generate_string_literal(context.type_store, &literal.value))
+}
+
+fn generate_array_literal<G: Generator>(context: &mut Context, generator: &mut G, literal: &ArrayLiteral) -> Option<G::Binding> {
+	let mut elements = Vec::with_capacity(literal.expressions.len());
+	for expression in &literal.expressions {
+		if let Some(step) = generate_expression(context, generator, expression) {
+			elements.push(step);
+		}
+	}
+
+	if context.type_store.type_layout(literal.pointee_type_id).size <= 0 {
+		todo!("Generate a non-null zero len slice");
+	}
+
+	Some(generator.generate_array_literal(context.type_store, &elements, literal.pointee_type_id, literal.type_id))
 }
 
 fn generate_struct_literal<G: Generator>(
@@ -265,6 +283,14 @@ fn generate_unary_operation<G: Generator>(
 			)
 		}
 	}
+}
+
+fn generate_mutable_slice_to_immutable<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	conversion: &SliceMutableToImmutable,
+) -> Option<G::Binding> {
+	Some(generate_expression(context, generator, &conversion.expression).unwrap())
 }
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
