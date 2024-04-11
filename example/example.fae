@@ -1,82 +1,11 @@
-import fae::stdout::print_i64, print_string, print_newline
-
-extern "realloc"
-fn realloc(ptr: &mut u8, new_size: usize): &mut u8
-
-extern "free"
-fn free(ptr: &mut u8)
-
-generic T
-fn null_reference(): &mut T {
-	return 0.(&mut T)
+struct Contains {
+	a: bool
 }
 
-generic T
-struct List {
-	ptr: &mut T
-	length: i64
-	capacity: i64
-}
-
-generic T
-fn list_new(): List<T> {
-	return List<T> {
-		ptr: null_reference<T>()
-		length: 0
-		capacity: 0
-	}
-}
-
-generic T
-fn list_push(list: &mut List<T>, item: T) {
-	// I really want auto-deref for pointers
-	if list.*.length + 1 >= list.*.capacity {
-		mut new_capacity = list.*.capacity * 2
-		if new_capacity == 0 {
-			new_capacity = 4
-		}
-
-		let new_size = size_of<T>() * new_capacity
-		let ptr = realloc(list.*.ptr.(&mut u8), new_size.(usize))
-		if ptr.(usize) != list.*.ptr.(usize) {
-			free(list.*.ptr.(&mut u8))
-		}
-
-		list.*.ptr = ptr.(&mut T)
-		list.*.capacity = new_capacity
-	}
-
-	mut offset = list.*.ptr.(usize)
-	offset = offset + size_of<T>().(usize) * list.*.length.(usize)
-	offset.(&mut T).* = item
-
-	list.*.length = list.*.length + 1
-}
-
-generic T
-fn list_get(list: &mut List<T>, index: i64): &mut T {
-	if index < 0 or list.*.length <= index {
-		// such a scuffed panic lmao
-		print_string("Index ")
-		print_i64(index)
-		print_string(" out of range of list with length ")
-		print_i64(list.*.length)
-		print_newline()
-		null_reference<u8>().* = 0
-	}
-
-	mut offset = list.*.ptr.(usize)
-	offset = offset + size_of<T>().(usize) * index.(usize)
-	return offset.(&mut T)
+fn function(a: i64, contains: Contains) {
+	(a == 14) and contains.a
 }
 
 fn main() {
-	// holy hell I want some proper type inferrence
-	mut list = list_new<i64>()
-	list_push<i64>(list.&mut, 42)
-	list_push<i64>(list.&mut, 69)
-	print_i64(list_get<i64>(list.&mut, 1).*)
-	print_newline()
-	print_i64(list_get<i64>(list.&mut, 0).*)
-	print_newline()
+	function(1, Contains { a: false })
 }

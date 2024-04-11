@@ -102,7 +102,7 @@ impl<'ctx> LLVMTypes<'ctx> {
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
-				PrimativeKind::Bool => BasicTypeEnum::IntType(context.i8_type()),
+				PrimativeKind::Bool => BasicTypeEnum::IntType(context.bool_type()),
 
 				PrimativeKind::Numeric(numeric_kind) => match numeric_kind {
 					NumericKind::I8 | NumericKind::U8 => BasicTypeEnum::IntType(context.i8_type()),
@@ -355,7 +355,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_boolean_literal(&mut self, type_store: &TypeStore, literal: bool) -> Self::Binding {
-		let value = self.context.i8_type().const_int(literal as u64, false);
+		let value = self.context.bool_type().const_int(literal as u64, false);
 		let kind = BindingKind::Value(BasicValueEnum::IntValue(value));
 		Binding { type_id: type_store.bool_type_id(), kind }
 	}
@@ -705,23 +705,31 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let left = left.to_value(&mut self.builder);
 		let right = right.to_value(&mut self.builder);
+
+		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr) {
+			let mut left = left.into_int_value();
+			if left.get_type().get_bit_width() > 1 {
+				left = self.builder.build_int_truncate(left, self.context.bool_type(), "").unwrap();
+			}
+
+			let mut right = right.into_int_value();
+			if right.get_type().get_bit_width() > 1 {
+				right = self.builder.build_int_truncate(right, self.context.bool_type(), "").unwrap();
+			}
+
+			assert_eq!(left.get_type(), right.get_type());
+
+			let result = match op {
+				BinaryOperator::LogicalAnd => self.builder.build_and(left, right, "").unwrap(),
+				BinaryOperator::LogicalOr => self.builder.build_or(left, right, "").unwrap(),
+				_ => unreachable!("{op:?}"),
+			};
+
+			let kind = BindingKind::Value(BasicValueEnum::IntValue(result));
+			return Some(Binding { type_id: result_type_id, kind });
+		}
+
 		assert_eq!(left.get_type(), right.get_type());
-
-		if let BinaryOperator::LogicalAnd = op {
-			let left = left.into_int_value();
-			let right = right.into_int_value();
-			let result = self.builder.build_and(left, right, "").unwrap();
-			let kind = BindingKind::Value(BasicValueEnum::IntValue(result));
-			return Some(Binding { type_id: result_type_id, kind });
-		}
-
-		if let BinaryOperator::LogicalOr = op {
-			let left = left.into_int_value();
-			let right = right.into_int_value();
-			let result = self.builder.build_or(left, right, "").unwrap();
-			let kind = BindingKind::Value(BasicValueEnum::IntValue(result));
-			return Some(Binding { type_id: result_type_id, kind });
-		}
 
 		let value = if left.is_int_value() {
 			let left = left.into_int_value();

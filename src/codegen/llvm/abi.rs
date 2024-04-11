@@ -119,6 +119,12 @@ impl<'ctx> SysvAbi<'ctx> {
 					buffer.push(BasicTypeEnum::IntType(llvm_type));
 				}
 
+				sysv_abi::ClassKind::Boolean => {
+					assert_eq!(class.size, 1);
+					let llvm_type = context.bool_type();
+					buffer.push(BasicTypeEnum::IntType(llvm_type));
+				}
+
 				sysv_abi::ClassKind::SSE | sysv_abi::ClassKind::SSEUp => {
 					let llvm_type = match class.size {
 						2 => context.f16_type(),
@@ -167,6 +173,12 @@ impl<'ctx> SysvAbi<'ctx> {
 						8 => context.i64_type(),
 						unknown_size => panic!("{unknown_size}"),
 					};
+					self.parameter_type_buffer.push(BasicMetadataTypeEnum::IntType(llvm_type));
+				}
+
+				sysv_abi::ClassKind::Boolean => {
+					assert_eq!(class.size, 1);
+					let llvm_type = context.bool_type();
 					self.parameter_type_buffer.push(BasicMetadataTypeEnum::IntType(llvm_type));
 				}
 

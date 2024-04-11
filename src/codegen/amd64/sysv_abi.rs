@@ -16,6 +16,7 @@ impl std::default::Default for Class {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClassKind {
 	Integer,
+	Boolean,
 	Pointer,
 	SSE,
 	SSECombine,
@@ -42,14 +43,14 @@ pub fn classification_buffer() -> [Class; 8] {
 }
 
 // Huge thanks to the Zig selfhost compiler for making the spec algorithm make sense
-pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8], type_id: TypeId) -> &'buf [Class] {
+pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8], type_id: TypeId) -> &'buf mut [Class] {
 	let entry = type_store.type_entries[type_id.index()];
 
 	match entry.kind {
 		TypeEntryKind::BuiltinType { kind } => match kind {
 			PrimativeKind::Bool => {
-				buffer[0] = Class { kind: ClassKind::Integer, size: 1 };
-				return &buffer[..1];
+				buffer[0] = Class { kind: ClassKind::Boolean, size: 1 };
+				return &mut buffer[..1];
 			}
 
 			PrimativeKind::Numeric(kind) => {
@@ -64,7 +65,7 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				};
 
 				buffer[0] = class;
-				return &buffer[..1];
+				return &mut buffer[..1];
 			}
 
 			PrimativeKind::AnyCollapse | PrimativeKind::Void | PrimativeKind::UntypedInteger | PrimativeKind::UntypedDecimal => {
@@ -79,7 +80,7 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 			// Fae does not currently support unaligned/packed struct fields, so we don't need to worry about that
 			if aggregate_layout.size > 8 * 8 {
 				buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-				return &buffer[..1];
+				return &mut buffer[..1];
 			}
 
 			let user_type = &type_store.user_types[shape_index];
@@ -105,6 +106,9 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				let mut field_buffer = classification_buffer();
 				let field_classes = classify_type(type_store, &mut field_buffer, field.type_id);
 				assert!(field_classes[0].kind != ClassKind::NoClass, "{:?}", field_classes[0]);
+				if field_classes[0].kind == ClassKind::Boolean {
+					field_classes[0].kind = ClassKind::Integer;
+				}
 
 				if field_layout.size + combine_size <= 8 {
 					// Combine with prior fields to make an eightbyte
@@ -182,13 +186,13 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				// (a) If one of the classes is MEMORY, the whole argument is passed in memory.
 				if class.kind == ClassKind::Memory {
 					buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-					return &buffer[..1];
+					return &mut buffer[..1];
 				}
 
 				// (b) If X87UP is not preceded by X87, the whole argument is passed in memory.
 				if class.kind == ClassKind::X87Up && index > 0 && buffer[index - 1].kind != ClassKind::X87 {
 					buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-					return &buffer[..1];
+					return &mut buffer[..1];
 				}
 
 				contains_sse_up |= class.kind == ClassKind::SSEUp;
@@ -199,7 +203,7 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 			let first_eightbyte_sse = buffer[0].kind == ClassKind::SSE;
 			if aggregate_layout.size > 16 && (!first_eightbyte_sse || !contains_sse_up) {
 				buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-				return &buffer[..1];
+				return &mut buffer[..1];
 			}
 
 			// (d) If SSEUP is not preceded by SSE or SSEUP, it is converted to SSE.
@@ -221,18 +225,18 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				}
 			}
 
-			return &buffer[..contents_len];
+			return &mut buffer[..contents_len];
 		}
 
 		TypeEntryKind::Pointer { .. } => {
 			buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
-			return &buffer[..1];
+			return &mut buffer[..1];
 		}
 
 		TypeEntryKind::Slice(_) => {
 			buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
 			buffer[1] = Class { kind: ClassKind::Integer, size: 8 };
-			return &buffer[..2];
+			return &mut buffer[..2];
 		}
 
 		TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
