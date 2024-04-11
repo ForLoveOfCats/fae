@@ -546,12 +546,46 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				let constructed = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id);
 				let information = constructed.unwrap();
 
+				// Some numeric varargs need to be widened before passing
 				if let ParameterInformation::BareValue { type_id } = information {
-					// TODO: Add f16 once added to the language
-					if type_id.numeric_kind(type_store) == Some(NumericKind::F32) {
-						let float = argument.to_value(builder).into_float_value();
-						let double = builder.build_float_cast(float, context.f64_type(), "").unwrap();
-						let argument = BasicMetadataValueEnum::FloatValue(double);
+					if let Some(numeric_kind) = type_id.numeric_kind(type_store) {
+						match numeric_kind {
+							// Sign extend
+							NumericKind::I8 | NumericKind::I16 => {
+								let int = argument.to_value(builder).into_int_value();
+								let widened = builder.build_int_s_extend(int, context.i32_type(), "").unwrap();
+								let argument = BasicMetadataValueEnum::IntValue(widened);
+								self.argument_value_buffer.push(argument);
+								continue;
+							}
+
+							// Zero extend
+							NumericKind::U8 | NumericKind::U16 => {
+								let int = argument.to_value(builder).into_int_value();
+								let widened = builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
+								let argument = BasicMetadataValueEnum::IntValue(widened);
+								self.argument_value_buffer.push(argument);
+								continue;
+							}
+
+							// TODO: Add f16 once added to the language
+							NumericKind::F32 => {
+								let float = argument.to_value(builder).into_float_value();
+								let double = builder.build_float_cast(float, context.f64_type(), "").unwrap();
+								let argument = BasicMetadataValueEnum::FloatValue(double);
+								self.argument_value_buffer.push(argument);
+								continue;
+							}
+
+							_ => {}
+						}
+					}
+
+					// Zero extend
+					if type_id.is_bool(type_store) {
+						let int = argument.to_value(builder).into_int_value();
+						let widened = builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
+						let argument = BasicMetadataValueEnum::IntValue(widened);
 						self.argument_value_buffer.push(argument);
 						continue;
 					}

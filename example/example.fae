@@ -1,11 +1,5 @@
-struct Contains {
-	a: bool
-}
-
-fn function(a: i64, contains: Contains) {
-	(a == 14) and contains.a
-}
+import fae::libc::printf
 
 fn main() {
-	function(1, Contains { a: false })
+	printf("%d\n".pointer, true)
 }

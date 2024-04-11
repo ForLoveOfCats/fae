@@ -34,6 +34,10 @@ impl TypeId {
 		type_store.direct_match(self, type_store.decimal_type_id)
 	}
 
+	pub fn is_bool(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.bool_type_id)
+	}
+
 	pub fn is_numeric(self, type_store: &TypeStore) -> bool {
 		let range = type_store.integer_type_id.entry..=type_store.f64_type_id.entry;
 		range.contains(&self.entry) || self.is_any_collapse(type_store)
