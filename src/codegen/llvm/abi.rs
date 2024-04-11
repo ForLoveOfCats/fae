@@ -376,7 +376,18 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			context.void_type().fn_type(&self.parameter_type_buffer, varargs)
 		} else {
 			if let [llvm_type] = self.return_type_buffer.as_slice() {
-				llvm_type.fn_type(&self.parameter_type_buffer, varargs)
+				let is_aggregate = if let FunctionReturnType::ByValue { value_type } = return_type {
+					value_type.is_struct_type()
+				} else {
+					false
+				};
+
+				if is_aggregate {
+					let llvm_type = context.struct_type(&self.return_type_buffer, false);
+					llvm_type.fn_type(&self.parameter_type_buffer, varargs)
+				} else {
+					llvm_type.fn_type(&self.parameter_type_buffer, varargs)
+				}
 			} else {
 				let llvm_type = context.struct_type(&self.return_type_buffer, false);
 				llvm_type.fn_type(&self.parameter_type_buffer, varargs)

@@ -40,10 +40,6 @@ fn main() {
 
 	print_cmp(void == void)
 	print_cmp(void != void)
-	print_cmp(void > void)
-	print_cmp(void >= void)
-	print_cmp(void < void)
-	print_cmp(void <= void)
 }
 
 fn print_cmp(result: bool) {

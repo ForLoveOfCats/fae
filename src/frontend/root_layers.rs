@@ -93,7 +93,6 @@ impl<'a> RootLayers<'a> {
 
 			&PathSegments::MainModule { symbol_name } => {
 				let layer = &self.layers[self.root_layer_index];
-				// dbg!(&self.layers);
 				layer.lookup_root_symbol(messages, &[symbol_name])
 			}
 		}

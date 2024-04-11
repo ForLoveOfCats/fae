@@ -2,6 +2,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
+use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeId, TypeStore};
 
 /*
@@ -22,11 +23,15 @@ a significant IR flattening to make it cheaper to construct and interpret.
 pub trait Generator {
 	type Binding: Clone + Copy;
 
-	fn register_type_descriptions(&mut self, type_store: &mut TypeStore);
+	fn register_type_descriptions(&mut self, type_store: &TypeStore);
 
 	fn register_functions(&mut self, type_store: &TypeStore, function_store: &FunctionStore);
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId);
+
+	fn start_block(&mut self);
+
+	fn end_block(&mut self);
 
 	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self));
 
@@ -83,9 +88,20 @@ pub trait Generator {
 
 	fn generate_assign(&mut self, type_store: &TypeStore, left: Self::Binding, right: Self::Binding);
 
+	fn generate_binary_operation(
+		&mut self,
+		type_store: &TypeStore,
+		left: Self::Binding,
+		right: Self::Binding,
+		op: BinaryOperator,
+		source_type_id: TypeId,
+		result_type_id: TypeId,
+	) -> Option<Self::Binding>;
+
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId);
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);
 
+	// TODO: Remove this in favor of a "end_function"
 	fn finalize_generator(&mut self);
 }

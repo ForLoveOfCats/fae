@@ -8,7 +8,7 @@ use crate::frontend::ir::{
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::tree::BinaryOperator;
-use crate::frontend::type_store::{TypeEntryKind, TypeStore};
+use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore};
 
 pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
@@ -27,6 +27,19 @@ pub fn generate<'a, G: Generator>(
 		}
 
 		for specialization_index in 0..shape.specializations.len() {
+			let specialization = &shape.specializations[specialization_index];
+			if specialization.generic_poisioned {
+				continue;
+			}
+
+			for type_argument in specialization.type_arguments.ids() {
+				let entry = &type_store.type_entries[type_argument.index()];
+				if entry.generic_poisoned {
+					panic!("The legacy C backend had this, does it ever get hit?")
+					// continue;
+				}
+			}
+
 			let function_id = FunctionId { function_shape_index, specialization_index };
 			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
 		}
@@ -45,7 +58,22 @@ struct Context<'a, 'b> {
 	function_id: FunctionId,
 }
 
-impl<'a, 'b> Context<'a, 'b> {}
+impl<'a, 'b> Context<'a, 'b> {
+	fn specialize_type_id(&mut self, type_id: TypeId) -> TypeId {
+		let mut generic_usages = Vec::new();
+		let type_id = self.type_store.specialize_with_function_generics(
+			self.messages,
+			self.function_store,
+			self.module_path,
+			&mut generic_usages,
+			self.function_id.function_shape_index,
+			self.function_type_arguments,
+			type_id,
+		);
+		assert_eq!(generic_usages.len(), 0);
+		type_id
+	}
+}
 
 pub fn generate_function<'a, G: Generator>(
 	messages: &mut Messages<'a>,
@@ -88,6 +116,8 @@ pub fn generate_function<'a, G: Generator>(
 
 // TODO: Handle scope alloc lifetime
 fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {
+	generator.start_block();
+
 	for statement in &block.statements {
 		match &statement.kind {
 			StatementKind::Expression(expression) => {
@@ -101,6 +131,8 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 			StatementKind::Return(statement) => generate_return(context, generator, statement),
 		};
 	}
+
+	generator.end_block();
 }
 
 fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, expression: &Expression) -> Option<G::Binding> {
@@ -179,11 +211,14 @@ fn generate_array_literal<G: Generator>(context: &mut Context, generator: &mut G
 		}
 	}
 
-	if context.type_store.type_layout(literal.pointee_type_id).size <= 0 {
+	let pointee_type_id = context.specialize_type_id(literal.pointee_type_id);
+	let type_id = context.specialize_type_id(literal.type_id);
+
+	if context.type_store.type_layout(pointee_type_id).size <= 0 {
 		todo!("Generate a non-null zero len slice");
 	}
 
-	Some(generator.generate_array_literal(context.type_store, &elements, literal.pointee_type_id, literal.type_id))
+	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id))
 }
 
 fn generate_struct_literal<G: Generator>(
@@ -199,18 +234,7 @@ fn generate_struct_literal<G: Generator>(
 		}
 	}
 
-	let mut generic_usages = Vec::new();
-	let type_id = context.type_store.specialize_with_function_generics(
-		context.messages,
-		context.function_store,
-		context.module_path,
-		&mut generic_usages,
-		context.function_id.function_shape_index,
-		context.function_type_arguments,
-		literal.type_id,
-	);
-	assert_eq!(generic_usages.len(), 0);
-
+	let type_id = context.specialize_type_id(literal.type_id);
 	let layout = context.type_store.type_layout(type_id);
 	if layout.size <= 0 {
 		assert_eq!(fields.len(), 0);
@@ -273,6 +297,7 @@ fn generate_unary_operation<G: Generator>(
 	generator: &mut G,
 	operation: &UnaryOperation,
 ) -> Option<G::Binding> {
+	let type_id = context.specialize_type_id(operation.type_id);
 	let expression = generate_expression(context, generator, &operation.expression)?;
 
 	match &operation.op {
@@ -280,25 +305,19 @@ fn generate_unary_operation<G: Generator>(
 
 		UnaryOperator::Invert => todo!("UnaryOperator::Invert"),
 
-		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => {
-			Some(generator.generate_address_of(expression, operation.type_id))
+		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => Some(generator.generate_address_of(expression, type_id)),
+
+		UnaryOperator::Dereference => Some(generator.generate_dereference(context.type_store, expression, type_id)),
+
+		&UnaryOperator::Cast { type_id: to } => {
+			let to = context.specialize_type_id(to);
+			Some(generator.generate_cast(context.type_store, expression, to))
 		}
-
-		UnaryOperator::Dereference => Some(generator.generate_dereference(context.type_store, expression, operation.type_id)),
-
-		&UnaryOperator::Cast { type_id: to } => Some(generator.generate_cast(context.type_store, expression, to)),
 
 		UnaryOperator::Index { index_expression } => {
 			let span = index_expression.span;
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			generator.generate_slice_index(
-				context.lang_items,
-				context.type_store,
-				operation.type_id,
-				expression,
-				index_expression,
-				span,
-			)
+			generator.generate_slice_index(context.lang_items, context.type_store, type_id, expression, index_expression, span)
 		}
 	}
 }
@@ -308,27 +327,28 @@ fn generate_binary_operation<G: Generator>(
 	generator: &mut G,
 	operation: &BinaryOperation,
 ) -> Option<G::Binding> {
-	match operation.op {
-		BinaryOperator::Assign => {
-			let left = generate_expression(context, generator, &operation.left).unwrap();
-			let right = generate_expression(context, generator, &operation.right).unwrap();
-			generator.generate_assign(context.type_store, left, right);
-			return None;
-		}
+	let left = generate_expression(context, generator, &operation.left);
+	let right = generate_expression(context, generator, &operation.right);
 
-		BinaryOperator::Add => todo!("BinaryOperator::Add"),
-		BinaryOperator::Sub => todo!("BinaryOperator::Sub"),
-		BinaryOperator::Mul => todo!("BinaryOperator::Mul"),
-		BinaryOperator::Div => todo!("BinaryOperator::Div"),
-		BinaryOperator::Equals => todo!("BinaryOperator::Equals"),
-		BinaryOperator::NotEquals => todo!("BinaryOperator::NotEquals"),
-		BinaryOperator::GreaterThan => todo!("BinaryOperator::GreaterThan"),
-		BinaryOperator::GreaterThanEquals => todo!("BinaryOperator::GreaterThanEquals"),
-		BinaryOperator::LessThan => todo!("BinaryOperator::LessThan"),
-		BinaryOperator::LessThanEquals => todo!("BinaryOperator::LessThanEquals"),
-		BinaryOperator::LogicalAnd => todo!("BinaryOperator::LogicalAnd"),
-		BinaryOperator::LogicalOr => todo!("BinaryOperator::LogicalOr"),
-	}
+	let Some(left) = left else {
+		assert!(right.is_none());
+
+		let value = match operation.op {
+			BinaryOperator::Assign => return None,
+
+			BinaryOperator::Equals => true,
+			BinaryOperator::NotEquals => false,
+
+			op => unreachable!("{op:?}"),
+		};
+
+		return Some(generator.generate_boolean_literal(context.type_store, value));
+	};
+
+	let right = right.unwrap();
+	let source_type_id = context.specialize_type_id(operation.left.type_id);
+	let result_type_id = context.specialize_type_id(operation.type_id);
+	generator.generate_binary_operation(context.type_store, left, right, operation.op, source_type_id, result_type_id)
 }
 
 fn generate_mutable_slice_to_immutable<G: Generator>(
@@ -341,7 +361,8 @@ fn generate_mutable_slice_to_immutable<G: Generator>(
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
 	let value = generate_expression(context, generator, &binding.expression);
-	generator.generate_binding(binding.readable_index, value, binding.type_id);
+	let type_id = context.specialize_type_id(binding.type_id);
+	generator.generate_binding(binding.readable_index, value, type_id);
 }
 
 fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {
@@ -368,7 +389,7 @@ fn generate_intrinsic<G: Generator>(
 	match call.name {
 		"size_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len(), 1);
-			let type_id = specialization.type_arguments.explicit_ids()[0];
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
 			let size = context.type_store.type_layout(type_id).size as i128;
 			let integer = IntegerValue::new_collapsed(size, span, context.type_store.i64_type_id());
 			generate_integer_value(context, generator, &integer)
@@ -376,7 +397,7 @@ fn generate_intrinsic<G: Generator>(
 
 		"alignment_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len(), 1);
-			let type_id = specialization.type_arguments.explicit_ids()[0];
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
 			let alignment = context.type_store.type_layout(type_id).alignment as i128;
 			let integer = IntegerValue::new_collapsed(alignment, span, context.type_store.i64_type_id());
 			generate_integer_value(context, generator, &integer)

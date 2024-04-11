@@ -739,7 +739,7 @@ fn generate_binary_operation(context: &mut Context, operation: &BinaryOperation,
 
 	if operation.op == BinaryOperator::Assign {
 		writeln!(output, "{left_step} = {right_step};")?;
-		return Ok(Some(left_step));
+		return Ok(None);
 	}
 
 	if !generate_type_id(context, operation.type_id, output)? {

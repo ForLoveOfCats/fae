@@ -4,7 +4,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicType, BasicTypeEnum, PointerType, StructType};
 use inkwell::values::{BasicValueEnum, PointerValue};
-use inkwell::{AddressSpace, IntPredicate};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
@@ -12,6 +12,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
+use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
@@ -132,6 +133,10 @@ impl<'ctx> LLVMTypes<'ctx> {
 	}
 }
 
+struct BlockFrame {
+	intial_readables_len: usize,
+}
+
 pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
@@ -142,6 +147,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 	llvm_types: LLVMTypes<'ctx>,
 
 	state: State,
+	block_frames: Vec<BlockFrame>,
 	functions: Vec<Vec<Option<DefinedFunction<'ctx>>>>,
 	readables: Vec<Option<Binding<'ctx>>>,
 
@@ -164,6 +170,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			llvm_types,
 
 			state: State::InModule,
+			block_frames: Vec::new(),
 			functions: Vec::new(),
 			readables: Vec::new(),
 
@@ -195,7 +202,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	type Binding = Binding<'ctx>;
 
-	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
+	fn register_type_descriptions(&mut self, type_store: &TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
 		for shape in &type_store.user_types {
@@ -265,6 +272,16 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		}
 	}
 
+	fn start_block(&mut self) {
+		let frame = BlockFrame { intial_readables_len: self.readables.len() };
+		self.block_frames.push(frame);
+	}
+
+	fn end_block(&mut self) {
+		let frame = self.block_frames.pop().expect("Every end must match a start");
+		self.readables.truncate(frame.intial_readables_len);
+	}
+
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId) {
 		self.finalize_function_if_in_function();
 
@@ -288,7 +305,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let following_block = self.context.insert_basic_block_after(original_block, "");
 
 		let condition = condition.to_value(&mut self.builder).into_int_value();
-		let zero = self.context.i8_type().const_zero();
+		let zero = condition.get_type().const_zero();
 		let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
 		self.builder
 			.build_conditional_branch(flag, if_block, following_block)
@@ -416,15 +433,17 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		specialization_index: usize,
 		fields: &[Self::Binding],
 	) -> Self::Binding {
-		// TODO: Avoid this creating this vec every time
-		let mut values = Vec::with_capacity(fields.len());
-		for field in fields {
-			values.push(field.to_value(&mut self.builder));
+		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].unwrap();
+
+		let alloca = self.builder.build_alloca(struct_type, "").unwrap();
+		for (index, field) in fields.iter().enumerate() {
+			let value = field.to_value(&mut self.builder);
+			let field_pointer = self.builder.build_struct_gep(struct_type, alloca, index as u32, "").unwrap();
+			self.builder.build_store(field_pointer, value).unwrap();
 		}
 
-		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].unwrap();
-		let struct_value = struct_type.const_named_struct(&values);
-		let kind = BindingKind::Value(BasicValueEnum::StructValue(struct_value));
+		let pointed_type = BasicTypeEnum::StructType(struct_type);
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type };
 		Binding { type_id, kind }
 	}
 
@@ -646,12 +665,204 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 			BindingKind::Pointer { pointer: right_pointer, .. } => {
 				let layout = type_store.type_layout(right.type_id);
-				dbg!(layout);
 				let align = layout.alignment as u32;
 				let size = self.context.i64_type().const_int(layout.size as u64, false);
 				self.builder.build_memcpy(left, align, right_pointer, align, size).unwrap();
 			}
 		}
+	}
+
+	fn generate_binary_operation(
+		&mut self,
+		type_store: &TypeStore,
+		left: Self::Binding,
+		right: Self::Binding,
+		op: BinaryOperator,
+		source_type_id: TypeId,
+		result_type_id: TypeId,
+	) -> Option<Self::Binding> {
+		if let BinaryOperator::Assign = op {
+			let left = match left.kind {
+				BindingKind::Pointer { pointer, .. } => pointer,
+				BindingKind::Value(value) => unreachable!("{value:?}"),
+			};
+
+			match right.kind {
+				BindingKind::Value(value) => {
+					self.builder.build_store(left, value).unwrap();
+				}
+
+				BindingKind::Pointer { pointer: right_pointer, .. } => {
+					let layout = type_store.type_layout(right.type_id);
+					let align = layout.alignment as u32;
+					let size = self.context.i64_type().const_int(layout.size as u64, false);
+					self.builder.build_memcpy(left, align, right_pointer, align, size).unwrap();
+				}
+			}
+
+			return None;
+		}
+
+		let left = left.to_value(&mut self.builder);
+		let right = right.to_value(&mut self.builder);
+		assert_eq!(left.get_type(), right.get_type());
+
+		if let BinaryOperator::LogicalAnd = op {
+			let left = left.into_int_value();
+			let right = right.into_int_value();
+			let result = self.builder.build_and(left, right, "").unwrap();
+			let kind = BindingKind::Value(BasicValueEnum::IntValue(result));
+			return Some(Binding { type_id: result_type_id, kind });
+		}
+
+		if let BinaryOperator::LogicalOr = op {
+			let left = left.into_int_value();
+			let right = right.into_int_value();
+			let result = self.builder.build_or(left, right, "").unwrap();
+			let kind = BindingKind::Value(BasicValueEnum::IntValue(result));
+			return Some(Binding { type_id: result_type_id, kind });
+		}
+
+		let value = if left.is_int_value() {
+			let left = left.into_int_value();
+			let right = right.into_int_value();
+
+			use IntPredicate::*;
+			match op {
+				BinaryOperator::Add => {
+					let int = self.builder.build_int_add(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::Sub => {
+					let int = self.builder.build_int_sub(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::Mul => {
+					let int = self.builder.build_int_mul(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::Div => {
+					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_int_signed_div(left, right, "").unwrap()
+					} else {
+						self.builder.build_int_unsigned_div(left, right, "").unwrap()
+					};
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::Equals => {
+					let result = self.builder.build_int_compare(EQ, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::NotEquals => {
+					let result = self.builder.build_int_compare(NE, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::GreaterThan => {
+					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_int_compare(SGT, left, right, "").unwrap()
+					} else {
+						self.builder.build_int_compare(UGT, left, right, "").unwrap()
+					};
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::GreaterThanEquals => {
+					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_int_compare(SGE, left, right, "").unwrap()
+					} else {
+						self.builder.build_int_compare(UGE, left, right, "").unwrap()
+					};
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::LessThan => {
+					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_int_compare(SLT, left, right, "").unwrap()
+					} else {
+						self.builder.build_int_compare(ULT, left, right, "").unwrap()
+					};
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::LessThanEquals => {
+					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_int_compare(SLE, left, right, "").unwrap()
+					} else {
+						self.builder.build_int_compare(ULE, left, right, "").unwrap()
+					};
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::Assign | BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => unreachable!(),
+			}
+		} else {
+			let left = left.into_float_value();
+			let right = right.into_float_value();
+
+			use FloatPredicate::*;
+			match op {
+				BinaryOperator::Add => {
+					let float = self.builder.build_float_add(left, right, "").unwrap();
+					BasicValueEnum::FloatValue(float)
+				}
+
+				BinaryOperator::Sub => {
+					let float = self.builder.build_float_sub(left, right, "").unwrap();
+					BasicValueEnum::FloatValue(float)
+				}
+
+				BinaryOperator::Mul => {
+					let float = self.builder.build_float_mul(left, right, "").unwrap();
+					BasicValueEnum::FloatValue(float)
+				}
+
+				BinaryOperator::Div => {
+					let float = self.builder.build_float_div(left, right, "").unwrap();
+					BasicValueEnum::FloatValue(float)
+				}
+
+				BinaryOperator::Equals => {
+					let result = self.builder.build_float_compare(OEQ, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::NotEquals => {
+					let result = self.builder.build_float_compare(ONE, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::GreaterThan => {
+					let result = self.builder.build_float_compare(OGT, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::GreaterThanEquals => {
+					let result = self.builder.build_float_compare(OGE, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::LessThan => {
+					let result = self.builder.build_float_compare(OLT, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::LessThanEquals => {
+					let result = self.builder.build_float_compare(OLE, left, right, "").unwrap();
+					BasicValueEnum::IntValue(result)
+				}
+
+				BinaryOperator::Assign | BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => unreachable!(),
+			}
+		};
+
+		let kind = BindingKind::Value(value);
+		Some(Binding { type_id: result_type_id, kind })
 	}
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId) {

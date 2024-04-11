@@ -2132,6 +2132,50 @@ fn validate_binary_operation<'a>(
 		}
 	}
 
+	match op {
+		BinaryOperator::Assign => {}
+
+		BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul | BinaryOperator::Div => {
+			if !left.type_id.is_numeric(context.type_store) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform arithmetic on non-numerical type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
+		BinaryOperator::Equals | BinaryOperator::NotEquals => {
+			if !left.type_id.is_primative(context.type_store) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform equality comparison on non-primative type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
+		BinaryOperator::GreaterThan
+		| BinaryOperator::GreaterThanEquals
+		| BinaryOperator::LessThan
+		| BinaryOperator::LessThanEquals => {
+			if !left.type_id.is_numeric(context.type_store) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform comparison on non-numerical type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
+		BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
+			let boolean = context.type_store.bool_type_id();
+			if !context.type_store.direct_match(left.type_id, boolean) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform logical operation on non-boolean type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+	}
+
 	let type_id = match op {
 		BinaryOperator::Assign => context.type_store.void_type_id(),
 
