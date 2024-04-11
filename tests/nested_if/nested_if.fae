@@ -1,0 +1,41 @@
+import fae::stdout::print_string, print_newline
+
+fn print(str: []u8) {
+	print_string(str)
+	print_newline()
+}
+
+fn main() {
+	if (true) {
+		if (false) {
+			print("a")
+		}
+
+		if (true) {
+			print("b")
+		}
+	}
+
+	print("c")
+
+	if (false) {
+		print("d")
+		if (true) {
+			print("e")
+		}
+	}
+
+	if (true) {
+		print("f")
+		if (true) {
+			print("g")
+			if (true) {
+				print("h")
+			}
+			print("i")
+		}
+		print("j")
+	}
+
+	print("k")
+}

@@ -302,7 +302,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self)) {
 		let original_block = self.builder.get_insert_block().unwrap();
 		let if_block = self.context.insert_basic_block_after(original_block, "if_block");
-		let following_block = self.context.insert_basic_block_after(original_block, "");
+		let following_block = self.context.insert_basic_block_after(original_block, "following_block");
 
 		let condition = condition.to_value(&mut self.builder).into_int_value();
 		let zero = condition.get_type().const_zero();
@@ -313,7 +313,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		self.builder.position_at_end(if_block);
 		body_callback(self);
-		self.builder.build_unconditional_branch(following_block).unwrap();
+		let current_block = self.builder.get_insert_block().unwrap();
+		if current_block.get_terminator().is_none() {
+			self.builder.build_unconditional_branch(following_block).unwrap();
+		}
 
 		self.builder.position_at_end(following_block);
 	}
