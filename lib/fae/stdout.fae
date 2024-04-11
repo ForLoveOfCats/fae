@@ -18,7 +18,7 @@ fn print_bool(arg: bool) {
 }
 
 fn print_i8(arg: i8) {
-	printf("%hd\0".pointer, arg)
+	printf("%hhd\0".pointer, arg)
 }
 
 fn print_i16(arg: i16) {
