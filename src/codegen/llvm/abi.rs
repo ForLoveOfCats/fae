@@ -529,7 +529,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 		for (&value, information) in arguments.iter().zip(function.parameter_information.iter()) {
 			let (Some(value), Some(information)) = (value, information) else {
-				assert_eq!(value.is_none(), information.is_none());
+				assert_eq!(value.is_none(), information.is_none(), "{value:?}, {information:?}");
 				continue;
 			};
 

@@ -1,5 +1,31 @@
-import fae::libc::printf
+import fae::stdout::print_i32, print_bool, print_newline
+
+struct A {}
+
+struct ContainsA {
+	a: A
+}
+
+struct ContainsMultiple {
+	first: ContainsA
+	second: i32
+}
+
+fn func_a(a: A): A {
+	return a
+}
+
+fn func_b(c: ContainsMultiple): ContainsA {
+	let contains = c.first
+	return contains
+}
+
+fn func_c(ptr: &mut A) {
+	ptr.* = A {}
+}
 
 fn main() {
-	printf("%d\n".pointer, true)
+	mut a: A = A {}
+	mut b = ContainsA { a: a }
+	let multiple = ContainsMultiple { first: b, second: -3 }
 }

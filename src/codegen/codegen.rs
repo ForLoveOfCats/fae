@@ -8,7 +8,7 @@ use crate::frontend::ir::{
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::tree::BinaryOperator;
-use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore};
+use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
@@ -216,7 +216,7 @@ fn generate_array_literal<G: Generator>(context: &mut Context, generator: &mut G
 
 	let pointee_layout = context.type_store.type_layout(pointee_type_id);
 	if pointee_layout.size <= 0 {
-		return Some(generator.generate_non_null_invalid_slice(type_id, 1, literal.expressions.len() as u64));
+		return Some(generator.generate_non_null_invalid_slice(type_id, literal.expressions.len() as u64));
 	}
 
 	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id))
@@ -290,6 +290,21 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 		return None;
 	};
 
+	let type_id = context.specialize_type_id(read.base.type_id);
+	let entry = &context.type_store.type_entries[type_id.index()];
+	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+		match &context.type_store.user_types[shape_index].kind {
+			UserTypeKind::Struct { shape } => {
+				let specialization = &shape.specializations[specialization_index];
+				let field_type_id = specialization.fields[read.field_index].type_id;
+				let field_layout = context.type_store.type_layout(field_type_id);
+				if field_layout.size <= 0 {
+					return None;
+				}
+			}
+		}
+	}
+
 	generator.generate_field_read(context.type_store, base, read.field_index)
 }
 
@@ -299,7 +314,12 @@ fn generate_unary_operation<G: Generator>(
 	operation: &UnaryOperation,
 ) -> Option<G::Binding> {
 	let type_id = context.specialize_type_id(operation.type_id);
-	let expression = generate_expression(context, generator, &operation.expression)?;
+	let Some(expression) = generate_expression(context, generator, &operation.expression) else {
+		if matches!(operation.op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
+			return Some(generator.generate_non_null_invalid_pointer(type_id));
+		}
+		return None;
+	};
 
 	match &operation.op {
 		UnaryOperator::Negate => todo!("UnaryOperator::Negate"),
@@ -346,7 +366,10 @@ fn generate_binary_operation<G: Generator>(
 		return Some(generator.generate_boolean_literal(context.type_store, value));
 	};
 
-	let right = right.unwrap();
+	let Some(right) = right else {
+		return None;
+	};
+
 	let source_type_id = context.specialize_type_id(operation.left.type_id);
 	let result_type_id = context.specialize_type_id(operation.type_id);
 	generator.generate_binary_operation(context.type_store, left, right, operation.op, source_type_id, result_type_id)

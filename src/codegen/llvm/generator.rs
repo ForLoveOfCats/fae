@@ -180,7 +180,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 
 	fn finalize_function_if_in_function(&mut self) {
 		if self.state == (State::InFunction { void_returning: true }) {
-			self.builder.build_return(None).unwrap();
+			if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+				self.builder.build_return(None).unwrap();
+			}
 		}
 		self.state = State::InModule;
 	}
@@ -910,8 +912,17 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.abi.return_value(&self.context, &mut self.builder, function, value);
 	}
 
-	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, alignment: u64, len: u64) -> Self::Binding {
-		let alignment = self.context.i64_type().const_int(alignment as u64, false);
+	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding {
+		let value = self.context.i64_type().const_int(1, false);
+		let pointer_type = self.llvm_types.opaque_pointer;
+		let pointer = self.builder.build_int_to_ptr(value, pointer_type, "").unwrap();
+
+		let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer));
+		Binding { type_id: pointer_type_id, kind }
+	}
+
+	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, len: u64) -> Self::Binding {
+		let alignment = self.context.i64_type().const_int(1, false);
 		let pointer_type = self.llvm_types.opaque_pointer;
 		let pointer = self.builder.build_int_to_ptr(alignment, pointer_type, "").unwrap();
 
