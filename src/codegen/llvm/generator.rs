@@ -619,10 +619,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let success_block = self.context.insert_basic_block_after(original_block, "");
 		let failure_block = self.context.insert_basic_block_after(original_block, "bounds_check_failure");
 
-		let pointed_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, item_type);
-		let ValuePointer { pointer: value_pointer, pointed_type: struct_type } = self.value_pointer(base);
+		let ValuePointer { pointer: value_pointer, .. } = self.value_pointer(base);
 
-		let pointer_type = pointed_type.ptr_type(AddressSpace::default());
+		let pointer_type = self.llvm_types.opaque_pointer;
+		let struct_type = self.llvm_types.slice_struct;
 		let pointer_pointer = self.builder.build_struct_gep(struct_type, value_pointer, 0, "").unwrap();
 		let pointer_value = self.builder.build_load(pointer_type, pointer_pointer, "").unwrap();
 		let pointer = pointer_value.into_pointer_value();
@@ -648,7 +648,13 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		self.builder.position_at_end(success_block);
 
+		let item_layout = type_store.type_layout(item_type);
+		if item_layout.size <= 0 {
+			return None;
+		}
+
 		let indicies = &[index];
+		let pointed_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, item_type);
 		let adjusted = unsafe { self.builder.build_gep(pointed_type, pointer, indicies, "").unwrap() };
 
 		let kind = BindingKind::Pointer { pointer: adjusted, pointed_type };
@@ -902,6 +908,19 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 		self.abi.return_value(&self.context, &mut self.builder, function, value);
+	}
+
+	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, alignment: u64, len: u64) -> Self::Binding {
+		let alignment = self.context.i64_type().const_int(alignment as u64, false);
+		let pointer_type = self.llvm_types.opaque_pointer;
+		let pointer = self.builder.build_int_to_ptr(alignment, pointer_type, "").unwrap();
+
+		let len = BasicValueEnum::IntValue(self.context.i64_type().const_int(len, false));
+		let fields = &[BasicValueEnum::PointerValue(pointer), len];
+		let slice = self.llvm_types.slice_struct.const_named_struct(fields);
+
+		let kind = BindingKind::Value(BasicValueEnum::StructValue(slice));
+		Binding { type_id: slice_type_id, kind }
 	}
 
 	fn finalize_generator(&mut self) {

@@ -102,6 +102,8 @@ pub trait Generator {
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);
 
+	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, alignment: u64, len: u64) -> Self::Binding;
+
 	// TODO: Remove this in favor of a "end_function"
 	fn finalize_generator(&mut self);
 }

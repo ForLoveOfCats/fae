@@ -214,8 +214,9 @@ fn generate_array_literal<G: Generator>(context: &mut Context, generator: &mut G
 	let pointee_type_id = context.specialize_type_id(literal.pointee_type_id);
 	let type_id = context.specialize_type_id(literal.type_id);
 
-	if context.type_store.type_layout(pointee_type_id).size <= 0 {
-		todo!("Generate a non-null zero len slice");
+	let pointee_layout = context.type_store.type_layout(pointee_type_id);
+	if pointee_layout.size <= 0 {
+		return Some(generator.generate_non_null_invalid_slice(type_id, 1, literal.expressions.len() as u64));
 	}
 
 	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id))
