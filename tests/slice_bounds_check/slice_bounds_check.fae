@@ -12,6 +12,6 @@ fn main() {
 	print_bool(slice[2]) // true
 	print_newline()
 
-	print_bool(slice[3]) // panic
+	print_bool(slice[8]) // panic
 	print_newline()
 }

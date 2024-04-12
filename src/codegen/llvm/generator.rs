@@ -685,7 +685,15 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			.unwrap();
 
 		self.builder.position_at_end(failure_block);
-		self.generate_call(type_store, lang_items.slice_bound_check_failure.unwrap(), &[]);
+		// TODO: Build some abstraction for calling lang item functions
+		let failure_args = {
+			let kind = BindingKind::Value(BasicValueEnum::IntValue(len));
+			let len = Some(Binding { type_id: type_store.i64_type_id(), kind });
+			let kind = BindingKind::Value(BasicValueEnum::IntValue(index));
+			let index = Some(Binding { type_id: type_store.i64_type_id(), kind });
+			[len, index]
+		};
+		self.generate_call(type_store, lang_items.slice_bound_check_failure.unwrap(), &failure_args);
 		self.builder.build_unreachable().unwrap();
 
 		self.builder.position_at_end(success_block);

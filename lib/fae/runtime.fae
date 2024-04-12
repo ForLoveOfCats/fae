@@ -5,7 +5,15 @@ fn fae_main(argc: i32, argc: &&u8): i32 {
 }
 
 #lang "slice_bound_check_failure"
-fn slice_bound_check_failure() {
-	fae::libc::puts("Bounds check failure".pointer)
+fn slice_bound_check_failure(length: i64, index: i64) {
+	let stderr = fae::libc::STDERR.*
+
+	fae::libc::fprintf(
+		stderr
+		"Index %ld is out of range of slice with length %ld\n".pointer
+		index
+		length
+	)
+
 	fae::libc::exit(-1)
 }
