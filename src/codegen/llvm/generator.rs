@@ -488,6 +488,23 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Some(Binding { type_id, kind })
 	}
 
+	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding {
+		let value = value.to_value(&mut self.builder);
+
+		let negated = if value.is_int_value() {
+			let int = self.builder.build_int_neg(value.into_int_value(), "").unwrap();
+			BasicValueEnum::IntValue(int)
+		} else if value.is_float_value() {
+			let float = self.builder.build_float_neg(value.into_float_value(), "").unwrap();
+			BasicValueEnum::FloatValue(float)
+		} else {
+			unreachable!("{value:?}");
+		};
+
+		let kind = BindingKind::Value(negated);
+		Binding { type_id, kind }
+	}
+
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding {
 		let pointer = self.value_pointer(base);
 		let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer.pointer));

@@ -124,7 +124,7 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 				generate_expression(context, generator, expression);
 			}
 
-			StatementKind::Block(_) => todo!("generate StatementKind::Block"),
+			StatementKind::Block(block) => generate_block(context, generator, block),
 
 			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
 
@@ -322,7 +322,7 @@ fn generate_unary_operation<G: Generator>(
 	};
 
 	match &operation.op {
-		UnaryOperator::Negate => todo!("UnaryOperator::Negate"),
+		UnaryOperator::Negate => Some(generator.generate_negate(expression, type_id)),
 
 		UnaryOperator::Invert => todo!("UnaryOperator::Invert"),
 

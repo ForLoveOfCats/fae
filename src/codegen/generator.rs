@@ -70,6 +70,8 @@ pub trait Generator {
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
 
+	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding;
+
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding;
 
 	fn generate_dereference(&mut self, type_store: &TypeStore, base: Self::Binding, pointed_type_id: TypeId) -> Self::Binding;
