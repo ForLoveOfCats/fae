@@ -1,4 +1,4 @@
-import fae::stdout::print_string, print_newline
+import fae::stdout::print_u32, print_string, print_newline
 
 struct MyType {
 	a: i32
@@ -42,6 +42,11 @@ fn main() {
 	{
 		c.b = 55
 	}
+
+	print_u32('A')
+	print_newline()
+	print_u32('ℒ')
+	print_newline()
 
 	if true {
 		print_string("In true if\n")

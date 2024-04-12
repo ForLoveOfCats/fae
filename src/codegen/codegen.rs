@@ -2,8 +2,8 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	ArrayLiteral, BinaryOperation, Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId,
-	FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
+	ArrayLiteral, BinaryOperation, Binding, Block, Call, CodepointLiteral, DecimalValue, Expression, ExpressionKind, FieldRead,
+	FunctionId, FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
 	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
 };
 use crate::frontend::lang_items::LangItems;
@@ -153,7 +153,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		&ExpressionKind::BooleanLiteral(literal) => generate_boolean_literal(context, generator, literal),
 
-		ExpressionKind::CodepointLiteral(_) => todo!("generate expression CodepointLiteral"),
+		ExpressionKind::CodepointLiteral(literal) => generate_codepoint_literal(context, generator, literal),
 
 		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
 
@@ -202,6 +202,15 @@ fn generate_decimal_value<G: Generator>(context: &Context, generator: &mut G, va
 
 fn generate_boolean_literal<G: Generator>(context: &Context, generator: &mut G, literal: bool) -> Option<G::Binding> {
 	Some(generator.generate_boolean_literal(context.type_store, literal))
+}
+
+fn generate_codepoint_literal<G: Generator>(
+	context: &Context,
+	generator: &mut G,
+	literal: &CodepointLiteral,
+) -> Option<G::Binding> {
+	let type_id = context.type_store.u32_type_id();
+	Some(generator.generate_integer_value(context.type_store, type_id, literal.value as i128))
 }
 
 fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, literal: &StringLiteral) -> Option<G::Binding> {

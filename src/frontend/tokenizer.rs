@@ -407,13 +407,15 @@ impl<'a> Tokenizer<'a> {
 		token
 	}
 
-	//TODO: Remove this
+	// This is such a hack
 	fn advance_by_codepoint(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
+		self.offset += 1;
 		self.verify_not_eof(messages)?;
 
-		let mut chars = self.source[self.offset..].chars();
-		chars.next();
-		self.offset = chars.as_str().as_ptr() as usize - self.source.as_ptr() as usize;
+		let mut chars = self.source[self.offset..].char_indices();
+		chars.next().ok_or(())?;
+		let advance = chars.next().ok_or(())?.0;
+		self.offset += advance.saturating_sub(1);
 
 		Ok(())
 	}
