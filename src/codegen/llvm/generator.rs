@@ -528,6 +528,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		Binding { type_id, kind }
 	}
 
+	fn generate_invert(&mut self, value: Self::Binding) -> Self::Binding {
+		let type_id = value.type_id;
+		let value = value.to_value(&mut self.builder);
+		let inverted = self.builder.build_not(value.into_int_value(), "").unwrap();
+		let kind = BindingKind::Value(BasicValueEnum::IntValue(inverted));
+		Binding { type_id, kind }
+	}
+
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding {
 		let pointer = self.value_pointer(base);
 		let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer.pointer));

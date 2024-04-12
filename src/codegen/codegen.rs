@@ -333,7 +333,7 @@ fn generate_unary_operation<G: Generator>(
 	match &operation.op {
 		UnaryOperator::Negate => Some(generator.generate_negate(expression, type_id)),
 
-		UnaryOperator::Invert => todo!("UnaryOperator::Invert"),
+		UnaryOperator::Invert => Some(generator.generate_invert(expression)),
 
 		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => Some(generator.generate_address_of(expression, type_id)),
 

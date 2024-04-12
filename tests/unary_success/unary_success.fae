@@ -25,7 +25,7 @@ fn main() {
 	print_i32(--identity<i32>(2))
 	print_newline()
 
-	let e = false.!
+	let e = identity<bool>(false).!
 	print_bool(e)
 	print_newline()
 
