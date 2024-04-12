@@ -59,7 +59,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 
 		match token {
 			Token { kind: TokenKind::Word, text: "import", .. } => {
-				disallow_attributes(messages, attributes, token.span, "An import statement");
+				disallow_all_attributes(messages, attributes, token.span, "An import statement");
 				if let Ok(statement) = parse_import_statement(messages, tokenizer) {
 					items.push(Statement::Import(statement));
 				} else {
@@ -68,7 +68,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			}
 
 			Token { kind: TokenKind::Word, text: "const", .. } => {
-				disallow_attributes(messages, attributes, token.span, "A const definition");
+				disallow_all_attributes(messages, attributes, token.span, "A const definition");
 				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
 					items.push(Statement::Const(Box::new(statement)));
 				} else {
@@ -76,8 +76,24 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
+			Token { kind: TokenKind::Word, text: "static", .. } => {
+				const ALLOWED: AllowedAttributes = AllowedAttributes {
+					generic_attribute: false,
+					extern_attribute: true,
+					export_attribute: false, // TODO: Allow exporting
+					intrinsic_attribute: false,
+					lang_attribute: false,
+				};
+				disallow_attributes(messages, &attributes, ALLOWED, "A static definition");
+				if let Ok(statement) = parse_static_statement(messages, tokenizer, attributes) {
+					items.push(Statement::Static(Box::new(statement)));
+				} else {
+					consume_error_syntax(messages, tokenizer);
+				}
+			}
+
 			Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
-				disallow_attributes(messages, attributes, token.span, "A let statement");
+				disallow_all_attributes(messages, attributes, token.span, "A let statement");
 				if let Ok(statement) = parse_binding_statement(messages, tokenizer) {
 					items.push(Statement::Binding(Box::new(statement)));
 				} else {
@@ -102,7 +118,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			}
 
 			Token { kind: TokenKind::Word, text: "return", .. } => {
-				disallow_attributes(messages, attributes, token.span, "A return statement");
+				disallow_all_attributes(messages, attributes, token.span, "A return statement");
 				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
 					items.push(Statement::Return(Box::new(statement)));
 				} else {
@@ -111,7 +127,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			}
 
 			Token { kind: TokenKind::OpenBrace, .. } => {
-				disallow_attributes(messages, attributes, token.span, "A block");
+				disallow_all_attributes(messages, attributes, token.span, "A block");
 				if let Ok(statement) = parse_block(messages, tokenizer) {
 					items.push(Statement::Block(statement));
 				} else {
@@ -122,7 +138,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			Token { kind: TokenKind::CloseBrace, .. } => break,
 
 			_ => {
-				disallow_attributes(messages, attributes, token.span, "An expression");
+				disallow_all_attributes(messages, attributes, token.span, "An expression");
 				if let Ok(expression) = parse_expression(messages, tokenizer, true) {
 					items.push(Statement::Expression(expression));
 					if tokenizer.expect(messages, TokenKind::Newline).is_err() {
@@ -138,8 +154,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 	items
 }
 
-//TODO: Add function to only disallow specific attribute kinds
-fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Span, label: &str) {
+fn disallow_all_attributes(messages: &mut Messages, attributes: Attributes, span: Span, label: &str) {
 	let mut buffer = [Span::unusable(); Attributes::FIELD_COUNT];
 	let spans = attributes.attribute_spans(&mut buffer);
 
@@ -151,6 +166,23 @@ fn disallow_attributes(messages: &mut Messages, attributes: Attributes, span: Sp
 
 		messages.message(message);
 	}
+}
+
+fn disallow_attributes(messages: &mut Messages, attributes: &Attributes, allowed: AllowedAttributes, label: &str) {
+	fn disallow<T>(messages: &mut Messages, attribute: &Option<Node<T>>, allowed: bool, label: &str, kind: &str) {
+		if let Some(node) = attribute {
+			if !allowed {
+				let message = error!("{label} does not allow {kind} attribute");
+				messages.message(message.span(node.span));
+			}
+		}
+	}
+
+	disallow(messages, &attributes.generic_attribute, allowed.generic_attribute, label, "generic");
+	disallow(messages, &attributes.extern_attribute, allowed.extern_attribute, label, "extern");
+	disallow(messages, &attributes.export_attribute, allowed.export_attribute, label, "export");
+	disallow(messages, &attributes.intrinsic_attribute, allowed.intrinsic_attribute, label, "intrinsic");
+	disallow(messages, &attributes.lang_attribute, allowed.lang_attribute, label, "lang");
 }
 
 fn parse_expression<'a>(
@@ -721,7 +753,7 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 				}
 
 				"export" => {
-					check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
+					check_duplicate_attribute(messages, &attributes.export_attribute, "export", peeked.span)?;
 					attributes.export_attribute = Some(parse_export_attribute(messages, tokenizer)?);
 				}
 
@@ -1128,6 +1160,30 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 
 	let span = const_token.span + expression.span;
 	let item = Const { name, parsed_type, expression };
+	Ok(Node { item, span })
+}
+
+fn parse_static_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	attributes: Attributes<'a>,
+) -> ParseResult<Node<Static<'a>>> {
+	let keyword_token = tokenizer.expect_word(messages, "static")?;
+
+	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
+	check_not_reserved(messages, name_token, "static name")?;
+	let name = Node::from_token(name_token.text, name_token);
+
+	tokenizer.expect(messages, TokenKind::Colon)?;
+	let parsed_type = parse_type(messages, tokenizer)?;
+
+	let span = keyword_token.span + parsed_type.span;
+	let item = Static {
+		name,
+		parsed_type,
+		extern_attribute: attributes.extern_attribute,
+	};
+
 	Ok(Node { item, span })
 }
 

@@ -1,11 +1,13 @@
-// TODO: Linux (*nix?) specific, add conditional compliation
-const STDERR_FILE_NUMBER = 2
+extern "stderr"
+static STDERR: &&FileHandle
+
+struct FileHandle {}
 
 extern "exit"
 fn exit(code: i32)
 
 extern "fprintf"
-fn fprintf(stream: &void, pointer: &u8, ...)
+fn fprintf(stream: &FileHandle, pointer: &u8, ...)
 
 extern "printf"
 fn printf(pointer: &u8, ...)

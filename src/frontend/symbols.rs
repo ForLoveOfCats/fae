@@ -1,7 +1,9 @@
+use std::collections::{hash_map, HashMap};
+
 use crate::frontend::error::Messages;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
-use crate::frontend::tree::PathSegments;
+use crate::frontend::tree::{ExternAttribute, PathSegments};
 use crate::frontend::type_store::{TypeId, TypeStore};
 
 #[derive(Debug, Copy, Clone)]
@@ -19,6 +21,7 @@ pub enum SymbolKind {
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 	Function { function_shape_index: usize },
 	Const { constant_index: usize },
+	Static { static_index: usize },
 	Let { readable_index: usize },
 	Mut { readable_index: usize },
 }
@@ -32,6 +35,7 @@ impl std::fmt::Display for SymbolKind {
 			SymbolKind::FunctionGeneric { .. } => "a function generic parameter",
 			SymbolKind::Function { .. } => "a function",
 			SymbolKind::Const { .. } => "a constant",
+			SymbolKind::Static { .. } => "a static",
 			SymbolKind::Let { .. } => "an immutable binding",
 			SymbolKind::Mut { .. } => "a mutable binding",
 		};
@@ -114,6 +118,7 @@ impl<'a> Symbols<'a> {
 						SymbolKind::Function { .. }
 						| SymbolKind::Type { .. }
 						| SymbolKind::Const { .. }
+						| SymbolKind::Static { .. }
 						| SymbolKind::BuiltinType { .. } => {}
 
 						_ => break,
@@ -171,6 +176,55 @@ impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 	}
 }
 
+#[derive(Debug)]
+pub struct Externs {
+	pub externs: HashMap<String, Span>,
+}
+
+impl Externs {
+	pub fn new() -> Externs {
+		Externs { externs: HashMap::new() }
+	}
+
+	pub fn push(&mut self, messages: &mut Messages, name: &str, span: Span) {
+		match self.externs.entry(name.to_string()) {
+			hash_map::Entry::Occupied(occupied) => {
+				let error = error!("Duplicate extern declaration {name:?}").span(span);
+				messages.message(error.note(note!(*occupied.get(), "Other declaration here")));
+			}
+
+			hash_map::Entry::Vacant(entry) => {
+				entry.insert(span);
+			}
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Static<'a> {
+	pub name: &'a str,
+	pub type_id: TypeId,
+	pub extern_attribute: Option<ExternAttribute<'a>>,
+}
+
+#[derive(Debug)]
+pub struct Statics<'a> {
+	pub statics: Vec<Static<'a>>,
+}
+
+impl<'a> Statics<'a> {
+	pub fn new() -> Self {
+		Statics { statics: Vec::new() }
+	}
+
+	pub fn push(&mut self, name: &'a str, type_id: TypeId, extern_attribute: Option<ExternAttribute<'a>>) -> usize {
+		let index = self.statics.len();
+		let instance = Static { name, type_id, extern_attribute };
+		self.statics.push(instance);
+		index
+	}
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Readable<'a> {
 	pub name: &'a str,
@@ -184,7 +238,7 @@ pub enum ReadableKind {
 	Mut,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Readables<'a> {
 	pub starting_index: usize,
 	pub readables: Vec<Readable<'a>>,

@@ -8,6 +8,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::parser::parse_file;
 use crate::frontend::root_layers::RootLayers;
+use crate::frontend::symbols::Statics;
 use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
 
@@ -49,9 +50,10 @@ pub fn build_project(
 
 	//Partially parallelizable
 	let mut lang_items = LangItems::new();
+	let mut root_layers = RootLayers::new(root_name);
 	let mut type_store = TypeStore::new();
 	let mut function_store = FunctionStore::new();
-	let mut root_layers = RootLayers::new(root_name);
+	let mut statics = Statics::new();
 	validate(
 		cli_arguments,
 		&mut messages,
@@ -59,6 +61,7 @@ pub fn build_project(
 		&mut root_layers,
 		&mut type_store,
 		&mut function_store,
+		&mut statics,
 		&parsed_files,
 	);
 
@@ -90,7 +93,8 @@ pub fn build_project(
 		}
 
 		CodegenBackend::LLVM => {
-			let binary_path = llvm::amd64::generate_code(&mut messages, &lang_items, &mut type_store, &mut function_store);
+			let binary_path =
+				llvm::amd64::generate_code(&mut messages, &lang_items, &mut type_store, &mut function_store, &statics);
 			assert!(!messages.any_errors());
 			any_errors |= messages.any_errors();
 			any_messages |= messages.any_messages();

@@ -416,6 +416,7 @@ pub enum ExpressionKind<'a> {
 
 	Call(Call<'a>),
 	Read(Read<'a>),
+	StaticRead(StaticRead<'a>),
 	FieldRead(Box<FieldRead<'a>>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
@@ -440,6 +441,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::Call(_) => "a function call",
 			ExpressionKind::Read(_) => "a binding read",
+			ExpressionKind::StaticRead(_) => "a static read",
 			ExpressionKind::FieldRead(_) => "a field read",
 			ExpressionKind::UnaryOperation(_) => "an unary operation",
 			ExpressionKind::BinaryOperation(_) => "a binary operation",
@@ -687,6 +689,13 @@ pub struct Read<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
 	pub readable_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StaticRead<'a> {
+	pub name: &'a str,
+	pub type_id: TypeId,
+	pub static_index: usize,
 }
 
 #[derive(Debug, Clone)]

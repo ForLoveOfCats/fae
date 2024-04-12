@@ -107,6 +107,7 @@ pub struct RootLayer<'a> {
 	pub importable_types_range: Range<usize>,
 	pub importable_functions_range: Range<usize>,
 	pub importable_consts_range: Range<usize>,
+	pub importable_statics_range: Range<usize>,
 }
 
 impl<'a> RootLayer<'a> {
@@ -118,6 +119,7 @@ impl<'a> RootLayer<'a> {
 			importable_types_range: 0..0,
 			importable_functions_range: 0..0,
 			importable_consts_range: 0..0,
+			importable_statics_range: 0..0,
 		}
 	}
 
@@ -144,5 +146,9 @@ impl<'a> RootLayer<'a> {
 
 	pub fn importable_consts(&self) -> &[Symbol<'a>] {
 		&self.symbols.symbols[self.importable_consts_range.clone()]
+	}
+
+	pub fn importable_statics(&self) -> &[Symbol<'a>] {
+		&self.symbols.symbols[self.importable_statics_range.clone()]
 	}
 }

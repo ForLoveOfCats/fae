@@ -1,0 +1,30 @@
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 9: A static definition does not allow generic attribute
+  9| generic T
+     ^^^^^^^^^
+
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 11: A static definition does not allow export attribute
+  11| export "TODO: Allow exporting"
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 12: A static definition does not allow intrinsic attribute
+  12| #intrinsic
+      ^^^^^^^^^^
+
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 13: A static definition does not allow lang attribute
+  13| #lang "made_up_lang_item"
+      ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 5: Duplicate extern declaration "made_up_symbol"
+  5| static DUPLICATE: i32
+     ^^^^^^^^^^^^^^^^^^^^^
+Note: ./tests/extern_static_failure/extern_static_failure.fae, line 2: Other declaration here
+  2| static EXTERNAL_STATIC: i32
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 7: Static definition must have extern attribute
+  7| static MISSING_EXTERN: u8
+     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 18: A static definition is only allowed in a root scope
+  18|     static NON_ROOT: f64
+          ^^^^^^^^^^^^^^^^^^^^

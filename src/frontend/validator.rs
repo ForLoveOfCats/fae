@@ -1,4 +1,3 @@
-use std::collections::{hash_map, HashMap};
 use std::rc::Rc;
 
 use crate::cli_arguments::CliArguments;
@@ -8,7 +7,7 @@ use crate::frontend::ir::*;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
-use crate::frontend::symbols::{ReadableKind, Readables, Symbol, SymbolKind, Symbols};
+use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::Node;
 use crate::frontend::tree::{self, BinaryOperator, PathSegments};
 use crate::frontend::type_store::*;
@@ -29,8 +28,9 @@ pub struct Context<'a, 'b, 'c> {
 	pub root_layers: &'b RootLayers<'a>,
 
 	pub lang_items: &'b mut LangItems,
-	pub externs: &'b mut HashMap<String, Span>,
+	pub externs: &'b mut Externs,
 	pub constants: &'b mut Vec<ConstantValue<'a>>,
+	pub statics: &'b mut Statics<'a>,
 	pub initial_readables_starting_index: usize,
 	pub initial_readables_overall_len: usize,
 	pub readables: &'b mut Readables<'a>,
@@ -70,6 +70,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			lang_items: self.lang_items,
 			externs: self.externs,
 			constants: self.constants,
+			statics: self.statics,
 			initial_readables_starting_index: self.readables.starting_index,
 			initial_readables_overall_len: self.readables.overall_len(),
 			readables: self.readables,
@@ -108,6 +109,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			lang_items: self.lang_items,
 			externs: self.externs,
 			constants: self.constants,
+			statics: self.statics,
 			initial_readables_starting_index,
 			initial_readables_overall_len: self.readables.overall_len(),
 			readables: self.readables,
@@ -185,10 +187,11 @@ pub fn validate<'a>(
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	statics: &mut Statics<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
 	let mut function_generic_usages = Vec::new();
-	let mut externs = HashMap::new();
+	let mut externs = Externs::new();
 	let mut constants = Vec::new();
 
 	create_root_types(messages, root_layers, type_store, parsed_files);
@@ -219,6 +222,7 @@ pub fn validate<'a>(
 		&mut function_generic_usages,
 		&mut externs,
 		&mut constants,
+		statics,
 		&mut readables,
 		parsed_files,
 		&mut symbols,
@@ -247,6 +251,7 @@ pub fn validate<'a>(
 			lang_items,
 			externs: &mut externs,
 			constants: &mut constants,
+			statics,
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables: &mut readables,
@@ -332,7 +337,7 @@ fn create_root_functions<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	externs: &mut HashMap<String, Span>,
+	externs: &mut Externs,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
@@ -373,8 +378,9 @@ fn validate_root_consts<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
-	externs: &mut HashMap<String, Span>,
+	externs: &mut Externs,
 	constants: &mut Vec<ConstantValue<'a>>,
+	statics: &mut Statics<'a>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
 	symbols: &mut Symbols<'a>,
@@ -385,7 +391,6 @@ fn validate_root_consts<'a>(
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		symbols.duplicate(&layer.symbols);
-		let old_symbols_len = symbols.len();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
@@ -403,6 +408,7 @@ fn validate_root_consts<'a>(
 			lang_items,
 			externs,
 			constants,
+			statics,
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
@@ -413,13 +419,23 @@ fn validate_root_consts<'a>(
 			generic_parameters: &blank_generic_parameters,
 		};
 
+		let old_symbols_len = context.symbols.len();
 		validate_block_consts(&mut context, &parsed_file.block);
 		assert_eq!(context.readables.overall_len(), 0);
 		assert_eq!(context.readables.starting_index, 0);
+		let importable_consts_range = old_symbols_len..context.symbols.len();
+
+		let old_symbols_len = context.symbols.len();
+		validate_block_statics(&mut context, &parsed_file.block);
+		assert_eq!(context.readables.overall_len(), 0);
+		assert_eq!(context.readables.starting_index, 0);
+		let importable_statics_range = old_symbols_len..context.symbols.len();
+
 		std::mem::forget(context);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_consts_range = old_symbols_len..symbols.len();
+		layer.importable_consts_range = importable_consts_range;
+		layer.importable_statics_range = importable_statics_range;
 		layer.symbols.duplicate(symbols);
 	}
 }
@@ -479,7 +495,6 @@ fn resolve_import_for_block_types<'a>(
 	}
 }
 
-// TODO: This function and its sibling below have terrible names, fix that
 fn resolve_block_non_type_imports<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
@@ -493,7 +508,7 @@ fn resolve_block_non_type_imports<'a>(
 		let path = PathSegments::Path {
 			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
 		};
-		resolve_import_for_non_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
 	}
 
 	for statement in &block.statements {
@@ -504,11 +519,11 @@ fn resolve_block_non_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names.as_slice());
-		resolve_import_for_non_block_types(messages, root_layers, symbols, function_initial_symbols_len, path, names);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, path, names);
 	}
 }
 
-fn resolve_import_for_non_block_types<'a>(
+fn resolve_import_for_block_non_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -534,12 +549,24 @@ fn resolve_import_for_non_block_types<'a>(
 				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
 			}
 		}
+
+		for &importing in layer.importable_statics() {
+			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
+				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
+			}
+		}
 	} else {
+		// TODO: Add asterisk syntax for importing all items in a scope
+
 		for &importing in layer.importable_functions() {
 			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
 		}
 
 		for &importing in layer.importable_consts() {
+			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		}
+
+		for &importing in layer.importable_statics() {
 			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
 		}
 	}
@@ -561,16 +588,26 @@ fn create_block_types<'a>(
 				| tree::Statement::Block(..)
 				| tree::Statement::Binding(..)
 				| tree::Statement::Return(..) => {
-					messages.message(
-						error!("{} is not allowed in a root scope", statement.name_and_article()).span(statement.span()),
-					);
+					let error = error!("{} is not allowed in a root scope", statement.name_and_article());
+					messages.message(error.span(statement.span()));
 					continue;
 				}
 
 				tree::Statement::Import(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Function(..)
-				| tree::Statement::Const(..) => {}
+				| tree::Statement::Const(..)
+				| tree::Statement::Static(..) => {}
+			}
+		} else {
+			match statement {
+				tree::Statement::Static(..) => {
+					let error = error!("{} is only allowed in a root scope", statement.name_and_article());
+					messages.message(error.span(statement.span()));
+					continue;
+				}
+
+				_ => {}
 			}
 		}
 
@@ -781,7 +818,7 @@ fn create_block_functions<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	externs: &mut HashMap<String, Span>,
+	externs: &mut Externs,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -904,16 +941,7 @@ fn create_block_functions<'a>(
 
 			let name = statement.name;
 			if let Some(Node { item: extern_attribute, .. }) = statement.extern_attribute {
-				match externs.entry(extern_attribute.name.to_string()) {
-					hash_map::Entry::Occupied(occupied) => {
-						let error = error!("Duplicate extern function declaration").span(name.span);
-						messages.message(error.note(note!(*occupied.get(), "Other declaration here")));
-					}
-
-					hash_map::Entry::Vacant(entry) => {
-						entry.insert(name.span);
-					}
-				}
+				externs.push(messages, extern_attribute.name, name.span);
 			}
 
 			let is_main = module_path == [root_layers.root_name.as_str()] && name.item == "main";
@@ -948,6 +976,14 @@ fn validate_block_consts<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree:
 	for statement in &block.statements {
 		if let tree::Statement::Const(statement) = statement {
 			validate_const(context, statement);
+		}
+	}
+}
+
+fn validate_block_statics<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {
+	for statement in &block.statements {
+		if let tree::Statement::Static(statement) = statement {
+			validate_static(context, statement);
 		}
 	}
 }
@@ -1053,6 +1089,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			tree::Statement::Function(statement) => validate_function(&mut context, statement),
 
 			tree::Statement::Const(..) => {}
+
+			tree::Statement::Static(..) => {}
 
 			tree::Statement::Binding(statement) => {
 				let validated = match validate_binding(&mut context, statement) {
@@ -1346,6 +1384,33 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	let span = Some(expression.span);
 	let symbol = Symbol { name, kind, span };
 	context.push_symbol(symbol);
+
+	Some(())
+}
+
+fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Static<'a>>) -> Option<()> {
+	if let Some(extern_attribute) = statement.item.extern_attribute {
+		let name = extern_attribute.item.name;
+		context.externs.push(context.messages, name, statement.span);
+	} else {
+		let error = error!("Static definition must have extern attribute");
+		context.message(error.span(statement.span));
+	}
+
+	let type_id = context.lookup_type(&statement.item.parsed_type)?;
+	let layout = context.type_store.type_layout(type_id);
+	if layout.size <= 0 {
+		let error = error!("Static definition cannot have a zero-sized type");
+		context.message(error.span(statement.span));
+	}
+
+	let name = statement.item.name.item;
+	let extern_attribute = statement.item.extern_attribute.map(|n| n.item);
+	let index = context.statics.push(name, type_id, extern_attribute);
+
+	let kind = SymbolKind::Static { static_index: index };
+	let span = Some(statement.span);
+	context.push_symbol(Symbol { name, kind, span });
 
 	Some(())
 }
@@ -1751,6 +1816,19 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				}
 			};
 
+			return Expression { span, type_id, mutable: false, returns: false, kind };
+		}
+
+		SymbolKind::Static { static_index } => {
+			let static_instance = &context.statics.statics[static_index];
+			let static_read = StaticRead {
+				name: static_instance.name,
+				type_id: static_instance.type_id,
+				static_index,
+			};
+
+			let type_id = static_instance.type_id;
+			let kind = ExpressionKind::StaticRead(static_read);
 			return Expression { span, type_id, mutable: false, returns: false, kind };
 		}
 

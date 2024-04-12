@@ -2,6 +2,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
+use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeId, TypeStore};
 
@@ -24,6 +25,8 @@ pub trait Generator {
 	type Binding: Clone + Copy;
 
 	fn register_type_descriptions(&mut self, type_store: &TypeStore);
+
+	fn register_statics(&mut self, type_store: &TypeStore, statics: &Statics);
 
 	fn register_functions(&mut self, type_store: &TypeStore, function_store: &FunctionStore);
 
@@ -67,6 +70,8 @@ pub trait Generator {
 	) -> Option<Self::Binding>;
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
+
+	fn generate_static_read(&mut self, static_index: usize) -> Self::Binding;
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
 

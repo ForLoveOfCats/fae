@@ -3,10 +3,11 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Call, DecimalValue, Expression, ExpressionKind, FieldRead, FunctionId,
-	FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StringLiteral, StructLiteral,
-	TypeArguments, UnaryOperation, UnaryOperator,
+	FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
+	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
 };
 use crate::frontend::lang_items::LangItems;
+use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
@@ -15,9 +16,11 @@ pub fn generate<'a, G: Generator>(
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
+	statics: &Statics,
 	generator: &mut G,
 ) {
 	generator.register_type_descriptions(type_store);
+	generator.register_statics(type_store, statics);
 	generator.register_functions(type_store, function_store);
 
 	for function_shape_index in 0..function_store.shapes.len() {
@@ -162,6 +165,8 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 
 		ExpressionKind::Read(read) => generate_read(generator, read),
 
+		ExpressionKind::StaticRead(static_read) => generate_static_read(generator, static_read),
+
 		ExpressionKind::FieldRead(read) => generate_field_read(context, generator, read),
 
 		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation),
@@ -283,6 +288,10 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 
 fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {
 	generator.generate_read(read.readable_index)
+}
+
+fn generate_static_read<G: Generator>(generator: &mut G, static_read: &StaticRead) -> Option<G::Binding> {
+	Some(generator.generate_static_read(static_read.static_index))
 }
 
 fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, read: &FieldRead) -> Option<G::Binding> {

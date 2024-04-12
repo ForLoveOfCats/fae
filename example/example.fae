@@ -1,31 +1,9 @@
-import fae::stdout::print_i32, print_bool, print_newline
-
-struct A {}
-
-struct ContainsA {
-	a: A
-}
-
-struct ContainsMultiple {
-	first: ContainsA
-	second: i32
-}
-
-fn func_a(a: A): A {
-	return a
-}
-
-fn func_b(c: ContainsMultiple): ContainsA {
-	let contains = c.first
-	return contains
-}
-
-fn func_c(ptr: &mut A) {
-	ptr.* = A {}
-}
+import fae::libc::STDERR, FileHandle, fprintf
+import fae::stdout::print_string, print_pointer, print_newline
 
 fn main() {
-	mut a: A = A {}
-	mut b = ContainsA { a: a }
-	let multiple = ContainsMultiple { first: b, second: -3 }
+	print_string("stderr file pointer: ")
+	print_pointer<FileHandle>(STDERR.*)
+	print_newline()
+	fprintf(STDERR.*, "Hello from fprintf over stderr\n".pointer)
 }

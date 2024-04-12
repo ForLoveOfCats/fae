@@ -3,7 +3,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicType, BasicTypeEnum, PointerType, StructType};
-use inkwell::values::{BasicValueEnum, PointerValue};
+use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
 use crate::codegen::generator::Generator;
@@ -12,6 +12,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
+use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
@@ -149,6 +150,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 	state: State,
 	block_frames: Vec<BlockFrame>,
 	functions: Vec<Vec<Option<DefinedFunction<'ctx>>>>,
+	statics: Vec<Binding<'ctx>>,
 	readables: Vec<Option<Binding<'ctx>>>,
 
 	_marker: std::marker::PhantomData<ABI>,
@@ -172,6 +174,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			state: State::InModule,
 			block_frames: Vec::new(),
 			functions: Vec::new(),
+			statics: Vec::new(),
 			readables: Vec::new(),
 
 			_marker: std::marker::PhantomData::default(),
@@ -234,6 +237,22 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				let llvm_struct = self.context.struct_type(&field_types_buffer, false);
 				self.llvm_types.user_type_structs[description.shape_index][description.specialization_index] = Some(llvm_struct);
 			}
+		}
+	}
+
+	fn register_statics(&mut self, type_store: &TypeStore, statics: &Statics) {
+		for static_instance in &statics.statics {
+			let llvm_type = self
+				.llvm_types
+				.type_to_basic_type_enum(self.context, type_store, static_instance.type_id);
+
+			let extern_attribute = static_instance.extern_attribute.unwrap();
+			let global = self.module.add_global(llvm_type, None, extern_attribute.name);
+
+			let value = global.as_basic_value_enum();
+			let kind = BindingKind::Value(value);
+			let binding = Binding { type_id: static_instance.type_id, kind };
+			self.statics.push(binding);
 		}
 	}
 
@@ -466,6 +485,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
 		self.readables[readable_index]
+	}
+
+	fn generate_static_read(&mut self, static_index: usize) -> Self::Binding {
+		self.statics[static_index]
 	}
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {

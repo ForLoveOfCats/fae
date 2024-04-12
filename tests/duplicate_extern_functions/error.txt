@@ -1,4 +1,4 @@
-Validation error: ./tests/duplicate_extern_functions/other_file.fae, line 2: Duplicate extern function declaration
+Validation error: ./tests/duplicate_extern_functions/other_file.fae, line 2: Duplicate extern declaration "made_up_function"
   2| fn function_two()
         ^^^^^^^^^^^^
 Note: ./tests/duplicate_extern_functions/duplicate_extern_functions.fae, line 4: Other declaration here

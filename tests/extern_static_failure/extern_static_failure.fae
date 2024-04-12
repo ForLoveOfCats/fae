@@ -1,0 +1,19 @@
+extern "made_up_symbol"
+static EXTERNAL_STATIC: i32
+
+extern "made_up_symbol"
+static DUPLICATE: i32
+
+static MISSING_EXTERN: u8
+
+generic T
+extern "another_made_up_symbol"
+export "TODO: Allow exporting"
+#intrinsic
+#lang "made_up_lang_item"
+static DISALLOWED_ATTRIBUTES: f32
+
+fn main() {
+	extern "abc"
+	static NON_ROOT: f64
+}

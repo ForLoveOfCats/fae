@@ -52,6 +52,14 @@ pub struct LangAttribute<'a> {
 	pub name: &'a str,
 }
 
+pub struct AllowedAttributes {
+	pub generic_attribute: bool,
+	pub extern_attribute: bool,
+	pub export_attribute: bool,
+	pub intrinsic_attribute: bool,
+	pub lang_attribute: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Attributes<'a> {
 	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
@@ -155,6 +163,13 @@ pub struct Const<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub expression: Node<Expression<'a>>,
+}
+
+#[derive(Debug)]
+pub struct Static<'a> {
+	pub name: Node<&'a str>,
+	pub parsed_type: Node<Type<'a>>,
+	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 }
 
 #[derive(Debug)]
@@ -338,6 +353,7 @@ pub enum Statement<'a> {
 	Function(Box<Function<'a>>),
 
 	Const(Box<Node<Const<'a>>>),
+	Static(Box<Node<Static<'a>>>),
 	Binding(Box<Node<Binding<'a>>>),
 
 	Return(Box<Node<Return<'a>>>),
@@ -355,6 +371,7 @@ impl<'a> Statement<'a> {
 			Struct(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
 			Const(statement) => statement.span,
+			Static(statement) => statement.span,
 			Binding(statement) => statement.span,
 			Return(statement) => statement.span,
 		}
@@ -370,6 +387,7 @@ impl<'a> Statement<'a> {
 			Struct(..) => "A struct definition",
 			Function(..) => "A function definition",
 			Const(..) => "A const definition",
+			Static(..) => "A static definition",
 			Binding(..) => "A binding definition",
 			Return(..) => "A return statement",
 		}

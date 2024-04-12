@@ -859,6 +859,8 @@ fn generate_expression(context: &mut Context, expression: &Expression, output: O
 			temp_id.dereference = true;
 		}
 
+		ExpressionKind::StaticRead(..) => {}
+
 		ExpressionKind::FieldRead(field_read) => {
 			let Some(struct_step) = generate_expression(context, &field_read.base, output)? else {
 				return Ok(None);
