@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::cli_arguments::{CliArguments, CodegenBackend};
-use crate::codegen::{legacy_c, llvm};
+use crate::codegen::llvm;
 use crate::frontend::error::{Messages, WriteFmt};
 use crate::frontend::file::load_all_files;
 use crate::frontend::function_store::FunctionStore;
@@ -74,31 +74,14 @@ pub fn build_project(
 	}
 
 	//Not parallelizable
-	match cli_arguments.codegen_backend {
-		CodegenBackend::LegacyC => {
-			let binary_path = PathBuf::from("./output.executable");
-			legacy_c::generate_code(
-				&mut messages,
-				&mut type_store,
-				&mut function_store,
-				legacy_c::OptimizationLevel::None,
-				&binary_path,
-				legacy_c::DebugCodegen::OnFailure,
-			);
-
-			assert!(!messages.any_errors());
-			any_errors |= messages.any_errors();
-			any_messages |= messages.any_messages();
-			BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
-		}
-
+	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => {
-			let binary_path =
-				llvm::amd64::generate_code(&mut messages, &lang_items, &mut type_store, &mut function_store, &statics);
-			assert!(!messages.any_errors());
-			any_errors |= messages.any_errors();
-			any_messages |= messages.any_messages();
-			BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
+			llvm::amd64::generate_code(&mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
 		}
-	}
+	};
+
+	assert!(!messages.any_errors());
+	any_errors |= messages.any_errors();
+	any_messages |= messages.any_messages();
+	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 }

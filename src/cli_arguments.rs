@@ -9,7 +9,6 @@ pub struct CliArguments {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CodegenBackend {
-	LegacyC,
 	LLVM,
 }
 
@@ -20,7 +19,7 @@ pub fn parse_arguments() -> CliArguments {
 	let mut cli_arguments = CliArguments {
 		run_compiler_tests: false,
 		compiler_test_names: Vec::new(),
-		codegen_backend: CodegenBackend::LegacyC,
+		codegen_backend: CodegenBackend::LLVM,
 	};
 
 	while let Some((index, arg)) = iterator.next() {
@@ -40,23 +39,16 @@ pub fn parse_arguments() -> CliArguments {
 	cli_arguments
 }
 
-fn parse_tack_argument(cli_arguments: &mut CliArguments, any_errors: &mut bool, arg: &OsStr, index: usize) {
+fn parse_tack_argument(_cli_arguments: &mut CliArguments, any_errors: &mut bool, arg: &OsStr, index: usize) {
 	match arg.to_str() {
 		Some("--help") => {
 			eprintln!("Fae programming language compiler");
 			eprintln!();
 			eprintln!("Command line arguments:");
 			eprintln!("  test, t: Run compiler test suite");
-			eprintln!("  --codegen-legacy-c: Use the original C transpile codegen backend (default)");
-			eprintln!("  --codegen-llvm: Use the new LLVM codegen backend");
-			eprintln!("  --std-enabled: Enable use of the Fae standard library (default)");
-			eprintln!("  --std-disabled: Disable use of the Fae standard library");
 			eprintln!("  --help: Print this help message");
 			std::process::exit(0);
 		}
-
-		Some("--codegen-legacy-c") => cli_arguments.codegen_backend = CodegenBackend::LegacyC,
-		Some("--codegen-llvm") => cli_arguments.codegen_backend = CodegenBackend::LLVM,
 
 		Some(arg) => {
 			eprintln!("Unknown cli argument {arg:?}");
