@@ -36,7 +36,7 @@ impl AttributeKinds {
 #[derive(Debug, PartialEq, Eq)]
 enum State {
 	InModule,
-	InFunction { void_returning: bool },
+	InFunction { function_id: FunctionId, void_returning: bool },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -61,7 +61,7 @@ struct ValuePointer<'ctx> {
 }
 
 impl<'ctx> Binding<'ctx> {
-	pub fn to_value(self, builder: &mut Builder<'ctx>) -> BasicValueEnum<'ctx> {
+	pub fn to_value(self, builder: &Builder<'ctx>) -> BasicValueEnum<'ctx> {
 		let (pointer, pointed_type) = match self.kind {
 			BindingKind::Value(value) => return value,
 			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
@@ -143,9 +143,9 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 	pub module: Module<'ctx>,
 	pub builder: Builder<'ctx>,
 
-	abi: ABI,
-	attribute_kinds: AttributeKinds,
-	llvm_types: LLVMTypes<'ctx>,
+	abi: Option<ABI>, // I really dislike the lease pattern, oh well
+	pub attribute_kinds: AttributeKinds,
+	pub llvm_types: LLVMTypes<'ctx>,
 
 	state: State,
 	block_frames: Vec<BlockFrame>,
@@ -167,7 +167,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			module,
 			builder,
 
-			abi: ABI::new(),
+			abi: Some(ABI::new()),
 			attribute_kinds: AttributeKinds::new(),
 			llvm_types,
 
@@ -182,19 +182,57 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn finalize_function_if_in_function(&mut self) {
-		if self.state == (State::InFunction { void_returning: true }) {
-			if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-				self.builder.build_return(None).unwrap();
+		if let State::InFunction { function_id, void_returning } = self.state {
+			if void_returning {
+				if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+					self.builder.build_return(None).unwrap();
+				}
 			}
+
+			let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+			let defined_function = function.as_ref().unwrap();
+
+			let alloca_block = defined_function
+				.alloca_block
+				.expect("Should only be None for extern functions");
+			let logic_begin_block = defined_function
+				.logic_begin_block
+				.expect("Should only be None for extern functions");
+
+			self.builder.position_at_end(alloca_block);
+			self.builder.build_unconditional_branch(logic_begin_block).unwrap();
+			self.builder.clear_insertion_position();
 		}
+
 		self.state = State::InModule;
+	}
+
+	pub fn build_alloca<T: BasicType<'ctx>>(&self, llvm_type: T) -> PointerValue<'ctx> {
+		let function_id = match self.state {
+			State::InFunction { function_id, .. } => function_id,
+			State::InModule => unreachable!(),
+		};
+
+		let original_block = self.builder.get_insert_block().unwrap();
+
+		let maybe = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let defined_function = maybe.as_ref().unwrap();
+		let alloca_block = defined_function
+			.alloca_block
+			.expect("Should only be None for extern functions");
+
+		self.builder.position_at_end(alloca_block);
+		let pointer = self.builder.build_alloca(llvm_type, "").unwrap();
+
+		self.builder.position_at_end(original_block);
+		pointer
 	}
 
 	fn value_pointer(&mut self, binding: Binding<'ctx>) -> ValuePointer<'ctx> {
 		match binding.kind {
 			BindingKind::Value(value) => {
 				let pointed_type = value.get_type();
-				let pointer = self.builder.build_alloca(pointed_type, "").unwrap();
+				let pointer = self.build_alloca(pointed_type);
 				self.builder.build_store(pointer, value).unwrap();
 				ValuePointer { pointer, pointed_type }
 			}
@@ -275,7 +313,13 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					continue;
 				}
 
-				let defined_function = self.abi.define_function(
+				assert_eq!(self.state, State::InModule);
+				let function_id = FunctionId { function_shape_index, specialization_index };
+				let void_returning = specialization.return_type.is_void(type_store);
+				self.state = State::InFunction { function_id, void_returning };
+
+				let mut abi = self.abi.take().unwrap();
+				let defined_function = abi.define_function(
 					type_store,
 					&self.context,
 					&mut self.module,
@@ -285,8 +329,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					shape,
 					specialization,
 				);
+				self.abi = Some(abi);
 
 				specializations.push(Some(defined_function));
+				self.state = State::InModule
 			}
 
 			self.functions.push(specializations);
@@ -308,24 +354,24 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let defined_function = maybe_function.as_ref().unwrap();
-		let entry_block = defined_function
-			.entry_block
+		let logic_begin_block = defined_function
+			.logic_begin_block
 			.expect("Should only be None for extern functions");
-		self.builder.position_at_end(entry_block);
+		self.builder.position_at_end(logic_begin_block);
 
 		self.readables.clear();
 		self.readables.extend_from_slice(&defined_function.initial_values);
 
 		let void_returning = function.return_type.is_void(type_store);
-		self.state = State::InFunction { void_returning };
+		self.state = State::InFunction { function_id, void_returning };
 	}
 
 	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self)) {
 		let original_block = self.builder.get_insert_block().unwrap();
 		let if_block = self.context.insert_basic_block_after(original_block, "if_block");
-		let following_block = self.context.insert_basic_block_after(original_block, "following_block");
+		let following_block = self.context.insert_basic_block_after(if_block, "following_block");
 
-		let condition = condition.to_value(&mut self.builder).into_int_value();
+		let condition = condition.to_value(&self.builder).into_int_value();
 		let zero = condition.get_type().const_zero();
 		let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
 		self.builder
@@ -411,7 +457,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			.llvm_types
 			.type_to_basic_type_enum(self.context, type_store, element_type_id);
 		let array_type = element_type.array_type(elements.len() as u32);
-		let alloca = self.builder.build_alloca(array_type, "").unwrap();
+		let alloca = self.build_alloca(array_type);
 
 		let zero = self.context.i64_type().const_int(0, false);
 		for (index, element) in elements.iter().enumerate() {
@@ -432,7 +478,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		}
 
 		let slice_type = self.llvm_types.slice_struct;
-		let slice_alloca = self.builder.build_alloca(slice_type, "").unwrap();
+		let slice_alloca = self.build_alloca(slice_type);
 
 		let pointer_pointer = self.builder.build_struct_gep(slice_type, slice_alloca, 0, "").unwrap();
 		let pointer_value = BasicValueEnum::PointerValue(alloca);
@@ -459,9 +505,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	) -> Self::Binding {
 		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].unwrap();
 
-		let alloca = self.builder.build_alloca(struct_type, "").unwrap();
+		let alloca = self.build_alloca(struct_type);
 		for (index, field) in fields.iter().enumerate() {
-			let value = field.to_value(&mut self.builder);
+			let value = field.to_value(&self.builder);
 			let field_pointer = self.builder.build_struct_gep(struct_type, alloca, index as u32, "").unwrap();
 			self.builder.build_store(field_pointer, value).unwrap();
 		}
@@ -479,8 +525,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	) -> Option<Binding<'ctx>> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
-		self.abi
-			.call_function(type_store, self.context, &mut self.builder, &self.llvm_types, function, &arguments)
+
+		let mut abi = self.abi.take().unwrap();
+		let binding = abi.call_function(self, type_store, function, &arguments);
+		self.abi = Some(abi);
+
+		binding
 	}
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding> {
@@ -512,7 +562,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding {
-		let value = value.to_value(&mut self.builder);
+		let value = value.to_value(&self.builder);
 
 		let negated = if value.is_int_value() {
 			let int = self.builder.build_int_neg(value.into_int_value(), "").unwrap();
@@ -530,7 +580,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_invert(&mut self, value: Self::Binding) -> Self::Binding {
 		let type_id = value.type_id;
-		let value = value.to_value(&mut self.builder);
+		let value = value.to_value(&self.builder);
 		let inverted = self.builder.build_not(value.into_int_value(), "").unwrap();
 		let kind = BindingKind::Value(BasicValueEnum::IntValue(inverted));
 		Binding { type_id, kind }
@@ -560,7 +610,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
-		let from = base.to_value(&mut self.builder);
+		let from = base.to_value(&self.builder);
 		let from_pointer = from.is_pointer_value();
 		let to_pointer = to.is_pointer(type_store);
 
@@ -666,8 +716,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		_index_span: Span,
 	) -> Option<Self::Binding> {
 		let original_block = self.builder.get_insert_block().unwrap();
-		let success_block = self.context.insert_basic_block_after(original_block, "");
 		let failure_block = self.context.insert_basic_block_after(original_block, "bounds_check_failure");
+		let success_block = self.context.insert_basic_block_after(failure_block, "");
 
 		let ValuePointer { pointer: value_pointer, .. } = self.value_pointer(base);
 
@@ -681,7 +731,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let len_pointer = self.builder.build_struct_gep(struct_type, value_pointer, 1, "").unwrap();
 		let len = self.builder.build_load(i64_type, len_pointer, "").unwrap().into_int_value();
 
-		let index = index.to_value(&mut self.builder).into_int_value();
+		let index = index.to_value(&self.builder).into_int_value();
 
 		let zero = i64_type.const_int(0, false);
 		let greater_than_zero = self.builder.build_int_compare(IntPredicate::SGE, index, zero, "").unwrap();
@@ -770,8 +820,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			return None;
 		}
 
-		let left = left.to_value(&mut self.builder);
-		let right = right.to_value(&mut self.builder);
+		let left = left.to_value(&self.builder);
+		let right = right.to_value(&self.builder);
 
 		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr) {
 			let mut left = left.into_int_value();
@@ -949,7 +999,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let (pointer, pointed_type) = match value.kind {
 			BindingKind::Value(value) => {
-				let alloca = self.builder.build_alloca(value.get_type(), "").unwrap();
+				let alloca = self.build_alloca(value.get_type());
 				self.builder.build_store(alloca, value).unwrap();
 				(alloca, value.get_type())
 			}
@@ -965,7 +1015,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
-		self.abi.return_value(&self.context, &mut self.builder, function, value);
+
+		let mut abi = self.abi.take().unwrap();
+		abi.return_value(&self.context, &mut self.builder, function, value);
+		self.abi = Some(abi);
 	}
 
 	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding {

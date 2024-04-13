@@ -8,7 +8,7 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
-use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMTypes};
+use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMGenerator, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
 use crate::frontend::type_store::{Layout, NumericKind, TypeId, TypeStore};
 
@@ -29,13 +29,13 @@ pub trait LLVMAbi<'ctx> {
 
 	fn call_function(
 		&mut self,
+		generator: &LLVMGenerator<'ctx, Self>,
 		type_store: &TypeStore,
-		context: &'ctx Context,
-		builder: &mut Builder<'ctx>,
-		llvm_types: &LLVMTypes<'ctx>,
 		function: &DefinedFunction<'ctx>,
 		arguments: &[Option<generator::Binding<'ctx>>],
-	) -> Option<generator::Binding<'ctx>>;
+	) -> Option<generator::Binding<'ctx>>
+	where
+		Self: Sized;
 
 	fn return_value(
 		&mut self,
@@ -60,7 +60,8 @@ pub struct DefinedFunction<'ctx> {
 	pub parameter_information: Vec<Option<ParameterInformation<'ctx>>>,
 	pub c_varargs: bool,
 	pub initial_values: Vec<Option<generator::Binding<'ctx>>>,
-	pub entry_block: Option<BasicBlock<'ctx>>, // None for extern functions
+	pub alloca_block: Option<BasicBlock<'ctx>>,      // None for extern functions
+	pub logic_begin_block: Option<BasicBlock<'ctx>>, // None for extern functions
 }
 
 struct ParameterAttribute {
@@ -259,8 +260,7 @@ impl<'ctx> SysvAbi<'ctx> {
 
 	fn generate_parameter(
 		&mut self,
-		context: &'ctx Context,
-		builder: &mut Builder<'ctx>,
+		generator: &LLVMGenerator<'ctx, Self>,
 		value: generator::Binding<'ctx>,
 		information: &ParameterInformation<'ctx>,
 	) {
@@ -270,18 +270,18 @@ impl<'ctx> SysvAbi<'ctx> {
 			&ParameterInformation::ByPointer { pointed_type, layout, .. } => {
 				match value.kind {
 					generator::BindingKind::Value(value) => {
-						let alloca = builder.build_alloca(pointed_type, "").unwrap();
-						builder.build_store(alloca, value).unwrap();
+						let alloca = generator.build_alloca(pointed_type);
+						generator.builder.build_store(alloca, value).unwrap();
 						let argument = BasicMetadataValueEnum::PointerValue(alloca);
 						self.argument_value_buffer.push(argument);
 					}
 
 					generator::BindingKind::Pointer { pointer, pointed_type: ty } => {
 						assert_eq!(pointed_type, ty);
-						let alloca = builder.build_alloca(pointed_type, "").unwrap();
-						let size = context.i64_type().const_int(layout.size as u64, false);
+						let alloca = generator.build_alloca(pointed_type);
+						let size = generator.context.i64_type().const_int(layout.size as u64, false);
 						let align = layout.alignment as u32;
-						builder.build_memcpy(alloca, align, pointer, align, size).unwrap();
+						generator.builder.build_memcpy(alloca, align, pointer, align, size).unwrap();
 						let argument = BasicMetadataValueEnum::PointerValue(alloca);
 						self.argument_value_buffer.push(argument);
 					}
@@ -291,7 +291,7 @@ impl<'ctx> SysvAbi<'ctx> {
 			}
 
 			ParameterInformation::BareValue { .. } => {
-				let value = value.to_value(builder);
+				let value = value.to_value(&generator.builder);
 				let argument = basic_value_enum_to_basic_metadata_value_enum(value);
 				self.argument_value_buffer.push(argument);
 				return;
@@ -300,8 +300,8 @@ impl<'ctx> SysvAbi<'ctx> {
 
 		let pointer = match value.kind {
 			generator::BindingKind::Value(value) => {
-				let alloca = builder.build_alloca(value.get_type(), "").unwrap();
-				builder.build_store(alloca, value).unwrap();
+				let alloca = generator.build_alloca(value.get_type());
+				generator.builder.build_store(alloca, value).unwrap();
 				alloca
 			}
 
@@ -312,8 +312,11 @@ impl<'ctx> SysvAbi<'ctx> {
 		let composition = composition.composition_struct;
 		for field_index in 0..composition_field_count {
 			let field_type = composition.get_field_type_at_index(field_index).unwrap();
-			let field_pointer = builder.build_struct_gep(composition, pointer, field_index, "").unwrap();
-			let value = builder.build_load(field_type, field_pointer, "").unwrap();
+			let field_pointer = generator
+				.builder
+				.build_struct_gep(composition, pointer, field_index, "")
+				.unwrap();
+			let value = generator.builder.build_load(field_type, field_pointer, "").unwrap();
 			let argument = basic_value_enum_to_basic_metadata_value_enum(value);
 			self.argument_value_buffer.push(argument);
 		}
@@ -379,7 +382,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		self.parameter_information_buffer.clear();
 
 		for parameter in &function.parameters {
-			let information = self.construct_parameter_information(type_store, context, llvm_types, parameter.type_id);
+			let information = self.construct_parameter_information(type_store, context, &llvm_types, parameter.type_id);
 			self.parameter_information_buffer.push(information);
 		}
 
@@ -416,7 +419,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				parameter_information: self.parameter_information_buffer.clone(),
 				c_varargs: function_shape.c_varargs,
 				initial_values: Vec::new(),
-				entry_block: None,
+				alloca_block: None,
+				logic_begin_block: None,
 			};
 		}
 
@@ -433,8 +437,9 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			llvm_function.add_attribute(inkwell::attributes::AttributeLoc::Param(attribute.index), attribute.attribute);
 		}
 
-		let entry_block = context.append_basic_block(llvm_function, "");
-		builder.position_at_end(entry_block);
+		let alloca_block = context.append_basic_block(llvm_function, "alloca_block");
+		let logic_begin_block = context.append_basic_block(llvm_function, "logic_begin_block");
+		builder.position_at_end(logic_begin_block);
 
 		let mut initial_values = Vec::with_capacity(self.parameter_information_buffer.len());
 		let mut parameter_index = if matches!(return_type, FunctionReturnType::ByPointer { .. }) {
@@ -473,7 +478,9 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 			assert!(composition.layout.size > 0, "{:?}", composition.layout);
 
+			builder.position_at_end(alloca_block);
 			let pointer = builder.build_alloca(composition.actual_type, "").unwrap();
+			builder.position_at_end(logic_begin_block);
 			let pointed_type = BasicTypeEnum::StructType(composition.composition_struct);
 			let type_id = composition.actual_type_id;
 			let kind = generator::BindingKind::Pointer { pointer, pointed_type };
@@ -495,25 +502,25 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			parameter_information: self.parameter_information_buffer.clone(),
 			c_varargs: function_shape.c_varargs,
 			initial_values,
-			entry_block: Some(entry_block),
+			alloca_block: Some(alloca_block),
+			logic_begin_block: Some(logic_begin_block),
 		}
 	}
 
 	fn call_function(
 		&mut self,
+		generator: &LLVMGenerator<'ctx, Self>,
 		type_store: &TypeStore,
-		context: &'ctx Context,
-		builder: &mut Builder<'ctx>,
-		llvm_types: &LLVMTypes<'ctx>,
 		function: &DefinedFunction<'ctx>,
 		arguments: &[Option<generator::Binding<'ctx>>],
 	) -> Option<generator::Binding<'ctx>> {
 		self.argument_value_buffer.clear();
+		let context = generator.context;
 
 		let mut sret_alloca = None;
 		match function.return_type {
 			FunctionReturnType::ByPointer { pointed_type, .. } => {
-				let alloca = builder.build_alloca(pointed_type, "").unwrap();
+				let alloca = generator.build_alloca(pointed_type);
 				self.argument_value_buffer.push(BasicMetadataValueEnum::PointerValue(alloca));
 				sret_alloca = Some(alloca);
 			}
@@ -533,7 +540,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				continue;
 			};
 
-			self.generate_parameter(context, builder, value, information);
+			self.generate_parameter(generator, value, information);
 		}
 
 		if function.c_varargs {
@@ -543,6 +550,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 					continue;
 				};
 
+				let llvm_types = &generator.llvm_types;
 				let constructed = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id);
 				let information = constructed.unwrap();
 
@@ -552,8 +560,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 						match numeric_kind {
 							// Sign extend
 							NumericKind::I8 | NumericKind::I16 => {
-								let int = argument.to_value(builder).into_int_value();
-								let widened = builder.build_int_s_extend(int, context.i32_type(), "").unwrap();
+								let int = argument.to_value(&generator.builder).into_int_value();
+								let widened = generator.builder.build_int_s_extend(int, context.i32_type(), "").unwrap();
 								let argument = BasicMetadataValueEnum::IntValue(widened);
 								self.argument_value_buffer.push(argument);
 								continue;
@@ -561,8 +569,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 							// Zero extend
 							NumericKind::U8 | NumericKind::U16 => {
-								let int = argument.to_value(builder).into_int_value();
-								let widened = builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
+								let int = argument.to_value(&generator.builder).into_int_value();
+								let widened = generator.builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
 								let argument = BasicMetadataValueEnum::IntValue(widened);
 								self.argument_value_buffer.push(argument);
 								continue;
@@ -570,8 +578,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 							// TODO: Add f16 once added to the language
 							NumericKind::F32 => {
-								let float = argument.to_value(builder).into_float_value();
-								let double = builder.build_float_cast(float, context.f64_type(), "").unwrap();
+								let float = argument.to_value(&generator.builder).into_float_value();
+								let double = generator.builder.build_float_cast(float, context.f64_type(), "").unwrap();
 								let argument = BasicMetadataValueEnum::FloatValue(double);
 								self.argument_value_buffer.push(argument);
 								continue;
@@ -583,19 +591,20 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 					// Zero extend
 					if type_id.is_bool(type_store) {
-						let int = argument.to_value(builder).into_int_value();
-						let widened = builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
+						let int = argument.to_value(&generator.builder).into_int_value();
+						let widened = generator.builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
 						let argument = BasicMetadataValueEnum::IntValue(widened);
 						self.argument_value_buffer.push(argument);
 						continue;
 					}
 				}
 
-				self.generate_parameter(context, builder, argument, &information);
+				self.generate_parameter(generator, argument, &information);
 			}
 		}
 
-		let callsite_value = builder
+		let callsite_value = generator
+			.builder
 			.build_direct_call(function.llvm_function, &self.argument_value_buffer, "")
 			.unwrap();
 
