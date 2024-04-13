@@ -330,12 +330,17 @@ pub struct Block<'a> {
 pub struct If<'a> {
 	pub type_id: TypeId, // TODO: Meaningless until else-if/else have been added
 	pub condition: Expression<'a>,
-	pub body: Expression<'a>,
+	pub body: Block<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct While<'a> {
+	pub condition: Expression<'a>,
+	pub body: Block<'a>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Statement<'a> {
-	pub type_id: TypeId,
 	pub kind: StatementKind<'a>,
 }
 
@@ -344,6 +349,7 @@ pub enum StatementKind<'a> {
 	Expression(Expression<'a>),
 
 	Block(Block<'a>),
+	While(While<'a>),
 
 	Binding(Box<Binding<'a>>),
 

@@ -586,6 +586,7 @@ fn create_block_types<'a>(
 			match statement {
 				tree::Statement::Expression(..)
 				| tree::Statement::Block(..)
+				| tree::Statement::While(..)
 				| tree::Statement::Binding(..)
 				| tree::Statement::Return(..) => {
 					let error = error!("{} is not allowed in a root scope", statement.name_and_article());
@@ -1061,6 +1062,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		match statement {
 			tree::Statement::Expression(..)
 			| tree::Statement::Block(..)
+			| tree::Statement::While(..)
 			| tree::Statement::Binding(..)
 			| tree::Statement::Return(..)
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
@@ -1069,17 +1071,21 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				let expression = validate_expression(&mut context, statement);
 				returns |= expression.returns;
 
-				let type_id = expression.type_id;
 				let kind = StatementKind::Expression(expression);
-				statements.push(Statement { type_id, kind });
+				statements.push(Statement { kind });
 			}
 
 			tree::Statement::Block(statement) => {
 				let scope = context.child_scope();
 				let block = validate_block(scope, &statement.item, false);
-				let type_id = block.type_id;
 				let kind = StatementKind::Block(block);
-				statements.push(Statement { type_id, kind })
+				statements.push(Statement { kind })
+			}
+
+			tree::Statement::While(statement) => {
+				let statement = validate_while_statement(&mut context, statement);
+				let kind = StatementKind::While(statement);
+				statements.push(Statement { kind })
 			}
 
 			tree::Statement::Import(..) => {}
@@ -1098,9 +1104,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 					None => continue,
 				};
 
-				let type_id = validated.type_id;
 				let kind = StatementKind::Binding(Box::new(validated));
-				statements.push(Statement { type_id, kind });
+				statements.push(Statement { kind });
 			}
 
 			tree::Statement::Return(statement) => {
@@ -1123,14 +1128,9 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 					}
 				}
 
-				let type_id = match &expression {
-					Some(expression) => expression.type_id,
-					None => context.type_store.void_type_id(),
-				};
-
 				let boxed_return = Box::new(Return { span, expression });
 				let kind = StatementKind::Return(boxed_return);
-				statements.push(Statement { type_id, kind })
+				statements.push(Statement { kind })
 			}
 		}
 	}
@@ -1485,12 +1485,20 @@ fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a t
 }
 
 fn validate_if_expression<'a>(context: &mut Context<'a, '_, '_>, if_expression: &'a tree::If<'a>, span: Span) -> Expression<'a> {
-	let condition = validate_expression(context, &if_expression.condition);
-	let body = validate_expression(context, &if_expression.body);
+	let mut scope = context.child_scope();
+	let condition = validate_expression(&mut scope, &if_expression.condition);
+	let body = validate_block(scope, &if_expression.body.item, false);
 	let type_id = body.type_id; // TODO: Wrong, needs else-if/else
 	let returns = condition.returns; // The body is not guarenteed to run, therefore cannot indicate termination
 	let kind = ExpressionKind::If(Box::new(If { type_id, condition, body }));
 	Expression { span, type_id, mutable: true, returns, kind }
+}
+
+fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a Node<tree::While<'a>>) -> While<'a> {
+	let mut scope = context.child_scope();
+	let condition = validate_expression(&mut scope, &statement.item.condition);
+	let body = validate_block(scope, &statement.item.body.item, false);
+	While { condition, body }
 }
 
 fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::IntegerLiteral, span: Span) -> Expression<'a> {

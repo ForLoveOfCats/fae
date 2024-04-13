@@ -6,6 +6,7 @@ use inkwell::types::{BasicType, BasicTypeEnum, PointerType, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
+use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
@@ -368,8 +369,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self)) {
 		let original_block = self.builder.get_insert_block().unwrap();
-		let if_block = self.context.insert_basic_block_after(original_block, "if_block");
-		let following_block = self.context.insert_basic_block_after(if_block, "following_block");
+		let if_block = self.context.insert_basic_block_after(original_block, "if_body_block");
+		let following_block = self.context.insert_basic_block_after(if_block, "if_following_block");
 
 		let condition = condition.to_value(&self.builder).into_int_value();
 		let zero = condition.get_type().const_zero();
@@ -383,6 +384,38 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let current_block = self.builder.get_insert_block().unwrap();
 		if current_block.get_terminator().is_none() {
 			self.builder.build_unconditional_branch(following_block).unwrap();
+		}
+
+		self.builder.position_at_end(following_block);
+	}
+
+	fn generate_while(
+		&mut self,
+		context: &mut codegen::Context,
+		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
+		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
+	) {
+		let original_block = self.builder.get_insert_block().unwrap();
+		let condition_block = self.context.insert_basic_block_after(original_block, "while_condition_block");
+		let while_block = self.context.insert_basic_block_after(condition_block, "while_body_block");
+		let following_block = self.context.insert_basic_block_after(while_block, "while_following_block");
+
+		self.builder.build_unconditional_branch(condition_block).unwrap();
+		self.builder.position_at_end(condition_block);
+
+		let condition_binding = condition_callback(context, self);
+		let condition = condition_binding.to_value(&self.builder).into_int_value();
+		let zero = condition.get_type().const_zero();
+		let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
+		self.builder
+			.build_conditional_branch(flag, while_block, following_block)
+			.unwrap();
+
+		self.builder.position_at_end(while_block);
+		body_callback(context, self);
+		let current_block = self.builder.get_insert_block().unwrap();
+		if current_block.get_terminator().is_none() {
+			self.builder.build_unconditional_branch(condition_block).unwrap();
 		}
 
 		self.builder.position_at_end(following_block);

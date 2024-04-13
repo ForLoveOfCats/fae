@@ -1,3 +1,4 @@
+use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Function, FunctionId};
 use crate::frontend::lang_items::LangItems;
@@ -37,6 +38,15 @@ pub trait Generator {
 	fn end_block(&mut self);
 
 	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self));
+
+	// I hate this API but it has to pass the context back through to avoid having both closures
+	// have to capture a mutable reference at the same time
+	fn generate_while(
+		&mut self,
+		context: &mut codegen::Context,
+		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
+		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
+	);
 
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding;
 

@@ -346,6 +346,7 @@ pub enum Statement<'a> {
 	Expression(Node<Expression<'a>>),
 
 	Block(Node<Block<'a>>),
+	While(Node<While<'a>>),
 
 	Import(Node<Import<'a>>),
 
@@ -367,6 +368,7 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(statement) => statement.span,
 			Block(statement) => statement.span,
+			While(statement) => statement.span,
 			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
@@ -383,6 +385,7 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(..) => "An expression",
 			Block(..) => "A block",
+			While(..) => "A while loop",
 			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
 			Function(..) => "A function definition",
@@ -402,7 +405,13 @@ pub struct Block<'a> {
 #[derive(Debug)]
 pub struct If<'a> {
 	pub condition: Node<Expression<'a>>,
-	pub body: Node<Expression<'a>>,
+	pub body: Node<Block<'a>>,
+}
+
+#[derive(Debug)]
+pub struct While<'a> {
+	pub condition: Node<Expression<'a>>,
+	pub body: Node<Block<'a>>,
 }
 
 #[derive(Debug)]

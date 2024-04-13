@@ -4,7 +4,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Call, CodepointLiteral, DecimalValue, Expression, ExpressionKind, FieldRead,
 	FunctionId, FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
-	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
+	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -51,7 +51,7 @@ pub fn generate<'a, G: Generator>(
 	generator.finalize_generator();
 }
 
-struct Context<'a, 'b> {
+pub struct Context<'a, 'b> {
 	messages: &'b mut Messages<'a>,
 	lang_items: &'b LangItems,
 	type_store: &'b mut TypeStore<'a>,
@@ -129,6 +129,8 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 			StatementKind::Block(block) => generate_block(context, generator, block),
 
+			StatementKind::While(statement) => generate_while(context, generator, statement),
+
 			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
 
 			StatementKind::Return(statement) => generate_return(context, generator, statement),
@@ -186,10 +188,20 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 fn generate_if<G: Generator>(context: &mut Context, generator: &mut G, if_expression: &If) -> Option<G::Binding> {
 	let condition = generate_expression(context, generator, &if_expression.condition).unwrap();
 	generator.generate_if(condition, |generator| {
-		generate_expression(context, generator, &if_expression.body);
+		generate_block(context, generator, &if_expression.body);
 	});
 
 	None
+}
+
+fn generate_while<G: Generator>(context: &mut Context, generator: &mut G, statement: &While) {
+	generator.generate_while(
+		context,
+		|context, generator| generate_expression(context, generator, &statement.condition).unwrap(),
+		|context, generator| {
+			generate_block(context, generator, &statement.body);
+		},
+	);
 }
 
 fn generate_integer_value<G: Generator>(context: &Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {

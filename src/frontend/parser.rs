@@ -117,6 +117,15 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
+			Token { kind: TokenKind::Word, text: "while", .. } => {
+				disallow_all_attributes(messages, attributes, token.span, "A while loop");
+				if let Ok(statement) = parse_while_statement(messages, tokenizer) {
+					items.push(Statement::While(statement));
+				} else {
+					consume_error_syntax(messages, tokenizer);
+				}
+			}
+
 			Token { kind: TokenKind::Word, text: "return", .. } => {
 				disallow_all_attributes(messages, attributes, token.span, "A return statement");
 				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
@@ -569,12 +578,23 @@ fn parse_if<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Parse
 	let if_token = tokenizer.expect_word(messages, "if")?;
 
 	let condition = parse_expression(messages, tokenizer, false)?;
-	let body = parse_expression(messages, tokenizer, true)?;
+	let body = parse_block(messages, tokenizer)?;
 
 	let span = if_token.span + body.span;
 	let value = If { condition, body };
 	let expression = Expression::If(Box::new(value));
 	Ok(Node::new(expression, span))
+}
+
+fn parse_while_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<While<'a>>> {
+	let while_token = tokenizer.expect_word(messages, "while")?;
+
+	let condition = parse_expression(messages, tokenizer, false)?;
+	let body = parse_block(messages, tokenizer)?;
+
+	let span = while_token.span + body.span;
+	let value = While { condition, body };
+	Ok(Node::new(value, span))
 }
 
 // Holy return type batman
