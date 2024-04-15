@@ -1,10 +1,29 @@
+const StdInDescription: i32 = 0
+const StdOutDescription: i32 = 1
+const StdErrDescription: i32 = 2
+
+extern "stdin"
+static StdInFile: &&FileHandle
+
+extern "stdout"
+static StdOutFile: &&FileHandle
+
 extern "stderr"
-static STDERR: &&FileHandle
+static StdErrFile: &&FileHandle
 
 struct FileHandle {}
 
+extern "atoi"
+fn atoi(string: &u8): i32
+
+extern "atol"
+fn atol(string: &u8): i64
+
 extern "exit"
 fn exit(code: i32)
+
+extern "fflush"
+fn fflush(stream: &FileHandle)
 
 extern "fprintf"
 fn fprintf(stream: &FileHandle, pointer: &u8, ...)
@@ -14,3 +33,12 @@ fn printf(pointer: &u8, ...)
 
 extern "puts"
 fn puts(pointer: &u8)
+
+extern "rand"
+fn rand(): i32
+
+extern "read"
+fn read(fd: i32, buffer: &mut u8, count: usize): i64
+
+extern "srand"
+fn srand(seed: u32)
