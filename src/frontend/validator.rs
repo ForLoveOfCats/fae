@@ -1882,7 +1882,7 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 			Field {
 				span: None,
 				name: "pointer",
-				type_id: context.type_store.pointer_to(as_slice.type_id, false),
+				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
 			},
 			Field {
 				span: None,
