@@ -133,7 +133,10 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
 
-			StatementKind::Return(statement) => generate_return(context, generator, statement),
+			StatementKind::Return(statement) => {
+				generate_return(context, generator, statement);
+				break;
+			},
 		};
 	}
 
