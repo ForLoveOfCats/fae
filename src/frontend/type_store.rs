@@ -43,6 +43,11 @@ impl TypeId {
 		range.contains(&self.entry) || self.is_any_collapse(type_store)
 	}
 
+	pub fn is_integer(self, type_store: &TypeStore) -> bool {
+		let range = type_store.i8_type_id.entry..=type_store.usize_type_id.entry;
+		range.contains(&self.entry) || self.entry == type_store.integer_type_id.entry || self.is_any_collapse(type_store)
+	}
+
 	pub fn numeric_kind(self, type_store: &TypeStore) -> Option<NumericKind> {
 		if !self.is_numeric(type_store) {
 			return None;

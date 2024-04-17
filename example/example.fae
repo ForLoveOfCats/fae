@@ -1,18 +1,24 @@
-import fae::stdout::print_string
-import fae::libc::StdOutFile, StdInFile, StdInDescription, atol, fflush, printf, rand, read
+import fae::stdout::print_string, print_i64, print_i32, print_newline
+import fae::libc::StdOutFile, StdInDescription, atol, fflush, printf, rand, read
 
 fn main() {
 	play_round()
 }
 
+fn seed_rand() {
+	import fae::libc::TimeT, null, srand, time
+	let null = null<TimeT>()
+	srand(time(null).time_t.(u32))
+}
+
 fn play_round() {
-	let number = rand().(i64) // TODO: Add modulo to the language
+	seed_rand()
+	let number = rand().(i64) % 100
 	print_string("Guess the random number\n")
 
 	let buffer = [0.(u8), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-	mut break = false
-	while break.! {
+	while true {
 		print_string(">>> ")
 		fflush(StdOutFile.*)
 		mut read_bytes: i64 = 0
@@ -21,7 +27,6 @@ fn play_round() {
 		}
 
 		buffer[read_bytes] = 0
-		fae::libc::puts(buffer.pointer)
 		let guess = atol(buffer.pointer)
 		printf("You guessed %d\n".pointer, guess)
 
@@ -34,7 +39,7 @@ fn play_round() {
 		}
 
 		if guess == number {
-			print_string("Somehow you got it!")
+			print_string("Somehow you got it!\n")
 			return
 		}
 	}

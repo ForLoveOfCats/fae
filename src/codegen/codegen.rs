@@ -136,7 +136,7 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 			StatementKind::Return(statement) => {
 				generate_return(context, generator, statement);
 				break;
-			},
+			}
 		};
 	}
 

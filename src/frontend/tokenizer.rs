@@ -23,13 +23,20 @@ pub enum TokenKind {
 	OpenGeneric,
 
 	Add,
-	AddEqual,
+	AddAssign,
 	Sub,
-	SubEqual,
+	SubAssign,
 	Mul,
-	MulEqual,
+	MulAssign,
 	Div,
-	DivEqual,
+	DivAssign,
+	Modulo,
+	ModuloAssign,
+
+	BitshiftLeft,
+	BitshiftLeftAssign,
+	BitshiftRight,
+	BitshiftRightAssign,
 
 	Equal,
 	CompEqual,
@@ -72,13 +79,20 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::OpenGeneric => "'<'",
 
 			TokenKind::Add => "'+'",
-			TokenKind::AddEqual => "'+='",
+			TokenKind::AddAssign => "'+='",
 			TokenKind::Sub => "'-'",
-			TokenKind::SubEqual => "'-='",
+			TokenKind::SubAssign => "'-='",
 			TokenKind::Mul => "'*'",
-			TokenKind::MulEqual => "'*='",
+			TokenKind::MulAssign => "'*='",
 			TokenKind::Div => "'/'",
-			TokenKind::DivEqual => "'/='",
+			TokenKind::DivAssign => "'/='",
+			TokenKind::Modulo => "'%'",
+			TokenKind::ModuloAssign => "'%='",
+
+			TokenKind::BitshiftLeft => "'<<'",
+			TokenKind::BitshiftLeftAssign => "'<<='",
+			TokenKind::BitshiftRight => "'>>'",
+			TokenKind::BitshiftRightAssign => "'>>=='",
 
 			TokenKind::Equal => "'='",
 			TokenKind::CompEqual => "'=='",
@@ -199,21 +213,21 @@ impl<'a> Tokenizer<'a> {
 
 			[b'+', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("+=", AddEqual, self.offset - 1, self.offset + 1, self.file_index))
+				Ok(Token::new("+=", AddAssign, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
 			[b'+', ..] => Ok(Token::new("+", Add, self.offset, self.offset + 1, self.file_index)),
 
 			[b'-', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("-=", SubEqual, self.offset - 1, self.offset + 1, self.file_index))
+				Ok(Token::new("-=", SubAssign, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
 			[b'-', ..] => Ok(Token::new("-", Sub, self.offset, self.offset + 1, self.file_index)),
 
 			[b'*', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("*=", MulEqual, self.offset - 1, self.offset + 1, self.file_index))
+				Ok(Token::new("*=", MulAssign, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
 			[b'*', ..] => Ok(Token::new("*", Mul, self.offset, self.offset + 1, self.file_index)),
@@ -247,10 +261,37 @@ impl<'a> Tokenizer<'a> {
 
 			[b'/', b'=', ..] => {
 				self.offset += 1;
-				Ok(Token::new("/=", DivEqual, self.offset - 1, self.offset + 1, self.file_index))
+				Ok(Token::new("/=", DivAssign, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
 			[b'/', ..] => Ok(Token::new("/", Div, self.offset, self.offset + 1, self.file_index)),
+
+			[b'%', b'=', ..] => {
+				self.offset += 1;
+				Ok(Token::new("%=", ModuloAssign, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'%', ..] => Ok(Token::new("%", Modulo, self.offset, self.offset + 1, self.file_index)),
+
+			[b'<', b'<', b'=', ..] => {
+				self.offset += 2;
+				Ok(Token::new("<<=", BitshiftLeftAssign, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'<', b'<', ..] => {
+				self.offset += 1;
+				Ok(Token::new("<<", BitshiftLeft, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'>', b'>', b'=', ..] => {
+				self.offset += 2;
+				Ok(Token::new(">>=", BitshiftRightAssign, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'>', b'>', ..] => {
+				self.offset += 1;
+				Ok(Token::new(">>", BitshiftRight, self.offset - 1, self.offset + 1, self.file_index))
+			}
 
 			[b'=', b'=', ..] => {
 				self.offset += 1;

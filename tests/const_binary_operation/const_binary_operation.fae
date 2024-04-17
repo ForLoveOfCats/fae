@@ -1,0 +1,16 @@
+import fae::stdout::print_i64, print_u64, print_newline
+
+const One = 5 % 4
+const Two = (-5) % 4
+const Three = (-5) % (-4)
+
+fn main() {
+	print_signed(One)
+	print_signed(Two)
+	print_signed(Three)
+}
+
+fn print_signed(value: i64) {
+	print_i64(value)
+	print_newline()
+}

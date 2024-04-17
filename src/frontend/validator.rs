@@ -1370,8 +1370,8 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 		ExpressionKind::CodepointLiteral(literal) => ConstantValue::CodepointLiteral(literal.value),
 
 		kind => {
-			let name = kind.name_with_article();
-			context.message(error!("Cannot have {name} as a const expression").span(expression.span));
+			let name = kind.name();
+			context.message(error!("Cannot have a runtime {name} as a const expression").span(expression.span));
 			return None;
 		}
 	};
@@ -1381,7 +1381,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 
 	let name = statement.item.name.item;
 	let kind = SymbolKind::Const { constant_index };
-	let span = Some(expression.span);
+	let span = Some(statement.span + expression.span);
 	let symbol = Symbol { name, kind, span };
 	context.push_symbol(symbol);
 
@@ -2221,10 +2221,38 @@ fn validate_binary_operation<'a>(
 	match op {
 		BinaryOperator::Assign => {}
 
-		BinaryOperator::Add | BinaryOperator::Sub | BinaryOperator::Mul | BinaryOperator::Div => {
-			if !left.type_id.is_numeric(context.type_store) {
+		BinaryOperator::Add
+		| BinaryOperator::AddAssign
+		| BinaryOperator::Sub
+		| BinaryOperator::SubAssign
+		| BinaryOperator::Mul
+		| BinaryOperator::MulAssign
+		| BinaryOperator::Div
+		| BinaryOperator::DivAssign
+		| BinaryOperator::Modulo
+		| BinaryOperator::ModuloAssign => {
+			if matches!(op, BinaryOperator::Modulo | BinaryOperator::ModuloAssign) {
+				if !left.type_id.is_integer(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform modulo on non-integer type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
+			} else if !left.type_id.is_numeric(context.type_store) {
 				let found = context.type_name(left.type_id);
 				let error = error!("Cannot perform arithmetic on non-numerical type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
+		BinaryOperator::BitshiftLeft
+		| BinaryOperator::BitshiftLeftAssign
+		| BinaryOperator::BitshiftRight
+		| BinaryOperator::BitshiftRightAssign => {
+			if !left.type_id.is_numeric(context.type_store) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform bitshift on non-numerical type {found}");
 				context.message(error.span(span));
 				return Expression::any_collapse(context.type_store, span);
 			}
@@ -2263,7 +2291,14 @@ fn validate_binary_operation<'a>(
 	}
 
 	let type_id = match op {
-		BinaryOperator::Assign => context.type_store.void_type_id(),
+		BinaryOperator::Assign
+		| BinaryOperator::AddAssign
+		| BinaryOperator::SubAssign
+		| BinaryOperator::MulAssign
+		| BinaryOperator::DivAssign
+		| BinaryOperator::ModuloAssign
+		| BinaryOperator::BitshiftLeftAssign
+		| BinaryOperator::BitshiftRightAssign => context.type_store.void_type_id(),
 
 		BinaryOperator::Equals
 		| BinaryOperator::NotEquals
@@ -2303,6 +2338,7 @@ fn perform_constant_binary_operation<'a>(
 			BinaryOperator::Sub => left.sub(context.messages, right)?,
 			BinaryOperator::Mul => left.mul(context.messages, right)?,
 			BinaryOperator::Div => left.div(context.messages, right)?,
+			BinaryOperator::Modulo => left.modulo(context.messages, right)?,
 			_ => return None,
 		};
 

@@ -432,6 +432,29 @@ pub enum ExpressionKind<'a> {
 }
 
 impl<'a> ExpressionKind<'a> {
+	pub fn name(&self) -> &'static str {
+		match self {
+			ExpressionKind::AnyCollapse => "AnyCollapse",
+			ExpressionKind::Void => "void value",
+			ExpressionKind::Block(_) => "block",
+			ExpressionKind::If(_) => "if expression",
+			ExpressionKind::IntegerValue(_) => "untyped integer",
+			ExpressionKind::DecimalValue(_) => "untyped decimal",
+			ExpressionKind::BooleanLiteral(_) => "boolean literal",
+			ExpressionKind::CodepointLiteral(_) => "codepoint literal",
+			ExpressionKind::StringLiteral(_) => "string literal",
+			ExpressionKind::ArrayLiteral(_) => "array literal",
+			ExpressionKind::StructLiteral(_) => "struct literal",
+			ExpressionKind::Call(_) => "function call",
+			ExpressionKind::Read(_) => "binding read",
+			ExpressionKind::StaticRead(_) => "static read",
+			ExpressionKind::FieldRead(_) => "field read",
+			ExpressionKind::UnaryOperation(_) => "unary operation",
+			ExpressionKind::BinaryOperation(_) => "binary operation",
+			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
+		}
+	}
+
 	pub fn name_with_article(&self) -> &'static str {
 		match self {
 			ExpressionKind::AnyCollapse => "an AnyCollapse",
@@ -451,8 +474,6 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::FieldRead(_) => "a field read",
 			ExpressionKind::UnaryOperation(_) => "an unary operation",
 			ExpressionKind::BinaryOperation(_) => "a binary operation",
-
-			// TODO: Is this correct?
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
 		}
 	}
@@ -523,7 +544,6 @@ impl IntegerValue {
 	pub fn add(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
-
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_add(other.value) else {
@@ -553,7 +573,6 @@ impl IntegerValue {
 	pub fn mul(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
-
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_mul(other.value) else {
@@ -568,13 +587,40 @@ impl IntegerValue {
 	pub fn div(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
-
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_div(other.value) else {
 			let err = error!("Overflow or underflow in constant division");
 			messages.message(err.span(span));
 			return None;
+		};
+
+		Some(IntegerValue { value, span, collapse: None })
+	}
+
+	// TODO: These error messages should be thought out a bit better
+	pub fn modulo(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+		let span = self.span + other.span;
+
+		let truncated_remainder = self.value % other.value;
+		let value = if truncated_remainder < 0 {
+			let Some(abs) = other.value.checked_abs() else {
+				let err = error!("Absolute value failure in constant modulo");
+				messages.message(err.span(span));
+				return None;
+			};
+
+			let Some(added) = truncated_remainder.checked_add(abs) else {
+				let err = error!("Addition failure in constant modulo");
+				messages.message(err.span(span));
+				return None;
+			};
+
+			added
+		} else {
+			truncated_remainder
 		};
 
 		Some(IntegerValue { value, span, collapse: None })

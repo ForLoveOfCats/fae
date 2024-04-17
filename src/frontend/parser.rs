@@ -253,9 +253,20 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 		TokenKind::Equal => BinaryOperator::Assign,
 
 		TokenKind::Add => BinaryOperator::Add,
+		TokenKind::AddAssign => BinaryOperator::AddAssign,
 		TokenKind::Sub => BinaryOperator::Sub,
+		TokenKind::SubAssign => BinaryOperator::SubAssign,
 		TokenKind::Mul => BinaryOperator::Mul,
+		TokenKind::MulAssign => BinaryOperator::MulAssign,
 		TokenKind::Div => BinaryOperator::Div,
+		TokenKind::DivAssign => BinaryOperator::DivAssign,
+		TokenKind::Modulo => BinaryOperator::Modulo,
+		TokenKind::ModuloAssign => BinaryOperator::ModuloAssign,
+
+		TokenKind::BitshiftLeft => BinaryOperator::BitshiftLeft,
+		TokenKind::BitshiftLeftAssign => BinaryOperator::BitshiftLeftAssign,
+		TokenKind::BitshiftRight => BinaryOperator::BitshiftRight,
+		TokenKind::BitshiftRightAssign => BinaryOperator::BitshiftRightAssign,
 
 		TokenKind::CompEqual => BinaryOperator::Equals,
 		TokenKind::CompNotEqual => BinaryOperator::NotEquals,
@@ -530,6 +541,7 @@ fn parse_string_contents(string: &str) -> Cow<str> {
 		let mut escape = "";
 		match string[index..].as_bytes() {
 			[b'\\', b'n', ..] => escape = "\n",
+			[b'\\', b't', ..] => escape = "\t",
 			[b'\\', b'\\', ..] => escape = "\\",
 			[b'\\', b'"', ..] => escape = "\"",
 			[b'\\', b'0', ..] => escape = "\0",

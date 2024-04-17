@@ -251,9 +251,20 @@ pub enum BinaryOperator {
 	Assign,
 
 	Add,
+	AddAssign,
 	Sub,
+	SubAssign,
 	Mul,
+	MulAssign,
 	Div,
+	DivAssign,
+	Modulo,
+	ModuloAssign,
+
+	BitshiftLeft,
+	BitshiftLeftAssign,
+	BitshiftRight,
+	BitshiftRightAssign,
 
 	Equals,
 	NotEquals,
@@ -272,16 +283,31 @@ impl BinaryOperator {
 	pub fn name(self) -> &'static str {
 		match self {
 			BinaryOperator::Assign => "Assignment",
+
 			BinaryOperator::Add => "Addition",
+			BinaryOperator::AddAssign => "Addition assignment",
 			BinaryOperator::Sub => "Subtraction",
+			BinaryOperator::SubAssign => "Subtraction assignment",
 			BinaryOperator::Mul => "Multiplication",
+			BinaryOperator::MulAssign => "Multiplication assignment",
 			BinaryOperator::Div => "Division",
+			BinaryOperator::DivAssign => "Division assignment",
+			BinaryOperator::Modulo => "Modulo",
+			BinaryOperator::ModuloAssign => "Modulo assignment",
+
+			BinaryOperator::BitshiftLeft => "Bitshift left",
+			BinaryOperator::BitshiftLeftAssign => "Bitshift left assignment",
+			BinaryOperator::BitshiftRight => "Bitshift right",
+			BinaryOperator::BitshiftRightAssign => "Bitshift right assignment",
+
 			BinaryOperator::Equals => "Equals",
 			BinaryOperator::NotEquals => "Not Equals",
+
 			BinaryOperator::GreaterThan => "Greater Than",
 			BinaryOperator::GreaterThanEquals => "Greater Than Equals",
 			BinaryOperator::LessThan => "Less Than",
 			BinaryOperator::LessThanEquals => "Less Than Equals",
+
 			BinaryOperator::LogicalAnd => "Logical And",
 			BinaryOperator::LogicalOr => "Logical Or",
 		}
@@ -292,20 +318,31 @@ impl BinaryOperator {
 	pub fn precedence(self) -> u32 {
 		use BinaryOperator::*;
 		match self {
-			Assign => 0,
+			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign => 0,
+
 			LogicalAnd | LogicalOr => 1,
+
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 2,
-			Add | Sub => 3,
-			Mul | Div => 4,
+
+			BitshiftLeft | BitshiftRight => 3,
+
+			Add | Sub => 4,
+
+			Mul | Div | Modulo => 5,
 		}
 	}
 
 	pub fn associativity(self) -> Associativity {
 		use BinaryOperator::*;
 		match self {
-			Assign => Associativity::Right,
-			Add | Sub | Mul | Div => Associativity::Left,
+			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign => {
+				Associativity::Right
+			}
+
+			Add | Sub | Mul | Div | Modulo | BitshiftLeft | BitshiftRight => Associativity::Left,
+
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => Associativity::Left,
+
 			LogicalAnd | LogicalOr => Associativity::Left,
 		}
 	}

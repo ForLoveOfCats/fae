@@ -853,6 +853,102 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			return None;
 		}
 
+		if matches!(
+			op,
+			BinaryOperator::AddAssign
+				| BinaryOperator::SubAssign
+				| BinaryOperator::MulAssign
+				| BinaryOperator::DivAssign
+				| BinaryOperator::ModuloAssign
+				| BinaryOperator::BitshiftLeftAssign
+				| BinaryOperator::BitshiftRightAssign
+		) {
+			let target = match left.kind {
+				BindingKind::Pointer { pointer, .. } => pointer,
+				BindingKind::Value(value) => unreachable!("{value:?}"),
+			};
+			let left = left.to_value(&self.builder).into_int_value();
+			let right = right.to_value(&self.builder).into_int_value();
+			assert_eq!(left.get_type(), right.get_type());
+
+			match op {
+				BinaryOperator::AddAssign => {
+					let int = self.builder.build_int_add(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::SubAssign => {
+					let int = self.builder.build_int_sub(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::MulAssign => {
+					let int = self.builder.build_int_mul(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::DivAssign => {
+					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_int_signed_div(left, right, "").unwrap()
+					} else {
+						self.builder.build_int_unsigned_div(left, right, "").unwrap()
+					};
+
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::ModuloAssign => {
+					let value = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						use IntPredicate::*;
+						let zero = left.get_type().const_zero();
+						let srem_result = self.builder.build_int_signed_rem(left, right, "").unwrap();
+
+						let absolute_value = {
+							let negated = self.builder.build_int_neg(right, "").unwrap();
+							let is_negative = self.builder.build_int_compare(SLT, right, zero, "").unwrap();
+							let selected = self.builder.build_select(is_negative, negated, right, "").unwrap();
+							selected.into_int_value()
+						};
+
+						let is_negative = self.builder.build_int_compare(SLT, srem_result, zero, "").unwrap();
+						let selected = self.builder.build_select(is_negative, absolute_value, zero, "").unwrap();
+						let addened = selected.into_int_value();
+
+						let result = self.builder.build_int_add(srem_result, addened, "").unwrap();
+						BasicValueEnum::IntValue(result)
+					} else {
+						let int = self.builder.build_int_unsigned_rem(left, right, "").unwrap();
+						BasicValueEnum::IntValue(int)
+					};
+
+					self.builder.build_store(target, value).unwrap();
+					return None;
+				}
+
+				BinaryOperator::BitshiftLeftAssign => {
+					let int = self.builder.build_left_shift(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::BitshiftRightAssign => {
+					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_right_shift(left, right, true, "").unwrap()
+					} else {
+						self.builder.build_right_shift(left, right, false, "").unwrap()
+					};
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				_ => unreachable!(),
+			}
+		}
+
 		let left = left.to_value(&self.builder);
 		let right = right.to_value(&self.builder);
 
@@ -911,6 +1007,44 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					BasicValueEnum::IntValue(int)
 				}
 
+				BinaryOperator::Modulo => {
+					if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						let zero = left.get_type().const_zero();
+						let srem_result = self.builder.build_int_signed_rem(left, right, "").unwrap();
+
+						let absolute_value = {
+							let negated = self.builder.build_int_neg(right, "").unwrap();
+							let is_negative = self.builder.build_int_compare(SLT, right, zero, "").unwrap();
+							let selected = self.builder.build_select(is_negative, negated, right, "").unwrap();
+							selected.into_int_value()
+						};
+
+						let is_negative = self.builder.build_int_compare(SLT, srem_result, zero, "").unwrap();
+						let selected = self.builder.build_select(is_negative, absolute_value, zero, "").unwrap();
+						let addened = selected.into_int_value();
+
+						let result = self.builder.build_int_add(srem_result, addened, "").unwrap();
+						BasicValueEnum::IntValue(result)
+					} else {
+						let int = self.builder.build_int_unsigned_rem(left, right, "").unwrap();
+						BasicValueEnum::IntValue(int)
+					}
+				}
+
+				BinaryOperator::BitshiftLeft => {
+					let int = self.builder.build_left_shift(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::BitshiftRight => {
+					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+						self.builder.build_right_shift(left, right, true, "").unwrap()
+					} else {
+						self.builder.build_right_shift(left, right, false, "").unwrap()
+					};
+					BasicValueEnum::IntValue(int)
+				}
+
 				BinaryOperator::Equals => {
 					let result = self.builder.build_int_compare(EQ, left, right, "").unwrap();
 					BasicValueEnum::IntValue(result)
@@ -957,7 +1091,16 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					BasicValueEnum::IntValue(result)
 				}
 
-				BinaryOperator::Assign | BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => unreachable!(),
+				BinaryOperator::Assign
+				| BinaryOperator::AddAssign
+				| BinaryOperator::SubAssign
+				| BinaryOperator::MulAssign
+				| BinaryOperator::DivAssign
+				| BinaryOperator::ModuloAssign
+				| BinaryOperator::BitshiftLeftAssign
+				| BinaryOperator::BitshiftRightAssign
+				| BinaryOperator::LogicalAnd
+				| BinaryOperator::LogicalOr => unreachable!(),
 			}
 		} else {
 			let left = left.into_float_value();
@@ -1015,7 +1158,19 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					BasicValueEnum::IntValue(result)
 				}
 
-				BinaryOperator::Assign | BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => unreachable!(),
+				BinaryOperator::Assign
+				| BinaryOperator::AddAssign
+				| BinaryOperator::SubAssign
+				| BinaryOperator::MulAssign
+				| BinaryOperator::DivAssign
+				| BinaryOperator::Modulo
+				| BinaryOperator::ModuloAssign
+				| BinaryOperator::BitshiftLeft
+				| BinaryOperator::BitshiftLeftAssign
+				| BinaryOperator::BitshiftRight
+				| BinaryOperator::BitshiftRightAssign
+				| BinaryOperator::LogicalAnd
+				| BinaryOperator::LogicalOr => unreachable!(),
 			}
 		};
 

@@ -1,0 +1,120 @@
+import fae::stdout::print_i64, print_u64, print_string, print_newline
+
+
+fn main() {
+	signed()
+	unsigned()
+}
+
+fn print_signed(value: i64) {
+	print_i64(value)
+	print_newline()
+}
+
+fn signed() {
+	print_string("Signed binary operations\n")
+	mut signed: i64 = 5
+	print_signed(signed) // 5
+
+	signed = signed + 1
+	print_signed(signed) // 6
+
+	signed += 2
+	print_signed(signed) // 8
+
+	signed = signed - 4
+	print_signed(signed) // 4
+
+	signed -= 10
+	print_signed(signed) // -6
+
+	signed = signed * 18
+	print_signed(signed) // -108
+
+	signed *= 4
+	print_signed(signed) // -432
+
+	signed = signed / 3
+	print_signed(signed) // -144
+
+	signed /= 4
+	print_signed(signed) // -36
+
+	signed = signed % 20
+	print_signed(signed) // 4
+
+	signed = -16
+	print_signed(signed) // -16
+
+	signed %= 12
+	print_signed(signed) // 8
+
+	signed = signed << 5
+	print_signed(signed) // 256
+
+	signed <<= 2
+	print_signed(signed) // 1024
+
+	signed = -signed
+	print_signed(signed) // -1024
+
+	signed = signed >> 3
+	print_signed(signed) // -128
+
+	signed >>= 2
+	print_signed(signed) // -32
+}
+
+fn print_unsigned(value: u64) {
+	print_u64(value)
+	print_newline()
+}
+
+fn unsigned() {
+	print_string("\nUnsigned binary operations\n")
+	mut unsigned: u64 = 8
+	print_unsigned(unsigned) // 8
+
+	unsigned = unsigned + 1
+	print_unsigned(unsigned) // 9
+
+	unsigned += 2
+	print_unsigned(unsigned) // 11
+
+	unsigned = unsigned - 1
+	print_unsigned(unsigned) // 10
+
+	unsigned -= 3
+	print_unsigned(unsigned) // 7
+
+	unsigned = unsigned * 18
+	print_unsigned(unsigned) // 126
+
+	unsigned *= 4
+	print_unsigned(unsigned) // 504
+
+	unsigned = unsigned / 2
+	print_unsigned(unsigned) // 252
+
+	unsigned /= 4
+	print_unsigned(unsigned) // 63
+
+	unsigned = unsigned % 50
+	print_unsigned(unsigned) // 13
+
+	unsigned %= 10
+	print_unsigned(unsigned) // 3
+
+	unsigned = unsigned << 5
+	print_unsigned(unsigned) // 96
+
+	unsigned <<= 2
+	print_unsigned(unsigned) // 384
+
+	unsigned = unsigned >> 3
+	print_unsigned(unsigned) // 48
+
+	unsigned >>= 4
+	print_unsigned(unsigned) // 3
+}
+
