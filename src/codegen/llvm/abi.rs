@@ -382,31 +382,29 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		self.parameter_information_buffer.clear();
 
 		for parameter in &function.parameters {
-			let information = self.construct_parameter_information(type_store, context, &llvm_types, parameter.type_id);
+			let information = self.construct_parameter_information(type_store, context, llvm_types, parameter.type_id);
 			self.parameter_information_buffer.push(information);
 		}
 
 		let varargs = function_shape.c_varargs;
 		let fn_type = if self.return_type_buffer.is_empty() {
 			context.void_type().fn_type(&self.parameter_type_buffer, varargs)
-		} else {
-			if let [llvm_type] = self.return_type_buffer.as_slice() {
-				let is_aggregate = if let FunctionReturnType::ByValue { value_type } = return_type {
-					value_type.is_struct_type()
-				} else {
-					false
-				};
-
-				if is_aggregate {
-					let llvm_type = context.struct_type(&self.return_type_buffer, false);
-					llvm_type.fn_type(&self.parameter_type_buffer, varargs)
-				} else {
-					llvm_type.fn_type(&self.parameter_type_buffer, varargs)
-				}
+		} else if let [llvm_type] = self.return_type_buffer.as_slice() {
+			let is_aggregate = if let FunctionReturnType::ByValue { value_type } = return_type {
+				value_type.is_struct_type()
 			} else {
+				false
+			};
+
+			if is_aggregate {
 				let llvm_type = context.struct_type(&self.return_type_buffer, false);
 				llvm_type.fn_type(&self.parameter_type_buffer, varargs)
+			} else {
+				llvm_type.fn_type(&self.parameter_type_buffer, varargs)
 			}
+		} else {
+			let llvm_type = context.struct_type(&self.return_type_buffer, false);
+			llvm_type.fn_type(&self.parameter_type_buffer, varargs)
 		};
 
 		if let Some(extern_attribute) = function_shape.extern_attribute {
@@ -517,16 +515,13 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		self.argument_value_buffer.clear();
 		let context = generator.context;
 
-		let mut sret_alloca = None;
-		match function.return_type {
-			FunctionReturnType::ByPointer { pointed_type, .. } => {
-				let alloca = generator.build_alloca(pointed_type);
-				self.argument_value_buffer.push(BasicMetadataValueEnum::PointerValue(alloca));
-				sret_alloca = Some(alloca);
-			}
-
-			_ => {}
-		}
+		let sret_alloca = if let FunctionReturnType::ByPointer { pointed_type, .. } = function.return_type {
+			let alloca = generator.build_alloca(pointed_type);
+			self.argument_value_buffer.push(BasicMetadataValueEnum::PointerValue(alloca));
+			Some(alloca)
+		} else {
+			None
+		};
 
 		if function.c_varargs {
 			assert!(arguments.len() >= function.parameter_information.len());
@@ -667,7 +662,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 	}
 }
 
-fn basic_value_enum_to_basic_metadata_value_enum<'ctx>(value: BasicValueEnum<'ctx>) -> BasicMetadataValueEnum<'ctx> {
+fn basic_value_enum_to_basic_metadata_value_enum(value: BasicValueEnum) -> BasicMetadataValueEnum {
 	match value {
 		BasicValueEnum::ArrayValue(value) => BasicMetadataValueEnum::ArrayValue(value),
 		BasicValueEnum::IntValue(value) => BasicMetadataValueEnum::IntValue(value),

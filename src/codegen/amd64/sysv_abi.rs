@@ -168,7 +168,7 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 					}
 
 					let result_slice = &mut buffer[buffer_index..buffer_index + field_classes.len()];
-					result_slice.copy_from_slice(&field_classes);
+					result_slice.copy_from_slice(field_classes);
 					buffer_index += field_classes.len();
 
 					assert!(field_layout.size <= 8, "{}", field_layout.size);

@@ -178,16 +178,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			statics: Vec::new(),
 			readables: Vec::new(),
 
-			_marker: std::marker::PhantomData::default(),
+			_marker: std::marker::PhantomData,
 		}
 	}
 
 	fn finalize_function_if_in_function(&mut self) {
 		if let State::InFunction { function_id, void_returning } = self.state {
-			if void_returning {
-				if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-					self.builder.build_return(None).unwrap();
-				}
+			if void_returning && self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+				self.builder.build_return(None).unwrap();
 			}
 
 			let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
@@ -254,7 +252,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
 			};
 
-			let specializations = Vec::from_iter((0..specialization_count).into_iter().map(|_| None));
+			let specializations = Vec::from_iter((0..specialization_count).map(|_| None));
 			self.llvm_types.user_type_structs.push(specializations);
 		}
 
@@ -322,7 +320,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				let mut abi = self.abi.take().unwrap();
 				let defined_function = abi.define_function(
 					type_store,
-					&self.context,
+					self.context,
 					&mut self.module,
 					&mut self.builder,
 					&self.attribute_kinds,
@@ -484,7 +482,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		element_type_id: TypeId,
 		slice_type_id: TypeId,
 	) -> Self::Binding {
-		assert!(elements.len() > 0);
+		assert!(!elements.is_empty());
 
 		let element_type = self
 			.llvm_types
@@ -560,7 +558,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let function = maybe_function.as_ref().unwrap();
 
 		let mut abi = self.abi.take().unwrap();
-		let binding = abi.call_function(self, type_store, function, &arguments);
+		let binding = abi.call_function(self, type_store, function, arguments);
 		self.abi = Some(abi);
 
 		binding
@@ -582,7 +580,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let field_type = pointed_struct.get_field_type_at_index(index).unwrap();
 		let field_pointer = self.builder.build_struct_gep(pointed_type, pointer, index, "").unwrap();
 
-		let type_id = if let Some(_) = base.type_id.as_slice(type_store) {
+		let type_id = if base.type_id.as_slice(type_store).is_some() {
 			type_store.usize_type_id()
 		} else if let Some(struct_type) = base.type_id.as_struct(type_store) {
 			struct_type.fields[field_index].type_id
@@ -637,7 +635,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let pointed_type = self
 			.llvm_types
-			.type_to_basic_type_enum(&self.context, type_store, pointed_type_id);
+			.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
 		let kind = BindingKind::Pointer { pointer, pointed_type };
 		Binding { type_id: pointed_type_id, kind }
 	}
@@ -1205,7 +1203,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let function = maybe_function.as_ref().unwrap();
 
 		let mut abi = self.abi.take().unwrap();
-		abi.return_value(&self.context, &mut self.builder, function, value);
+		abi.return_value(self.context, &mut self.builder, function, value);
 		self.abi = Some(abi);
 	}
 

@@ -601,14 +601,10 @@ fn create_block_types<'a>(
 				| tree::Statement::Static(..) => {}
 			}
 		} else {
-			match statement {
-				tree::Statement::Static(..) => {
-					let error = error!("{} is only allowed in a root scope", statement.name_and_article());
-					messages.message(error.span(statement.span()));
-					continue;
-				}
-
-				_ => {}
+			if let tree::Statement::Static(..) = statement {
+				let error = error!("{} is only allowed in a root scope", statement.name_and_article());
+				messages.message(error.span(statement.span()));
+				continue;
 			}
 		}
 
@@ -1937,19 +1933,19 @@ fn validate_unary_operation<'a>(
 	match (&op, &mut expression.kind) {
 		(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
 			value.negate(context.messages, span);
-			expression.span = expression.span + span;
+			expression.span += span;
 			return expression;
 		}
 
 		(UnaryOperator::Negate, ExpressionKind::DecimalValue(value)) => {
 			value.negate(span);
-			expression.span = expression.span + span;
+			expression.span += span;
 			return expression;
 		}
 
 		(UnaryOperator::Invert, ExpressionKind::BooleanLiteral(value)) => {
 			*value = !*value;
-			expression.span = expression.span + span;
+			expression.span += span;
 			return expression;
 		}
 

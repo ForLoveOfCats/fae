@@ -852,7 +852,7 @@ fn parse_export_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 	let name_token = tokenizer.expect(messages, TokenKind::String)?;
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let attribute = ExportAttribute { name: &name_token.text };
+	let attribute = ExportAttribute { name: name_token.text };
 	let span = export_token.span + name_token.span;
 	Ok(Node::new(attribute, span))
 }
@@ -877,7 +877,7 @@ fn parse_lang_attribute<'a>(
 	let name_token = tokenizer.expect(messages, TokenKind::String)?;
 	tokenizer.expect(messages, TokenKind::Newline)?;
 
-	let attribute = LangAttribute { name: &name_token.text };
+	let attribute = LangAttribute { name: name_token.text };
 	let span = pound_sign_span + lang_token.span + name_token.span;
 	Ok(Node::new(attribute, span))
 }

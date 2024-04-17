@@ -305,7 +305,7 @@ impl<'a> std::fmt::Display for Assembler<'a> {
 		for print_entry in &self.print_sequence {
 			let (length, label) = match print_entry {
 				PrintEntry::Note { note: text } => {
-					#[cfg(not(features = "test-support"))]
+					#[cfg(not(feature = "test-support"))]
 					writeln!(f, "// {text}")?;
 					continue;
 				}

@@ -319,9 +319,7 @@ fn generate_static_read<G: Generator>(generator: &mut G, static_read: &StaticRea
 }
 
 fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, read: &FieldRead) -> Option<G::Binding> {
-	let Some(base) = generate_expression(context, generator, &read.base) else {
-		return None;
-	};
+	let base = generate_expression(context, generator, &read.base)?;
 
 	let type_id = context.specialize_type_id(read.base.type_id);
 	let entry = &context.type_store.type_entries[type_id.index()];
@@ -399,10 +397,7 @@ fn generate_binary_operation<G: Generator>(
 		return Some(generator.generate_boolean_literal(context.type_store, value));
 	};
 
-	let Some(right) = right else {
-		return None;
-	};
-
+	let right = right?;
 	let source_type_id = context.specialize_type_id(operation.left.type_id);
 	let result_type_id = context.specialize_type_id(operation.type_id);
 	generator.generate_binary_operation(context.type_store, left, right, operation.op, source_type_id, result_type_id)

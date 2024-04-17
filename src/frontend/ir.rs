@@ -538,7 +538,7 @@ impl IntegerValue {
 		};
 
 		self.value = value;
-		self.span = self.span + sign_span;
+		self.span += sign_span;
 	}
 
 	pub fn add(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
@@ -660,7 +660,7 @@ impl DecimalValue {
 		assert_not_collapsed(self.collapse);
 
 		self.value = -self.value;
-		self.span = self.span + sign_span;
+		self.span += sign_span;
 	}
 
 	pub fn add(self, other: DecimalValue) -> DecimalValue {
