@@ -171,11 +171,11 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		self.type_store.type_name(self.function_store, self.module_path, type_id)
 	}
 
-	pub fn collapse_fair(&mut self, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Option<TypeId> {
+	pub fn collapse_fair(&mut self, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Result<TypeId, ()> {
 		self.type_store.collapse_fair(self.messages, self.function_store, a, b)
 	}
 
-	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Option<bool> {
+	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Result<bool, ()> {
 		self.type_store.collapse_to(self.messages, self.function_store, to, from)
 	}
 }
@@ -1116,7 +1116,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				let mut expression = expression.map(|expression| validate_expression(&mut context, expression));
 				if let Some(expression) = &mut expression {
 					let return_type = context.return_type.unwrap();
-					if let Some(false) = context.collapse_to(return_type, expression) {
+					if let Ok(false) = context.collapse_to(return_type, expression) {
 						let expected = context.type_name(return_type);
 						let got = context.type_name(expression.type_id);
 						let error = error!("Expected return type of {expected}, got {got}");
@@ -1346,7 +1346,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 
 	let mut expression = validate_expression(context, &statement.item.expression);
 	if let Some(explicit_type) = explicit_type {
-		if !context.collapse_to(explicit_type, &mut expression)? {
+		if !context.collapse_to(explicit_type, &mut expression).ok()? {
 			context.message(
 				error!(
 					"Const type mismatch between explicit type {} and expression type {}",
@@ -1417,7 +1417,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	let type_id = match &statement.item.parsed_type {
 		Some(parsed_type) => {
 			let explicit_type = context.lookup_type(parsed_type)?;
-			if !context.collapse_to(explicit_type, &mut expression)? {
+			if !context.collapse_to(explicit_type, &mut expression).ok()? {
 				let expected = context.type_name(explicit_type);
 				let got = context.type_name(expression.type_id);
 				let err = error!("Expected {expected} but got expression with type {got}");
@@ -1456,7 +1456,7 @@ pub fn validate_expression<'a>(
 
 	match &expression.item {
 		tree::Expression::Block(block) => validate_block_expression(context, block, span),
-		tree::Expression::If(if_expression) => validate_if_expression(context, if_expression, span),
+		tree::Expression::IfElseChain(chain_expression) => validate_if_else_chain_expression(context, chain_expression, span),
 		tree::Expression::IntegerLiteral(literal) => validate_integer_literal(context, literal, span),
 		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
 		tree::Expression::BooleanLiteral(literal) => validate_bool_literal(context, *literal, span),
@@ -1480,13 +1480,59 @@ fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a t
 	Expression { span, type_id, mutable: true, returns, kind }
 }
 
-fn validate_if_expression<'a>(context: &mut Context<'a, '_, '_>, if_expression: &'a tree::If<'a>, span: Span) -> Expression<'a> {
-	let mut scope = context.child_scope();
-	let condition = validate_expression(&mut scope, &if_expression.condition);
-	let body = validate_block(scope, &if_expression.body.item, false);
-	let type_id = body.type_id; // TODO: Wrong, needs else-if/else
-	let returns = condition.returns; // The body is not guarenteed to run, therefore cannot indicate termination
-	let kind = ExpressionKind::If(Box::new(If { type_id, condition, body }));
+fn validate_if_else_chain_expression<'a>(
+	context: &mut Context<'a, '_, '_>,
+	chain_expression: &'a tree::IfElseChain<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let mut type_id = None;
+	let mut check_body_type_id = |context: &mut Context, body: &Block, span: Span| {
+		if let Some(type_id) = type_id {
+			// TODO: Make sure that future `give` statement performs expression collapse
+			if !context.type_store.direct_match(type_id, body.type_id) {
+				let expected = context.type_name(type_id);
+				let found = context.type_name(body.type_id);
+				let error = error!("If-else chain body type mismatch, expected {expected} but found {found}");
+				context.message(error.span(span));
+			}
+		} else {
+			type_id = Some(body.type_id);
+		}
+	};
+
+	let mut entries = Vec::with_capacity(chain_expression.entries.len());
+	let mut first_condition_returns = false;
+	let mut all_if_bodies_return = true;
+
+	for (index, entry) in chain_expression.entries.iter().enumerate() {
+		let mut scope = context.child_scope();
+		let condition = validate_expression(&mut scope, &entry.condition);
+		if index == 0 && condition.returns {
+			first_condition_returns = true;
+		}
+
+		let body = validate_block(scope, &entry.body.item, false);
+		all_if_bodies_return &= body.returns;
+		check_body_type_id(context, &body, entry.body.span);
+
+		let entry = IfElseChainEntry { condition, body };
+		entries.push(entry);
+	}
+
+	let mut else_returns = false;
+	let else_body = if let Some(else_body) = &chain_expression.else_body {
+		let scope = context.child_scope();
+		let body = validate_block(scope, &else_body.item, false);
+		else_returns = body.returns;
+		Some(body)
+	} else {
+		None
+	};
+
+	let type_id = type_id.unwrap();
+	let returns = (all_if_bodies_return && else_returns) || first_condition_returns;
+	let chain = IfElseChain { type_id, entries, else_body };
+	let kind = ExpressionKind::IfElseChain(Box::new(chain));
 	Expression { span, type_id, mutable: true, returns, kind }
 }
 
@@ -2072,7 +2118,7 @@ fn validate_cast<'a>(
 		let to_untyped = to_untyped_integer || to_untyped_decimal;
 
 		if from_untyped && !to_untyped {
-			context.collapse_to(to_type_id, &mut expression);
+			_ = context.collapse_to(to_type_id, &mut expression);
 		}
 	} else if from_pointer && to_pointer {
 	} else if from_pointer && to_numeric {
@@ -2096,7 +2142,7 @@ fn validate_cast<'a>(
 				let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(from_type_id));
 				context.message(error.span(span));
 			} else if from_type_id.is_untyped_integer(context.type_store) {
-				context.collapse_to(context.type_store.usize_type_id(), &mut expression);
+				_ = context.collapse_to(context.type_store.usize_type_id(), &mut expression);
 			}
 		}
 	} else {
@@ -2171,7 +2217,7 @@ fn validate_binary_operation<'a>(
 	let mut right = validate_expression(context, &operation.right);
 	let collapsed = context.collapse_fair(&mut left, &mut right);
 
-	let Some(collapsed) = collapsed else {
+	let Ok(collapsed) = collapsed else {
 		context.message(
 			error!("{} type mismatch", op.name())
 				.span(span)

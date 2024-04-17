@@ -1,6 +1,6 @@
 use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::ir::{Block, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
@@ -37,7 +37,13 @@ pub trait Generator {
 
 	fn end_block(&mut self);
 
-	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self));
+	fn generate_if_else_chain(
+		&mut self,
+		context: &mut codegen::Context,
+		chain_expression: &IfElseChain,
+		condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
+		body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+	);
 
 	// I hate this API but it has to pass the context back through to avoid having both closures
 	// have to capture a mutable reference at the same time

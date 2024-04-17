@@ -3,8 +3,8 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Call, CodepointLiteral, DecimalValue, Expression, ExpressionKind, FieldRead,
-	FunctionId, FunctionShape, If, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
-	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	FunctionId, FunctionShape, IfElseChain, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead,
+	StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -150,7 +150,7 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 			None
 		}
 
-		ExpressionKind::If(if_expression) => generate_if(context, generator, if_expression),
+		ExpressionKind::IfElseChain(chain_expression) => generate_if_else_chain(context, generator, chain_expression),
 
 		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
 
@@ -188,11 +188,17 @@ fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, e
 	}
 }
 
-fn generate_if<G: Generator>(context: &mut Context, generator: &mut G, if_expression: &If) -> Option<G::Binding> {
-	let condition = generate_expression(context, generator, &if_expression.condition).unwrap();
-	generator.generate_if(condition, |generator| {
-		generate_block(context, generator, &if_expression.body);
-	});
+fn generate_if_else_chain<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	chain_expression: &IfElseChain,
+) -> Option<G::Binding> {
+	generator.generate_if_else_chain(
+		context,
+		chain_expression,
+		|context, generator, condition| generate_expression(context, generator, condition).unwrap(),
+		|context, generator, body| generate_block(context, generator, body),
+	);
 
 	None
 }

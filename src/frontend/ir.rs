@@ -327,10 +327,16 @@ pub struct Block<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct If<'a> {
-	pub type_id: TypeId, // TODO: Meaningless until else-if/else have been added
+pub struct IfElseChainEntry<'a> {
 	pub condition: Expression<'a>,
 	pub body: Block<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IfElseChain<'a> {
+	pub type_id: TypeId, // TODO: Meaningless until else-if/else have been added
+	pub entries: Vec<IfElseChainEntry<'a>>,
+	pub else_body: Option<Block<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -408,7 +414,7 @@ pub enum ExpressionKind<'a> {
 	Void,
 
 	Block(Block<'a>),
-	If(Box<If<'a>>),
+	IfElseChain(Box<IfElseChain<'a>>),
 
 	IntegerValue(IntegerValue),
 	DecimalValue(DecimalValue),
@@ -437,7 +443,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::AnyCollapse => "AnyCollapse",
 			ExpressionKind::Void => "void value",
 			ExpressionKind::Block(_) => "block",
-			ExpressionKind::If(_) => "if expression",
+			ExpressionKind::IfElseChain(_) => "if expression",
 			ExpressionKind::IntegerValue(_) => "untyped integer",
 			ExpressionKind::DecimalValue(_) => "untyped decimal",
 			ExpressionKind::BooleanLiteral(_) => "boolean literal",
@@ -460,7 +466,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::AnyCollapse => "an AnyCollapse",
 			ExpressionKind::Void => "a void value",
 			ExpressionKind::Block(_) => "a block",
-			ExpressionKind::If(_) => "a if expression",
+			ExpressionKind::IfElseChain(_) => "a if expression",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",
 			ExpressionKind::DecimalValue(_) => "an untyped decimal",
 			ExpressionKind::BooleanLiteral(_) => "a boolean literal",

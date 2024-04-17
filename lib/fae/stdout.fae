@@ -9,12 +9,11 @@ fn print_newline() {
 }
 
 fn print_bool(arg: bool) {
-	mut as_text = "false"
 	if arg {
-		as_text = "true"
+		print_string("true")
+	} else {
+		print_string("false")
 	}
-
-	print_string(as_text)
 }
 
 fn print_i8(arg: i8) {

@@ -10,7 +10,7 @@ use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Function, FunctionId};
+use crate::frontend::ir::{Block, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
@@ -365,22 +365,62 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		self.state = State::InFunction { function_id, void_returning };
 	}
 
-	fn generate_if(&mut self, condition: Self::Binding, body_callback: impl FnOnce(&mut Self)) {
+	fn generate_if_else_chain(
+		&mut self,
+		context: &mut codegen::Context,
+		chain_expression: &IfElseChain,
+		mut condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
+		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+	) {
 		let original_block = self.builder.get_insert_block().unwrap();
-		let if_block = self.context.insert_basic_block_after(original_block, "if_body_block");
-		let following_block = self.context.insert_basic_block_after(if_block, "if_following_block");
+		let following_block = self
+			.context
+			.insert_basic_block_after(original_block, "if_else_following_block");
 
-		let condition = condition.to_value(&self.builder).into_int_value();
-		let zero = condition.get_type().const_zero();
-		let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
-		self.builder
-			.build_conditional_branch(flag, if_block, following_block)
-			.unwrap();
+		let mut next_condition_block = self.context.insert_basic_block_after(original_block, "condition_block");
+		let mut insert_after = next_condition_block;
 
-		self.builder.position_at_end(if_block);
-		body_callback(self);
-		let current_block = self.builder.get_insert_block().unwrap();
-		if current_block.get_terminator().is_none() {
+		self.builder.build_unconditional_branch(next_condition_block).unwrap();
+
+		for entry in &chain_expression.entries {
+			let condition_block = next_condition_block;
+			self.builder.position_at_end(condition_block);
+			next_condition_block = self.context.insert_basic_block_after(insert_after, "condition_block");
+
+			let condition = condition_callback(context, self, &entry.condition);
+			let condition = condition.to_value(&self.builder).into_int_value();
+
+			let if_block = self.context.insert_basic_block_after(insert_after, "if_block");
+			insert_after = if_block;
+
+			let zero = condition.get_type().const_zero();
+			let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
+			self.builder
+				.build_conditional_branch(flag, if_block, next_condition_block)
+				.unwrap();
+
+			self.builder.position_at_end(if_block);
+			body_callback(context, self, &entry.body);
+			let current_block = self.builder.get_insert_block().unwrap();
+			if current_block.get_terminator().is_none() {
+				self.builder.build_unconditional_branch(following_block).unwrap();
+			}
+		}
+
+		if let Some(body) = &chain_expression.else_body {
+			let block = next_condition_block;
+			block.set_name("else_block");
+
+			self.builder.position_at_end(block);
+			body_callback(context, self, body);
+			let current_block = self.builder.get_insert_block().unwrap();
+			if current_block.get_terminator().is_none() {
+				self.builder.build_unconditional_branch(following_block).unwrap();
+			}
+		} else {
+			let block = next_condition_block;
+			block.set_name("non_existant_else_block");
+			self.builder.position_at_end(block);
 			self.builder.build_unconditional_branch(following_block).unwrap();
 		}
 

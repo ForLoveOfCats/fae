@@ -524,9 +524,9 @@ impl<'a> TypeStore<'a> {
 		function_store: &FunctionStore,
 		a: &mut Expression<'a>,
 		b: &mut Expression<'a>,
-	) -> Option<TypeId> {
+	) -> Result<TypeId, ()> {
 		if a.type_id.entry == b.type_id.entry {
-			return Some(a.type_id);
+			return Ok(a.type_id);
 		}
 
 		// if either are any collapse then collapse to the other, even if it is also any collapse
@@ -534,9 +534,9 @@ impl<'a> TypeStore<'a> {
 		// if either type is an untyped number we know the other isn't, collapse to the other type
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
-			return Some(b.type_id);
+			return Ok(b.type_id);
 		} else if b.type_id.entry == self.any_collapse_type_id.entry {
-			return Some(a.type_id);
+			return Ok(a.type_id);
 		}
 
 		let a_number = a.type_id.entry == self.integer_type_id.entry || a.type_id.entry == self.decimal_type_id.entry;
@@ -553,8 +553,8 @@ impl<'a> TypeStore<'a> {
 
 			let collapsed = self.collapse_to(messages, function_store, self.decimal_type_id, non_decimal)?;
 			return match collapsed {
-				true => Some(self.decimal_type_id),
-				false => None,
+				true => Ok(self.decimal_type_id),
+				false => Err(()),
 			};
 		}
 
@@ -562,8 +562,8 @@ impl<'a> TypeStore<'a> {
 			assert!(!b_number);
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
 			return match collapsed {
-				true => Some(b.type_id),
-				false => None,
+				true => Ok(b.type_id),
+				false => Err(()),
 			};
 		}
 
@@ -571,12 +571,12 @@ impl<'a> TypeStore<'a> {
 			assert!(!a_number);
 			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
 			return match collapsed {
-				true => Some(a.type_id),
-				false => None,
+				true => Ok(a.type_id),
+				false => Err(()),
 			};
 		}
 
-		None
+		Err(())
 	}
 
 	pub fn collapse_to(
@@ -585,9 +585,9 @@ impl<'a> TypeStore<'a> {
 		function_store: &FunctionStore,
 		to: TypeId,
 		from: &mut Expression<'a>,
-	) -> Option<bool> {
+	) -> Result<bool, ()> {
 		if to.entry == from.type_id.entry {
-			return Some(true);
+			return Ok(true);
 		}
 
 		// any collapse -> anything else
@@ -599,7 +599,7 @@ impl<'a> TypeStore<'a> {
 		if from.type_id.entry == self.any_collapse_type_id.entry {
 			// From any collapse
 			// No need to convert anything, this only gets introduced in case of error so we know we won't codegen
-			return Some(true);
+			return Ok(true);
 		}
 
 		if from.type_id.entry == self.integer_type_id.entry {
@@ -619,7 +619,7 @@ impl<'a> TypeStore<'a> {
 				if value.abs() > MAX_F64_INTEGER {
 					let err = error!("Constant integer {value} is unable to be represented as a constant decimal");
 					messages.message(err.span(span));
-					return None;
+					return Err(());
 				}
 
 				let type_id = self.decimal_type_id;
@@ -627,7 +627,7 @@ impl<'a> TypeStore<'a> {
 				let returns = from.returns;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
 				*from = Expression { span: from.span, type_id, mutable, returns, kind };
-				return Some(true);
+				return Ok(true);
 			}
 
 			let (to_float, max_float_integer) = match to.entry {
@@ -641,12 +641,12 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let err = error!("Constant integer {value} is unable to be represented as {name}");
 					messages.message(err.span(span));
-					return None;
+					return Err(());
 				}
 
 				// constant integer -> float of large enough
 				from_value.collapse(to);
-				return Some(true);
+				return Ok(true);
 			}
 
 			let (to_signed, to_unsigned, bit_count) = match to.entry {
@@ -672,7 +672,7 @@ impl<'a> TypeStore<'a> {
 						let name = self.type_name(function_store, &[], to);
 						let error = error!("Constant integer {value} is too small to be represented as {name}");
 						messages.message(error.span(span));
-						return None;
+						return Err(());
 					}
 				} else {
 					let max_value = i128::pow(2, bit_count - 1) - 1;
@@ -680,13 +680,13 @@ impl<'a> TypeStore<'a> {
 						let name = self.type_name(function_store, &[], to);
 						let error = error!("Constant integer {value} is too large to be represented as {name}");
 						messages.message(error.span(span));
-						return None;
+						return Err(());
 					}
 				}
 
 				// constant integer -> signed of large enough
 				from_value.collapse(to);
-				return Some(true);
+				return Ok(true);
 			}
 
 			if to_unsigned {
@@ -694,7 +694,7 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let error = error!("Constant integer {value} is negative and so cannot be represented as {name}",);
 					messages.message(error.span(span));
-					return None;
+					return Err(());
 				}
 
 				let max_value = i128::pow(2, bit_count) - 1;
@@ -702,12 +702,12 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let error = error!("Constant integer {value} is too large to be represented as {name}");
 					messages.message(error.span(span));
-					return None;
+					return Err(());
 				}
 
 				// constant integer -> unsigned of large enough if not negative
 				from_value.collapse(to);
-				return Some(true);
+				return Ok(true);
 			}
 		}
 
@@ -732,13 +732,13 @@ impl<'a> TypeStore<'a> {
 						let name = self.type_name(function_store, &[], to);
 						let err = error!("Constant decimal {value} cannot be represented as {name} without a loss in precision");
 						messages.message(err.span(span));
-						return None;
+						return Err(());
 					}
 				}
 
 				// constant decimal -> float of large enough
 				from_value.collapse(to);
-				return Some(true);
+				return Ok(true);
 			}
 		}
 
@@ -748,7 +748,7 @@ impl<'a> TypeStore<'a> {
 		if let TypeEntryKind::Pointer { type_id: to, mutable: to_mutable } = to_entry.kind {
 			if let TypeEntryKind::Pointer { type_id: from, mutable: from_mutable } = from_entry.kind {
 				if to.entry == from.entry && from_mutable && !to_mutable {
-					return Some(true);
+					return Ok(true);
 				}
 			}
 		}
@@ -763,7 +763,7 @@ impl<'a> TypeStore<'a> {
 						// See `get_or_create_reference_entries`, mutable slice directly follows immutable slice of same type
 						// Back up one entry to turn the array's slice from mutable to immutable
 						literal.type_id.entry -= 1;
-						return Some(true);
+						return Ok(true);
 					}
 
 					// TODO: This replace is a dumb solution
@@ -773,12 +773,12 @@ impl<'a> TypeStore<'a> {
 					let conversion = Box::new(SliceMutableToImmutable { type_id, expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
 					*from = Expression { span: from.span, type_id, mutable: false, returns, kind };
-					return Some(true);
+					return Ok(true);
 				}
 			}
 		}
 
-		Some(false)
+		Ok(false)
 	}
 
 	fn get_or_create_reference_entries(&mut self, type_id: TypeId) -> u32 {

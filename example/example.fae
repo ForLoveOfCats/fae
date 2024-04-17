@@ -14,7 +14,7 @@ fn seed_rand() {
 fn play_round() {
 	seed_rand()
 	let number = rand().(i64) % 100
-	print_string("Guess the random number\n")
+	print_string("Guess the random number between 1 and 100\n")
 
 	let buffer = [0.(u8), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
@@ -22,7 +22,7 @@ fn play_round() {
 		print_string(">>> ")
 		fflush(StdOutFile.*)
 		mut read_bytes: i64 = 0
-		while read_bytes == 0 {
+		while read_bytes <= 0 {
 			read_bytes = read(StdInDescription, buffer.pointer, 19)
 		}
 
@@ -32,13 +32,9 @@ fn play_round() {
 
 		if guess < number {
 			print_string("Too low\n")
-		}
-
-		if guess > number {
+		} else if guess > number {
 			print_string("Too high\n")
-		}
-
-		if guess == number {
+		} else {
 			print_string("Somehow you got it!\n")
 			return
 		}

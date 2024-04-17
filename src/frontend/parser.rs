@@ -329,7 +329,7 @@ fn parse_expression_atom<'a>(
 
 		TokenKind::Word | TokenKind::DoubleColon => {
 			match peeked.text {
-				"if" => return parse_if(messages, tokenizer),
+				"if" => return parse_if_else_chain(messages, tokenizer),
 
 				"true" => {
 					tokenizer.next(messages)?;
@@ -576,6 +576,9 @@ fn test_parse_string() {
 		(r"\n", "\n"),
 		(r"hello\n", "hello\n"),
 		(r"\nhello\n", "\nhello\n"),
+		(r"\t", "\t"),
+		(r"hello\t", "hello\t"),
+		(r"\thello\t", "\thello\t"),
 		(r"\\hel\\lo\\", "\\hel\\lo\\"),
 		(r"hello\0there", "hello\0there"),
 	];
@@ -586,15 +589,37 @@ fn test_parse_string() {
 	}
 }
 
-fn parse_if<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
+fn parse_if_else_chain<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
+	let mut entries = Vec::new();
+	let mut else_body = None;
+
 	let if_token = tokenizer.expect_word(messages, "if")?;
+	let mut span = if_token.span;
 
 	let condition = parse_expression(messages, tokenizer, false)?;
 	let body = parse_block(messages, tokenizer)?;
+	span += body.span;
+	entries.push(IfElseChainEntry { condition, body });
 
-	let span = if_token.span + body.span;
-	let value = If { condition, body };
-	let expression = Expression::If(Box::new(value));
+	while let Ok(Token { text: "else", .. }) = tokenizer.peek() {
+		tokenizer.expect_word(messages, "else")?;
+
+		if let Ok(Token { text: "if", .. }) = tokenizer.peek() {
+			tokenizer.expect_word(messages, "if")?;
+			let condition = parse_expression(messages, tokenizer, false)?;
+			let body = parse_block(messages, tokenizer)?;
+			span += body.span;
+			entries.push(IfElseChainEntry { condition, body });
+		} else {
+			let body = parse_block(messages, tokenizer)?;
+			span += body.span;
+			else_body = Some(body);
+			break;
+		}
+	}
+
+	let value = IfElseChain { entries, else_body };
+	let expression = Expression::IfElseChain(Box::new(value));
 	Ok(Node::new(expression, span))
 }
 
@@ -1271,7 +1296,10 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 }
 
 fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
-	let is_reserved = matches!(token.text, "const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic");
+	let is_reserved = matches!(
+		token.text,
+		"const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic" | "if" | "else" | "while"
+	);
 
 	if is_reserved {
 		messages.message(error!("Cannot use reserved word {:?} as {use_as}", token.text).span(token.span));

@@ -9,10 +9,14 @@ fn main() {
 	if true {
 		if false {
 			print("a")
+		} else {
+			print("1")
 		}
 
 		if true {
 			print("b")
+		} else {
+			print("2")
 		}
 	}
 
@@ -23,16 +27,26 @@ fn main() {
 		if true {
 			print("e")
 		}
+	} else if true {
+		print("3")
+	} else{
+		print("4")
 	}
 
 	if true {
 		print("f")
 		if true {
 			print("g")
-			if true {
+			if false {
+				print("5")
+			} else if true {
 				print("h")
+			} else {
+				print("6")
 			}
 			print("i")
+		} else {
+			print("7")
 		}
 		print("j")
 	}

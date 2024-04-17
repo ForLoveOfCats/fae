@@ -440,9 +440,15 @@ pub struct Block<'a> {
 }
 
 #[derive(Debug)]
-pub struct If<'a> {
+pub struct IfElseChainEntry<'a> {
 	pub condition: Node<Expression<'a>>,
 	pub body: Node<Block<'a>>,
+}
+
+#[derive(Debug)]
+pub struct IfElseChain<'a> {
+	pub entries: Vec<IfElseChainEntry<'a>>,
+	pub else_body: Option<Node<Block<'a>>>,
 }
 
 #[derive(Debug)]
@@ -454,7 +460,7 @@ pub struct While<'a> {
 #[derive(Debug)]
 pub enum Expression<'a> {
 	Block(Block<'a>),
-	If(Box<If<'a>>),
+	IfElseChain(Box<IfElseChain<'a>>),
 
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
