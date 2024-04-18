@@ -63,6 +63,24 @@ fn signed() {
 
 	signed >>= 2
 	print_signed(signed) // -32
+
+	signed = signed & 255
+	print_signed(signed) // 224
+
+	signed &= 112
+	print_signed(signed) // 96
+
+	signed = signed | 7
+	print_signed(signed) // 103
+
+	signed |= 152
+	print_signed(signed) // 255
+
+	signed = signed ^ 1023
+	print_signed(signed) // 768
+
+	signed ^= 769
+	print_signed(signed) // 1
 }
 
 fn print_unsigned(value: u64) {
@@ -99,22 +117,40 @@ fn unsigned() {
 	unsigned /= 4
 	print_unsigned(unsigned) // 63
 
-	unsigned = unsigned % 50
-	print_unsigned(unsigned) // 13
+	unsigned = unsigned % 40
+	print_unsigned(unsigned) // 23
 
-	unsigned %= 10
-	print_unsigned(unsigned) // 3
+	unsigned %= 12
+	print_unsigned(unsigned) // 11
 
 	unsigned = unsigned << 5
-	print_unsigned(unsigned) // 96
+	print_unsigned(unsigned) // 352
 
 	unsigned <<= 2
-	print_unsigned(unsigned) // 384
+	print_unsigned(unsigned) // 1408
 
 	unsigned = unsigned >> 3
-	print_unsigned(unsigned) // 48
+	print_unsigned(unsigned) // 176
 
-	unsigned >>= 4
-	print_unsigned(unsigned) // 3
+	unsigned >>= 2
+	print_unsigned(unsigned) // 44
+
+	unsigned = unsigned & 14
+	print_unsigned(unsigned) // 12
+
+	unsigned &= 6
+	print_unsigned(unsigned) // 4
+
+	unsigned = unsigned | 192
+	print_unsigned(unsigned) // 196
+
+	unsigned |= 240
+	print_unsigned(unsigned) // 244
+
+	unsigned = unsigned ^ 255
+	print_unsigned(unsigned) // 11
+
+	unsigned ^= 31
+	print_unsigned(unsigned) // 20
 }
 

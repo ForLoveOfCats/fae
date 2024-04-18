@@ -266,6 +266,13 @@ pub enum BinaryOperator {
 	BitshiftRight,
 	BitshiftRightAssign,
 
+	BitwiseAnd,
+	BitwiseAndAssign,
+	BitwiseOr,
+	BitwiseOrAssign,
+	BitwiseXor,
+	BitwiseXorAssign,
+
 	Equals,
 	NotEquals,
 
@@ -300,6 +307,13 @@ impl BinaryOperator {
 			BinaryOperator::BitshiftRight => "Bitshift right",
 			BinaryOperator::BitshiftRightAssign => "Bitshift right assignment",
 
+			BinaryOperator::BitwiseAnd => "Bitwise and",
+			BinaryOperator::BitwiseAndAssign => "Bitwise and assignment",
+			BinaryOperator::BitwiseOr => "Bitwise or",
+			BinaryOperator::BitwiseOrAssign => "Bitwise or assignment",
+			BinaryOperator::BitwiseXor => "Bitwise xor",
+			BinaryOperator::BitwiseXorAssign => "Bitwise xor assignment",
+
 			BinaryOperator::Equals => "Equals",
 			BinaryOperator::NotEquals => "Not Equals",
 
@@ -318,28 +332,32 @@ impl BinaryOperator {
 	pub fn precedence(self) -> u32 {
 		use BinaryOperator::*;
 		match self {
-			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign => 0,
+			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign
+			| BitwiseAndAssign | BitwiseOrAssign | BitwiseXorAssign => 0,
 
 			LogicalAnd | LogicalOr => 1,
 
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 2,
 
-			BitshiftLeft | BitshiftRight => 3,
+			BitwiseAnd | BitwiseOr | BitwiseXor => 3,
 
-			Add | Sub => 4,
+			BitshiftLeft | BitshiftRight => 4,
 
-			Mul | Div | Modulo => 5,
+			Add | Sub => 5,
+
+			Mul | Div | Modulo => 6,
 		}
 	}
 
 	pub fn associativity(self) -> Associativity {
 		use BinaryOperator::*;
 		match self {
-			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign => {
-				Associativity::Right
-			}
+			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign
+			| BitwiseAndAssign | BitwiseOrAssign | BitwiseXorAssign => Associativity::Right,
 
-			Add | Sub | Mul | Div | Modulo | BitshiftLeft | BitshiftRight => Associativity::Left,
+			Add | Sub | Mul | Div | Modulo | BitshiftLeft | BitshiftRight | BitwiseAnd | BitwiseOr | BitwiseXor => {
+				Associativity::Left
+			}
 
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => Associativity::Left,
 

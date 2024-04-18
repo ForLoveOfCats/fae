@@ -956,6 +956,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				| BinaryOperator::ModuloAssign
 				| BinaryOperator::BitshiftLeftAssign
 				| BinaryOperator::BitshiftRightAssign
+				| BinaryOperator::BitwiseAndAssign
+				| BinaryOperator::BitwiseOrAssign
+				| BinaryOperator::BitwiseXorAssign
 		) {
 			let left = codegen::generate_expression(context, self, left).unwrap();
 			let right = codegen::generate_expression(context, self, right).unwrap();
@@ -1042,6 +1045,24 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					return None;
 				}
 
+				BinaryOperator::BitwiseAndAssign => {
+					let int = self.builder.build_and(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::BitwiseOrAssign => {
+					let int = self.builder.build_or(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
+				BinaryOperator::BitwiseXorAssign => {
+					let int = self.builder.build_xor(left, right, "").unwrap();
+					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					return None;
+				}
+
 				_ => unreachable!(),
 			}
 		}
@@ -1121,6 +1142,21 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					BasicValueEnum::IntValue(int)
 				}
 
+				BinaryOperator::BitwiseAnd => {
+					let int = self.builder.build_and(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::BitwiseOr => {
+					let int = self.builder.build_or(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
+				BinaryOperator::BitwiseXor => {
+					let int = self.builder.build_xor(left, right, "").unwrap();
+					BasicValueEnum::IntValue(int)
+				}
+
 				BinaryOperator::Equals => {
 					let result = self.builder.build_int_compare(EQ, left, right, "").unwrap();
 					BasicValueEnum::IntValue(result)
@@ -1175,6 +1211,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				| BinaryOperator::ModuloAssign
 				| BinaryOperator::BitshiftLeftAssign
 				| BinaryOperator::BitshiftRightAssign
+				| BinaryOperator::BitwiseAndAssign
+				| BinaryOperator::BitwiseOrAssign
+				| BinaryOperator::BitwiseXorAssign
 				| BinaryOperator::LogicalAnd
 				| BinaryOperator::LogicalOr => unreachable!(),
 			}
@@ -1245,6 +1284,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				| BinaryOperator::BitshiftLeftAssign
 				| BinaryOperator::BitshiftRight
 				| BinaryOperator::BitshiftRightAssign
+				| BinaryOperator::BitwiseAnd
+				| BinaryOperator::BitwiseAndAssign
+				| BinaryOperator::BitwiseOr
+				| BinaryOperator::BitwiseOrAssign
+				| BinaryOperator::BitwiseXor
+				| BinaryOperator::BitwiseXorAssign
 				| BinaryOperator::LogicalAnd
 				| BinaryOperator::LogicalOr => unreachable!(),
 			}

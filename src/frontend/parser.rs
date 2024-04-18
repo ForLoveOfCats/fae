@@ -286,6 +286,13 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 		TokenKind::BitshiftRight => BinaryOperator::BitshiftRight,
 		TokenKind::BitshiftRightAssign => BinaryOperator::BitshiftRightAssign,
 
+		TokenKind::Ampersand => BinaryOperator::BitwiseAnd,
+		TokenKind::AmpersandAssign => BinaryOperator::BitwiseAndAssign,
+		TokenKind::Pipe => BinaryOperator::BitwiseOr,
+		TokenKind::PipeAssign => BinaryOperator::BitwiseOrAssign,
+		TokenKind::Caret => BinaryOperator::BitwiseXor,
+		TokenKind::CaretAssign => BinaryOperator::BitwiseXorAssign,
+
 		TokenKind::CompEqual => BinaryOperator::Equals,
 		TokenKind::CompNotEqual => BinaryOperator::NotEquals,
 

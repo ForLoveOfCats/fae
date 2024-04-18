@@ -2304,6 +2304,29 @@ fn validate_binary_operation<'a>(
 	match op {
 		BinaryOperator::Assign => {}
 
+		BinaryOperator::Modulo | BinaryOperator::ModuloAssign => {
+			if !left.type_id.is_integer(context.type_store) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform modulo on non-integer type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
+		BinaryOperator::BitwiseAnd
+		| BinaryOperator::BitwiseAndAssign
+		| BinaryOperator::BitwiseOr
+		| BinaryOperator::BitwiseOrAssign
+		| BinaryOperator::BitwiseXor
+		| BinaryOperator::BitwiseXorAssign => {
+			if !left.type_id.is_bool(context.type_store) && !left.type_id.is_integer(context.type_store) {
+				let found = context.type_name(left.type_id);
+				let error = error!("Cannot perform bitwise operation on {found}, type must be integer or boolean");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+		}
+
 		BinaryOperator::Add
 		| BinaryOperator::AddAssign
 		| BinaryOperator::Sub
@@ -2311,17 +2334,8 @@ fn validate_binary_operation<'a>(
 		| BinaryOperator::Mul
 		| BinaryOperator::MulAssign
 		| BinaryOperator::Div
-		| BinaryOperator::DivAssign
-		| BinaryOperator::Modulo
-		| BinaryOperator::ModuloAssign => {
-			if matches!(op, BinaryOperator::Modulo | BinaryOperator::ModuloAssign) {
-				if !left.type_id.is_integer(context.type_store) {
-					let found = context.type_name(left.type_id);
-					let error = error!("Cannot perform modulo on non-integer type {found}");
-					context.message(error.span(span));
-					return Expression::any_collapse(context.type_store, span);
-				}
-			} else if !left.type_id.is_numeric(context.type_store) {
+		| BinaryOperator::DivAssign => {
+			if !left.type_id.is_numeric(context.type_store) {
 				let found = context.type_name(left.type_id);
 				let error = error!("Cannot perform arithmetic on non-numerical type {found}");
 				context.message(error.span(span));
@@ -2333,9 +2347,9 @@ fn validate_binary_operation<'a>(
 		| BinaryOperator::BitshiftLeftAssign
 		| BinaryOperator::BitshiftRight
 		| BinaryOperator::BitshiftRightAssign => {
-			if !left.type_id.is_numeric(context.type_store) {
+			if !left.type_id.is_integer(context.type_store) {
 				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform bitshift on non-numerical type {found}");
+				let error = error!("Cannot perform bitshift on non-integer type {found}");
 				context.message(error.span(span));
 				return Expression::any_collapse(context.type_store, span);
 			}
@@ -2422,6 +2436,9 @@ fn perform_constant_binary_operation<'a>(
 			BinaryOperator::Mul => left.mul(context.messages, right)?,
 			BinaryOperator::Div => left.div(context.messages, right)?,
 			BinaryOperator::Modulo => left.modulo(context.messages, right)?,
+			BinaryOperator::BitwiseAnd => left.bitwise_and(right),
+			BinaryOperator::BitwiseOr => left.bitwise_or(right),
+			BinaryOperator::BitwiseXor => left.bitwise_xor(right),
 			_ => return None,
 		};
 

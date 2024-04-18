@@ -1,4 +1,4 @@
-import fae::stdout::print_string, print_i64, print_i32, print_newline
+import fae::stdout::print_string, print_i64, print_i32, print_newline, print_u8
 import fae::libc::StdOutFile, StdInDescription, atol, fflush, printf, rand, read
 
 fn main() {

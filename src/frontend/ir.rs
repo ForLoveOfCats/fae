@@ -642,6 +642,24 @@ impl IntegerValue {
 
 		Some(IntegerValue { value, span, collapse: None })
 	}
+
+	pub fn bitwise_and(self, other: IntegerValue) -> IntegerValue {
+		let value = self.value & other.value;
+		let span = self.span + other.span;
+		IntegerValue { value, span, collapse: None }
+	}
+
+	pub fn bitwise_or(self, other: IntegerValue) -> IntegerValue {
+		let value = self.value | other.value;
+		let span = self.span + other.span;
+		IntegerValue { value, span, collapse: None }
+	}
+
+	pub fn bitwise_xor(self, other: IntegerValue) -> IntegerValue {
+		let value = self.value ^ other.value;
+		let span = self.span + other.span;
+		IntegerValue { value, span, collapse: None }
+	}
 }
 
 #[derive(Debug, Copy, Clone)]

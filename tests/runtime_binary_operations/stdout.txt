@@ -16,6 +16,12 @@ Signed binary operations
 -1024
 -128
 -32
+224
+96
+103
+255
+768
+1
 
 Unsigned binary operations
 8
@@ -27,9 +33,15 @@ Unsigned binary operations
 504
 252
 63
-13
-3
-96
-384
-48
-3
+23
+11
+352
+1408
+176
+44
+12
+4
+196
+244
+11
+20

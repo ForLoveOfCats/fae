@@ -47,11 +47,17 @@ pub enum TokenKind {
 	CompLess,
 	CompLessEqual,
 
+	Ampersand,
+	AmpersandAssign,
+	Pipe,
+	PipeAssign,
+	Caret,
+	CaretAssign,
+
 	Colon,
 	DoubleColon,
 	Period,
 	Comma,
-	Ampersand,
 	PoundSign,
 
 	Exclamation,
@@ -103,11 +109,17 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::CompLess => "'<'",
 			TokenKind::CompLessEqual => "'<='",
 
+			TokenKind::Ampersand => "'&'",
+			TokenKind::AmpersandAssign => "'&='",
+			TokenKind::Pipe => "'|'",
+			TokenKind::PipeAssign => "'|='",
+			TokenKind::Caret => "'^'",
+			TokenKind::CaretAssign => "'^='",
+
 			TokenKind::Colon => "':'",
 			TokenKind::DoubleColon => "'::'",
 			TokenKind::Period => "'.'",
 			TokenKind::Comma => "','",
-			TokenKind::Ampersand => "'&'",
 			TokenKind::PoundSign => "'#'",
 
 			TokenKind::Exclamation => "'!'",
@@ -328,6 +340,27 @@ impl<'a> Tokenizer<'a> {
 				}
 			}
 
+			[b'&', b'=', ..] => {
+				self.offset += 1;
+				Ok(Token::new("&=", AmpersandAssign, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'&', ..] => Ok(Token::new("&", Ampersand, self.offset, self.offset + 1, self.file_index)),
+
+			[b'|', b'=', ..] => {
+				self.offset += 1;
+				Ok(Token::new("|=", PipeAssign, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'|', ..] => Ok(Token::new("|", Pipe, self.offset, self.offset + 1, self.file_index)),
+
+			[b'^', b'=', ..] => {
+				self.offset += 1;
+				Ok(Token::new("^=", CaretAssign, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'^', ..] => Ok(Token::new("^", Caret, self.offset, self.offset + 1, self.file_index)),
+
 			[b':', b':', ..] => {
 				self.offset += 1;
 				Ok(Token::new("::", DoubleColon, self.offset - 1, self.offset + 1, self.file_index))
@@ -338,8 +371,6 @@ impl<'a> Tokenizer<'a> {
 			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1, self.file_index)),
 
 			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1, self.file_index)),
-
-			[b'&', ..] => Ok(Token::new("&", Ampersand, self.offset, self.offset + 1, self.file_index)),
 
 			[b'#', ..] => Ok(Token::new("#", PoundSign, self.offset, self.offset + 1, self.file_index)),
 

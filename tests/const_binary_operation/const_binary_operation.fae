@@ -1,13 +1,22 @@
 import fae::stdout::print_i64, print_u64, print_newline
 
-const One = 5 % 4
-const Two = (-5) % 4
-const Three = (-5) % (-4)
+// TODO: Add +, -, *, /
+
+const One = 5 % 4 // 1
+const Two = (-5) % 4 // 3
+const Three = (-5) % (-4) // 3
+
+const Four = 7 & 14 // 6
+const Five = 1 | 4 // 5
+const Six = 30 ^ 15 // 17
 
 fn main() {
 	print_signed(One)
 	print_signed(Two)
 	print_signed(Three)
+	print_signed(Four)
+	print_signed(Five)
+	print_signed(Six)
 }
 
 fn print_signed(value: i64) {
