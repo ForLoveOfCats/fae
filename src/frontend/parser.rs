@@ -126,6 +126,15 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
+			Token { kind: TokenKind::Word, text: "break", .. } => {
+				disallow_all_attributes(messages, attributes, token.span, "A breakl statement");
+				if let Ok(statement) = parse_break_statement(messages, tokenizer) {
+					items.push(Statement::Break(statement));
+				} else {
+					consume_error_syntax(messages, tokenizer);
+				}
+			}
+
 			Token { kind: TokenKind::Word, text: "return", .. } => {
 				disallow_all_attributes(messages, attributes, token.span, "A return statement");
 				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
@@ -1276,6 +1285,11 @@ fn parse_binding_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenize
 	Ok(Node { item, span })
 }
 
+fn parse_break_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Break>> {
+	let break_token = tokenizer.expect_word(messages, "break")?;
+	Ok(Node::from_token(Break, break_token))
+}
+
 fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Return<'a>>> {
 	let return_token = tokenizer.expect_word(messages, "return")?;
 
@@ -1298,7 +1312,7 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
 	let is_reserved = matches!(
 		token.text,
-		"const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic" | "if" | "else" | "while"
+		"const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic" | "if" | "else" | "while" | "break"
 	);
 
 	if is_reserved {

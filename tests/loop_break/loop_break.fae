@@ -1,0 +1,39 @@
+	import fae::stdout::print_i32, print_newline
+
+fn main() {
+	print("A")
+	while true {
+		print("B")
+		break
+		print("C")
+	}
+	print("D")
+
+	while true {
+		print("E")
+		while true {
+			print("F")
+			break
+			print("G")			
+		}
+		print("H")
+		break
+		print("I")
+	}
+
+	mut index: i32 = 0
+	while true {
+		print_i32(index)
+		print_newline()
+		index += 1
+		if index >= 5 {
+			break
+		}
+	}
+}
+
+fn print(str: []u8) {
+	import fae::stdout::print_string
+	print_string(str)
+	print_newline()
+}

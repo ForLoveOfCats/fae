@@ -359,6 +359,7 @@ pub enum StatementKind<'a> {
 
 	Binding(Box<Binding<'a>>),
 
+	Break(Break),
 	Return(Box<Return<'a>>),
 }
 
@@ -372,8 +373,12 @@ pub struct Binding<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct Break {
+	pub loop_index: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct Return<'a> {
-	pub span: Span,
 	pub expression: Option<Expression<'a>>,
 }
 

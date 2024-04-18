@@ -1,0 +1,11 @@
+Validation error: ./tests/break_outside_loop/break_outside_loop.fae, line 1: A break statement is not allowed in a root scope
+  1| break
+     ^^^^^
+
+Validation error: ./tests/break_outside_loop/break_outside_loop.fae, line 4: Cannot break when outside a loop
+  4|     break
+         ^^^^^
+
+Validation error: ./tests/break_outside_loop/break_outside_loop.fae, line 8: Cannot break when outside a loop
+  8|             break
+                 ^^^^^

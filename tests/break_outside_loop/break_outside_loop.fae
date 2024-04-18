@@ -1,0 +1,12 @@
+break
+
+fn main() {
+	break
+
+	while true {
+		fn inner() {
+			break
+		}
+	}
+}
+

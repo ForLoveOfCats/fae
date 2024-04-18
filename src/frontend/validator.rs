@@ -39,6 +39,9 @@ pub struct Context<'a, 'b, 'c> {
 	pub function_initial_symbols_len: usize,
 	pub symbols: &'b mut Symbols<'a>,
 
+	pub next_loop_index: usize,
+	pub current_loop_index: Option<usize>,
+
 	pub return_type: Option<TypeId>,
 	pub generic_parameters: &'c GenericParameters<'a>,
 }
@@ -79,6 +82,9 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			function_initial_symbols_len: self.function_initial_symbols_len,
 			symbols: self.symbols,
 
+			next_loop_index: self.next_loop_index,
+			current_loop_index: self.current_loop_index,
+
 			return_type: self.return_type,
 			generic_parameters: self.generic_parameters,
 		}
@@ -117,6 +123,9 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			initial_symbols_len: self.symbols.len(),
 			function_initial_symbols_len: self.function_initial_symbols_len,
 			symbols: self.symbols,
+
+			next_loop_index: 0,
+			current_loop_index: None,
 
 			return_type: Some(return_type),
 			generic_parameters,
@@ -258,6 +267,8 @@ pub fn validate<'a>(
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
 			symbols: &mut symbols,
+			next_loop_index: 0,
+			current_loop_index: None,
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 		};
@@ -415,6 +426,8 @@ fn validate_root_consts<'a>(
 			initial_symbols_len: symbols.len(),
 			function_initial_symbols_len: symbols.len(),
 			symbols,
+			next_loop_index: 0,
+			current_loop_index: None,
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 		};
@@ -588,6 +601,7 @@ fn create_block_types<'a>(
 				| tree::Statement::Block(..)
 				| tree::Statement::While(..)
 				| tree::Statement::Binding(..)
+				| tree::Statement::Break(..)
 				| tree::Statement::Return(..) => {
 					let error = error!("{} is not allowed in a root scope", statement.name_and_article());
 					messages.message(error.span(statement.span()));
@@ -1060,6 +1074,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			| tree::Statement::Block(..)
 			| tree::Statement::While(..)
 			| tree::Statement::Binding(..)
+			| tree::Statement::Break(..)
 			| tree::Statement::Return(..)
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
@@ -1104,16 +1119,25 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				statements.push(Statement { kind });
 			}
 
+			tree::Statement::Break(statement) => {
+				let statement = if let Some(loop_index) = context.current_loop_index {
+					Break { loop_index }
+				} else {
+					let error = error!("Cannot break when outside a loop");
+					context.message(error.span(statement.span));
+					Break { loop_index: 0 }
+				};
+
+				let kind = StatementKind::Break(statement);
+				statements.push(Statement { kind });
+			}
+
 			tree::Statement::Return(statement) => {
 				returns |= true;
 
 				let expression = statement.item.expression.as_ref();
-				let span = match &expression {
-					Some(expression) => statement.span + expression.span,
-					None => statement.span,
-				};
-
 				let mut expression = expression.map(|expression| validate_expression(&mut context, expression));
+
 				if let Some(expression) = &mut expression {
 					let return_type = context.return_type.unwrap();
 					if let Ok(false) = context.collapse_to(return_type, expression) {
@@ -1124,9 +1148,9 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 					}
 				}
 
-				let boxed_return = Box::new(Return { span, expression });
+				let boxed_return = Box::new(Return { expression });
 				let kind = StatementKind::Return(boxed_return);
-				statements.push(Statement { kind })
+				statements.push(Statement { kind });
 			}
 		}
 	}
@@ -1539,6 +1563,8 @@ fn validate_if_else_chain_expression<'a>(
 fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a Node<tree::While<'a>>) -> While<'a> {
 	let mut scope = context.child_scope();
 	let condition = validate_expression(&mut scope, &statement.item.condition);
+	scope.current_loop_index = Some(scope.next_loop_index);
+	scope.next_loop_index += 1;
 	let body = validate_block(scope, &statement.item.body.item, false);
 	While { condition, body }
 }

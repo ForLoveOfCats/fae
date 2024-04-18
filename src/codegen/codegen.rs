@@ -2,9 +2,9 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	ArrayLiteral, BinaryOperation, Binding, Block, Call, CodepointLiteral, DecimalValue, Expression, ExpressionKind, FieldRead,
-	FunctionId, FunctionShape, IfElseChain, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead,
-	StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	ArrayLiteral, BinaryOperation, Binding, Block, Break, Call, CodepointLiteral, DecimalValue, Expression, ExpressionKind,
+	FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind,
+	StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -132,6 +132,11 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 			StatementKind::While(statement) => generate_while(context, generator, statement),
 
 			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
+
+			StatementKind::Break(statement) => {
+				generate_break(generator, statement);
+				break;
+			}
 
 			StatementKind::Return(statement) => {
 				generate_return(context, generator, statement);
@@ -421,6 +426,10 @@ fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, bind
 	let value = generate_expression(context, generator, &binding.expression);
 	let type_id = context.specialize_type_id(binding.type_id);
 	generator.generate_binding(binding.readable_index, value, type_id);
+}
+
+fn generate_break<G: Generator>(generator: &mut G, statement: &Break) {
+	generator.generate_break(statement.loop_index);
 }
 
 fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {

@@ -374,6 +374,9 @@ pub struct FieldRead<'a> {
 }
 
 #[derive(Debug)]
+pub struct Break;
+
+#[derive(Debug)]
 pub struct Return<'a> {
 	pub expression: Option<Node<Expression<'a>>>,
 }
@@ -394,6 +397,7 @@ pub enum Statement<'a> {
 	Static(Box<Node<Static<'a>>>),
 	Binding(Box<Node<Binding<'a>>>),
 
+	Break(Node<Break>),
 	Return(Box<Node<Return<'a>>>),
 }
 
@@ -412,6 +416,7 @@ impl<'a> Statement<'a> {
 			Const(statement) => statement.span,
 			Static(statement) => statement.span,
 			Binding(statement) => statement.span,
+			Break(statement) => statement.span,
 			Return(statement) => statement.span,
 		}
 	}
@@ -429,6 +434,7 @@ impl<'a> Statement<'a> {
 			Const(..) => "A const definition",
 			Static(..) => "A static definition",
 			Binding(..) => "A binding definition",
+			Break(..) => "A break statement",
 			Return(..) => "A return statement",
 		}
 	}

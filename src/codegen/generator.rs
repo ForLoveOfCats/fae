@@ -125,6 +125,8 @@ pub trait Generator {
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId);
 
+	fn generate_break(&mut self, loop_index: usize);
+
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);
 
 	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding;
