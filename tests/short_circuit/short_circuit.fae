@@ -1,0 +1,35 @@
+import fae::stdout::print_string, print_bool, print_newline
+
+fn returns_true(string: []u8): bool {
+	print_string(string)
+	print_newline()
+	return true
+}
+
+fn returns_false(string: []u8): bool {
+	print_string(string)
+	print_newline()
+	return false
+}
+
+fn print(value: bool) {
+	print_bool(value)
+	print_newline()
+	print_newline()
+}
+
+fn main() {
+	print_string("And:\n")
+	print(returns_true("A") and returns_true("B"))
+	print(returns_true("A") and returns_false("B"))
+	print(returns_false("A") and returns_true("B"))
+	print(returns_false("A") and returns_false("B"))
+
+	print_newline()
+
+	print_string("Or:\n")
+	print(returns_true("A") or returns_true("B"))
+	print(returns_true("A") or returns_false("B"))
+	print(returns_false("A") or returns_true("B"))
+	print(returns_false("A") or returns_false("B"))
+}

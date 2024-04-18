@@ -52,13 +52,13 @@ pub fn generate<'a, G: Generator>(
 }
 
 pub struct Context<'a, 'b> {
-	messages: &'b mut Messages<'a>,
-	lang_items: &'b LangItems,
-	type_store: &'b mut TypeStore<'a>,
-	function_store: &'b FunctionStore<'a>,
-	module_path: &'a [String],
-	function_type_arguments: &'b TypeArguments,
-	function_id: FunctionId,
+	pub messages: &'b mut Messages<'a>,
+	pub lang_items: &'b LangItems,
+	pub type_store: &'b mut TypeStore<'a>,
+	pub function_store: &'b FunctionStore<'a>,
+	pub module_path: &'a [String],
+	pub function_type_arguments: &'b TypeArguments,
+	pub function_id: FunctionId,
 }
 
 impl<'a, 'b> Context<'a, 'b> {
@@ -148,7 +148,11 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 	generator.end_block();
 }
 
-fn generate_expression<G: Generator>(context: &mut Context, generator: &mut G, expression: &Expression) -> Option<G::Binding> {
+pub fn generate_expression<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	expression: &Expression,
+) -> Option<G::Binding> {
 	match &expression.kind {
 		ExpressionKind::Block(block) => {
 			generate_block(context, generator, block);
@@ -363,6 +367,27 @@ fn generate_unary_operation<G: Generator>(
 		return None;
 	};
 
+	let layout = context.type_store.type_layout(type_id);
+	if layout.size <= 0 {
+		// HACK: We still need to generate the bounds check. Right now the backend is assumed to
+		// understand index of slice of zero sized type.
+		// TODO: Add a separate `generator.generate_bounds_check` to untangle this mess
+		if let UnaryOperator::Index { index_expression } = &operation.op {
+			let span = index_expression.span;
+			let index_expression = generate_expression(context, generator, index_expression).unwrap();
+			return generator.generate_slice_index(
+				context.lang_items,
+				context.type_store,
+				type_id,
+				expression,
+				index_expression,
+				span,
+			);
+		}
+
+		return None;
+	}
+
 	match &operation.op {
 		UnaryOperator::Negate => Some(generator.generate_negate(expression, type_id)),
 
@@ -390,10 +415,17 @@ fn generate_binary_operation<G: Generator>(
 	generator: &mut G,
 	operation: &BinaryOperation,
 ) -> Option<G::Binding> {
-	let left = generate_expression(context, generator, &operation.left);
-	let right = generate_expression(context, generator, &operation.right);
+	let left_type_id = context.specialize_type_id(operation.left.type_id);
+	let result_type_id = context.specialize_type_id(operation.type_id);
 
-	let Some(left) = left else {
+	let left_untyped_integer = left_type_id.is_untyped_integer(context.type_store);
+	let left_untyped_decimal = left_type_id.is_untyped_decimal(context.type_store);
+	let left_has_size = left_untyped_integer || left_untyped_decimal || context.type_store.type_layout(left_type_id).size > 0;
+
+	if !left_has_size {
+		let left = generate_expression(context, generator, &operation.left);
+		assert!(left.is_none());
+		let right = generate_expression(context, generator, &operation.right);
 		assert!(right.is_none());
 
 		let value = match operation.op {
@@ -406,12 +438,9 @@ fn generate_binary_operation<G: Generator>(
 		};
 
 		return Some(generator.generate_boolean_literal(context.type_store, value));
-	};
+	}
 
-	let right = right?;
-	let source_type_id = context.specialize_type_id(operation.left.type_id);
-	let result_type_id = context.specialize_type_id(operation.type_id);
-	generator.generate_binary_operation(context.type_store, left, right, operation.op, source_type_id, result_type_id)
+	generator.generate_binary_operation(context, &operation.left, &operation.right, operation.op, left_type_id, result_type_id)
 }
 
 fn generate_mutable_slice_to_immutable<G: Generator>(

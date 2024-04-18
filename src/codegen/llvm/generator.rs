@@ -376,11 +376,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
 	) {
 		let original_block = self.builder.get_insert_block().unwrap();
-		let following_block = self
-			.context
-			.insert_basic_block_after(original_block, "if_else_following_block");
+		let following_block = self.context.insert_basic_block_after(original_block, "if_else_following");
 
-		let mut next_condition_block = self.context.insert_basic_block_after(original_block, "condition_block");
+		let mut next_condition_block = self.context.insert_basic_block_after(original_block, "condition");
 		let mut insert_after = next_condition_block;
 
 		self.builder.build_unconditional_branch(next_condition_block).unwrap();
@@ -388,12 +386,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		for entry in &chain_expression.entries {
 			let condition_block = next_condition_block;
 			self.builder.position_at_end(condition_block);
-			next_condition_block = self.context.insert_basic_block_after(insert_after, "condition_block");
+			next_condition_block = self.context.insert_basic_block_after(insert_after, "condition");
 
 			let condition = condition_callback(context, self, &entry.condition);
 			let condition = condition.to_value(&self.builder).into_int_value();
 
-			let if_block = self.context.insert_basic_block_after(insert_after, "if_block");
+			let if_block = self.context.insert_basic_block_after(insert_after, "if");
 			insert_after = if_block;
 
 			let zero = condition.get_type().const_zero();
@@ -412,7 +410,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		if let Some(body) = &chain_expression.else_body {
 			let block = next_condition_block;
-			block.set_name("else_block");
+			block.set_name("else");
 
 			self.builder.position_at_end(block);
 			body_callback(context, self, body);
@@ -422,7 +420,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			}
 		} else {
 			let block = next_condition_block;
-			block.set_name("non_existant_else_block");
+			block.set_name("non_existant_else");
 			self.builder.position_at_end(block);
 			self.builder.build_unconditional_branch(following_block).unwrap();
 		}
@@ -437,10 +435,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
 	) {
 		let original_block = self.builder.get_insert_block().unwrap();
-		let condition_block = self.context.insert_basic_block_after(original_block, "while_condition_block");
-		let while_block = self.context.insert_basic_block_after(condition_block, "while_body_block");
+		let condition_block = self.context.insert_basic_block_after(original_block, "while_condition");
+		let while_block = self.context.insert_basic_block_after(condition_block, "while_body");
 
-		let following_block = self.context.insert_basic_block_after(while_block, "while_following_block");
+		let following_block = self.context.insert_basic_block_after(while_block, "while_following");
 		self.loop_follow_blocks.push(following_block);
 
 		self.builder.build_unconditional_branch(condition_block).unwrap();
@@ -868,14 +866,17 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_binary_operation(
 		&mut self,
-		type_store: &TypeStore,
-		left: Self::Binding,
-		right: Self::Binding,
+		context: &mut codegen::Context,
+		left: &Expression,
+		right: &Expression,
 		op: BinaryOperator,
 		source_type_id: TypeId,
 		result_type_id: TypeId,
 	) -> Option<Self::Binding> {
 		if let BinaryOperator::Assign = op {
+			let left = codegen::generate_expression(context, self, left).unwrap();
+			let right = codegen::generate_expression(context, self, right).unwrap();
+
 			let left = match left.kind {
 				BindingKind::Pointer { pointer, .. } => pointer,
 				BindingKind::Value(value) => unreachable!("{value:?}"),
@@ -887,7 +888,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BindingKind::Pointer { pointer: right_pointer, .. } => {
-					let layout = type_store.type_layout(right.type_id);
+					let layout = context.type_store.type_layout(right.type_id);
 					let align = layout.alignment as u32;
 					let size = self.context.i64_type().const_int(layout.size as u64, false);
 					self.builder.build_memcpy(left, align, right_pointer, align, size).unwrap();
@@ -895,6 +896,51 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			}
 
 			return None;
+		}
+
+		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr) {
+			let current_block = self.builder.get_insert_block().unwrap();
+			let left_block = self.context.insert_basic_block_after(current_block, "logical_and_left");
+			let right_block = self.context.insert_basic_block_after(left_block, "logical_and_right");
+			let following_block = self.context.insert_basic_block_after(right_block, "logical_and_following");
+
+			self.builder.build_unconditional_branch(left_block).unwrap();
+
+			self.builder.position_at_end(left_block);
+			let left_binding = codegen::generate_expression(context, self, left).unwrap();
+			let mut left = left_binding.to_value(&self.builder).into_int_value();
+			if left.get_type().get_bit_width() > 1 {
+				left = self.builder.build_int_truncate(left, self.context.bool_type(), "").unwrap();
+			}
+
+			match op {
+				BinaryOperator::LogicalAnd => self
+					.builder
+					.build_conditional_branch(left, right_block, following_block)
+					.unwrap(),
+
+				BinaryOperator::LogicalOr => self
+					.builder
+					.build_conditional_branch(left, following_block, right_block)
+					.unwrap(),
+
+				_ => unreachable!("{op:?}"),
+			};
+
+			self.builder.position_at_end(right_block);
+			let right_binding = codegen::generate_expression(context, self, right).unwrap();
+			let mut right = right_binding.to_value(&self.builder).into_int_value();
+			if right.get_type().get_bit_width() > 1 {
+				right = self.builder.build_int_truncate(right, self.context.bool_type(), "").unwrap();
+			}
+			self.builder.build_unconditional_branch(following_block).unwrap();
+
+			self.builder.position_at_end(following_block);
+			let phi = self.builder.build_phi(self.context.bool_type(), "").unwrap();
+			phi.add_incoming(&[(&left, left_block), (&right, right_block)]);
+
+			let kind = BindingKind::Value(phi.as_basic_value());
+			return Some(Binding { type_id: result_type_id, kind });
 		}
 
 		if matches!(
@@ -907,6 +953,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				| BinaryOperator::BitshiftLeftAssign
 				| BinaryOperator::BitshiftRightAssign
 		) {
+			let left = codegen::generate_expression(context, self, left).unwrap();
+			let right = codegen::generate_expression(context, self, right).unwrap();
+
 			let target = match left.kind {
 				BindingKind::Pointer { pointer, .. } => pointer,
 				BindingKind::Value(value) => unreachable!("{value:?}"),
@@ -935,7 +984,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::DivAssign => {
-					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_int_signed_div(left, right, "").unwrap()
 					} else {
 						self.builder.build_int_unsigned_div(left, right, "").unwrap()
@@ -946,7 +995,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::ModuloAssign => {
-					let value = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let value = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						use IntPredicate::*;
 						let zero = left.get_type().const_zero();
 						let srem_result = self.builder.build_int_signed_rem(left, right, "").unwrap();
@@ -980,7 +1029,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::BitshiftRightAssign => {
-					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_right_shift(left, right, true, "").unwrap()
 					} else {
 						self.builder.build_right_shift(left, right, false, "").unwrap()
@@ -993,32 +1042,11 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			}
 		}
 
-		let left = left.to_value(&self.builder);
-		let right = right.to_value(&self.builder);
+		let left_binding = codegen::generate_expression(context, self, left).unwrap();
+		let right_binding = codegen::generate_expression(context, self, right).unwrap();
 
-		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr) {
-			let mut left = left.into_int_value();
-			if left.get_type().get_bit_width() > 1 {
-				left = self.builder.build_int_truncate(left, self.context.bool_type(), "").unwrap();
-			}
-
-			let mut right = right.into_int_value();
-			if right.get_type().get_bit_width() > 1 {
-				right = self.builder.build_int_truncate(right, self.context.bool_type(), "").unwrap();
-			}
-
-			assert_eq!(left.get_type(), right.get_type());
-
-			let result = match op {
-				BinaryOperator::LogicalAnd => self.builder.build_and(left, right, "").unwrap(),
-				BinaryOperator::LogicalOr => self.builder.build_or(left, right, "").unwrap(),
-				_ => unreachable!("{op:?}"),
-			};
-
-			let kind = BindingKind::Value(BasicValueEnum::IntValue(result));
-			return Some(Binding { type_id: result_type_id, kind });
-		}
-
+		let left = left_binding.to_value(&self.builder);
+		let right = right_binding.to_value(&self.builder);
 		assert_eq!(left.get_type(), right.get_type());
 
 		let value = if left.is_int_value() {
@@ -1043,7 +1071,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::Div => {
-					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_int_signed_div(left, right, "").unwrap()
 					} else {
 						self.builder.build_int_unsigned_div(left, right, "").unwrap()
@@ -1052,7 +1080,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::Modulo => {
-					if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						let zero = left.get_type().const_zero();
 						let srem_result = self.builder.build_int_signed_rem(left, right, "").unwrap();
 
@@ -1081,7 +1109,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::BitshiftRight => {
-					let int = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_right_shift(left, right, true, "").unwrap()
 					} else {
 						self.builder.build_right_shift(left, right, false, "").unwrap()
@@ -1100,7 +1128,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::GreaterThan => {
-					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_int_compare(SGT, left, right, "").unwrap()
 					} else {
 						self.builder.build_int_compare(UGT, left, right, "").unwrap()
@@ -1109,7 +1137,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::GreaterThanEquals => {
-					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_int_compare(SGE, left, right, "").unwrap()
 					} else {
 						self.builder.build_int_compare(UGE, left, right, "").unwrap()
@@ -1118,7 +1146,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::LessThan => {
-					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_int_compare(SLT, left, right, "").unwrap()
 					} else {
 						self.builder.build_int_compare(ULT, left, right, "").unwrap()
@@ -1127,7 +1155,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				}
 
 				BinaryOperator::LessThanEquals => {
-					let result = if source_type_id.numeric_kind(type_store).unwrap().is_signed() {
+					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
 						self.builder.build_int_compare(SLE, left, right, "").unwrap()
 					} else {
 						self.builder.build_int_compare(ULE, left, right, "").unwrap()

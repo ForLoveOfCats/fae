@@ -23,7 +23,7 @@ a significant IR flattening to make it cheaper to construct and interpret.
 */
 
 pub trait Generator {
-	type Binding: Clone + Copy;
+	type Binding: Clone + Copy + std::fmt::Debug;
 
 	fn register_type_descriptions(&mut self, type_store: &TypeStore);
 
@@ -115,9 +115,9 @@ pub trait Generator {
 
 	fn generate_binary_operation(
 		&mut self,
-		type_store: &TypeStore,
-		left: Self::Binding,
-		right: Self::Binding,
+		context: &mut codegen::Context,
+		left: &Expression,
+		right: &Expression,
 		op: BinaryOperator,
 		source_type_id: TypeId,
 		result_type_id: TypeId,
