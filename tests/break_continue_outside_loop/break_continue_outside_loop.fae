@@ -1,11 +1,14 @@
 break
+continue
 
 fn main() {
 	break
+	continue
 
 	while true {
 		fn inner() {
 			break
+			continue
 		}
 	}
 }

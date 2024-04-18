@@ -1,0 +1,14 @@
+import fae::stdout::print_string, print_i64, print_newline
+
+fn main() {
+	mut index: i64 = 0
+	while index < 10 {
+		index += 1
+		print_i64(index)
+		print_newline()
+
+		continue
+
+		print_string("Abc\n")
+	}
+}

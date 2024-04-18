@@ -151,6 +151,7 @@ pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
 
 	state: State,
 	block_frames: Vec<BlockFrame>,
+	loop_condition_blocks: Vec<BasicBlock<'ctx>>,
 	loop_follow_blocks: Vec<BasicBlock<'ctx>>,
 	functions: Vec<Vec<Option<DefinedFunction<'ctx>>>>,
 	statics: Vec<Binding<'ctx>>,
@@ -176,6 +177,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 
 			state: State::InModule,
 			block_frames: Vec::new(),
+			loop_condition_blocks: Vec::new(),
 			loop_follow_blocks: Vec::new(),
 			functions: Vec::new(),
 			statics: Vec::new(),
@@ -436,6 +438,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	) {
 		let original_block = self.builder.get_insert_block().unwrap();
 		let condition_block = self.context.insert_basic_block_after(original_block, "while_condition");
+		self.loop_condition_blocks.push(condition_block);
 		let while_block = self.context.insert_basic_block_after(condition_block, "while_body");
 
 		let following_block = self.context.insert_basic_block_after(while_block, "while_following");
@@ -460,6 +463,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		}
 
 		self.builder.position_at_end(following_block);
+		self.loop_condition_blocks.pop();
 		self.loop_follow_blocks.pop();
 	}
 
@@ -1275,6 +1279,11 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	fn generate_break(&mut self, loop_index: usize) {
 		let follow_block = self.loop_follow_blocks[loop_index];
 		self.builder.build_unconditional_branch(follow_block).unwrap();
+	}
+
+	fn generate_continue(&mut self, loop_index: usize) {
+		let condition_block = self.loop_condition_blocks[loop_index];
+		self.builder.build_unconditional_branch(condition_block).unwrap();
 	}
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {

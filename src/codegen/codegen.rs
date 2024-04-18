@@ -2,9 +2,9 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	ArrayLiteral, BinaryOperation, Binding, Block, Break, Call, CodepointLiteral, DecimalValue, Expression, ExpressionKind,
-	FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, Read, Return, SliceMutableToImmutable, StatementKind,
-	StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	ArrayLiteral, BinaryOperation, Binding, Block, Break, Call, CodepointLiteral, Continue, DecimalValue, Expression,
+	ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, Read, Return, SliceMutableToImmutable,
+	StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -135,6 +135,11 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 			StatementKind::Break(statement) => {
 				generate_break(generator, statement);
+				break;
+			}
+
+			StatementKind::Continue(statement) => {
+				generate_continue(generator, statement);
 				break;
 			}
 
@@ -459,6 +464,10 @@ fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, bind
 
 fn generate_break<G: Generator>(generator: &mut G, statement: &Break) {
 	generator.generate_break(statement.loop_index);
+}
+
+fn generate_continue<G: Generator>(generator: &mut G, statement: &Continue) {
+	generator.generate_continue(statement.loop_index);
 }
 
 fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {

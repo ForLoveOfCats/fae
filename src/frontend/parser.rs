@@ -127,9 +127,18 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			}
 
 			Token { kind: TokenKind::Word, text: "break", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A breakl statement");
+				disallow_all_attributes(messages, attributes, token.span, "A break statement");
 				if let Ok(statement) = parse_break_statement(messages, tokenizer) {
 					items.push(Statement::Break(statement));
+				} else {
+					consume_error_syntax(messages, tokenizer);
+				}
+			}
+
+			Token { kind: TokenKind::Word, text: "continue", .. } => {
+				disallow_all_attributes(messages, attributes, token.span, "A continue statement");
+				if let Ok(statement) = parse_continue_statement(messages, tokenizer) {
+					items.push(Statement::Continue(statement));
 				} else {
 					consume_error_syntax(messages, tokenizer);
 				}
@@ -1288,6 +1297,11 @@ fn parse_binding_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenize
 fn parse_break_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Break>> {
 	let break_token = tokenizer.expect_word(messages, "break")?;
 	Ok(Node::from_token(Break, break_token))
+}
+
+fn parse_continue_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Continue>> {
+	let continue_token = tokenizer.expect_word(messages, "continue")?;
+	Ok(Node::from_token(Continue, continue_token))
 }
 
 fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Return<'a>>> {

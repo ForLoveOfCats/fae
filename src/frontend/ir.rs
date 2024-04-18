@@ -360,6 +360,7 @@ pub enum StatementKind<'a> {
 	Binding(Box<Binding<'a>>),
 
 	Break(Break),
+	Continue(Continue),
 	Return(Box<Return<'a>>),
 }
 
@@ -374,6 +375,11 @@ pub struct Binding<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Break {
+	pub loop_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Continue {
 	pub loop_index: usize,
 }
 

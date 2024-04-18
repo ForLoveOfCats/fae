@@ -602,6 +602,7 @@ fn create_block_types<'a>(
 				| tree::Statement::While(..)
 				| tree::Statement::Binding(..)
 				| tree::Statement::Break(..)
+				| tree::Statement::Continue(..)
 				| tree::Statement::Return(..) => {
 					let error = error!("{} is not allowed in a root scope", statement.name_and_article());
 					messages.message(error.span(statement.span()));
@@ -1075,6 +1076,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			| tree::Statement::While(..)
 			| tree::Statement::Binding(..)
 			| tree::Statement::Break(..)
+			| tree::Statement::Continue(..)
 			| tree::Statement::Return(..)
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
@@ -1129,6 +1131,19 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				};
 
 				let kind = StatementKind::Break(statement);
+				statements.push(Statement { kind });
+			}
+
+			tree::Statement::Continue(statement) => {
+				let statement = if let Some(loop_index) = context.current_loop_index {
+					Continue { loop_index }
+				} else {
+					let error = error!("Cannot continue when outside a loop");
+					context.message(error.span(statement.span));
+					Continue { loop_index: 0 }
+				};
+
+				let kind = StatementKind::Continue(statement);
 				statements.push(Statement { kind });
 			}
 

@@ -1,0 +1,26 @@
+import fae::stdout::print_i64, print_string, print_newline
+
+fn main() {
+	mut outer: i64 = 0
+	while outer < 10 {
+		mut inner: i64 = 0
+		while true {
+			if inner == 1 {
+				inner += 1
+				continue
+			}
+
+			print_i64(outer)
+			print_string(" ")
+			print_i64(inner)
+			print_newline()
+
+			inner += 1
+			if inner >= 3 {
+				break
+			}
+		}
+
+		outer += 1
+	}
+}
