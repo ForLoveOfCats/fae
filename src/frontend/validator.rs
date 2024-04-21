@@ -1684,7 +1684,7 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
 	let mut expression = validate_expression(context, &statement.item.expression);
 
-	let type_id = match &statement.item.parsed_type {
+	let mut type_id = match &statement.item.parsed_type {
 		Some(parsed_type) => {
 			let explicit_type = context.lookup_type(parsed_type)?;
 			if !context.collapse_to(explicit_type, &mut expression).ok()? {
@@ -1703,8 +1703,10 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 
 	if type_id.is_untyped_integer(context.type_store) {
 		context.message(error!("Cannot create binding of untyped integer").span(statement.span));
+		type_id = context.type_store.any_collapse_type_id();
 	} else if type_id.is_untyped_decimal(context.type_store) {
 		context.message(error!("Cannot create binding of untyped decimal").span(statement.span));
+		type_id = context.type_store.any_collapse_type_id();
 	}
 
 	let is_mutable = statement.item.is_mutable;
