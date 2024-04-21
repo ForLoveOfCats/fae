@@ -1,0 +1,11 @@
+struct Pet {
+	name: []str
+}
+
+fn returns_pet(): Pet {
+	return Pet { name: "Lola" }
+}
+
+fn main() {
+	let pet = returns_pet()
+}
