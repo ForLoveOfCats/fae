@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	DecimalValue, Expression, ExpressionKind, GenericParameter, GenericUsage, SliceMutableToImmutable, TypeArguments,
+	DecimalValue, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId, SliceMutableToImmutable, TypeArguments,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
@@ -14,10 +16,6 @@ pub struct TypeId {
 }
 
 impl TypeId {
-	pub fn new(entry: u32) -> TypeId {
-		TypeId { entry }
-	}
-
 	pub fn is_any_collapse(self, type_store: &TypeStore) -> bool {
 		type_store.direct_match(self, type_store.any_collapse_type_id)
 	}
@@ -120,9 +118,6 @@ pub struct Layout {
 
 #[derive(Debug)]
 pub struct StructShape<'a> {
-	pub name: &'a str,
-	pub generics: Vec<GenericParameter<'a>>,
-
 	pub been_filled: bool,
 	pub fields: Vec<Node<FieldShape<'a>>>,
 
@@ -130,10 +125,8 @@ pub struct StructShape<'a> {
 }
 
 impl<'a> StructShape<'a> {
-	pub fn new(name: &'a str, generics: Vec<GenericParameter<'a>>) -> Self {
+	pub fn new() -> Self {
 		StructShape {
-			name,
-			generics,
 			been_filled: false,
 			fields: Vec::new(),
 			specializations: Vec::new(),
@@ -165,9 +158,20 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct UserType<'a> {
+	pub name: &'a str,
 	pub span: Span,
 	pub module_path: &'a [String],
+	pub scope_id: ScopeId,
+	pub generic_parameters: GenericParameters<'a>,
+	pub methods: HashMap<&'a str, MethodInfo>,
 	pub kind: UserTypeKind<'a>,
+}
+
+#[derive(Debug)]
+pub struct MethodInfo {
+	pub span: Span,
+	pub function_shape_index: usize,
+	pub kind: tree::MethodKind,
 }
 
 #[derive(Debug)]
@@ -306,6 +310,10 @@ impl TypeEntry {
 							.type_arguments
 							.iter()
 							.any(|t| type_store.type_entries[t.index()].generic_poisoned)
+							|| specialization // TODO DO NOT MERGE REMOVE THIS
+								.fields
+								.iter()
+								.any(|f| type_store.type_entries[f.type_id.index()].generic_poisoned)
 					}
 				}
 			}
@@ -859,13 +867,38 @@ impl<'a> TypeStore<'a> {
 		}
 	}
 
-	pub fn register_type(&mut self, name: &'a str, kind: UserTypeKind<'a>, span: Span, module_path: &'a [String]) -> Symbol<'a> {
+	pub fn register_type(
+		&mut self,
+		name: &'a str,
+		generic_parameters: GenericParameters<'a>,
+		kind: UserTypeKind<'a>,
+		module_path: &'a [String],
+		scope_id: ScopeId,
+		span: Span,
+	) -> Symbol<'a> {
 		// Type entry gets added during specialization
+
 		let shape_index = self.user_types.len();
-		self.user_types.push(UserType { span, module_path, kind });
+		let user_type = UserType {
+			name,
+			span,
+			module_path,
+			scope_id,
+			generic_parameters,
+			methods: HashMap::new(),
+			kind,
+		};
+		self.user_types.push(user_type);
 
 		let kind = SymbolKind::Type { shape_index };
 		Symbol { name, kind, span: Some(span) }
+	}
+
+	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {
+		let entry = self.type_entries.len() as u32;
+		let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index };
+		self.type_entries.push(TypeEntry::new(self, kind));
+		TypeId { entry }
 	}
 
 	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
@@ -999,6 +1032,7 @@ impl<'a> TypeStore<'a> {
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
 		function_initial_symbols_len: usize,
+		enclosing_generic_parameters: &GenericParameters<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
 	) -> Option<TypeId> {
 		let (path_segments, type_arguments) = match &parsed_type.item {
@@ -1013,6 +1047,7 @@ impl<'a> TypeStore<'a> {
 					root_layers,
 					symbols,
 					function_initial_symbols_len,
+					enclosing_generic_parameters,
 					pointee,
 				)?;
 				return Some(self.pointer_to(id, *mutable));
@@ -1027,6 +1062,7 @@ impl<'a> TypeStore<'a> {
 					root_layers,
 					symbols,
 					function_initial_symbols_len,
+					enclosing_generic_parameters,
 					pointee,
 				)?;
 				return Some(self.slice_of(id, *mutable));
@@ -1050,12 +1086,8 @@ impl<'a> TypeStore<'a> {
 
 			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
 				let user_type = &self.user_types[shape_index];
-				match &user_type.kind {
-					UserTypeKind::Struct { shape } => {
-						let generic = &shape.generics[generic_index];
-						return Some(generic.generic_type_id);
-					}
-				}
+				let generic = user_type.generic_parameters.parameters()[generic_index];
+				return Some(generic.generic_type_id);
 			}
 
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
@@ -1070,7 +1102,7 @@ impl<'a> TypeStore<'a> {
 			}
 		};
 
-		let mut type_args = Vec::with_capacity(type_arguments.len());
+		let mut type_args = Vec::with_capacity(type_arguments.len() + enclosing_generic_parameters.parameters().len());
 		for argument in type_arguments {
 			let id = self.lookup_type(
 				messages,
@@ -1080,9 +1112,17 @@ impl<'a> TypeStore<'a> {
 				root_layers,
 				symbols,
 				function_initial_symbols_len,
+				enclosing_generic_parameters,
 				argument,
 			)?;
 			type_args.push(id);
+		}
+
+		let shape = &self.user_types[shape_index];
+		assert_eq!(shape.generic_parameters.method_base_len(), 0);
+		if shape.generic_parameters.implicit_len() > 0 {
+			assert_eq!(shape.generic_parameters.implicit_len(), enclosing_generic_parameters.parameters().len());
+			type_args.extend(enclosing_generic_parameters.parameters().iter().map(|p| p.generic_type_id));
 		}
 
 		let invoke_span = Some(parsed_type.span);
@@ -1094,6 +1134,7 @@ impl<'a> TypeStore<'a> {
 			shape_index,
 			invoke_span,
 			type_args,
+			type_arguments.len(),
 		)
 	}
 
@@ -1106,22 +1147,23 @@ impl<'a> TypeStore<'a> {
 		shape_index: usize,
 		invoke_span: Option<Span>,
 		type_arguments: Vec<TypeId>,
+		explicit_type_argument_len: usize, // TODO: Make a struct for this?
 	) -> Option<TypeId> {
+		assert!(explicit_type_argument_len <= type_arguments.len());
+
 		let user_type = &self.user_types[shape_index];
 		let shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 		};
 
-		if type_arguments.len() != shape.generics.len() {
-			messages.message(
-				error!(
-					"Expected {} type arguments for `{}`, got {}",
-					shape.generics.len(),
-					shape.name,
-					type_arguments.len()
-				)
-				.span_if_some(invoke_span),
+		if explicit_type_argument_len != user_type.generic_parameters.explicit_len() {
+			let error = error!(
+				"Expected {} type arguments for `{}`, got {}",
+				user_type.generic_parameters.explicit_len(),
+				user_type.name,
+				explicit_type_argument_len,
 			);
+			messages.message(error.span_if_some(invoke_span));
 			return None;
 		}
 
@@ -1175,7 +1217,7 @@ impl<'a> TypeStore<'a> {
 		self.type_entries.push(entry);
 
 		if type_arguments_generic_poisoned {
-			let usage = GenericUsage::UserType { type_arguments, shape_index };
+			let usage = GenericUsage::UserType { type_arguments, explicit_type_argument_len, shape_index };
 			generic_usages.push(usage)
 		}
 
@@ -1201,8 +1243,10 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::BuiltinType { .. } => type_id,
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let shape = &mut self.user_types[*shape_index];
-				match &mut shape.kind {
+				let user_type = &mut self.user_types[*shape_index];
+				let explicit_type_argument_len = user_type.generic_parameters.explicit_len();
+
+				match &mut user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &mut shape.specializations[*specialization_index];
 						let any_user_type_generic = specialization
@@ -1237,6 +1281,7 @@ impl<'a> TypeStore<'a> {
 							*shape_index,
 							None,
 							new_struct_type_arguments,
+							explicit_type_argument_len,
 						)
 						.unwrap()
 					}
@@ -1269,12 +1314,15 @@ impl<'a> TypeStore<'a> {
 				self.slice_of(type_id, *mutable)
 			}
 
-			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
-				assert_eq!(type_shape_index, *shape_index);
-				type_arguments[*generic_index]
+			&TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+				assert_eq!(type_shape_index, shape_index);
+				type_arguments[generic_index]
 			}
 
-			TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
+			&TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
+				let generic_parameters = &function_store.shapes[function_shape_index].generic_parameters;
+				generic_parameters.parameters()[generic_index].generic_type_id
+			}
 		}
 	}
 
@@ -1293,8 +1341,10 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::BuiltinType { .. } => type_id,
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let shape = &mut self.user_types[*shape_index];
-				match &mut shape.kind {
+				let user_type = &mut self.user_types[*shape_index];
+				let explicit_type_argument_len = user_type.generic_parameters.explicit_len();
+
+				match &mut user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &mut shape.specializations[*specialization_index];
 						let any_function_generic = specialization
@@ -1329,6 +1379,7 @@ impl<'a> TypeStore<'a> {
 							*shape_index,
 							None,
 							new_struct_type_arguments,
+							explicit_type_argument_len,
 						)
 						.unwrap()
 					}
@@ -1361,11 +1412,15 @@ impl<'a> TypeStore<'a> {
 				self.slice_of(type_id, *mutable)
 			}
 
-			TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
+			&TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+				// TODO: This could have unintended consequences
+				let generic_parameters = &self.user_types[shape_index].generic_parameters;
+				generic_parameters.parameters()[generic_index].generic_type_id
+			}
 
-			TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
-				assert_eq!(function_shape_index, *shape_index);
-				function_type_arguments.ids()[*generic_index]
+			&TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
+				assert_eq!(function_shape_index, shape_index);
+				function_type_arguments.ids()[generic_index]
 			}
 		}
 	}
@@ -1380,22 +1435,21 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let shape = &self.user_types[shape_index];
-				match &shape.kind {
+				let user_type = &self.user_types[shape_index];
+				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
-						if shape.generics.is_empty() {
-							return shape.name.to_owned();
+						if user_type.generic_parameters.explicit_len() == 0 {
+							return user_type.name.to_owned();
 						}
 
 						let specialization = &shape.specializations[specialization_index];
-						let type_arguments = specialization
-							.type_arguments
+						let type_arguments = specialization.type_arguments[0..user_type.generic_parameters.explicit_len()]
 							.iter()
 							.map(|a| self.internal_type_name(function_store, _module_path, *a))
 							.collect::<Vec<_>>()
 							.join(", ");
 
-						format!("{}<{}>", shape.name, type_arguments)
+						format!("{}<{}>", user_type.name, type_arguments)
 					}
 				}
 			}
@@ -1418,18 +1472,14 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
 				let shape = &function_store.shapes[function_shape_index];
-				let generic = &shape.generics.parameters()[generic_index];
+				let generic = &shape.generic_parameters.parameters()[generic_index];
 				generic.name.item.to_owned()
 			}
 
 			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
-				let shape = &self.user_types[shape_index];
-				match &shape.kind {
-					UserTypeKind::Struct { shape } => {
-						let generic = shape.generics[generic_index];
-						generic.name.item.to_owned()
-					}
-				}
+				let user_type = &self.user_types[shape_index];
+				let generic = user_type.generic_parameters.parameters()[generic_index];
+				generic.name.item.to_owned()
 			}
 		}
 	}

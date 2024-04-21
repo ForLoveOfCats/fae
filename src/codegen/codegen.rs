@@ -3,8 +3,9 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, Call, CodepointLiteral, Continue, DecimalValue, Expression,
-	ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, Read, Return, SliceMutableToImmutable,
-	StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, MethodCall, Read, Return,
+	SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation,
+	UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -182,6 +183,8 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::Call(call) => generate_call(context, generator, call),
 
+		ExpressionKind::MethodCall(method_call) => generate_method_call(context, generator, method_call),
+
 		ExpressionKind::Read(read) => generate_read(generator, read),
 
 		ExpressionKind::StaticRead(static_read) => generate_static_read(generator, static_read),
@@ -328,6 +331,29 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 	}
 
 	generator.generate_call(context.type_store, function_id, &arguments)
+}
+
+fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, method_call: &MethodCall) -> Option<G::Binding> {
+	let base_pointer_type_id = method_call.base.type_id; // TODO: Automatic dereference
+	let base = generate_expression(context, generator, &method_call.base).unwrap();
+
+	let function_id = context.function_store.specialize_with_function_generics(
+		context.messages,
+		context.type_store,
+		method_call.function_id,
+		context.function_id.function_shape_index,
+		context.function_type_arguments,
+	);
+
+	// TODO: Avoid this creating this vec every time
+	let mut arguments = Vec::with_capacity(method_call.arguments.len() + 1);
+	arguments.push(Some(base));
+	for argument in &method_call.arguments {
+		let binding = generate_expression(context, generator, argument);
+		arguments.push(binding);
+	}
+
+	generator.generate_method_call(context.type_store, function_id, base_pointer_type_id, &mut arguments)
 }
 
 fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {

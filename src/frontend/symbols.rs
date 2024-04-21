@@ -71,11 +71,17 @@ impl<'a> Symbols<'a> {
 		SymbolsScope { initial_symbols_len: self.len(), symbols: self }
 	}
 
-	pub fn push_symbol(&mut self, messages: &mut Messages, function_initial_symbol_len: usize, symbol: Symbol<'a>) {
-		let is_binding = matches!(symbol.kind, SymbolKind::Let { .. } | SymbolKind::Mut { .. });
+	pub fn push_symbol(&mut self, messages: &mut Messages, function_initial_symbols_len: usize, symbol: Symbol<'a>) {
+		let can_shadow = matches!(
+			symbol.kind,
+			SymbolKind::Let { .. }
+				| SymbolKind::Mut { .. }
+				| SymbolKind::FunctionGeneric { .. }
+				| SymbolKind::UserTypeGeneric { .. }
+		);
 
-		if !is_binding {
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
+		if !can_shadow {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_len, symbol.name) {
 				// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 				messages.message(
 					error!("Duplicate symbol `{}`", symbol.name)
@@ -92,11 +98,11 @@ impl<'a> Symbols<'a> {
 	pub fn push_imported_symbol(
 		&mut self,
 		messages: &mut Messages,
-		function_initial_symbol_len: usize,
+		function_initial_symbols_len: usize,
 		symbol: Symbol<'a>,
 		import_span: Option<Span>,
 	) {
-		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, symbol.name) {
+		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_len, symbol.name) {
 			messages.message(
 				error!("Import conflicts with existing symbol `{}`", found.name)
 					.span_if_some(import_span)
@@ -107,13 +113,13 @@ impl<'a> Symbols<'a> {
 		}
 	}
 
-	fn find_local_symbol_matching_name(&self, function_initial_symbol_len: usize, name: &str) -> Option<Symbol<'a>> {
+	fn find_local_symbol_matching_name(&self, function_initial_symbols_len: usize, name: &str) -> Option<Symbol<'a>> {
 		let mut index = self.symbols.len();
 		for &symbol in self.symbols.iter().rev() {
 			index -= 1;
 
 			if symbol.name == name {
-				if index < function_initial_symbol_len {
+				if index < function_initial_symbols_len {
 					match symbol.kind {
 						SymbolKind::Function { .. }
 						| SymbolKind::Type { .. }
@@ -137,7 +143,7 @@ impl<'a> Symbols<'a> {
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
 		type_store: &TypeStore<'a>,
-		function_initial_symbol_len: usize,
+		function_initial_symbols_len: usize,
 		path: &PathSegments<'a>,
 	) -> Option<Symbol<'a>> {
 		let segments = match path {
@@ -153,7 +159,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbol_len, name) {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_len, name) {
 				return Some(found);
 			}
 

@@ -31,6 +31,7 @@ pub fn parse_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 
 pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Vec<Statement<'a>> {
 	let mut items = Vec::new();
+	let mut next_function_index = 0;
 
 	loop {
 		while let Ok(token) = tokenizer.peek() {
@@ -81,6 +82,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 					generic_attribute: false,
 					extern_attribute: true,
 					export_attribute: false, // TODO: Allow exporting
+					method_attribute: false,
 					intrinsic_attribute: false,
 					lang_attribute: false,
 				};
@@ -102,7 +104,9 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			}
 
 			Token { kind: TokenKind::Word, text: "fn", .. } => {
-				if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes) {
+				let index = next_function_index;
+				next_function_index += 1;
+				if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes, index) {
 					items.push(Statement::Function(Box::new(statement)));
 				} else {
 					consume_error_syntax(messages, tokenizer);
@@ -208,6 +212,7 @@ fn disallow_attributes(messages: &mut Messages, attributes: &Attributes, allowed
 	disallow(messages, &attributes.generic_attribute, allowed.generic_attribute, label, "generic");
 	disallow(messages, &attributes.extern_attribute, allowed.extern_attribute, label, "extern");
 	disallow(messages, &attributes.export_attribute, allowed.export_attribute, label, "export");
+	disallow(messages, &attributes.method_attribute, allowed.method_attribute, label, "method");
 	disallow(messages, &attributes.intrinsic_attribute, allowed.intrinsic_attribute, label, "intrinsic");
 	disallow(messages, &attributes.lang_attribute, allowed.lang_attribute, label, "lang");
 }
@@ -535,6 +540,15 @@ fn parse_following_period<'a>(
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	let name = Node::from_token(name_token.text, name_token);
 
+	if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokenizer.peek_kind() {
+		let type_arguments = parse_type_arguments(messages, tokenizer)?.map(|a| a.item).unwrap_or_default();
+		let arguments_node = parse_arguments(messages, tokenizer)?;
+		let span = atom.span + arguments_node.span;
+		let arguments = arguments_node.item;
+		let method_call = MethodCall { base: atom, name, type_arguments, arguments };
+		return Ok(Node::new(Expression::MethodCall(Box::new(method_call)), span));
+	}
+
 	let span = atom.span + name.span;
 	let field_read = Box::new(FieldRead { base: atom, name });
 	return Ok(Node::new(Expression::FieldRead(field_read), span));
@@ -839,6 +853,11 @@ fn parse_attributes<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 					attributes.export_attribute = Some(parse_export_attribute(messages, tokenizer)?);
 				}
 
+				"method" => {
+					check_duplicate_attribute(messages, &attributes.method_attribute, "method", peeked.span)?;
+					attributes.method_attribute = Some(parse_method_attribute(messages, tokenizer)?);
+				}
+
 				_ => break,
 			}
 		} else if peeked.kind == TokenKind::PoundSign {
@@ -904,6 +923,31 @@ fn parse_export_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 
 	let attribute = ExportAttribute { name: name_token.text };
 	let span = export_token.span + name_token.span;
+	Ok(Node::new(attribute, span))
+}
+
+fn parse_method_attribute<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<MethodAttribute<'a>>> {
+	let method_token = tokenizer.expect_word(messages, "method")?;
+
+	let kind = match tokenizer.peek() {
+		Ok(Token { text: "mut", .. }) => {
+			tokenizer.expect_word(messages, "mut")?;
+			MethodKind::MutableSelf
+		}
+
+		Ok(Token { text: "static", .. }) => {
+			tokenizer.expect_word(messages, "static")?;
+			MethodKind::Static
+		}
+
+		_ => MethodKind::ImmutableSelf,
+	};
+
+	let base_type = parse_path_segments(messages, tokenizer)?;
+	tokenizer.expect(messages, TokenKind::Newline)?;
+
+	let span = method_token.span + base_type.span;
+	let attribute = MethodAttribute { base_type, kind };
 	Ok(Node::new(attribute, span))
 }
 
@@ -1081,6 +1125,7 @@ fn parse_function_declaration<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
+	index_in_block: usize,
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
@@ -1088,6 +1133,7 @@ fn parse_function_declaration<'a>(
 	};
 	let extern_attribute = attributes.extern_attribute;
 	let export_attribute = attributes.export_attribute;
+	let method_attribute = attributes.method_attribute;
 	let intrinsic_attribute = attributes.intrinsic_attribute;
 	let lang_attribute = attributes.lang_attribute;
 
@@ -1116,12 +1162,14 @@ fn parse_function_declaration<'a>(
 		generics,
 		extern_attribute,
 		export_attribute,
+		method_attribute,
 		intrinsic_attribute,
 		lang_attribute,
 		name,
 		parameters,
 		parsed_type,
 		block,
+		index_in_block,
 	})
 }
 
@@ -1333,7 +1381,14 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
 	let is_reserved = matches!(
 		token.text,
-		"const" | "fn" | "let" | "mut" | "return" | "struct" | "import" | "generic" | "if" | "else" | "while" | "break"
+		"const"
+			| "fn" | "let"
+			| "mut" | "return"
+			| "struct" | "import"
+			| "generic" | "extern"
+			| "export" | "method"
+			| "if" | "else"
+			| "while" | "break"
 	);
 
 	if is_reserved {

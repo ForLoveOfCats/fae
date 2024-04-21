@@ -189,8 +189,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 
 	fn finalize_function_if_in_function(&mut self) {
 		if let State::InFunction { function_id, void_returning } = self.state {
-			if void_returning && self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-				self.builder.build_return(None).unwrap();
+			if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+				if void_returning {
+					self.builder.build_return(None).unwrap();
+				} else {
+					self.builder.build_unreachable().unwrap();
+				}
 			}
 
 			let function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
@@ -604,6 +608,41 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	) -> Option<Binding<'ctx>> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
+
+		let mut abi = self.abi.take().unwrap();
+		let binding = abi.call_function(self, type_store, function, arguments);
+		self.abi = Some(abi);
+
+		binding
+	}
+
+	fn generate_method_call(
+		&mut self,
+		type_store: &TypeStore,
+		function_id: FunctionId,
+		base_pointer_type_id: TypeId,
+		arguments: &mut [Option<Self::Binding>],
+	) -> Option<Self::Binding> {
+		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
+		let function = maybe_function.as_ref().unwrap();
+
+		let base = arguments[0].unwrap();
+		let first_argument = match base.kind {
+			BindingKind::Value(value) => {
+				let pointed_type = value.get_type();
+				let pointer = self.build_alloca(pointed_type);
+				self.builder.build_store(pointer, value).unwrap();
+
+				let kind = BindingKind::Value(pointer.as_basic_value_enum());
+				Binding { type_id: base_pointer_type_id, kind }
+			}
+
+			BindingKind::Pointer { pointer, .. } => {
+				let kind = BindingKind::Value(pointer.as_basic_value_enum());
+				Binding { type_id: base_pointer_type_id, kind }
+			}
+		};
+		arguments[0] = Some(first_argument);
 
 		let mut abi = self.abi.take().unwrap();
 		let binding = abi.call_function(self, type_store, function, arguments);

@@ -17,7 +17,7 @@ use crate::frontend::type_store::*;
  *
  * It would be possible to emulate the advantages of an arena bump allocator without actually using one
  * by using several big `Vec`s and passing around indicies, but wrapping that up in a nice API is much
- * more effort than it is worth. See `ir_alloc_perf.rs` in the repo root for an example of this.
+ * more effort than it is worth.
  */
 
 #[derive(Debug, Clone)]
@@ -36,17 +36,29 @@ pub struct GenericParameters<'a> {
 	parameters: Vec<GenericParameter<'a>>,
 	explicit_len: usize,
 	implicit_len: usize,
+	method_base_len: usize,
 }
 
 impl<'a> GenericParameters<'a> {
 	pub fn new_from_explicit(explicit: Vec<GenericParameter<'a>>) -> Self {
 		let explicit_len = explicit.len();
-		GenericParameters { parameters: explicit, explicit_len, implicit_len: 0 }
+		GenericParameters {
+			parameters: explicit,
+			explicit_len,
+			implicit_len: 0,
+			method_base_len: 0,
+		}
 	}
 
 	pub fn push_implicit(&mut self, implict: GenericParameter<'a>) {
+		assert_eq!(self.method_base_len, 0);
 		self.parameters.push(implict);
 		self.implicit_len += 1;
+	}
+
+	pub fn push_method_base(&mut self, parameter: GenericParameter<'a>) {
+		self.parameters.push(parameter);
+		self.method_base_len += 1;
 	}
 
 	pub fn parameters(&self) -> &[GenericParameter<'a>] {
@@ -57,6 +69,11 @@ impl<'a> GenericParameters<'a> {
 		&self.parameters[0..self.explicit_len]
 	}
 
+	pub fn method_base_parameters(&self) -> &[GenericParameter<'a>] {
+		let start = self.explicit_len + self.implicit_len;
+		&self.parameters[start..]
+	}
+
 	pub fn explicit_len(&self) -> usize {
 		self.explicit_len
 	}
@@ -64,12 +81,24 @@ impl<'a> GenericParameters<'a> {
 	pub fn implicit_len(&self) -> usize {
 		self.implicit_len
 	}
+
+	pub fn method_base_len(&self) -> usize {
+		self.method_base_len
+	}
 }
 
 #[derive(Debug, Clone)]
 pub enum GenericUsage {
-	UserType { type_arguments: Vec<TypeId>, shape_index: usize },
-	Function { type_arguments: TypeArguments, function_shape_index: usize },
+	UserType {
+		type_arguments: Vec<TypeId>,
+		explicit_type_argument_len: usize,
+		shape_index: usize,
+	},
+
+	Function {
+		type_arguments: TypeArguments,
+		function_shape_index: usize,
+	},
 }
 
 impl GenericUsage {
@@ -85,7 +114,7 @@ impl GenericUsage {
 		invoke_span: Option<Span>,
 	) {
 		match self {
-			GenericUsage::UserType { type_arguments, shape_index } => {
+			GenericUsage::UserType { type_arguments, explicit_type_argument_len, shape_index } => {
 				let mut specialized_type_arguments = Vec::with_capacity(type_arguments.len());
 				for &type_argument in type_arguments {
 					let type_id = type_store.specialize_with_function_generics(
@@ -108,6 +137,7 @@ impl GenericUsage {
 					*shape_index,
 					None,
 					specialized_type_arguments,
+					*explicit_type_argument_len,
 				);
 			}
 
@@ -152,14 +182,14 @@ pub struct FunctionShape<'a> {
 	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 
-	pub generics: GenericParameters<'a>,
-	pub parameters: Vec<ParameterShape<'a>>,
+	pub generic_parameters: GenericParameters<'a>,
+	pub parameters: Vec<ParameterShape>,
 	pub c_varargs: bool,
 	pub return_type: TypeId,
 	pub block: Option<Rc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
 
-	pub specializations: Vec<Function<'a>>,
+	pub specializations: Vec<Function>,
 }
 
 // Anonymous structs pls save me
@@ -168,44 +198,8 @@ pub struct FunctionSpecializationResult {
 	pub return_type: TypeId,
 }
 
-impl<'a> FunctionShape<'a> {
-	pub fn new(
-		name: Node<&'a str>,
-		module_path: &'a [String],
-		file_index: usize,
-		is_main: bool,
-		generics: GenericParameters<'a>,
-		extern_attribute: Option<Node<ExternAttribute<'a>>>,
-		export_attribute: Option<Node<ExportAttribute<'a>>>,
-		intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
-		lang_attribute: Option<Node<LangAttribute<'a>>>,
-		parameters: Vec<ParameterShape<'a>>,
-		c_varargs: bool,
-		return_type: TypeId,
-	) -> Self {
-		FunctionShape {
-			name,
-			module_path,
-			file_index,
-			is_main,
-			extern_attribute,
-			export_attribute,
-			intrinsic_attribute,
-			lang_attribute,
-			generics,
-			parameters,
-			c_varargs,
-			return_type,
-			block: None,
-			generic_usages: Vec::new(),
-			specializations: Vec::new(),
-		}
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct ParameterShape<'a> {
-	pub name: Node<&'a str>,
+#[derive(Debug, Clone, Copy)]
+pub struct ParameterShape {
 	pub type_id: TypeId,
 	pub is_mutable: bool,
 	pub readable_index: usize,
@@ -216,17 +210,29 @@ pub struct TypeArguments {
 	ids: Vec<TypeId>,
 	explicit_len: usize,
 	implicit_len: usize,
+	method_base_len: usize,
 }
 
 impl TypeArguments {
 	pub fn new_from_explicit(explicit: Vec<TypeId>) -> TypeArguments {
 		let explicit_len = explicit.len();
-		TypeArguments { ids: explicit, explicit_len, implicit_len: 0 }
+		TypeArguments {
+			ids: explicit,
+			explicit_len,
+			implicit_len: 0,
+			method_base_len: 0,
+		}
 	}
 
 	pub fn push_implicit(&mut self, implict: TypeId) {
+		assert_eq!(self.method_base_len, 0);
 		self.ids.push(implict);
 		self.implicit_len += 1;
+	}
+
+	pub fn push_method_base(&mut self, type_id: TypeId) {
+		self.ids.push(type_id);
+		self.method_base_len += 1;
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -249,19 +255,16 @@ impl TypeArguments {
 		&self.ids[0..self.explicit_len]
 	}
 
-	pub fn matches(&self, other: &TypeArguments, type_store: &TypeStore) -> bool {
-		if self.implicit_len != other.implicit_len || self.explicit_len != other.explicit_len {
+	pub fn direct_matches(&self, other: &TypeArguments, type_store: &TypeStore) -> bool {
+		let implicit_mismatch = self.implicit_len != other.implicit_len;
+		let explicit_mismatch = self.explicit_len != other.explicit_len;
+		let method_base_mismatch = self.method_base_len != other.method_base_len;
+		if implicit_mismatch || explicit_mismatch || method_base_mismatch {
 			return false;
 		}
 
-		for (index, &implicit) in self.ids[..self.implicit_len].iter().enumerate() {
-			if !type_store.direct_match(implicit, other.ids[index]) {
-				return false;
-			}
-		}
-
-		for (index, &explicit) in self.ids[self.implicit_len..].iter().enumerate() {
-			if !type_store.direct_match(explicit, other.ids[index]) {
+		for (index, argument) in self.ids.iter().enumerate() {
+			if !type_store.direct_match(*argument, other.ids[index]) {
 				return false;
 			}
 		}
@@ -296,18 +299,17 @@ impl TypeArguments {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function<'a> {
+pub struct Function {
 	pub type_arguments: TypeArguments,
 	pub generic_poisioned: bool,
-	pub parameters: Vec<Parameter<'a>>,
+	pub parameters: Vec<Parameter>,
 	pub return_type: TypeId,
 	pub been_queued: bool,
 	pub been_generated: bool, // TODO: Remove
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Parameter<'a> {
-	pub name: Node<&'a str>,
+pub struct Parameter {
 	pub type_id: TypeId,
 	pub readable_index: usize,
 	pub is_mutable: bool,
@@ -317,6 +319,12 @@ pub struct Parameter<'a> {
 pub struct FunctionId {
 	pub function_shape_index: usize,
 	pub specialization_index: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScopeId {
+	pub file_index: usize,
+	pub scope_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -334,7 +342,7 @@ pub struct IfElseChainEntry<'a> {
 
 #[derive(Debug, Clone)]
 pub struct IfElseChain<'a> {
-	pub type_id: TypeId, // TODO: Meaningless until else-if/else have been added
+	pub type_id: TypeId,
 	pub entries: Vec<IfElseChainEntry<'a>>,
 	pub else_body: Option<Block<'a>>,
 }
@@ -438,6 +446,7 @@ pub enum ExpressionKind<'a> {
 	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),
+	MethodCall(Box<MethodCall<'a>>),
 	Read(Read<'a>),
 	StaticRead(StaticRead<'a>),
 	FieldRead(Box<FieldRead<'a>>),
@@ -463,6 +472,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::ArrayLiteral(_) => "array literal",
 			ExpressionKind::StructLiteral(_) => "struct literal",
 			ExpressionKind::Call(_) => "function call",
+			ExpressionKind::MethodCall(_) => "method call",
 			ExpressionKind::Read(_) => "binding read",
 			ExpressionKind::StaticRead(_) => "static read",
 			ExpressionKind::FieldRead(_) => "field read",
@@ -486,6 +496,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::ArrayLiteral(_) => "an array literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::Call(_) => "a function call",
+			ExpressionKind::MethodCall(_) => "a method call",
 			ExpressionKind::Read(_) => "a binding read",
 			ExpressionKind::StaticRead(_) => "a static read",
 			ExpressionKind::FieldRead(_) => "a field read",
@@ -765,6 +776,16 @@ pub struct FieldInitializer<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Call<'a> {
+	pub span: Span,
+	pub name: &'a str,
+	pub function_id: FunctionId,
+	pub arguments: Vec<Expression<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MethodCall<'a> {
+	pub base: Expression<'a>,
+	pub mutable_self: bool,
 	pub span: Span,
 	pub name: &'a str,
 	pub function_id: FunctionId,

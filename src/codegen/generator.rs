@@ -85,6 +85,14 @@ pub trait Generator {
 		arguments: &[Option<Self::Binding>],
 	) -> Option<Self::Binding>;
 
+	fn generate_method_call(
+		&mut self,
+		type_store: &TypeStore,
+		function_id: FunctionId,
+		base_pointer_type_id: TypeId,
+		arguments: &mut [Option<Self::Binding>],
+	) -> Option<Self::Binding>;
+
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
 
 	fn generate_static_read(&mut self, static_index: usize) -> Self::Binding;

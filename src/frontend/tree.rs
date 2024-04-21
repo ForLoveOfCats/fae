@@ -29,7 +29,7 @@ pub struct Import<'a> {
 	pub symbol_names: Vec<Node<&'a str>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GenericAttribute<'a> {
 	pub names: Vec<Node<&'a str>>,
 }
@@ -44,6 +44,19 @@ pub struct ExportAttribute<'a> {
 	pub name: &'a str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodKind {
+	Static,
+	ImmutableSelf,
+	MutableSelf,
+}
+
+#[derive(Debug)]
+pub struct MethodAttribute<'a> {
+	pub base_type: Node<PathSegments<'a>>,
+	pub kind: MethodKind,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct IntrinsicAttribute;
 
@@ -56,15 +69,17 @@ pub struct AllowedAttributes {
 	pub generic_attribute: bool,
 	pub extern_attribute: bool,
 	pub export_attribute: bool,
+	pub method_attribute: bool,
 	pub intrinsic_attribute: bool,
 	pub lang_attribute: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Attributes<'a> {
 	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
+	pub method_attribute: Option<Node<MethodAttribute<'a>>>,
 	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 }
@@ -77,6 +92,7 @@ impl<'a> Attributes<'a> {
 			generic_attribute: None,
 			extern_attribute: None,
 			export_attribute: None,
+			method_attribute: None,
 			intrinsic_attribute: None,
 			lang_attribute: None,
 		}
@@ -137,12 +153,14 @@ pub struct Function<'a> {
 	pub generics: Vec<Node<&'a str>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
+	pub method_attribute: Option<Node<MethodAttribute<'a>>>,
 	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 	pub name: Node<&'a str>,
 	pub parameters: Parameters<'a>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub block: Option<Node<Block<'a>>>,
+	pub index_in_block: usize,
 }
 
 #[derive(Debug)]
@@ -381,6 +399,14 @@ pub struct Call<'a> {
 }
 
 #[derive(Debug)]
+pub struct MethodCall<'a> {
+	pub base: Node<Expression<'a>>,
+	pub name: Node<&'a str>,
+	pub type_arguments: Vec<Node<Type<'a>>>,
+	pub arguments: Vec<Node<Expression<'a>>>,
+}
+
+#[derive(Debug)]
 pub struct Read<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 }
@@ -503,6 +529,7 @@ pub enum Expression<'a> {
 	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),
+	MethodCall(Box<MethodCall<'a>>),
 	Read(Read<'a>),
 	FieldRead(Box<FieldRead<'a>>),
 

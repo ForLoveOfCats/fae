@@ -29,7 +29,7 @@ impl<'a> FunctionStore<'a> {
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
-			if existing.type_arguments.matches(type_arguments, type_store) {
+			if existing.type_arguments.direct_matches(type_arguments, type_store) {
 				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
 			}
 		}
@@ -49,8 +49,8 @@ impl<'a> FunctionStore<'a> {
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 
-		if shape.generics.explicit_len() != type_arguments.explicit_len() {
-			let expected = shape.generics.explicit_len();
+		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len() {
+			let expected = shape.generic_parameters.explicit_len();
 			let got = type_arguments.explicit_len();
 			let error = error!("Expected {expected} type arguments, got {got}");
 			messages.message(error.span_if_some(invoke_span));
@@ -58,8 +58,8 @@ impl<'a> FunctionStore<'a> {
 		}
 
 		// TODO: Should this be an ICE instead?
-		if shape.generics.implicit_len() != type_arguments.implicit_len() {
-			let expected = shape.generics.implicit_len();
+		if shape.generic_parameters.implicit_len() != type_arguments.implicit_len() {
+			let expected = shape.generic_parameters.implicit_len();
 			let got = type_arguments.implicit_len();
 			let error = error!("Expected {expected} implicit type arguments, got {got}");
 			messages.message(error.span_if_some(invoke_span));
@@ -92,7 +92,7 @@ impl<'a> FunctionStore<'a> {
 
 				let is_mutable = parameter.is_mutable;
 				let readable_index = parameter.readable_index;
-				Parameter { name: parameter.name, type_id, readable_index, is_mutable }
+				Parameter { type_id, readable_index, is_mutable }
 			})
 			.collect::<Vec<_>>();
 

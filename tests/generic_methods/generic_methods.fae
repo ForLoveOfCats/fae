@@ -1,0 +1,55 @@
+import fae::stdout::print_i32, print_u32, print_f64, print_newline
+
+generic A, B
+struct Pair {
+	a: A
+	b: B
+}
+
+generic T
+fn generic_function(one: T, two: T, condition: bool): T {
+	generic B
+	struct Structure {
+		one: T
+		two: T
+		other: B
+	}
+
+	method Structure
+	fn select(condition: bool): T {
+		if condition {
+			return self.*.one
+		} else {
+			return self.*.two
+		}
+	}
+
+	method Structure
+	fn get_other(): B {
+		return self.*.other
+	}
+
+	generic U
+	method Structure
+	fn generic_method(arg: U): Pair<T, U> {
+		return Pair<T, U> { a: self.*.one, b: arg }
+	}
+
+	let a = Structure<i32> { one: one, two: two, other: 8 }
+
+	print_i32(a.get_other())
+	print_newline()
+
+	let pair = a.generic_method<u32>('A')
+	print_u32(pair.b)
+	print_newline()
+
+	return a.select(condition)
+}
+
+fn main() {
+	print_f64(generic_function<f64>(4.2, 6.9, true))
+	print_newline()
+	print_f64(generic_function<f64>(4.2, 6.9, false))
+	print_newline()
+}
