@@ -1,0 +1,26 @@
+import fae::stdout::print_i32, print_string, print_newline
+
+struct Structure {
+	field: i32
+}
+
+method mut Structure
+fn increment(by: i32) {
+	print_string("Incrementing\n")
+	self.field += by
+}
+
+method Structure
+fn print_details() {
+	print_string("field: ")
+	print_i32(self.field)
+	print_newline()
+}
+
+fn main() {
+	mut a = Structure { field: 2 }
+	let ptr = a.&mut
+	ptr.print_details()
+	ptr.increment(2)
+	ptr.print_details()
+}

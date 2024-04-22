@@ -2236,10 +2236,21 @@ fn validate_method_call<'a>(
 		return validate_static_method_call(context, method_call, base_type, span);
 	}
 
-	// TODO: Auto-dereference
 	let entry = &context.type_store.type_entries[base.type_id.index()];
-	let (base_shape_index, base_specialization_index) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+	let (base_shape_index, base_specialization_index, base_mutable) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index, base.mutable),
+
+		TypeEntryKind::Pointer { type_id, mutable } => {
+			let entry = context.type_store.type_entries[type_id.index()];
+			let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind else {
+				let found = context.type_name(base.type_id);
+				let error = error!("Cannot call method on type {found}");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			};
+
+			(shape_index, specialization_index, mutable)
+		}
 
 		TypeEntryKind::BuiltinType { kind } if kind == PrimativeKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
@@ -2279,7 +2290,7 @@ fn validate_method_call<'a>(
 		}
 	};
 
-	if mutable_self && !base.mutable {
+	if mutable_self && !base_mutable {
 		let name = method_call.name.item;
 		let error = error!("Cannot call mutable method `{name}` on an immutable object");
 		context.message(error.span(span));
@@ -2511,10 +2522,14 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 		return Expression::any_collapse(context.type_store, span);
 	}
 
+	let (type_id, mutable) = match base.type_id.as_pointed(context.type_store) {
+		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
+		None => (base.type_id, base.mutable),
+	};
+
 	// Dumb hack to store fields array in outer scope so a slice can be taken
 	let slice_fields;
-
-	let fields: &[Field] = if let Some(as_struct) = base.type_id.as_struct(context.type_store) {
+	let fields: &[Field] = if let Some(as_struct) = type_id.as_struct(context.type_store) {
 		&as_struct.fields
 	} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
 		slice_fields = [
@@ -2547,7 +2562,6 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 	};
 
 	let type_id = field.type_id;
-	let mutable = base.mutable;
 	let field_read = FieldRead { base, name: field.name, type_id, field_index };
 	let kind = ExpressionKind::FieldRead(Box::new(field_read));
 	Expression { span, type_id, mutable, returns: false, kind }
@@ -2830,35 +2844,6 @@ fn validate_binary_operation<'a>(
 		return constant_operation;
 	}
 
-	if op == BinaryOperator::Assign {
-		if let ExpressionKind::Read(read) = &left.kind {
-			let readable = match context.readables.get(read.readable_index) {
-				Some(readable) => readable,
-				None => return Expression::any_collapse(context.type_store, span),
-			};
-
-			if readable.kind != ReadableKind::Mut {
-				context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(span));
-			}
-		} else if let ExpressionKind::FieldRead(_) = &left.kind {
-			if !left.mutable {
-				context.message(error!("Cannot assign to field of immutable object").span(span));
-			}
-		} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
-		{
-			if !left.mutable {
-				context.message(error!("Cannot assign immutable memory location").span(span));
-			}
-		} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
-		{
-			if !left.mutable {
-				context.message(error!("Cannot assign to index of immutable slice").span(span));
-			}
-		} else {
-			context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(span));
-		}
-	}
-
 	match op {
 		BinaryOperator::Assign => {}
 
@@ -2953,7 +2938,36 @@ fn validate_binary_operation<'a>(
 		| BinaryOperator::DivAssign
 		| BinaryOperator::ModuloAssign
 		| BinaryOperator::BitshiftLeftAssign
-		| BinaryOperator::BitshiftRightAssign => context.type_store.void_type_id(),
+		| BinaryOperator::BitshiftRightAssign => {
+			if let ExpressionKind::Read(read) = &left.kind {
+				let readable = match context.readables.get(read.readable_index) {
+					Some(readable) => readable,
+					None => return Expression::any_collapse(context.type_store, span),
+				};
+
+				if readable.kind != ReadableKind::Mut {
+					context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(span));
+				}
+			} else if let ExpressionKind::FieldRead(_) = &left.kind {
+				if !left.mutable {
+					context.message(error!("Cannot assign to field of immutable object").span(span));
+				}
+			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
+			{
+				if !left.mutable {
+					context.message(error!("Cannot assign immutable memory location").span(span));
+				}
+			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
+			{
+				if !left.mutable {
+					context.message(error!("Cannot assign to index of immutable slice").span(span));
+				}
+			} else {
+				context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(span));
+			}
+
+			context.type_store.void_type_id()
+		}
 
 		BinaryOperator::Equals
 		| BinaryOperator::NotEquals

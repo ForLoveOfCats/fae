@@ -73,8 +73,16 @@ impl TypeId {
 		matches!(entry.kind, TypeEntryKind::Pointer { .. })
 	}
 
+	pub fn as_pointed(self, type_store: &TypeStore) -> Option<AsPointed> {
+		let entry = type_store.type_entries[self.index()];
+		match entry.kind {
+			TypeEntryKind::Pointer { type_id, mutable } => Some(AsPointed { type_id, mutable }),
+			_ => None,
+		}
+	}
+
 	pub fn is_primative(self, type_store: &TypeStore) -> bool {
-		let entry = type_store.type_entries[self.entry as usize];
+		let entry = type_store.type_entries[self.index()];
 		match entry.kind {
 			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::Pointer { .. } => true,
 			TypeEntryKind::UserType { .. } | TypeEntryKind::Slice(_) => false,
@@ -84,7 +92,7 @@ impl TypeId {
 	}
 
 	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
-		let entry = type_store.type_entries[self.entry as usize];
+		let entry = type_store.type_entries[self.index()];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
 			let shape = &type_store.user_types[shape_index];
 			#[allow(irrefutable_let_patterns)] // TODO: Remove once enums are added
@@ -97,7 +105,7 @@ impl TypeId {
 	}
 
 	pub fn as_slice(self, type_store: &TypeStore) -> Option<Slice> {
-		let entry = type_store.type_entries[self.entry as usize];
+		let entry = type_store.type_entries[self.index()];
 		if let TypeEntryKind::Slice(slice) = entry.kind {
 			return Some(slice);
 		}
@@ -108,6 +116,11 @@ impl TypeId {
 	pub fn index(self) -> usize {
 		self.entry as usize
 	}
+}
+
+pub struct AsPointed {
+	pub type_id: TypeId,
+	pub mutable: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -629,17 +629,28 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let base = arguments[0].unwrap();
 		let first_argument = match base.kind {
 			BindingKind::Value(value) => {
-				let pointed_type = value.get_type();
-				let pointer = self.build_alloca(pointed_type);
-				self.builder.build_store(pointer, value).unwrap();
+				if value.is_pointer_value() {
+					let kind = BindingKind::Value(value);
+					Binding { type_id: base_pointer_type_id, kind }
+				} else {
+					let pointed_type = value.get_type();
+					let pointer = self.build_alloca(pointed_type);
+					self.builder.build_store(pointer, value).unwrap();
 
-				let kind = BindingKind::Value(pointer.as_basic_value_enum());
-				Binding { type_id: base_pointer_type_id, kind }
+					let kind = BindingKind::Value(pointer.as_basic_value_enum());
+					Binding { type_id: base_pointer_type_id, kind }
+				}
 			}
 
-			BindingKind::Pointer { pointer, .. } => {
-				let kind = BindingKind::Value(pointer.as_basic_value_enum());
-				Binding { type_id: base_pointer_type_id, kind }
+			BindingKind::Pointer { pointer, pointed_type } => {
+				if pointed_type.is_pointer_type() {
+					let pointer = self.builder.build_load(pointed_type, pointer, "").unwrap();
+					let kind = BindingKind::Value(pointer.as_basic_value_enum());
+					Binding { type_id: base_pointer_type_id, kind }
+				} else {
+					let kind = BindingKind::Value(pointer.as_basic_value_enum());
+					Binding { type_id: base_pointer_type_id, kind }
+				}
 			}
 		};
 		arguments[0] = Some(first_argument);
@@ -662,17 +673,27 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
 		let index = field_index as u32;
 
-		let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
-		let pointed_struct = pointed_type.into_struct_type();
+		let (pointer, pointed_struct, type_id) = {
+			let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
+			if pointed_type.is_pointer_type() {
+				let pointer = self.builder.build_load(self.llvm_types.opaque_pointer, pointer, "").unwrap();
+				let type_id = base.type_id.as_pointed(type_store).unwrap().type_id;
+				let llvm_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, type_id);
+				(pointer.into_pointer_value(), llvm_type.into_struct_type(), type_id)
+			} else {
+				(pointer, pointed_type.into_struct_type(), base.type_id)
+			}
+		};
+
 		let field_type = pointed_struct.get_field_type_at_index(index).unwrap();
-		let field_pointer = self.builder.build_struct_gep(pointed_type, pointer, index, "").unwrap();
+		let field_pointer = self.builder.build_struct_gep(pointed_struct, pointer, index, "").unwrap();
 
 		let type_id = if base.type_id.as_slice(type_store).is_some() {
 			type_store.usize_type_id()
-		} else if let Some(struct_type) = base.type_id.as_struct(type_store) {
+		} else if let Some(struct_type) = type_id.as_struct(type_store) {
 			struct_type.fields[field_index].type_id
 		} else {
-			unreachable!("{:#?}", &type_store.type_entries[base.type_id.index()]);
+			unreachable!("{:#?}", &type_store.type_entries[type_id.index()]);
 		};
 
 		let kind = BindingKind::Pointer { pointer: field_pointer, pointed_type: field_type };
