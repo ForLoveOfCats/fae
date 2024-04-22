@@ -1,0 +1,44 @@
+import fae::stdout::print_i64, print_i32, print_string, print_newline
+
+struct Pet {
+	name: []u8
+	age: i64
+}
+
+method static Pet
+fn adopt_baby(name: []u8): Pet {
+	return Pet { name: name, age: 0 }
+}
+
+method mut Pet
+fn birthday_happened() {
+	self.*.age += 1
+}
+
+generic T
+struct List {
+	pointer: &T
+}
+
+method static List
+fn from_pointer(pointer: &T): List<T> {
+	return List<T> { pointer: pointer }
+}
+
+fn main() {
+	let a: i32 = 42
+	let list = List<i32>.from_pointer(a.&)
+	print_i32(list.pointer.*)
+	print_newline()
+
+	mut lola = Pet.adopt_baby("Lola")
+	print_string(lola.name)
+	print_string(" ")
+	print_i64(lola.age)
+	print_newline()
+
+	lola.birthday_happened()
+	print_string("Birthday happened! ")
+	print_i64(lola.age)
+	print_newline()
+}

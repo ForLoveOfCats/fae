@@ -171,10 +171,13 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 					result_slice.copy_from_slice(field_classes);
 					buffer_index += field_classes.len();
 
-					assert!(field_layout.size <= 8, "{}", field_layout.size);
-					combine_size = field_layout.size;
-					if combine_size > 0 {
-						buffer_index -= 1;
+					if field_layout.size > 8 {
+						combine_size = 0;
+					} else {
+						combine_size = field_layout.size;
+						if combine_size > 0 {
+							buffer_index -= 1;
+						}
 					}
 				}
 			}

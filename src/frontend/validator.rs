@@ -2109,55 +2109,17 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	Expression { span, type_id: return_type, mutable: true, returns, kind }
 }
 
-fn validate_method_call<'a>(
+fn get_method_function_specialization<'a>(
 	context: &mut Context<'a, '_, '_>,
-	method_call: &'a tree::MethodCall<'a>,
+	call_type_arguments: &[Node<tree::Type<'a>>],
+	function_shape_index: usize,
+	base_shape_index: usize,
+	base_specialization_index: usize,
 	span: Span,
-) -> Expression<'a> {
-	let base = validate_expression(context, &method_call.base);
-
-	// TODO: Auto-dereference
-	let entry = &context.type_store.type_entries[base.type_id.index()];
-	let (base_shape_index, base_specialization_index) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
-
-		_ => {
-			let found = context.type_name(base.type_id);
-			let error = error!("Cannot call method on type {found}");
-			context.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-	};
-
-	let user_type = &context.type_store.user_types[base_shape_index];
-	let method_info = match user_type.methods.get(method_call.name.item) {
-		Some(method_info) => method_info,
-
-		None => {
-			let name = method_call.name.item;
-			let found = context.type_name(base.type_id);
-			let error = error!("No method {name} on type {found}");
-			context.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-	};
-
-	let mutable_self = match method_info.kind {
-		MethodKind::ImmutableSelf => false,
-		MethodKind::MutableSelf => true,
-
-		MethodKind::Static => {
-			let name = method_call.name.item;
-			let error = error!("Cannot call static method `{name}` on an object instance");
-			context.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-	};
-	let function_shape_index = method_info.function_shape_index;
-
+) -> Option<FunctionSpecializationResult> {
 	let mut type_argument_lookup_errored = false;
 	let mut explicit_arguments = Vec::new();
-	for type_argument in &method_call.type_arguments {
+	for type_argument in call_type_arguments {
 		if let Some(type_id) = context.lookup_type(type_argument) {
 			explicit_arguments.push(type_id);
 		} else {
@@ -2166,7 +2128,7 @@ fn validate_method_call<'a>(
 	}
 
 	if type_argument_lookup_errored {
-		return Expression::any_collapse(context.type_store, span);
+		return None;
 	}
 
 	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
@@ -2189,7 +2151,7 @@ fn validate_method_call<'a>(
 		type_arguments.push_method_base(base_argument);
 	}
 
-	let result = context.function_store.get_or_add_specialization(
+	context.function_store.get_or_add_specialization(
 		context.messages,
 		context.type_store,
 		context.module_path,
@@ -2197,27 +2159,39 @@ fn validate_method_call<'a>(
 		function_shape_index,
 		Some(span),
 		type_arguments,
-	);
-	let FunctionSpecializationResult { specialization_index, return_type } = match result {
-		Some(results) => results,
-		None => return Expression::any_collapse(context.type_store, span),
-	};
+	)
+}
+
+struct MethodArgumentsResult<'a> {
+	returns: bool,
+	arguments: Vec<Expression<'a>>,
+}
+
+fn validate_method_arguments<'a>(
+	context: &mut Context<'a, '_, '_>,
+	call_arguments: &'a [Node<tree::Expression<'a>>],
+	function_shape_index: usize,
+	function_specialization_index: usize,
+	span: Span,
+	is_static: bool,
+) -> Option<MethodArgumentsResult<'a>> {
+	let maybe_self = if is_static { 0 } else { 1 };
 
 	let mut returns = false;
-	let mut arguments = Vec::with_capacity(method_call.arguments.len());
-	for argument in &method_call.arguments {
+	let mut arguments = Vec::with_capacity(call_arguments.len());
+	for argument in call_arguments {
 		let argument = validate_expression(context, argument);
 		returns |= argument.returns;
 		arguments.push(argument);
 	}
 
 	let shape = &context.function_store.shapes[function_shape_index];
-	let specialization = &shape.specializations[specialization_index];
+	let specialization = &shape.specializations[function_specialization_index];
 
 	// Don't bail immediately with type mismatch, we want to check every argument and the argument count
 	let mut arguments_type_mismatch = false;
 	for (index, argument) in arguments.iter_mut().enumerate() {
-		let parameter = match specialization.parameters.get(index + 1) {
+		let parameter = match specialization.parameters.get(index + maybe_self) {
 			Some(parameter) => parameter,
 			None => break,
 		};
@@ -2238,15 +2212,97 @@ fn validate_method_call<'a>(
 		}
 	}
 
-	if arguments.len() != specialization.parameters.len() - 1 {
-		let error = error!("Expected {} arguments, got {}", specialization.parameters.len() - 1, arguments.len());
+	if arguments.len() != specialization.parameters.len() - maybe_self {
+		let expected = specialization.parameters.len() - maybe_self;
+		let error = error!("Expected {expected} arguments, got {}", arguments.len());
 		context.message(error.span(span));
-		return Expression::any_collapse(context.type_store, span);
+		return None;
 	}
 
 	if arguments_type_mismatch {
-		return Expression::any_collapse(context.type_store, span);
+		return None;
 	}
+
+	Some(MethodArgumentsResult { returns, arguments })
+}
+
+fn validate_method_call<'a>(
+	context: &mut Context<'a, '_, '_>,
+	method_call: &'a tree::MethodCall<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let base = validate_expression(context, &method_call.base);
+	if let ExpressionKind::Type(base_type) = base.kind {
+		return validate_static_method_call(context, method_call, base_type, span);
+	}
+
+	// TODO: Auto-dereference
+	let entry = &context.type_store.type_entries[base.type_id.index()];
+	let (base_shape_index, base_specialization_index) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+
+		TypeEntryKind::BuiltinType { kind } if kind == PrimativeKind::AnyCollapse => {
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		_ => {
+			let found = context.type_name(base.type_id);
+			let error = error!("Cannot call method on type {found}");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let user_type = &context.type_store.user_types[base_shape_index];
+	let method_info = match user_type.methods.get(method_call.name.item) {
+		Some(method_info) => method_info,
+
+		None => {
+			let name = method_call.name.item;
+			let found = context.type_name(base.type_id);
+			let error = error!("No method {name} on type {found}");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let function_shape_index = method_info.function_shape_index;
+	let mutable_self = match method_info.kind {
+		MethodKind::ImmutableSelf => false,
+		MethodKind::MutableSelf => true,
+
+		MethodKind::Static => {
+			let name = method_call.name.item;
+			let error = error!("Cannot call static method `{name}` on an object instance");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	if mutable_self && !base.mutable {
+		let name = method_call.name.item;
+		let error = error!("Cannot call mutable method `{name}` on an immutable object");
+		context.message(error.span(span));
+	}
+
+	let result = get_method_function_specialization(
+		context,
+		&method_call.type_arguments,
+		function_shape_index,
+		base_shape_index,
+		base_specialization_index,
+		span,
+	);
+	let FunctionSpecializationResult { specialization_index, return_type } = match result {
+		Some(results) => results,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
+
+	let Some(MethodArgumentsResult { returns, arguments }) =
+		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, false)
+	else {
+		return Expression::any_collapse(context.type_store, span);
+	};
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
 	let method_call = MethodCall {
@@ -2262,16 +2318,98 @@ fn validate_method_call<'a>(
 	Expression { span, type_id: return_type, mutable: true, returns, kind }
 }
 
+fn validate_static_method_call<'a>(
+	context: &mut Context<'a, '_, '_>,
+	method_call: &'a tree::MethodCall<'a>,
+	base_type_id: TypeId,
+	span: Span,
+) -> Expression<'a> {
+	let entry = &context.type_store.type_entries[base_type_id.index()];
+	let (base_shape_index, base_specialization_index) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+
+		TypeEntryKind::BuiltinType { kind } if kind == PrimativeKind::AnyCollapse => {
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		_ => {
+			let found = context.type_name(base_type_id);
+			let error = error!("Cannot call static method on type {found}");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let user_type = &context.type_store.user_types[base_shape_index];
+	let method_info = match user_type.methods.get(method_call.name.item) {
+		Some(method_info) => method_info,
+
+		None => {
+			let name = method_call.name.item;
+			let found = context.type_name(base_type_id);
+			let error = error!("No method {name} on type {found}");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	match method_info.kind {
+		MethodKind::ImmutableSelf | MethodKind::MutableSelf => {
+			let name = method_call.name.item;
+			let error = error!("Cannot call instance method `{name}` statically");
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		MethodKind::Static => {}
+	};
+	let function_shape_index = method_info.function_shape_index;
+
+	let result = get_method_function_specialization(
+		context,
+		&method_call.type_arguments,
+		function_shape_index,
+		base_shape_index,
+		base_specialization_index,
+		span,
+	);
+	let FunctionSpecializationResult { specialization_index, return_type } = match result {
+		Some(results) => results,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
+
+	let Some(MethodArgumentsResult { returns, arguments }) =
+		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, true)
+	else {
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let function_id = FunctionId { function_shape_index, specialization_index };
+	let call = Call { span, name: method_call.name.item, function_id, arguments };
+
+	let kind = ExpressionKind::Call(call);
+	Expression { span, type_id: return_type, mutable: true, returns, kind }
+}
+
 fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, span: Span) -> Expression<'a> {
 	let symbol = match context.lookup_symbol(&read.path_segments.item) {
 		Some(symbol) => symbol,
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
+	fn disallow_type_arguments(context: &mut Context, read: &tree::Read, span: Span, label: &str) {
+		if read.type_arguments.len() > 0 {
+			let error = error!("Type arguments not permitted on {label}");
+			context.message(error.span(span));
+		}
+	}
+
 	let readable_index = match symbol.kind {
 		SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
 
 		SymbolKind::Const { constant_index } => {
+			disallow_type_arguments(context, read, span, "a const read");
+
 			let constant = &context.constants[constant_index];
 			let (kind, type_id) = match constant {
 				ConstantValue::IntegerValue(value) => {
@@ -2299,6 +2437,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		}
 
 		SymbolKind::Static { static_index } => {
+			disallow_type_arguments(context, read, span, "a static read");
+
 			let static_instance = &context.statics.statics[static_index];
 			let static_read = StaticRead {
 				name: static_instance.name,
@@ -2311,8 +2451,36 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			return Expression { span, type_id, mutable: false, returns: false, kind };
 		}
 
-		SymbolKind::BuiltinType { type_id } if type_id.is_void(context.type_store) => {
-			return Expression::void(context.type_store, span);
+		SymbolKind::BuiltinType { type_id } => {
+			disallow_type_arguments(context, read, span, "a builtin type");
+
+			if type_id.is_void(context.type_store) {
+				return Expression::void(context.type_store, span);
+			} else {
+				let kind = ExpressionKind::Type(type_id);
+				return Expression { span, type_id, mutable: false, returns: false, kind };
+			}
+		}
+
+		SymbolKind::Type { shape_index } => {
+			let Some(type_id) = context.type_store.get_or_add_shape_specialization_in_scope(
+				context.messages,
+				context.function_store,
+				context.module_path,
+				context.function_generic_usages,
+				context.root_layers,
+				context.symbols,
+				shape_index,
+				Some(span),
+				context.function_initial_symbols_len,
+				context.generic_parameters,
+				&read.type_arguments,
+			) else {
+				return Expression::any_collapse(context.type_store, span);
+			};
+
+			let kind = ExpressionKind::Type(type_id);
+			return Expression { span, type_id, mutable: false, returns: false, kind };
 		}
 
 		kind => {

@@ -431,6 +431,7 @@ impl<'a> Expression<'a> {
 pub enum ExpressionKind<'a> {
 	AnyCollapse,
 	Void,
+	Type(TypeId),
 
 	Block(Block<'a>),
 	IfElseChain(Box<IfElseChain<'a>>),
@@ -462,6 +463,7 @@ impl<'a> ExpressionKind<'a> {
 		match self {
 			ExpressionKind::AnyCollapse => "AnyCollapse",
 			ExpressionKind::Void => "void value",
+			ExpressionKind::Type(_) => "type",
 			ExpressionKind::Block(_) => "block",
 			ExpressionKind::IfElseChain(_) => "if expression",
 			ExpressionKind::IntegerValue(_) => "untyped integer",
@@ -486,6 +488,7 @@ impl<'a> ExpressionKind<'a> {
 		match self {
 			ExpressionKind::AnyCollapse => "an AnyCollapse",
 			ExpressionKind::Void => "a void value",
+			ExpressionKind::Type(_) => "a type",
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::IfElseChain(_) => "a if expression",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",

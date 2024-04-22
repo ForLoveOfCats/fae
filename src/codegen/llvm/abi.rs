@@ -8,7 +8,7 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use inkwell::AddressSpace;
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
-use crate::codegen::llvm::generator::{self, AttributeKinds, LLVMGenerator, LLVMTypes};
+use crate::codegen::llvm::generator::{self, AttributeKinds, BindingKind, LLVMGenerator, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
 use crate::frontend::type_store::{Layout, NumericKind, TypeId, TypeStore};
 
@@ -49,8 +49,17 @@ pub trait LLVMAbi<'ctx> {
 #[derive(Clone, Copy)]
 pub enum FunctionReturnType<'ctx> {
 	Void,
-	ByValue { value_type: BasicTypeEnum<'ctx> },
-	ByPointer { pointed_type: BasicTypeEnum<'ctx>, layout: Layout }, // sret
+
+	ByValue {
+		value_type: BasicTypeEnum<'ctx>,
+		abi_type: BasicTypeEnum<'ctx>,
+	},
+
+	// sret
+	ByPointer {
+		pointed_type: BasicTypeEnum<'ctx>,
+		layout: Layout,
+	},
 }
 
 pub struct DefinedFunction<'ctx> {
@@ -372,7 +381,14 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				let layout = type_store.type_layout(function.return_type);
 				FunctionReturnType::ByPointer { pointed_type: return_type, layout }
 			} else {
-				FunctionReturnType::ByValue { value_type: return_type }
+				let abi_type = if let [abi_type] = self.return_type_buffer.as_slice() {
+					*abi_type
+				} else {
+					let struct_type = context.struct_type(&self.return_type_buffer, false);
+					BasicTypeEnum::StructType(struct_type)
+				};
+
+				FunctionReturnType::ByValue { value_type: return_type, abi_type }
 			}
 		} else {
 			FunctionReturnType::Void
@@ -387,24 +403,12 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		}
 
 		let varargs = function_shape.c_varargs;
-		let fn_type = if self.return_type_buffer.is_empty() {
-			context.void_type().fn_type(&self.parameter_type_buffer, varargs)
-		} else if let [llvm_type] = self.return_type_buffer.as_slice() {
-			let is_aggregate = if let FunctionReturnType::ByValue { value_type } = return_type {
-				value_type.is_struct_type()
-			} else {
-				false
-			};
-
-			if is_aggregate {
-				let llvm_type = context.struct_type(&self.return_type_buffer, false);
-				llvm_type.fn_type(&self.parameter_type_buffer, varargs)
-			} else {
-				llvm_type.fn_type(&self.parameter_type_buffer, varargs)
+		let fn_type = match return_type {
+			FunctionReturnType::Void | FunctionReturnType::ByPointer { .. } => {
+				context.void_type().fn_type(&self.parameter_type_buffer, varargs)
 			}
-		} else {
-			let llvm_type = context.struct_type(&self.return_type_buffer, false);
-			llvm_type.fn_type(&self.parameter_type_buffer, varargs)
+
+			FunctionReturnType::ByValue { abi_type, .. } => abi_type.fn_type(&self.parameter_type_buffer, varargs),
 		};
 
 		if let Some(extern_attribute) = function_shape.extern_attribute {
@@ -607,9 +611,12 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		match function.return_type {
 			FunctionReturnType::Void => None,
 
-			FunctionReturnType::ByValue { .. } => {
+			FunctionReturnType::ByValue { value_type, .. } => {
+				let alloca = generator.build_alloca(value_type);
 				let value = callsite_value.try_as_basic_value().left().unwrap();
-				let kind = generator::BindingKind::Value(value);
+				generator.builder.build_store(alloca, value).unwrap();
+
+				let kind = generator::BindingKind::Pointer { pointer: alloca, pointed_type: value_type };
 				Some(generator::Binding { type_id, kind })
 			}
 
@@ -634,8 +641,18 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				builder.build_return(None).unwrap();
 			}
 
-			FunctionReturnType::ByValue { .. } => {
-				let value = value.unwrap().to_value(builder);
+			FunctionReturnType::ByValue { abi_type, .. } => {
+				let value = value.unwrap();
+				let pointer = match value.kind {
+					BindingKind::Value(value) => {
+						builder.build_return(Some(&value)).unwrap();
+						return;
+					}
+
+					BindingKind::Pointer { pointer, .. } => pointer,
+				};
+
+				let value = builder.build_load(abi_type, pointer, "").unwrap();
 				builder.build_return(Some(&value)).unwrap();
 			}
 

@@ -410,13 +410,12 @@ fn parse_expression_atom<'a>(
 				return Ok(Node::new(Expression::StructLiteral(struct_literal), span));
 			}
 
-			if let Some(type_arguments) = type_arguments {
-				// This is a weird error
-				messages.message(error!("Type arguments not allowed on binding read").span(type_arguments.span));
-			}
-
-			let span = path_segments.span;
-			let read = Read { path_segments };
+			let span = match &type_arguments {
+				Some(type_arguments) => path_segments.span + type_arguments.span,
+				None => path_segments.span,
+			};
+			let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+			let read = Read { path_segments, type_arguments };
 
 			Ok(Node::new(Expression::Read(read), span))
 		}
@@ -699,6 +698,11 @@ fn parse_type_arguments<'a>(
 	let close_token = tokenizer.expect(messages, TokenKind::CompGreater)?;
 
 	let span = open_token.span + close_token.span;
+	if types.is_empty() {
+		// Should this be a validation error instead?
+		messages.message(error!("Empty type argument list").span(span));
+	}
+
 	Ok(Some(Node::new(types, span)))
 }
 

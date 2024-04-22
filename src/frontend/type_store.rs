@@ -976,7 +976,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
 
-			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 16 },
+			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8 },
 
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
 			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0 },
@@ -1102,6 +1102,36 @@ impl<'a> TypeStore<'a> {
 			}
 		};
 
+		let invoke_span = Some(parsed_type.span);
+		self.get_or_add_shape_specialization_in_scope(
+			messages,
+			function_store,
+			module_path,
+			generic_usages,
+			root_layers,
+			symbols,
+			shape_index,
+			invoke_span,
+			function_initial_symbols_len,
+			enclosing_generic_parameters,
+			type_arguments,
+		)
+	}
+
+	pub fn get_or_add_shape_specialization_in_scope(
+		&mut self,
+		messages: &mut Messages<'a>,
+		function_store: &mut FunctionStore<'a>,
+		module_path: &'a [String],
+		generic_usages: &mut Vec<GenericUsage>,
+		root_layers: &RootLayers<'a>,
+		symbols: &Symbols<'a>,
+		shape_index: usize,
+		invoke_span: Option<Span>,
+		function_initial_symbols_len: usize,
+		enclosing_generic_parameters: &GenericParameters<'a>,
+		type_arguments: &[Node<tree::Type<'a>>],
+	) -> Option<TypeId> {
 		let mut type_args = Vec::with_capacity(type_arguments.len() + enclosing_generic_parameters.parameters().len());
 		for argument in type_arguments {
 			let id = self.lookup_type(
@@ -1125,7 +1155,6 @@ impl<'a> TypeStore<'a> {
 			type_args.extend(enclosing_generic_parameters.parameters().iter().map(|p| p.generic_type_id));
 		}
 
-		let invoke_span = Some(parsed_type.span);
 		self.get_or_add_shape_specialization(
 			messages,
 			function_store,

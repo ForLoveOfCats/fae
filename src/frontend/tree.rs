@@ -409,6 +409,7 @@ pub struct MethodCall<'a> {
 #[derive(Debug)]
 pub struct Read<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
+	pub type_arguments: Vec<Node<Type<'a>>>,
 }
 
 #[derive(Debug)]
