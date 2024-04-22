@@ -60,6 +60,7 @@ impl TypeId {
 			NumericKind::U16,
 			NumericKind::U32,
 			NumericKind::U64,
+			NumericKind::ISize,
 			NumericKind::USize,
 			NumericKind::F32,
 			NumericKind::F64,
@@ -211,6 +212,7 @@ pub enum NumericKind {
 	U32,
 	U64,
 
+	ISize,
 	USize,
 
 	F32,
@@ -234,6 +236,7 @@ impl NumericKind {
 			NumericKind::U16 => "u16",
 			NumericKind::U32 => "u32",
 			NumericKind::U64 => "u64",
+			NumericKind::ISize => "isize",
 			NumericKind::USize => "usize",
 			NumericKind::F32 => "f32",
 			NumericKind::F64 => "f64",
@@ -250,6 +253,7 @@ impl NumericKind {
 			NumericKind::U16 => Layout { size: 2, alignment: 2 },
 			NumericKind::U32 => Layout { size: 4, alignment: 4 },
 			NumericKind::U64 => Layout { size: 8, alignment: 8 },
+			NumericKind::ISize => Layout { size: 8, alignment: 8 },
 			NumericKind::USize => Layout { size: 8, alignment: 8 },
 			NumericKind::F32 => Layout { size: 4, alignment: 4 },
 			NumericKind::F64 => Layout { size: 8, alignment: 8 },
@@ -258,7 +262,7 @@ impl NumericKind {
 
 	pub fn is_signed(self) -> bool {
 		match self {
-			NumericKind::I8 | NumericKind::I16 | NumericKind::I32 | NumericKind::I64 => true,
+			NumericKind::I8 | NumericKind::I16 | NumericKind::I32 | NumericKind::I64 | NumericKind::ISize => true,
 			NumericKind::U8 | NumericKind::U16 | NumericKind::U32 | NumericKind::U64 | NumericKind::USize => false,
 			NumericKind::F32 | NumericKind::F64 => true,
 		}
@@ -398,6 +402,7 @@ pub struct TypeStore<'a> {
 	u32_type_id: TypeId,
 	u64_type_id: TypeId,
 
+	isize_type_id: TypeId,
 	usize_type_id: TypeId,
 
 	f32_type_id: TypeId,
@@ -444,6 +449,7 @@ impl<'a> TypeStore<'a> {
 		let u32_type_id = push_primative(Some("u32"), PrimativeKind::Numeric(NumericKind::U32));
 		let u64_type_id = push_primative(Some("u64"), PrimativeKind::Numeric(NumericKind::U64));
 
+		let isize_type_id = push_primative(Some("isize"), PrimativeKind::Numeric(NumericKind::ISize));
 		let usize_type_id = push_primative(Some("usize"), PrimativeKind::Numeric(NumericKind::USize));
 
 		let f32_type_id = push_primative(Some("f32"), PrimativeKind::Numeric(NumericKind::F32));
@@ -468,6 +474,7 @@ impl<'a> TypeStore<'a> {
 			u16_type_id,
 			u32_type_id,
 			u64_type_id,
+			isize_type_id,
 			usize_type_id,
 			f32_type_id,
 			f64_type_id,
@@ -511,6 +518,10 @@ impl<'a> TypeStore<'a> {
 
 	pub fn u64_type_id(&self) -> TypeId {
 		self.u64_type_id
+	}
+
+	pub fn isize_type_id(&self) -> TypeId {
+		self.isize_type_id
 	}
 
 	pub fn usize_type_id(&self) -> TypeId {
@@ -681,6 +692,7 @@ impl<'a> TypeStore<'a> {
 				e if e == self.u32_type_id.entry => (false, true, 32),
 				e if e == self.u64_type_id.entry => (false, true, 64),
 
+				e if e == self.isize_type_id.entry => (true, false, 64),
 				e if e == self.usize_type_id.entry => (false, true, 64),
 
 				_ => (false, false, 0),

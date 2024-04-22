@@ -47,7 +47,7 @@ extern "rand"
 fn rand(): i32
 
 extern "read"
-fn read(fd: i32, buffer: &mut u8, count: usize): i64
+fn read(fd: i32, buffer: &mut u8, count: usize): isize
 
 extern "srand"
 fn srand(seed: u32)

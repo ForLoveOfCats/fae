@@ -522,7 +522,7 @@ fn generate_intrinsic<G: Generator>(
 			assert_eq!(specialization.type_arguments.explicit_len(), 1);
 			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
 			let size = context.type_store.type_layout(type_id).size as i128;
-			let integer = IntegerValue::new_collapsed(size, span, context.type_store.i64_type_id());
+			let integer = IntegerValue::new_collapsed(size, span, context.type_store.isize_type_id());
 			generate_integer_value(context, generator, &integer)
 		}
 
@@ -530,7 +530,7 @@ fn generate_intrinsic<G: Generator>(
 			assert_eq!(specialization.type_arguments.explicit_len(), 1);
 			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
 			let alignment = context.type_store.type_layout(type_id).alignment as i128;
-			let integer = IntegerValue::new_collapsed(alignment, span, context.type_store.i64_type_id());
+			let integer = IntegerValue::new_collapsed(alignment, span, context.type_store.isize_type_id());
 			generate_integer_value(context, generator, &integer)
 		}
 

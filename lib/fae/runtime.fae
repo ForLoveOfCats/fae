@@ -5,7 +5,7 @@ fn fae_main(argc: i32, argc: &&u8): i32 {
 }
 
 #lang "slice_bound_check_failure"
-fn slice_bound_check_failure(length: i64, index: i64) {
+fn slice_bound_check_failure(length: isize, index: isize) {
 	let stderr = fae::libc::StdErrFile.*
 
 	fae::libc::fprintf(

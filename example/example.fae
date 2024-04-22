@@ -21,7 +21,7 @@ fn play_round() {
 	while true {
 		print_string(">>> ")
 		fflush(StdOutFile.*)
-		mut read_bytes: i64 = 0
+		mut read_bytes: isize = 0
 		while read_bytes <= 0 {
 			read_bytes = read(StdInDescription, buffer.pointer, 19)
 		}

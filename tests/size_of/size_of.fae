@@ -1,4 +1,4 @@
-import fae::stdout::print_i64, print_newline
+import fae::stdout::print_isize, print_newline
 
 struct Empty {}
 
@@ -22,38 +22,38 @@ struct Nested {
 
 generic T
 fn generic_func() {
-	print_i64(size_of<T>())
+	print_isize(size_of<T>())
 }
 
 fn main() {
-	print_i64(size_of<u32>()) // 4
+	print_isize(size_of<u32>()) // 4
 	print_newline()
 
-	print_i64(size_of<u64>()) // 8
+	print_isize(size_of<u64>()) // 8
 	print_newline()
 
-	print_i64(size_of<i8>()) // 1
+	print_isize(size_of<i8>()) // 1
 	print_newline()
 
-	print_i64(size_of<f32>()) // 4
+	print_isize(size_of<f32>()) // 4
 	print_newline()
 
-	print_i64(size_of<Empty>()) // 0
+	print_isize(size_of<Empty>()) // 0
 	print_newline()
 
-	print_i64(size_of<ContainsEmpty>()) // 4
+	print_isize(size_of<ContainsEmpty>()) // 4
 	print_newline()
 
-	print_i64(size_of<MultipleFields>()) // 24
+	print_isize(size_of<MultipleFields>()) // 24
 	print_newline()
 
-	print_i64(size_of<Nested>()) // 32
+	print_isize(size_of<Nested>()) // 32
 	print_newline()
 
 	generic_func<u8>() // 1
 	print_newline()
 
-	generic_func<i64>() // 8
+	generic_func<isize>() // 8
 	print_newline()
 
 	generic_func<u16>() // 2

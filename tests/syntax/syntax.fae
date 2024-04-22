@@ -71,7 +71,7 @@ fn main() {
 	let d: u64 = generic_function<u64>(54)
 
 	let ptr: &u8 = STRING.pointer
-	let len: i64 = STRING.len
+	let len: isize = STRING.len
 	print_string(STRING)
 	print_newline()
 }

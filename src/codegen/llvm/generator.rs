@@ -107,14 +107,17 @@ impl<'ctx> LLVMTypes<'ctx> {
 			TypeEntryKind::BuiltinType { kind } => match kind {
 				PrimativeKind::Bool => BasicTypeEnum::IntType(context.bool_type()),
 
-				PrimativeKind::Numeric(numeric_kind) => match numeric_kind {
-					NumericKind::I8 | NumericKind::U8 => BasicTypeEnum::IntType(context.i8_type()),
-					NumericKind::I16 | NumericKind::U16 => BasicTypeEnum::IntType(context.i16_type()),
-					NumericKind::I32 | NumericKind::U32 => BasicTypeEnum::IntType(context.i32_type()),
-					NumericKind::I64 | NumericKind::U64 | NumericKind::USize => BasicTypeEnum::IntType(context.i64_type()),
-					NumericKind::F32 => BasicTypeEnum::FloatType(context.f32_type()),
-					NumericKind::F64 => BasicTypeEnum::FloatType(context.f64_type()),
-				},
+				PrimativeKind::Numeric(numeric_kind) => {
+					use NumericKind::*;
+					match numeric_kind {
+						I8 | U8 => BasicTypeEnum::IntType(context.i8_type()),
+						I16 | U16 => BasicTypeEnum::IntType(context.i16_type()),
+						I32 | U32 => BasicTypeEnum::IntType(context.i32_type()),
+						I64 | U64 | ISize | USize => BasicTypeEnum::IntType(context.i64_type()),
+						F32 => BasicTypeEnum::FloatType(context.f32_type()),
+						F64 => BasicTypeEnum::FloatType(context.f64_type()),
+					}
+				}
 
 				PrimativeKind::AnyCollapse
 				| PrimativeKind::Void
@@ -483,7 +486,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				BasicValueEnum::IntValue(self.context.i32_type().const_int(value as u64, false))
 			}
 
-			NumericKind::I64 | NumericKind::U64 | NumericKind::USize => {
+			NumericKind::I64 | NumericKind::U64 | NumericKind::ISize | NumericKind::USize => {
 				BasicValueEnum::IntValue(self.context.i64_type().const_int(value as u64, false))
 			}
 
@@ -777,7 +780,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			I8 | U8 => (Some(self.context.i8_type()), None),
 			I16 | U16 => (Some(self.context.i16_type()), None),
 			I32 | U32 => (Some(self.context.i32_type()), None),
-			I64 | U64 | USize => (Some(self.context.i64_type()), None),
+			I64 | U64 | ISize | USize => (Some(self.context.i64_type()), None),
 			F32 => (None, Some(self.context.f32_type())),
 			F64 => (None, Some(self.context.f64_type())),
 		};
@@ -885,9 +888,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		// TODO: Build some abstraction for calling lang item functions
 		let failure_args = {
 			let kind = BindingKind::Value(BasicValueEnum::IntValue(len));
-			let len = Some(Binding { type_id: type_store.i64_type_id(), kind });
+			let len = Some(Binding { type_id: type_store.isize_type_id(), kind });
 			let kind = BindingKind::Value(BasicValueEnum::IntValue(index));
-			let index = Some(Binding { type_id: type_store.i64_type_id(), kind });
+			let index = Some(Binding { type_id: type_store.isize_type_id(), kind });
 			[len, index]
 		};
 		self.generate_call(type_store, lang_items.slice_bound_check_failure.unwrap(), &failure_args);

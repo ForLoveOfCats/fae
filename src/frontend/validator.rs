@@ -2541,7 +2541,7 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 			Field {
 				span: None,
 				name: "len",
-				type_id: context.type_store.i64_type_id(),
+				type_id: context.type_store.isize_type_id(),
 			},
 		];
 		&slice_fields
@@ -2746,12 +2746,15 @@ fn validate_cast<'a>(
 			let is_u64 = context
 				.type_store
 				.direct_match(from_type_id, context.type_store.u64_type_id());
+			let is_isize = context
+				.type_store
+				.direct_match(from_type_id, context.type_store.isize_type_id());
 			let is_usize = context
 				.type_store
 				.direct_match(from_type_id, context.type_store.usize_type_id());
 			let is_untyped_integer = from_type_id.is_untyped_integer(context.type_store);
 
-			if !is_i64 && !is_u64 && !is_usize && !is_untyped_integer {
+			if !is_i64 && !is_u64 && !is_isize && !is_usize && !is_untyped_integer {
 				let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(from_type_id));
 				context.message(error.span(span));
 			} else if from_type_id.is_untyped_integer(context.type_store) {
@@ -2806,8 +2809,8 @@ fn validate_bracket_index<'a>(
 		}
 	};
 
-	let i64_type_id = context.type_store.i64_type_id();
-	let collapsed = context.collapse_to(i64_type_id, &mut index_expression);
+	let isize_type_id = context.type_store.isize_type_id();
+	let collapsed = context.collapse_to(isize_type_id, &mut index_expression);
 	if !collapsed.unwrap_or(true) {
 		let error = error!("Cannot index by a value of {}", context.type_name(index_expression.type_id));
 		context.message(error.span(index_expression.span));

@@ -58,7 +58,9 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 					NumericKind::I8 | NumericKind::U8 => Class { kind: ClassKind::Integer, size: 1 },
 					NumericKind::I16 | NumericKind::U16 => Class { kind: ClassKind::Integer, size: 2 },
 					NumericKind::I32 | NumericKind::U32 => Class { kind: ClassKind::Integer, size: 4 },
-					NumericKind::I64 | NumericKind::U64 | NumericKind::USize => Class { kind: ClassKind::Integer, size: 8 },
+					NumericKind::I64 | NumericKind::U64 | NumericKind::ISize | NumericKind::USize => {
+						Class { kind: ClassKind::Integer, size: 8 }
+					}
 
 					NumericKind::F32 => Class { kind: ClassKind::SSE, size: 4 },
 					NumericKind::F64 => Class { kind: ClassKind::SSE, size: 8 },

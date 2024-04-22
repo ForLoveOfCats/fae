@@ -48,6 +48,10 @@ fn print_u64(arg: u64) {
 	printf("%lu\0".pointer, arg)
 }
 
+fn print_isize(arg: isize) {
+	printf("%ld\0".pointer, arg)
+}
+
 fn print_usize(arg: usize) {
 	printf("%lu\0".pointer, arg)
 }
