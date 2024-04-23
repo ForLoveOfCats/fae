@@ -1,10 +1,5 @@
 import fae::stdout::print_isize, print_string, print_newline
-
-extern "realloc"
-fn realloc(ptr: &mut u8, new_size: usize): &mut u8
-
-extern "free"
-fn free(ptr: &mut u8)
+import fae::libc::realloc, free
 
 generic T
 fn null_reference(): &mut T {

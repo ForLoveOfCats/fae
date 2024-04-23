@@ -1,0 +1,36 @@
+import fae::collections::list::List
+import fae::libc::read
+import fae::stdout::print_string, print_isize, print_newline
+
+struct File {
+	file_descriptor: i32
+}
+
+method static File
+fn from_fd(file_descriptor: i32): File {
+	return File {
+		file_descriptor: file_descriptor
+	}
+}
+
+method mut File
+fn read_until_newline(buffer: &mut List<u8>) {
+	buffer.clear()
+	const ChunkSize = 20
+
+	while true {
+		let original_length = buffer.length
+		buffer.reserve_capacity(buffer.length + ChunkSize)
+		let pointer = offset_pointer_mut<u8>(buffer.items_pointer, original_length)
+
+		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
+
+		buffer.set_length(original_length + bytes_read)
+
+		// TODO: Fix `buffer.last()` causing an ICE
+		// TODO: Add escape sequences to codepoint literals
+		if buffer.get(buffer.length - 1) == "\n"[0] {
+			return
+		}
+	}
+}

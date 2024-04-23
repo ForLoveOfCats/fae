@@ -1,3 +1,3 @@
-Validation warning: ./tests/cast_success/cast_success.fae, line 28: Unnecessary cast from mutable pointer `&mut u64` to immutable pointer `&u64`
-  28|     takes_ptr(ptr.(&u64))
+Validation warning: ./tests/cast_success/cast_success.fae, line 25: Unnecessary cast from mutable pointer `&mut u64` to immutable pointer `&u64`
+  25|     takes_ptr(ptr.(&u64))
                     ^^^^^^^^^^

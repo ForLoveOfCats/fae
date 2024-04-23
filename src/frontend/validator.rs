@@ -2358,7 +2358,7 @@ fn validate_static_method_call<'a>(
 		None => {
 			let name = method_call.name.item;
 			let found = context.type_name(base_type_id);
-			let error = error!("No method {name} on type {found}");
+			let error = error!("No static method {name} on type {found}");
 			context.message(error.span(span));
 			return Expression::any_collapse(context.type_store, span);
 		}

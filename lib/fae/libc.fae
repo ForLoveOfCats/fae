@@ -37,6 +37,9 @@ fn fflush(stream: &FileHandle)
 extern "fprintf"
 fn fprintf(stream: &FileHandle, pointer: &u8, ...)
 
+extern "free"
+fn free(ptr: &mut u8)
+
 extern "printf"
 fn printf(pointer: &u8, ...)
 
@@ -48,6 +51,9 @@ fn rand(): i32
 
 extern "read"
 fn read(fd: i32, buffer: &mut u8, count: usize): isize
+
+extern "realloc"
+fn realloc(ptr: &mut u8, new_size: usize): &mut u8
 
 extern "srand"
 fn srand(seed: u32)

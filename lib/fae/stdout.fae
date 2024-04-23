@@ -1,11 +1,13 @@
-import fae::libc::printf
+import fae::libc::printf, fflush, StdOutFile
 
 fn print_string(text: []u8) {
 	printf("%.*s\0".pointer, text.len, text.pointer)
+	fflush(StdOutFile.*)
 }
 
 fn print_newline() {
 	printf("\n\0".pointer)
+	fflush(StdOutFile.*)
 }
 
 fn print_bool(arg: bool) {
@@ -18,53 +20,66 @@ fn print_bool(arg: bool) {
 
 fn print_i8(arg: i8) {
 	printf("%hhd\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_i16(arg: i16) {
 	printf("%hd\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_i32(arg: i32) {
 	printf("%d\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_i64(arg: i64) {
 	printf("%ld\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_u8(arg: u8) {
 	printf("%hu\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_u16(arg: u16) {
 	printf("%hu\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_u32(arg: u32) {
 	printf("%u\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_u64(arg: u64) {
 	printf("%lu\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_isize(arg: isize) {
 	printf("%ld\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_usize(arg: usize) {
 	printf("%lu\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 generic T
 fn print_pointer(arg: &T) {
 	printf("%ld\0".pointer, arg.(usize))
+	fflush(StdOutFile.*)
 }
 
 fn print_f32(arg: f32) {
 	printf("%f\0".pointer, arg)
+	fflush(StdOutFile.*)
 }
 
 fn print_f64(arg: f64) {
 	printf("%f\0".pointer, arg)
+	fflush(StdOutFile.*)
 }

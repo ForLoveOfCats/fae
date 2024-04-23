@@ -5,3 +5,13 @@ fn size_of(): isize
 #intrinsic
 generic T
 fn alignment_of(): isize
+
+generic T
+fn offset_pointer(pointer: &T, by_bytes: isize): &T {
+	return (pointer.(usize) + by_bytes.(usize)).(&T)
+}
+
+generic T
+fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
+	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
+}

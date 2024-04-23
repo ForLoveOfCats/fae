@@ -1,8 +1,7 @@
+import fae::libc::free
+
 extern "malloc"
 fn malloc(size: usize): &mut u8
-
-extern "free"
-fn free(ptr: &mut u8)
 
 fn main() {
 	let ptr = malloc(52)

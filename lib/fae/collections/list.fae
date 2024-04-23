@@ -1,0 +1,119 @@
+import fae::stdout::print_string, print_isize, print_usize
+import fae::libc::null, realloc, free, exit
+
+generic T
+struct List {
+	items_pointer: &mut T
+	length: isize
+	capacity: isize
+}
+
+method static List
+fn new(): List<T> {
+	return List<T> {
+		items_pointer: null<T>()
+		length: 0
+		capacity: 0
+	}
+}
+
+method mut List
+fn push(item: T) {
+	if self.length + 1 >= self.capacity {
+		mut new_capacity = self.capacity * 2
+		if new_capacity == 0 {
+			new_capacity = 4
+		}
+		self.reserve_capacity(new_capacity)
+	}
+
+	let offset = size_of<T>() * self.length
+	offset_pointer_mut<T>(self.items_pointer, offset).* = item
+	self.length += 1
+}
+
+method mut List
+fn clear() {
+	self.length = 0
+}
+
+method mut List
+fn truncate(to_length: isize) {
+	self.length = to_length
+}
+
+method mut List
+fn reserve_capacity(new_capacity: isize) {
+	let new_size = size_of<T>() * new_capacity
+
+	let pointer = realloc(self.items_pointer.(&mut u8), new_size.(usize))
+	if pointer.(usize) != self.items_pointer.(usize) {
+		free(self.items_pointer.(&mut u8))
+	}
+
+	self.items_pointer = pointer.(&mut T)
+	self.capacity = new_capacity
+}
+
+method mut List
+fn set_length(new_length: isize) {
+	self.length = new_length
+}
+
+method List
+fn is_empty(): bool {
+	return self.length <= 0
+}
+
+method List
+fn has_items(): bool {
+	return self.length > 0
+}
+
+method List
+fn last(): T {
+	if self.is_empty() {
+		print_string("Cannot take last of empty List\n")
+		exit(-1)
+	}
+
+	return self.get(self.length - 1)
+}
+
+method List
+fn last_ref(): &T {
+	if self.is_empty() {
+		print_string("Cannot take last_ref of empty List\n")
+		exit(-1)
+	}
+
+	return self.get_ref(self.length - 1)
+}
+
+method mut List
+fn last_mut(): &mut T {
+	if self.is_empty() {
+		print_string("Cannot take last_mut of empty List\n")
+		exit(-1)
+	}
+
+	return self.get_mut(self.length - 1)
+}
+
+method List
+fn get(index: isize): T {
+	let slot = self.items_pointer.(usize) + size_of<T>().(usize) * index.(usize)
+	return slot.(&T).*
+}
+
+method List
+fn get_ref(index: isize): &T {
+	let slot = self.items_pointer.(usize) + size_of<T>().(usize) * index.(usize)
+	return slot.(&T)
+}
+
+method mut List
+fn get_mut(index: isize): &mut T {
+	let slot = self.items_pointer.(usize) + size_of<T>().(usize) * index.(usize)
+	return slot.(&mut T)
+}

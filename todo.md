@@ -1,0 +1,35 @@
+Done since last demo:
+ - Added methods on objects
+ - Added static methods on types
+ - Added `else if`, `else`, `break`, and `continue`
+ - Added automatic pointer dereference for field access and method calls
+ - Added `isize`, now the general length/index/size type
+ - Added modulo, bitshifts, and bitwise operators
+ - Added assignment versions of all binary operations
+ - Fixed logical operators not short circuting
+ - Fixed slice pointer having wrong mutability
+ - Fixed slices having the wrong alignment
+ - Fixed some minor ABI issues
+ - Fixed several compiler panics
+
+ Remaining features for minimum viable *language*:
+  - Private field
+  - String formatting
+  - Slice slicing and range type
+  - Defer
+  - Block expressions
+  - Unions + sum types and pattern matching
+  - Error system
+  - Traits
+  - Extremely limited operator overloading
+  - `for _ in _` iteration
+  - Function pointers
+  - Allocator system
+  - Named parameters and field name match omitting
+  - Statically sized array type
+  - Functions infer generic parameters from arguments
+  - Anonymous structs
+  - Per-platform conditional compilation
+  - Const structs
+  - Multi-line strings
+  - Glob imports

@@ -1,5 +1,7 @@
-import fae::stdout::print_string, print_i64, print_i32, print_newline, print_u8
-import fae::libc::StdOutFile, StdInDescription, atol, fflush, printf, rand, read
+import fae::stdout::print_string, print_isize, print_i64, print_i32, print_newline, print_u8
+import fae::libc::StdInDescription, atol, printf, rand
+import fae::collections::list::List
+import fae::io::file::File
 
 fn main() {
 	play_round()
@@ -16,18 +18,15 @@ fn play_round() {
 	let number = rand().(i64) % 100
 	print_string("Guess the random number between 1 and 100\n")
 
-	let buffer = [0.(u8), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+	mut stdin = File.from_fd(StdInDescription)
+	mut buffer = List<u8>.new()
 
 	while true {
 		print_string(">>> ")
-		fflush(StdOutFile.*)
-		mut read_bytes: isize = 0
-		while read_bytes <= 0 {
-			read_bytes = read(StdInDescription, buffer.pointer, 19)
-		}
+		stdin.read_until_newline(buffer.&mut)
+		buffer.push(0)
 
-		buffer[read_bytes] = 0
-		let guess = atol(buffer.pointer)
+		let guess = atol(buffer.items_pointer)
 		printf("You guessed %d\n".pointer, guess)
 
 		if guess < number {
