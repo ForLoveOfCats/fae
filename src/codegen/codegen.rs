@@ -334,8 +334,16 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 }
 
 fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, method_call: &MethodCall) -> Option<G::Binding> {
-	let base_pointer_type_id = method_call.base.type_id; // TODO: Automatic dereference
-	let base = generate_expression(context, generator, &method_call.base).unwrap();
+	let base_pointer_type_id = if method_call.base.type_id.is_pointer(context.type_store) {
+		method_call.base.type_id
+	} else {
+		context
+			.type_store
+			.pointer_to(method_call.base.type_id, method_call.base.mutable)
+	};
+
+	let base = generate_expression(context, generator, &method_call.base)
+		.unwrap_or(generator.generate_non_null_invalid_pointer(base_pointer_type_id));
 
 	let function_id = context.function_store.specialize_with_function_generics(
 		context.messages,

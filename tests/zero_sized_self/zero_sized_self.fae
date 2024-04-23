@@ -1,0 +1,16 @@
+import fae::stdout::print_i32, print_string, print_newline
+
+struct A {}
+
+method mut A
+fn method_a(arg: i32) {
+	self.* = A {}
+	print_i32(arg)
+	print_newline()
+}
+
+fn main() {
+	print_string("Before\n")
+	A {}.method_a(42)
+	print_string("After\n")
+}
