@@ -2,10 +2,10 @@ use inkwell::attributes::Attribute;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::Module;
+use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicType, BasicTypeEnum, PointerType, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
-use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
+use inkwell::{AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate};
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
@@ -517,7 +517,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
-		let global = self.builder.build_global_string_ptr(text, "").unwrap();
+		let array = self.context.const_string(text.as_bytes(), true);
+		let global = self.module.add_global(array.get_type(), None, "");
+		global.set_initializer(&array);
+		global.set_constant(true);
+		global.set_visibility(GlobalVisibility::Hidden);
+		global.set_linkage(Linkage::Private);
+		global.set_unnamed_addr(true);
+
 		let pointer = global.as_pointer_value();
 		let len = self.context.i64_type().const_int(text.len() as u64, false);
 
