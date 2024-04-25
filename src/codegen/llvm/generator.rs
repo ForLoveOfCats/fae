@@ -319,7 +319,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 			for specialization_index in 0..shape.specializations.len() {
 				let specialization = &shape.specializations[specialization_index];
-				if specialization.generic_poisioned {
+				if specialization.generic_poisoned {
 					specializations.push(None);
 					continue;
 				}

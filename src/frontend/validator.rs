@@ -1537,8 +1537,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			None,
 			TypeArguments::new_from_explicit(Vec::new()),
+			None,
 		);
 
 		if let Some(result) = result {
@@ -1577,8 +1577,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			None,
 			TypeArguments::new_from_explicit(Vec::new()),
+			None,
 		);
 	} else if let Some(lang_attribute) = &shape.lang_attribute {
 		let lang_name = lang_attribute.item.name;
@@ -1595,8 +1595,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			None,
 			TypeArguments::new_from_explicit(Vec::new()),
+			None,
 		);
 
 		if let Some(FunctionSpecializationResult { specialization_index, .. }) = result {
@@ -2029,8 +2029,8 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
-		Some(span),
 		type_arguments,
+		Some(span),
 	);
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
@@ -2157,8 +2157,8 @@ fn get_method_function_specialization<'a>(
 		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
-		Some(span),
 		type_arguments,
+		Some(span),
 	)
 }
 

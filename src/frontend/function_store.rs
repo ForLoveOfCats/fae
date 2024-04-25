@@ -44,8 +44,8 @@ impl<'a> FunctionStore<'a> {
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
-		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
+		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 
@@ -57,21 +57,15 @@ impl<'a> FunctionStore<'a> {
 			return None;
 		}
 
-		// TODO: Should this be an ICE instead?
-		if shape.generic_parameters.implicit_len() != type_arguments.implicit_len() {
-			let expected = shape.generic_parameters.implicit_len();
-			let got = type_arguments.implicit_len();
-			let error = error!("Expected {expected} implicit type arguments, got {got}");
-			messages.message(error.span_if_some(invoke_span));
-			return None;
-		}
+		assert_eq!(shape.generic_parameters.implicit_len(), type_arguments.implicit_len());
+		assert_eq!(shape.generic_parameters.method_base_len(), type_arguments.method_base_len());
 
 		if let Some(result) = self.get_specialization(type_store, function_shape_index, &type_arguments) {
 			return Some(result);
 		}
 
 		let shape = &self.shapes[function_shape_index];
-		let generic_poisioned = type_arguments
+		let generic_poisoned = type_arguments
 			.ids()
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
@@ -109,7 +103,7 @@ impl<'a> FunctionStore<'a> {
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
 			type_arguments: type_arguments.clone(),
-			generic_poisioned,
+			generic_poisoned,
 			parameters,
 			return_type,
 			been_queued: false,
@@ -118,12 +112,10 @@ impl<'a> FunctionStore<'a> {
 		let shape = &mut self.shapes[function_shape_index];
 		shape.specializations.push(concrete);
 
-		if generic_poisioned {
+		if generic_poisoned {
 			let usage = GenericUsage::Function { type_arguments, function_shape_index };
 			generic_usages.push(usage)
 		} else {
-			let function_type_arguments = type_arguments;
-
 			for generic_usage in shape.generic_usages.clone() {
 				generic_usage.apply_specialization(
 					messages,
@@ -132,7 +124,7 @@ impl<'a> FunctionStore<'a> {
 					module_path,
 					generic_usages,
 					function_shape_index,
-					&function_type_arguments,
+					&type_arguments,
 					invoke_span,
 				);
 			}
@@ -141,7 +133,7 @@ impl<'a> FunctionStore<'a> {
 		Some(FunctionSpecializationResult { specialization_index, return_type })
 	}
 
-	pub fn specialize_with_function_generics(
+	pub fn specialize_function_with_function_generics(
 		&self,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,

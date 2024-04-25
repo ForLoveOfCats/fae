@@ -145,6 +145,21 @@ impl GenericUsage {
 				type_arguments,
 				function_shape_index: usage_function_shape_index,
 			} => {
+				// HACK: It's possible for multiple function's generics to end up together in a
+				// type argument list which understandably causes assertions to fail when the
+				// system cannot look up a generic in the type arguments as it is from a different
+				// function. This is extremely difficult to fix but simply omitting these
+				// specializations seems harmless as these specializations will not end up in the
+				// resulting binary anyway. The validity of this remains to be seen.
+				for argument in function_type_arguments.ids() {
+					let kind = type_store.type_entries[argument.index()].kind;
+					if let TypeEntryKind::FunctionGeneric { function_shape_index: index, .. } = kind {
+						if function_shape_index != index {
+							return;
+						}
+					}
+				}
+
 				let mut type_arguments = type_arguments.clone();
 				type_arguments.specialize_with_function_generics(
 					messages,
@@ -162,8 +177,8 @@ impl GenericUsage {
 					module_path,
 					generic_usages,
 					*usage_function_shape_index,
-					invoke_span,
 					type_arguments,
+					invoke_span,
 				);
 			}
 		}
@@ -247,6 +262,10 @@ impl TypeArguments {
 		self.implicit_len
 	}
 
+	pub fn method_base_len(&self) -> usize {
+		self.method_base_len
+	}
+
 	pub fn ids(&self) -> &[TypeId] {
 		&self.ids
 	}
@@ -283,7 +302,7 @@ impl TypeArguments {
 		function_type_arguments: &TypeArguments,
 	) {
 		for original_id in &mut self.ids {
-			let new_id = type_store.specialize_with_function_generics(
+			*original_id = type_store.specialize_with_function_generics(
 				messages,
 				function_store,
 				module_path,
@@ -292,8 +311,6 @@ impl TypeArguments {
 				function_type_arguments,
 				*original_id,
 			);
-
-			*original_id = new_id;
 		}
 	}
 }
@@ -301,7 +318,7 @@ impl TypeArguments {
 #[derive(Debug, Clone)]
 pub struct Function {
 	pub type_arguments: TypeArguments,
-	pub generic_poisioned: bool,
+	pub generic_poisoned: bool,
 	pub parameters: Vec<Parameter>,
 	pub return_type: TypeId,
 	pub been_queued: bool,

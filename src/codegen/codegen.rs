@@ -32,7 +32,7 @@ pub fn generate<'a, G: Generator>(
 
 		for specialization_index in 0..shape.specializations.len() {
 			let specialization = &shape.specializations[specialization_index];
-			if specialization.generic_poisioned {
+			if specialization.generic_poisoned {
 				continue;
 			}
 
@@ -306,7 +306,7 @@ fn generate_struct_literal<G: Generator>(
 }
 
 fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
-	let function_id = context.function_store.specialize_with_function_generics(
+	let function_id = context.function_store.specialize_function_with_function_generics(
 		context.messages,
 		context.type_store,
 		call.function_id,
@@ -345,7 +345,7 @@ fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, 
 	let base = generate_expression(context, generator, &method_call.base)
 		.unwrap_or(generator.generate_non_null_invalid_pointer(base_pointer_type_id));
 
-	let function_id = context.function_store.specialize_with_function_generics(
+	let function_id = context.function_store.specialize_function_with_function_generics(
 		context.messages,
 		context.type_store,
 		method_call.function_id,

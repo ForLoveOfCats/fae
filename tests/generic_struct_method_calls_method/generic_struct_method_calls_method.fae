@@ -1,0 +1,26 @@
+import fae::stdout::print_isize, print_string, print_newline
+
+generic T
+struct List {}
+
+generic B
+method List
+fn a() {
+	self.b<B>()
+}
+
+generic U
+method List
+fn b() {
+	print_isize(size_of<T>())
+	print_string("  ")
+	print_isize(size_of<U>())
+	print_newline()
+}
+
+fn main() {
+	List<u8> {}.a<i16>() // 1  2
+	List<f64> {}.a<f32>() // 8  4
+	List<i32> {}.a<f64>() // 4  8
+	List<u16> {}.a<i8>() // 2 1
+}

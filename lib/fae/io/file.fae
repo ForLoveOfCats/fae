@@ -27,9 +27,8 @@ fn read_until_newline(buffer: &mut List<u8>) {
 
 		buffer.set_length(original_length + bytes_read)
 
-		// TODO: Fix `buffer.last()` causing an ICE
 		// TODO: Add escape sequences to codepoint literals
-		if buffer.get(buffer.length - 1) == "\n"[0] {
+		if buffer.last() == "\n"[0] {
 			return
 		}
 	}
