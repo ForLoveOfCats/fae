@@ -1733,6 +1733,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
 		tree::Expression::BooleanLiteral(literal) => validate_bool_literal(context, *literal, span),
 		tree::Expression::CodepointLiteral(literal) => validate_codepoint_literal(context, literal, span),
+		tree::Expression::ByteCodepointLiteral(literal) => validate_byte_codepoint_literal(context, literal, span),
 		tree::Expression::StringLiteral(literal) => validate_string_literal(context, literal, span),
 		tree::Expression::ArrayLiteral(literal) => validate_array_literal(context, literal, span),
 		tree::Expression::StructLiteral(literal) => validate_struct_literal(context, literal, span),
@@ -1845,6 +1846,16 @@ fn validate_codepoint_literal<'a>(
 ) -> Expression<'a> {
 	let kind = ExpressionKind::CodepointLiteral(CodepointLiteral { value: literal.value.item });
 	let type_id = context.type_store.u32_type_id();
+	Expression { span, type_id, mutable: true, returns: false, kind }
+}
+
+fn validate_byte_codepoint_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &tree::ByteCodepointLiteral,
+	span: Span,
+) -> Expression<'a> {
+	let kind = ExpressionKind::ByteCodepointLiteral(ByteCodepointLiteral { value: literal.value.item });
+	let type_id = context.type_store.u8_type_id();
 	Expression { span, type_id, mutable: true, returns: false, kind }
 }
 

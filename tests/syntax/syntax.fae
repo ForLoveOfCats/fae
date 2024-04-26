@@ -1,4 +1,4 @@
-import fae::stdout::print_u32, print_string, print_newline
+import fae::stdout::print_u32, print_u8, print_string, print_newline
 
 struct MyType {
 	a: i32
@@ -46,6 +46,8 @@ fn main() {
 	print_u32('A')
 	print_newline()
 	print_u32('ℒ')
+	print_newline()
+	print_u8(b'D')
 	print_newline()
 
 	if true {

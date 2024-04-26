@@ -458,6 +458,7 @@ pub enum ExpressionKind<'a> {
 
 	BooleanLiteral(bool),
 	CodepointLiteral(CodepointLiteral),
+	ByteCodepointLiteral(ByteCodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),
@@ -487,6 +488,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::DecimalValue(_) => "untyped decimal",
 			ExpressionKind::BooleanLiteral(_) => "boolean literal",
 			ExpressionKind::CodepointLiteral(_) => "codepoint literal",
+			ExpressionKind::ByteCodepointLiteral(_) => "byte codepoint literal",
 			ExpressionKind::StringLiteral(_) => "string literal",
 			ExpressionKind::ArrayLiteral(_) => "array literal",
 			ExpressionKind::StructLiteral(_) => "struct literal",
@@ -512,6 +514,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::DecimalValue(_) => "an untyped decimal",
 			ExpressionKind::BooleanLiteral(_) => "a boolean literal",
 			ExpressionKind::CodepointLiteral(_) => "a codepoint literal",
+			ExpressionKind::ByteCodepointLiteral(_) => "a byte codepoint literal",
 			ExpressionKind::StringLiteral(_) => "a string literal",
 			ExpressionKind::ArrayLiteral(_) => "an array literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
@@ -769,6 +772,11 @@ impl DecimalValue {
 #[derive(Debug, Clone)]
 pub struct CodepointLiteral {
 	pub value: char,
+}
+
+#[derive(Debug, Clone)]
+pub struct ByteCodepointLiteral {
+	pub value: u8,
 }
 
 #[derive(Debug, Clone)]

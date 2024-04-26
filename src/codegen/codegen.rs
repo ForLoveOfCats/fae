@@ -2,8 +2,8 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	ArrayLiteral, BinaryOperation, Binding, Block, Break, Call, CodepointLiteral, Continue, DecimalValue, Expression,
-	ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, MethodCall, Read, Return,
+	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CodepointLiteral, Continue, DecimalValue,
+	Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, MethodCall, Read, Return,
 	SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation,
 	UnaryOperator, While,
 };
@@ -175,6 +175,8 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::CodepointLiteral(literal) => generate_codepoint_literal(context, generator, literal),
 
+		ExpressionKind::ByteCodepointLiteral(literal) => generate_byte_codepoint_literal(context, generator, literal),
+
 		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
 
 		ExpressionKind::ArrayLiteral(literal) => generate_array_literal(context, generator, literal),
@@ -248,6 +250,15 @@ fn generate_codepoint_literal<G: Generator>(
 	literal: &CodepointLiteral,
 ) -> Option<G::Binding> {
 	let type_id = context.type_store.u32_type_id();
+	Some(generator.generate_integer_value(context.type_store, type_id, literal.value as i128))
+}
+
+fn generate_byte_codepoint_literal<G: Generator>(
+	context: &Context,
+	generator: &mut G,
+	literal: &ByteCodepointLiteral,
+) -> Option<G::Binding> {
+	let type_id = context.type_store.u8_type_id();
 	Some(generator.generate_integer_value(context.type_store, type_id, literal.value as i128))
 }
 

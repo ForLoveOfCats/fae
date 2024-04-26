@@ -10,6 +10,7 @@ pub enum TokenKind {
 	Number,
 	String,
 	Codepoint,
+	ByteCodepoint,
 
 	OpenParen,
 	CloseParen,
@@ -72,6 +73,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::Number => "number",
 			TokenKind::String => "string literal",
 			TokenKind::Codepoint => "codepoint literal",
+			TokenKind::ByteCodepoint => "byte codepoint literal",
 
 			TokenKind::OpenParen => "'('",
 			TokenKind::CloseParen => "')'",
@@ -373,6 +375,40 @@ impl<'a> Tokenizer<'a> {
 			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1, self.file_index)),
 
 			[b'#', ..] => Ok(Token::new("#", PoundSign, self.offset, self.offset + 1, self.file_index)),
+
+			[b'b', b'\'', ..] => {
+				let start_index = self.offset;
+				self.offset += 2;
+				self.verify_not_eof(messages)?;
+
+				if self.bytes[self.offset] == b'\\' {
+					self.offset += 2;
+				} else {
+					let before_advance = self.offset;
+					self.advance_by_codepoint(messages)?;
+					if self.offset - before_advance > 1 {
+						if let Some(messages) = messages {
+							let error = error!("Byte codepoint literal may not contain a multi-byte codepoint");
+							let span = Span {
+								start: before_advance,
+								end: before_advance + 1, // Only produce a single underscore
+								file_index: self.file_index,
+							};
+							messages.message(error.span(span));
+						}
+						return Err(());
+					}
+				}
+				self.expect_byte(messages, b'\'')?;
+
+				Ok(Token::new(
+					&self.source[start_index + 2..self.offset],
+					ByteCodepoint,
+					start_index,
+					self.offset + 1,
+					self.file_index,
+				))
+			}
 
 			[b'\'', ..] => {
 				let start_index = self.offset;

@@ -354,6 +354,19 @@ fn parse_expression_atom<'a>(
 			))
 		}
 
+		TokenKind::ByteCodepoint => {
+			let codepoint_token = tokenizer.expect(messages, TokenKind::ByteCodepoint)?;
+			let codepoint = parse_codepoint_contents(messages, codepoint_token)?;
+
+			// Tokenizer guarentees that this will be a single byte in the success case
+			let value = Node::from_token(codepoint as u8, codepoint_token);
+
+			Ok(Node::from_token(
+				Expression::ByteCodepointLiteral(ByteCodepointLiteral { value }),
+				codepoint_token,
+			))
+		}
+
 		TokenKind::Number => {
 			return parse_number(messages, tokenizer);
 		}

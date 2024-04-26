@@ -508,6 +508,10 @@ impl<'a> TypeStore<'a> {
 		self.decimal_type_id
 	}
 
+	pub fn u8_type_id(&self) -> TypeId {
+		self.u8_type_id
+	}
+
 	pub fn u32_type_id(&self) -> TypeId {
 		self.u32_type_id
 	}

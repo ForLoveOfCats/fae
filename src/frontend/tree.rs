@@ -214,6 +214,11 @@ pub struct CodepointLiteral {
 }
 
 #[derive(Debug)]
+pub struct ByteCodepointLiteral {
+	pub value: Node<u8>,
+}
+
+#[derive(Debug)]
 pub struct StringLiteral<'a> {
 	pub value: Node<Cow<'a, str>>,
 }
@@ -524,6 +529,7 @@ pub enum Expression<'a> {
 
 	BooleanLiteral(bool),
 	CodepointLiteral(CodepointLiteral),
+	ByteCodepointLiteral(ByteCodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),

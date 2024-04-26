@@ -1,0 +1,9 @@
+Parse error: ./tests/multi_byte_byte_codepoint/multi_byte_byte_codepoint.fae, line 2: Byte codepoint literal may not contain a multi-byte codepoint
+  2|     b'£'
+           ^
+
+Validation error: ./lib/fae/runtime.fae, line 3: No symbol `main` in root of module `multi_byte_byte_codepoint`
+  3|     ::main()
+           ^^^^
+
+Validation error: Missing main function

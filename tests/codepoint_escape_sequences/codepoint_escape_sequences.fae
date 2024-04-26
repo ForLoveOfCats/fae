@@ -1,4 +1,4 @@
-import fae::stdout::print_u32, print_newline
+import fae::stdout::print_u32, print_u8, print_newline
 
 fn main() {
 	case('A')
@@ -8,9 +8,24 @@ fn main() {
 	case('\\')
 	case('\'')
 	case('\0')
+
+	print_newline()
+
+	byte_case(b'A')
+	byte_case(b'\n')
+	byte_case(b'\r')
+	byte_case(b'\t')
+	byte_case(b'\\')
+	byte_case(b'\'')
+	byte_case(b'\0')
 }
 
 fn case(value: u32) {
 	print_u32(value)
+	print_newline()
+}
+
+fn byte_case(value: u8) {
+	print_u8(value)
 	print_newline()
 }
