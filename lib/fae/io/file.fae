@@ -24,11 +24,9 @@ fn read_until_newline(buffer: &mut List<u8>) {
 		let pointer = offset_pointer_mut<u8>(buffer.items_pointer, original_length)
 
 		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
-
 		buffer.set_length(original_length + bytes_read)
 
-		// TODO: Add escape sequences to codepoint literals
-		if buffer.last() == "\n"[0] {
+		if buffer.last() == '\n'.(u8) {
 			return
 		}
 	}

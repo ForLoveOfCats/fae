@@ -1,0 +1,30 @@
+fn main() {
+	print_cases([
+		"hello there"
+		"hello\nthere"
+		"\nthere"
+		"\n"
+		"hello\n"
+		"\nhello\n"
+		"\r"
+		"hello\r"
+		"\rhello\r"
+		"\r\n"
+		"hello\r\n"
+		"\r\nhello\r\n"
+		"\t"
+		"hello\t"
+		"\thello\t"
+		"\\hel\\lo\\"
+		"hello\0there"
+	])
+}
+
+fn print_cases(cases: [][]u8) {
+	mut index: isize = 0
+	while index < cases.len {
+		fae::stdout::print_string(cases[index])
+		fae::stdout::print_newline()
+		index += 1
+	}
+}

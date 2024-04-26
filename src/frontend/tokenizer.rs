@@ -376,7 +376,14 @@ impl<'a> Tokenizer<'a> {
 
 			[b'\'', ..] => {
 				let start_index = self.offset;
-				self.advance_by_codepoint(messages)?;
+				self.offset += 1;
+				self.verify_not_eof(messages)?;
+
+				if self.bytes[self.offset] == b'\\' {
+					self.offset += 2;
+				} else {
+					self.advance_by_codepoint(messages)?;
+				}
 				self.expect_byte(messages, b'\'')?;
 
 				Ok(Token::new(
@@ -481,13 +488,11 @@ impl<'a> Tokenizer<'a> {
 
 	// This is such a hack
 	fn advance_by_codepoint(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
-		self.offset += 1;
 		self.verify_not_eof(messages)?;
 
 		let mut chars = self.source[self.offset..].char_indices();
 		chars.next().ok_or(())?;
-		let advance = chars.next().ok_or(())?.0;
-		self.offset += advance.saturating_sub(1);
+		self.offset += chars.next().ok_or(())?.0;
 
 		Ok(())
 	}
@@ -495,8 +500,6 @@ impl<'a> Tokenizer<'a> {
 	//TODO: Remove this
 	fn expect_byte(&mut self, messages: &mut Option<&mut Messages>, expected: u8) -> ParseResult<()> {
 		self.verify_not_eof(messages)?;
-
-		self.offset += 1;
 
 		let found = self.bytes[self.offset];
 		if found != expected {

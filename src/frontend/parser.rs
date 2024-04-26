@@ -345,7 +345,8 @@ fn parse_expression_atom<'a>(
 
 		TokenKind::Codepoint => {
 			let codepoint_token = tokenizer.expect(messages, TokenKind::Codepoint)?;
-			let value = Node::from_token(codepoint_token.text.chars().next().unwrap(), codepoint_token);
+			let codepoint = parse_codepoint_contents(messages, codepoint_token)?;
+			let value = Node::from_token(codepoint, codepoint_token);
 
 			Ok(Node::from_token(
 				Expression::CodepointLiteral(CodepointLiteral { value }),
@@ -570,6 +571,33 @@ fn parse_bracket_index<'a>(
 	Ok(Node::new(expression, span))
 }
 
+fn parse_codepoint_contents(messages: &mut Messages, token: Token) -> ParseResult<char> {
+	let bytes = token.text.as_bytes();
+	assert!(bytes.len() >= 1);
+
+	if bytes[0] == b'\\' {
+		assert!(bytes.len() == 2);
+		let escape_sequence = match bytes[1] {
+			b'n' => b'\n',
+			b'r' => b'\r',
+			b't' => b'\t',
+			b'\\' => b'\\',
+			b'\'' => b'\'',
+			b'0' => b'\0',
+
+			_ => {
+				let error = error!("Unrecognized codepoint escape sequence `{}`", &token.text[..2]);
+				messages.message(error.span(token.span));
+				return Err(());
+			}
+		};
+
+		return Ok(escape_sequence as char);
+	}
+
+	Ok(token.text.chars().next().unwrap())
+}
+
 fn parse_string_contents(string: &str) -> Cow<str> {
 	let mut allocated = String::new();
 
@@ -579,6 +607,7 @@ fn parse_string_contents(string: &str) -> Cow<str> {
 		let mut escape = "";
 		match string[index..].as_bytes() {
 			[b'\\', b'n', ..] => escape = "\n",
+			[b'\\', b'r', ..] => escape = "\r",
 			[b'\\', b't', ..] => escape = "\t",
 			[b'\\', b'\\', ..] => escape = "\\",
 			[b'\\', b'"', ..] => escape = "\"",
@@ -602,29 +631,6 @@ fn parse_string_contents(string: &str) -> Cow<str> {
 	}
 
 	Cow::Borrowed(string)
-}
-
-// TODO: Replace with in-language test once stdout printing is in
-#[test]
-fn test_parse_string() {
-	let cases = [
-		(r"hello there", "hello there"),
-		(r"hello\nthere", "hello\nthere"),
-		(r"\nthere", "\nthere"),
-		(r"\n", "\n"),
-		(r"hello\n", "hello\n"),
-		(r"\nhello\n", "\nhello\n"),
-		(r"\t", "\t"),
-		(r"hello\t", "hello\t"),
-		(r"\thello\t", "\thello\t"),
-		(r"\\hel\\lo\\", "\\hel\\lo\\"),
-		(r"hello\0there", "hello\0there"),
-	];
-
-	for (index, (process, expected)) in cases.iter().enumerate() {
-		let processed = parse_string_contents(process);
-		assert!(processed == *expected, "expected {expected}, got {processed}, index {index}");
-	}
 }
 
 fn parse_if_else_chain<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {

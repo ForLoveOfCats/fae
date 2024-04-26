@@ -1,0 +1,16 @@
+import fae::stdout::print_u32, print_newline
+
+fn main() {
+	case('A')
+	case('\n')
+	case('\r')
+	case('\t')
+	case('\\')
+	case('\'')
+	case('\0')
+}
+
+fn case(value: u32) {
+	print_u32(value)
+	print_newline()
+}

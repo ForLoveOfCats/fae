@@ -1,4 +1,4 @@
-import fae::stdout::print_string, print_isize, print_i64, print_i32, print_newline, print_u8
+import fae::stdout::print_string, print_isize, print_i64, print_i32, print_u32, print_newline, print_u8
 import fae::libc::StdInDescription, atol, printf, rand
 import fae::collections::list::List
 import fae::io::file::File
