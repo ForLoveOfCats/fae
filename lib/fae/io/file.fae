@@ -3,7 +3,7 @@ import fae::libc::read
 import fae::stdout::print_string, print_isize, print_newline
 
 struct File {
-	file_descriptor: i32
+	file_descriptor: i32 readable readonly
 }
 
 method static File
@@ -24,7 +24,7 @@ fn read_until_newline(buffer: &mut List<u8>) {
 		let pointer = offset_pointer_mut<u8>(buffer.items_pointer, original_length)
 
 		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
-		buffer.set_length(original_length + bytes_read)
+		buffer.length = original_length + bytes_read
 
 		if buffer.last() == b'\n' {
 			return

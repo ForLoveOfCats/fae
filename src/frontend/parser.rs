@@ -1275,10 +1275,30 @@ fn parse_struct_declaration<'a>(
 			let name = Node::from_token(field_name_token.text, field_name_token);
 
 			tokenizer.expect(messages, TokenKind::Colon)?;
-
 			let parsed_type = parse_type(messages, tokenizer)?;
 
-			fields.push(Field { name, parsed_type });
+			let attribute = match tokenizer.peek() {
+				Ok(Token { text: "readable", .. }) => {
+					let token = tokenizer.expect_word(messages, "readable")?;
+					Some(Node::from_token(FieldAttribute::Readable, token))
+				}
+
+				Ok(Token { text: "private", .. }) => {
+					let token = tokenizer.expect_word(messages, "private")?;
+					Some(Node::from_token(FieldAttribute::Private, token))
+				}
+
+				_ => None,
+			};
+
+			let read_only = if let Ok(Token { text: "readonly", .. }) = tokenizer.peek() {
+				tokenizer.expect_word(messages, "readonly")?;
+				true
+			} else {
+				false
+			};
+
+			fields.push(Field { name, parsed_type, attribute, read_only });
 
 			while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
 				tokenizer.expect(messages, TokenKind::Newline)?;

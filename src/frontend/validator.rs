@@ -8,7 +8,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols};
-use crate::frontend::tree::{self, BinaryOperator, MethodKind, PathSegments};
+use crate::frontend::tree::{self, BinaryOperator, FieldAttribute, MethodKind, PathSegments};
 use crate::frontend::tree::{MethodAttribute, Node};
 use crate::frontend::type_store::*;
 
@@ -50,6 +50,7 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub return_type: Option<TypeId>,
 	pub generic_parameters: &'c GenericParameters<'a>,
+	pub method_base_index: Option<usize>,
 }
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
@@ -102,6 +103,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			return_type: self.return_type,
 			generic_parameters: self.generic_parameters,
+			method_base_index: self.method_base_index,
 		}
 	}
 
@@ -153,6 +155,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			return_type: Some(return_type),
 			generic_parameters,
+			method_base_index: self.method_base_index,
 		}
 	}
 
@@ -313,6 +316,7 @@ pub fn validate<'a>(
 			current_loop_index: None,
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
+			method_base_index: None,
 		};
 
 		validate_block(context, &parsed_file.block, true);
@@ -496,6 +500,7 @@ fn validate_root_consts<'a>(
 			current_loop_index: None,
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
+			method_base_index: None,
 		};
 
 		let old_symbols_len = context.symbols.len();
@@ -780,7 +785,12 @@ fn fill_block_types<'a>(
 					None => type_store.any_collapse_type_id(),
 				};
 
-				let field_shape = FieldShape { name: field.name.item, field_type };
+				let field_shape = FieldShape {
+					name: field.name.item,
+					field_type,
+					attribute: field.attribute,
+					read_only: field.read_only,
+				};
 				let span = field.name.span + field.parsed_type.span;
 				let node = tree::Node::new(field_shape, span);
 				fields.push(node);
@@ -827,6 +837,8 @@ fn fill_pre_existing_user_type_specializations<'a>(
 			span: Some(field.span),
 			name: field.item.name,
 			type_id: field.item.field_type,
+			attribute: field.item.attribute,
+			read_only: field.item.read_only,
 		});
 	}
 
@@ -1117,6 +1129,7 @@ fn create_block_functions<'a>(
 				export_attribute: statement.export_attribute,
 				intrinsic_attribute: statement.intrinsic_attribute,
 				lang_attribute: statement.lang_attribute,
+				method_base_index: method_base_shape_index,
 				parameters,
 				c_varargs,
 				return_type,
@@ -1408,15 +1421,16 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 	let mut maybe_self = 0;
 	if let Some(method_attribute) = &statement.method_attribute {
+		let shape = &scope.function_store.shapes[function_shape_index];
+		scope.method_base_index = shape.method_base_index;
+
 		let is_method = match method_attribute.item.kind {
 			MethodKind::ImmutableSelf | MethodKind::MutableSelf => true,
 			MethodKind::Static => false,
 		};
 
 		if is_method {
-			let shape = &scope.function_store.shapes[function_shape_index];
 			let type_id = shape.parameters[0].type_id;
-
 			let readable_index = scope.readables.push("self", type_id, ReadableKind::Let);
 			let kind = SymbolKind::Let { readable_index };
 			let symbol = Symbol { name: "self", kind, span: None };
@@ -1949,24 +1963,41 @@ fn validate_struct_literal<'a>(
 		};
 
 		if field.name != intializer.name.item {
-			context.message(
-				error!("Expected initalizer for field `{}`, got `{}` instead", field.name, intializer.name.item,)
-					.span(intializer.name.span),
-			);
+			let error = error!("Expected initalizer for field `{}`, got `{}` instead", field.name, intializer.name.item);
+			context.message(error.span(intializer.name.span));
+		}
+
+		let name = field.name;
+		let is_private = matches!(field.attribute, Some(Node { item: FieldAttribute::Private, .. }));
+		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
+		let external_access = if let Some(method_base_index) = context.method_base_index {
+			method_base_index != shape_index
+		} else {
+			true
+		};
+
+		if is_private && external_access {
+			let on = context.type_name(type_id);
+			let error = error!("Cannot publicly initialize private field `{name}` on type {on}",);
+			context.message(error.span(intializer.name.span + expression.span));
+		}
+
+		if is_readable && external_access {
+			let on = context.type_name(type_id);
+			let error = error!("Cannot publicly initialize readable field `{name}` on type {on}",);
+			context.message(error.span(intializer.name.span + expression.span));
 		}
 
 		if !context.collapse_to(field.type_id, &mut expression).unwrap_or(true) {
 			// Avoids a silly error message when something happend in the field definition, causing it to
 			// have `AnyCollapse` as its type, leading to an "Expected `AnyCollapse` got `_`" error
 			if !field.type_id.is_any_collapse(context.type_store) {
-				context.message(
-					error!(
-						"Field intializer type mismatch, expected {} but got {} instead",
-						context.type_name(field.type_id),
-						context.type_name(expression.type_id),
-					)
-					.span(intializer.name.span + expression.span),
+				let error = error!(
+					"Field intializer type mismatch, expected {} but got {} instead",
+					context.type_name(field.type_id),
+					context.type_name(expression.type_id),
 				);
+				context.message(error.span(intializer.name.span + expression.span));
 			}
 		}
 
@@ -2540,7 +2571,11 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 
 	// Dumb hack to store fields array in outer scope so a slice can be taken
 	let slice_fields;
+	let mut external_access = true;
 	let fields: &[Field] = if let Some(as_struct) = type_id.as_struct(context.type_store) {
+		if let Some(method_base_index) = context.method_base_index {
+			external_access = method_base_index != as_struct.shape_index;
+		}
 		&as_struct.fields
 	} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
 		slice_fields = [
@@ -2548,11 +2583,15 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 				span: None,
 				name: "pointer",
 				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
+				attribute: None,
+				read_only: true,
 			},
 			Field {
 				span: None,
 				name: "len",
 				type_id: context.type_store.isize_type_id(),
+				attribute: None,
+				read_only: true,
 			},
 		];
 		&slice_fields
@@ -2572,8 +2611,33 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 		return Expression::any_collapse(context.type_store, span);
 	};
 
+	let is_private = matches!(field.attribute, Some(Node { item: FieldAttribute::Private, .. }));
+	let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
+	let is_read_only = field.read_only;
+
+	if external_access && is_private {
+		let type_name = context.type_name(base.type_id);
+		let error = error!("Cannot publicly access private field `{}` on type {}", field_read.name.item, type_name);
+		context.message(error.span(field_read.name.span));
+		return Expression::any_collapse(context.type_store, span);
+	}
+
 	let type_id = field.type_id;
-	let field_read = FieldRead { base, name: field.name, type_id, field_index };
+	let (mutable, reason) = if external_access && is_readable {
+		(false, Some(FieldReadImmutableReason::Readable))
+	} else if is_read_only {
+		(false, Some(FieldReadImmutableReason::ReadOnly))
+	} else {
+		(mutable, None)
+	};
+
+	let field_read = FieldRead {
+		base,
+		name: field.name,
+		type_id,
+		field_index,
+		immutable_reason: reason,
+	};
 	let kind = ExpressionKind::FieldRead(Box::new(field_read));
 	Expression { span, type_id, mutable, returns: false, kind }
 }
@@ -2962,9 +3026,21 @@ fn validate_binary_operation<'a>(
 				if readable.kind != ReadableKind::Mut {
 					context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(span));
 				}
-			} else if let ExpressionKind::FieldRead(_) = &left.kind {
+			} else if let ExpressionKind::FieldRead(field_read) = &left.kind {
 				if !left.mutable {
-					context.message(error!("Cannot assign to field of immutable object").span(span));
+					let name = field_read.name;
+					let base = context.type_name(field_read.base.type_id);
+					let error = match field_read.immutable_reason {
+						Some(FieldReadImmutableReason::Readable) => {
+							error!("Cannot publicly assign to readable field `{name}` on type {base}")
+						}
+						Some(FieldReadImmutableReason::ReadOnly) => {
+							error!("Cannot assign to readonly field `{name}` on type {base}")
+						}
+						None => error!("Cannot assign to field of immutable object"),
+					};
+
+					context.message(error.span(span));
 				}
 			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
 			{
@@ -2976,7 +3052,7 @@ fn validate_binary_operation<'a>(
 				if !left.mutable {
 					context.message(error!("Cannot assign to index of immutable slice").span(span));
 				}
-			} else {
+			} else if !matches!(left.kind, ExpressionKind::AnyCollapse) {
 				context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(span));
 			}
 

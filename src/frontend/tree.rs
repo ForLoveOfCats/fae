@@ -142,10 +142,18 @@ pub struct Struct<'a> {
 	pub fields: Vec<Field<'a>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldAttribute {
+	Private,
+	Readable,
+}
+
 #[derive(Debug)]
 pub struct Field<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
+	pub attribute: Option<Node<FieldAttribute>>,
+	pub read_only: bool,
 }
 
 #[derive(Debug)]

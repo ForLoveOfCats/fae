@@ -8,7 +8,7 @@ use crate::frontend::ir::{
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
-use crate::frontend::tree::{self, Node};
+use crate::frontend::tree::{self, FieldAttribute, Node};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TypeId {
@@ -152,10 +152,13 @@ impl<'a> StructShape<'a> {
 pub struct FieldShape<'a> {
 	pub name: &'a str,
 	pub field_type: TypeId,
+	pub attribute: Option<Node<FieldAttribute>>,
+	pub read_only: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct<'a> {
+	pub shape_index: usize,
 	pub type_id: TypeId,
 	pub type_arguments: Vec<TypeId>,
 	pub been_filled: bool,
@@ -168,6 +171,8 @@ pub struct Field<'a> {
 	pub span: Option<Span>,
 	pub name: &'a str,
 	pub type_id: TypeId,
+	pub attribute: Option<Node<FieldAttribute>>,
+	pub read_only: bool,
 }
 
 #[derive(Debug)]
@@ -1239,6 +1244,8 @@ impl<'a> TypeStore<'a> {
 				span: Some(field.span),
 				name: field.item.name,
 				type_id: field.item.field_type,
+				attribute: field.item.attribute,
+				read_only: field.item.read_only,
 			});
 		}
 
@@ -1263,6 +1270,7 @@ impl<'a> TypeStore<'a> {
 		let type_id = TypeId { entry: self.type_entries.len() as u32 };
 		let been_filled = shape.been_filled;
 		let specialization = Struct {
+			shape_index,
 			type_id,
 			type_arguments: type_arguments.clone(),
 			been_filled,

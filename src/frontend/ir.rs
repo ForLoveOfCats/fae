@@ -197,6 +197,7 @@ pub struct FunctionShape<'a> {
 	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
 	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
 
+	pub method_base_index: Option<usize>,
 	pub generic_parameters: GenericParameters<'a>,
 	pub parameters: Vec<ParameterShape>,
 	pub c_varargs: bool,
@@ -834,12 +835,19 @@ pub struct StaticRead<'a> {
 	pub static_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldReadImmutableReason {
+	Readable,
+	ReadOnly,
+}
+
 #[derive(Debug, Clone)]
 pub struct FieldRead<'a> {
 	pub base: Expression<'a>,
 	pub name: &'a str,
 	pub type_id: TypeId,
 	pub field_index: usize,
+	pub immutable_reason: Option<FieldReadImmutableReason>,
 }
 
 #[derive(Debug, Clone)]

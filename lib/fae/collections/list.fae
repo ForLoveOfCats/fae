@@ -3,9 +3,9 @@ import fae::libc::null, realloc, free, exit
 
 generic T
 struct List {
-	items_pointer: &mut T
+	items_pointer: &mut T readable
 	length: isize
-	capacity: isize
+	capacity: isize readable
 }
 
 method static List
@@ -53,11 +53,6 @@ fn reserve_capacity(new_capacity: isize) {
 
 	self.items_pointer = pointer.(&mut T)
 	self.capacity = new_capacity
-}
-
-method mut List
-fn set_length(new_length: isize) {
-	self.length = new_length
 }
 
 method List
