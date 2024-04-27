@@ -34,18 +34,20 @@ pub fn generate_code<'a>(
 		.create_target_machine(&triple, "", "", OptimizationLevel::None, RelocMode::Default, CodeModel::Default)
 		.unwrap();
 
-	generator.module.print_to_file(Path::new("./fae.ll")).unwrap();
+	_ = std::fs::create_dir("./fae_target");
+	generator.module.print_to_file(Path::new("./fae_target/fae.ll")).unwrap();
+
 	if let Err(error) = generator.module.verify() {
 		eprintln!("{}", error.to_str().unwrap());
 		std::process::exit(-1);
 	}
 
-	let object_path = Path::new("./fae_object.o");
+	let object_path = Path::new("./fae_target/fae_object.o");
 	machine
 		.write_to_file(&generator.module, FileType::Object, object_path)
 		.unwrap();
 
-	let path = PathBuf::from("./fae_executable.x64");
+	let path = PathBuf::from("./fae_target/fae_executable.x64");
 	let mut lld = Command::new("ld.lld")
 		.arg(object_path)
 		.arg("/usr/lib/crt1.o")
