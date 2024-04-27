@@ -8,8 +8,8 @@ fn main() {
 }
 
 fn seed_rand() {
-	import fae::libc::TimeT, null, srand, time
-	let null = null<TimeT>()
+	import fae::libc::TimeT, srand, time
+	let null = null_pointer<TimeT>()
 	srand(time(null).time_t.(u32))
 }
 

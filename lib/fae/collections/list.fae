@@ -1,5 +1,5 @@
 import fae::stdout::print_string, print_isize, print_usize
-import fae::libc::null, realloc, free, exit
+import fae::libc::realloc, free, exit
 
 generic T
 struct List {
@@ -11,7 +11,7 @@ struct List {
 method static List
 fn new(): List<T> {
 	return List<T> {
-		items_pointer: null<T>()
+		items_pointer: null_pointer<T>()
 		length: 0
 		capacity: 0
 	}

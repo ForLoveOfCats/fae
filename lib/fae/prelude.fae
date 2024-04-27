@@ -7,6 +7,11 @@ generic T
 fn alignment_of(): isize
 
 generic T
+fn null_pointer(): &mut T {
+	return 0.(&mut T)
+}
+
+generic T
 fn offset_pointer(pointer: &T, by_bytes: isize): &T {
 	return (pointer.(usize) + by_bytes.(usize)).(&T)
 }

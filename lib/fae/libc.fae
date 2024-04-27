@@ -17,11 +17,6 @@ struct TimeT {
 	time_t: i64
 }
 
-generic T
-fn null(): &mut T {
-	return 0.(&mut T)
-}
-
 extern "atoi"
 fn atoi(string: &u8): i32
 
