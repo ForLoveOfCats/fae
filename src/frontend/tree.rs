@@ -13,9 +13,8 @@ pub struct File<'a> {
 
 //TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
 #[derive(Debug)]
-pub enum PathSegments<'a> {
-	Path { segments: Vec<Node<&'a str>> },
-	MainModule { symbol_name: Node<&'a str> },
+pub struct PathSegments<'a> {
+	pub segments: Vec<Node<&'a str>>,
 }
 
 #[derive(Debug)]

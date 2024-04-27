@@ -535,9 +535,8 @@ fn resolve_block_type_imports<'a>(
 	is_root: bool,
 ) {
 	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
-		let path = PathSegments::Path {
-			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
-		};
+		let segments = vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
+		let path = PathSegments { segments };
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
 	}
 
@@ -590,9 +589,8 @@ fn resolve_block_non_type_imports<'a>(
 	is_root: bool,
 ) {
 	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
-		let path = PathSegments::Path {
-			segments: vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())],
-		};
+		let segments = vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
+		let path = PathSegments { segments };
 		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
 	}
 

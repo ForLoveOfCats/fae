@@ -1040,22 +1040,12 @@ fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 		return Err(());
 	}
 
-	let path_segments = PathSegments::Path { segments };
+	let path_segments = PathSegments { segments };
 	let item = Import { path_segments, symbol_names };
 	Ok(Node { item, span })
 }
 
 fn parse_path_segments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<PathSegments<'a>>> {
-	if tokenizer.peek_kind() == Ok(TokenKind::DoubleColon) {
-		let double_colon = tokenizer.expect(messages, TokenKind::DoubleColon)?;
-		let symbol_token = tokenizer.expect(messages, TokenKind::Word)?;
-
-		let symbol_name = Node::from_token(symbol_token.text, symbol_token);
-		let path = PathSegments::MainModule { symbol_name };
-		let span = double_colon.span + symbol_token.span;
-		return Ok(Node::new(path, span));
-	}
-
 	let mut segments = Vec::new();
 	loop {
 		let segment_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -1071,7 +1061,7 @@ fn parse_path_segments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	}
 
 	let span = segments.first().unwrap().span + segments.last().unwrap().span;
-	Ok(Node::new(PathSegments::Path { segments }, span))
+	Ok(Node::new(PathSegments { segments }, span))
 }
 
 fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Type<'a>>> {

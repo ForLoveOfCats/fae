@@ -1,6 +1,6 @@
 export "main"
 fn fae_main(argc: i32, argc: &&u8): i32 {
-	::main()
+	fae::intrinsics::user_main_function()
 	return 0
 }
 

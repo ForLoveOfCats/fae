@@ -17,10 +17,7 @@ impl<'a> RootLayers<'a> {
 	}
 
 	pub fn layer_for_path(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<&RootLayer<'a>> {
-		match path {
-			PathSegments::Path { segments } => self.layer_for_module_path(messages, segments),
-			PathSegments::MainModule { .. } => Some(&self.layers[self.root_layer_index]),
-		}
+		self.layer_for_module_path(messages, &path.segments)
 	}
 
 	fn layer_for_module_path(&self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<&RootLayer<'a>> {
@@ -84,18 +81,10 @@ impl<'a> RootLayers<'a> {
 	}
 
 	pub fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		match path {
-			PathSegments::Path { segments } => {
-				assert!(segments.len() > 1);
-				let layer = self.layer_for_module_path(messages, &segments[..segments.len() - 1])?;
-				layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
-			}
-
-			&PathSegments::MainModule { symbol_name } => {
-				let layer = &self.layers[self.root_layer_index];
-				layer.lookup_root_symbol(messages, &[symbol_name])
-			}
-		}
+		let segments = path.segments.as_slice();
+		assert!(segments.len() > 1);
+		let layer = self.layer_for_module_path(messages, &segments[..segments.len() - 1])?;
+		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
 	}
 }
 

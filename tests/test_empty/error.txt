@@ -1,5 +1,1 @@
-Validation error: ./lib/fae/runtime.fae, line 3: No symbol `main` in root of module `test_empty`
-  3|     ::main()
-           ^^^^
-
 Validation error: Missing main function
