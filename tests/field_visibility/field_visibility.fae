@@ -4,7 +4,6 @@ struct MyStruct {
 	readable_field: i32 readable
 	private_field: i32 private
 	readonly_field: i32 readonly
-	readable_readonly_field: i32 readable readonly
 	private_readonly_field: i32 private readonly
 }
 
@@ -14,7 +13,6 @@ fn new(): MyStruct {
 		readable_field: 0
 		private_field: 0
 		readonly_field: 0
-		readable_readonly_field: 0
 		private_readonly_field: 0
 	}
 }
@@ -24,7 +22,6 @@ fn mutate_fields() {
 	self.readable_field += 1
 	self.private_field += 1
 	self.readonly_field += 1
-	self.readable_readonly_field += 1
 	self.private_readonly_field += 1
 }
 
@@ -33,13 +30,11 @@ fn main() {
 		readable_field: 0
 		private_field: 0
 		readonly_field: 0
-		readable_readonly_field: 0
 		private_readonly_field: 0
 	}
 
 	public_created.readable_field += 1
 	public_created.private_field += 1
 	public_created.readonly_field += 1
-	public_created.readable_readonly_field += 1
 	public_created.private_readonly_field += 1
 }

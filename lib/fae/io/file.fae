@@ -3,7 +3,7 @@ import fae::libc::read
 import fae::stdout::print_string, print_isize, print_newline
 
 struct File {
-	file_descriptor: i32 readable readonly
+	file_descriptor: i32 readonly
 }
 
 method static File

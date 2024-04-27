@@ -1,47 +1,35 @@
-Validation error: ./tests/field_visibility/field_visibility.fae, line 26: Cannot assign to readonly field `readonly_field` on type `&mut MyStruct`
-  26|     self.readonly_field += 1
+Validation error: ./tests/field_visibility/field_visibility.fae, line 24: Cannot assign to readonly field `readonly_field` on type `&mut MyStruct`
+  24|     self.readonly_field += 1
           ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 27: Cannot assign to readonly field `readable_readonly_field` on type `&mut MyStruct`
-  27|     self.readable_readonly_field += 1
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Validation error: ./tests/field_visibility/field_visibility.fae, line 28: Cannot assign to readonly field `private_readonly_field` on type `&mut MyStruct`
-  28|     self.private_readonly_field += 1
+Validation error: ./tests/field_visibility/field_visibility.fae, line 25: Cannot assign to readonly field `private_readonly_field` on type `&mut MyStruct`
+  25|     self.private_readonly_field += 1
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 33: Cannot publicly initialize readable field `readable_field` on type `MyStruct`
-  33|         readable_field: 0
+Validation error: ./tests/field_visibility/field_visibility.fae, line 30: Cannot publicly initialize readable field `readable_field` on type `MyStruct`
+  30|         readable_field: 0
               ^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 34: Cannot publicly initialize private field `private_field` on type `MyStruct`
-  34|         private_field: 0
+Validation error: ./tests/field_visibility/field_visibility.fae, line 31: Cannot publicly initialize private field `private_field` on type `MyStruct`
+  31|         private_field: 0
               ^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 36: Cannot publicly initialize readable field `readable_readonly_field` on type `MyStruct`
-  36|         readable_readonly_field: 0
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Validation error: ./tests/field_visibility/field_visibility.fae, line 37: Cannot publicly initialize private field `private_readonly_field` on type `MyStruct`
-  37|         private_readonly_field: 0
+Validation error: ./tests/field_visibility/field_visibility.fae, line 33: Cannot publicly initialize private field `private_readonly_field` on type `MyStruct`
+  33|         private_readonly_field: 0
               ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 40: Cannot publicly assign to readable field `readable_field` on type `MyStruct`
-  40|     public_created.readable_field += 1
+Validation error: ./tests/field_visibility/field_visibility.fae, line 36: Cannot publicly assign to readable field `readable_field` on type `MyStruct`
+  36|     public_created.readable_field += 1
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 41: Cannot publicly access private field `private_field` on type `MyStruct`
-  41|     public_created.private_field += 1
+Validation error: ./tests/field_visibility/field_visibility.fae, line 37: Cannot publicly access private field `private_field` on type `MyStruct`
+  37|     public_created.private_field += 1
                          ^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 42: Cannot assign to readonly field `readonly_field` on type `MyStruct`
-  42|     public_created.readonly_field += 1
+Validation error: ./tests/field_visibility/field_visibility.fae, line 38: Cannot assign to readonly field `readonly_field` on type `MyStruct`
+  38|     public_created.readonly_field += 1
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 43: Cannot publicly assign to readable field `readable_readonly_field` on type `MyStruct`
-  43|     public_created.readable_readonly_field += 1
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Validation error: ./tests/field_visibility/field_visibility.fae, line 44: Cannot publicly access private field `private_readonly_field` on type `MyStruct`
-  44|     public_created.private_readonly_field += 1
+Validation error: ./tests/field_visibility/field_visibility.fae, line 39: Cannot publicly access private field `private_readonly_field` on type `MyStruct`
+  39|     public_created.private_readonly_field += 1
                          ^^^^^^^^^^^^^^^^^^^^^^
