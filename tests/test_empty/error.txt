@@ -1,1 +1,1 @@
-Validation error: Missing main function
+Validation error: Project has no main function, is it missing or in the wrong file for project name?

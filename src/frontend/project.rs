@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use crate::cli_arguments::{CliArguments, CodegenBackend};
+use serde::Deserialize;
+
+use crate::cli::{CliArguments, CodegenBackend};
 use crate::codegen::llvm;
 use crate::frontend::error::{Messages, WriteFmt};
-use crate::frontend::file::load_all_files;
+use crate::frontend::file::{load_all_files, load_single_file};
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::parser::parse_file;
@@ -18,20 +20,52 @@ pub struct BuiltProject {
 	pub any_messages: bool,
 }
 
+#[derive(Deserialize)]
+pub struct ProjectConfig {
+	pub project_name: String,
+	pub source_directory: PathBuf,
+}
+
 pub fn build_project(
 	cli_arguments: &CliArguments,
 	err_output: &mut impl WriteFmt,
-	path: &Path,
-	root_name: String,
+	project_path: &Path,
+	test_config: Option<ProjectConfig>,
 ) -> BuiltProject {
-	// Can be folded into parallel parsing, ish
 	let mut files = Vec::new();
-	if let Err(err) = load_all_files(Path::new("./lib"), &mut files) {
-		panic!("Error loading standard library files: {}", err);
+	if let Err(err) = load_all_files(&std_path(), &mut files) {
+		usage_error!("Failed to load standard library files: {}", err);
 	}
-	if let Err(err) = load_all_files(path, &mut files) {
-		panic!("Error loading source files: {}", err);
-	}
+
+	let root_name = if project_path.is_dir() {
+		let config = if let Some(test_config) = test_config {
+			test_config
+		} else {
+			let config_path = project_path.join("fae.toml");
+			let Ok(config_file) = std::fs::read_to_string(&config_path) else {
+				usage_error!("Input directory does not contain a `fae.toml` file");
+			};
+
+			match toml::from_str::<ProjectConfig>(&config_file) {
+				Ok(config) => config,
+				Err(err) => usage_error!("Project config parse error {config_path:?}\n{err}"),
+			}
+		};
+
+		let source_directory = project_path.join(config.source_directory);
+		if let Err(err) = load_all_files(&source_directory, &mut files) {
+			usage_error!("Failed to load source files: {}", err);
+		}
+
+		config.project_name
+	} else if project_path.is_file() {
+		match load_single_file(project_path.to_path_buf(), &mut files) {
+			Ok(root_name) => root_name,
+			Err(err) => usage_error!("Failed to load source file: {}", err),
+		}
+	} else {
+		usage_error!("Input path is neither directory nor file");
+	};
 
 	let mut any_errors = false;
 	let mut any_messages = false;
@@ -84,4 +118,17 @@ pub fn build_project(
 	any_errors |= messages.any_errors();
 	any_messages |= messages.any_messages();
 	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
+}
+
+fn std_path() -> PathBuf {
+	if cfg!(feature = "bundled") {
+		let Ok(mut path) = std::env::current_exe() else {
+			usage_error!("Unable to get own executable path");
+		};
+
+		path.pop();
+		path.join("./lib")
+	} else {
+		PathBuf::from("./lib")
+	}
 }

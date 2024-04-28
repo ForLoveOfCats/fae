@@ -3,6 +3,12 @@ name = "fae"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+bundled = []
+
 [dependencies]
 inkwell = { version = "0.4.0", features = ["llvm17-0"] }
-unicode-width = "0.1.9"
+unicode-width = "0.1.12"
+
+toml = "0.8.12"
+serde = { version = "1.0.145", features = ["derive"] }

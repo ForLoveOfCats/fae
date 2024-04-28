@@ -1,7 +1,9 @@
 use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct CliArguments {
+	pub project_path: Option<PathBuf>,
 	pub run_compiler_tests: bool,
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
@@ -12,24 +14,38 @@ pub enum CodegenBackend {
 	LLVM,
 }
 
+#[macro_export]
+macro_rules! usage_error {
+	($($arg:tt)*) => {{
+		eprint!("Usage error: ");
+		eprintln!($( $arg )*);
+		std::process::exit(-1);
+	}}
+}
+
 pub fn parse_arguments() -> CliArguments {
 	let mut iterator = std::env::args_os().skip(1).enumerate();
 
 	let mut any_errors = false;
 	let mut cli_arguments = CliArguments {
+		project_path: None,
 		run_compiler_tests: false,
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LLVM,
 	};
 
 	while let Some((index, arg)) = iterator.next() {
-		if let Some("t" | "test") = arg.to_str() {
+		if arg.as_encoded_bytes().starts_with(b"-") {
+			parse_tack_argument(&mut cli_arguments, &mut any_errors, arg.as_os_str(), index);
+		} else if let Some("t" | "test") = arg.to_str() {
 			cli_arguments.run_compiler_tests = true;
 			parse_test_names(&mut cli_arguments, &mut any_errors, &mut iterator);
-			continue;
+		} else if cli_arguments.project_path.is_none() {
+			cli_arguments.project_path = Some(PathBuf::from(arg));
+		} else {
+			eprintln!("Unknown cli argument {arg:?}");
+			any_errors = true;
 		}
-
-		parse_tack_argument(&mut cli_arguments, &mut any_errors, arg.as_os_str(), index);
 	}
 
 	if any_errors {

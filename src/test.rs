@@ -1,9 +1,10 @@
 use std::fs::read_dir;
 use std::io::{stderr, Write};
+use std::path::PathBuf;
 
-use crate::cli_arguments::CliArguments;
+use crate::cli::CliArguments;
 use crate::color::*;
-use crate::frontend::project::build_project;
+use crate::frontend::project::{build_project, ProjectConfig};
 
 pub fn run_tests(cli_arguments: &CliArguments) {
 	let mut successes: u64 = 0;
@@ -43,7 +44,11 @@ pub fn run_tests(cli_arguments: &CliArguments) {
 		let panics = std::fs::metadata(entry.path().join("panics")).is_ok();
 		let mut error_output = String::new();
 
-		let built_project = build_project(cli_arguments, &mut error_output, &entry.path(), test_name.clone());
+		let test_config = ProjectConfig {
+			project_name: test_name.clone(),
+			source_directory: PathBuf::from(""),
+		};
+		let built_project = build_project(cli_arguments, &mut error_output, &entry.path(), Some(test_config));
 		let mut test_failed = false;
 
 		if built_project.any_messages {

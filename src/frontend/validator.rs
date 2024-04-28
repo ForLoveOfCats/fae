@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::cli_arguments::CliArguments;
+use crate::cli::CliArguments;
 use crate::frontend::error::*;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::*;
@@ -323,7 +323,8 @@ pub fn validate<'a>(
 	}
 
 	if function_store.main.is_none() {
-		messages.message(error!("Missing main function"));
+		let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
+		messages.message(error);
 	}
 }
 

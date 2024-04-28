@@ -2,4 +2,4 @@ Parse error: ./tests/multi_byte_byte_codepoint/multi_byte_byte_codepoint.fae, li
   2|     b'£'
            ^
 
-Validation error: Missing main function
+Validation error: Project has no main function, is it missing or in the wrong file for project name?

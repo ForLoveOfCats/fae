@@ -23,6 +23,28 @@ impl std::fmt::Debug for SourceFile {
 	}
 }
 
+pub fn load_single_file(path: PathBuf, files: &mut Vec<SourceFile>) -> Result<String> {
+	let mut file = std::fs::File::open(&path)?;
+	let capacity = file.metadata().map(|m| m.len()).unwrap_or(0);
+	let mut source = String::with_capacity(capacity as usize);
+	file.read_to_string(&mut source)?;
+
+	let Some(stem) = path.file_stem() else {
+		usage_error!("Input file has no name");
+	};
+
+	let extension_len = ".fae".len();
+	let full_name = stem.to_string_lossy();
+	let file_name = full_name[..full_name.len() - extension_len].to_owned();
+
+	let module_path = vec![file_name.clone()];
+	let index = files.len();
+	files.push(SourceFile { source, path, module_path, index });
+
+	Ok(file_name)
+}
+
+// Returns directory-project root name
 pub fn load_all_files(path: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
 	let mut walker = FileWalker::new(path)?;
 
@@ -101,7 +123,8 @@ impl FileWalker {
 					}
 
 					let extension_len = ".fae".len();
-					let full_name = entry.file_name().to_string_lossy().to_string();
+					let entry_file_name = entry.file_name();
+					let full_name = entry_file_name.to_string_lossy();
 					let file_name = full_name[..full_name.len() - extension_len].to_owned();
 					module_path.push(file_name);
 

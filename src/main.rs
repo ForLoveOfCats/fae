@@ -1,7 +1,9 @@
 #[macro_use]
 mod multi_line_string;
 
-mod cli_arguments;
+#[macro_use]
+mod cli;
+
 mod codegen;
 mod color;
 mod frontend;
@@ -11,7 +13,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Command;
 
-use cli_arguments::parse_arguments;
+use cli::parse_arguments;
 use frontend::project::build_project;
 
 fn main() {
@@ -22,9 +24,8 @@ fn main() {
 	}
 
 	let mut stderr = std::io::stderr();
-	let project_path = Path::new("./example");
-	let root_name = "example".to_owned();
-	let built_project = build_project(&cli_arguments, &mut stderr, project_path, root_name);
+	let project_path = cli_arguments.project_path.as_deref().unwrap_or_else(|| Path::new("./"));
+	let built_project = build_project(&cli_arguments, &mut stderr, project_path, None);
 
 	let Some(binary_path) = built_project.binary_path else {
 		std::process::exit(-1);
