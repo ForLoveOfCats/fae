@@ -36,8 +36,9 @@ pub fn build_project(
 	let mut files = Vec::new();
 
 	if cli_arguments.std_enabled {
-		if let Err(err) = load_all_files(&std_path(), &mut files) {
-			usage_error!("Failed to load standard library files: {}", err);
+		let std_path = std_path();
+		if let Err(err) = load_all_files(&std_path, &mut files) {
+			usage_error!("Failed to load standard library files at {std_path:?}: {}", err);
 		}
 	}
 
@@ -56,7 +57,21 @@ pub fn build_project(
 			}
 		};
 
-		let source_directory = project_path.join(config.source_directory);
+		let source_directory = match project_path.join(config.source_directory).canonicalize() {
+			Ok(source_directory) => source_directory,
+			Err(err) => usage_error!("Unable to canonicalize source directory path: {err}"),
+		};
+
+		let cwd = match std::env::current_dir() {
+			Ok(cwd) => cwd,
+			Err(err) => usage_error!("Unable to get current working directory: {err}"),
+		};
+
+		let source_directory = source_directory
+			.strip_prefix(cwd)
+			.map(|dir| Path::new("./").join(dir))
+			.unwrap_or(source_directory);
+
 		if let Err(err) = load_all_files(&source_directory, &mut files) {
 			usage_error!("Failed to load source files: {}", err);
 		}
