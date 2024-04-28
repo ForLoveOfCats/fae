@@ -236,7 +236,7 @@ pub fn validate<'a>(
 	let mut constants = Vec::new();
 
 	create_root_types(messages, root_layers, type_store, parsed_files);
-	resolve_root_type_imports(messages, root_layers, parsed_files);
+	resolve_root_type_imports(cli_arguments, messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
 	let mut local_function_shape_indicies = Vec::new();
@@ -359,14 +359,19 @@ fn create_root_types<'a>(
 	}
 }
 
-fn resolve_root_type_imports<'a>(messages: &mut Messages, root_layers: &mut RootLayers<'a>, parsed_files: &[tree::File<'a>]) {
+fn resolve_root_type_imports<'a>(
+	cli_arguments: &CliArguments,
+	messages: &mut Messages,
+	root_layers: &mut RootLayers<'a>,
+	parsed_files: &[tree::File<'a>],
+) {
 	for parsed_file in parsed_files {
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
 
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
-		resolve_block_type_imports(messages, root_layers, &mut symbols, module_path, 0, block, true);
+		resolve_block_type_imports(cli_arguments, messages, root_layers, &mut symbols, module_path, 0, block, true);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
@@ -527,6 +532,7 @@ fn validate_root_consts<'a>(
 }
 
 fn resolve_block_type_imports<'a>(
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -535,7 +541,7 @@ fn resolve_block_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
 		let path = PathSegments { segments };
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
@@ -581,6 +587,7 @@ fn resolve_import_for_block_types<'a>(
 }
 
 fn resolve_block_non_type_imports<'a>(
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -589,7 +596,7 @@ fn resolve_block_non_type_imports<'a>(
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
-	if is_root && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
 		let path = PathSegments { segments };
 		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
@@ -1235,6 +1242,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 
 		resolve_block_type_imports(
+			context.cli_arguments,
 			context.messages,
 			context.root_layers,
 			context.symbols,
@@ -1258,6 +1266,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	}
 
 	resolve_block_non_type_imports(
+		context.cli_arguments,
 		context.messages,
 		context.root_layers,
 		context.symbols,

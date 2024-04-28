@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::cli::{CliArguments, CodegenBackend};
+use crate::cli::{CliArguments, CodegenBackend, CompileCommand};
 use crate::codegen::llvm;
+use crate::color::*;
 use crate::frontend::error::{Messages, WriteFmt};
 use crate::frontend::file::{load_all_files, load_single_file};
 use crate::frontend::function_store::FunctionStore;
@@ -33,8 +34,11 @@ pub fn build_project(
 	test_config: Option<ProjectConfig>,
 ) -> BuiltProject {
 	let mut files = Vec::new();
-	if let Err(err) = load_all_files(&std_path(), &mut files) {
-		usage_error!("Failed to load standard library files: {}", err);
+
+	if cli_arguments.std_enabled {
+		if let Err(err) = load_all_files(&std_path(), &mut files) {
+			usage_error!("Failed to load standard library files: {}", err);
+		}
 	}
 
 	let root_name = if project_path.is_dir() {
@@ -66,6 +70,10 @@ pub fn build_project(
 	} else {
 		usage_error!("Input path is neither directory nor file");
 	};
+
+	if cli_arguments.command != CompileCommand::CompilerTest {
+		eprintln!("    {BOLD_GREEN}Building project{RESET} {root_name}",);
+	}
 
 	let mut any_errors = false;
 	let mut any_messages = false;
@@ -117,6 +125,11 @@ pub fn build_project(
 	assert!(!messages.any_errors());
 	any_errors |= messages.any_errors();
 	any_messages |= messages.any_messages();
+
+	if cli_arguments.command != CompileCommand::CompilerTest {
+		eprintln!("        {BOLD_GREEN}Built binary{RESET} {}", binary_path.display());
+	}
+
 	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 }
 

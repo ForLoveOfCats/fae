@@ -13,12 +13,13 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Command;
 
-use cli::parse_arguments;
+use cli::{parse_arguments, CompileCommand};
+use color::{BOLD_GREEN, RESET};
 use frontend::project::build_project;
 
 fn main() {
 	let cli_arguments = parse_arguments();
-	if cli_arguments.run_compiler_tests {
+	if cli_arguments.command == CompileCommand::CompilerTest {
 		test::run_tests(&cli_arguments);
 		return;
 	}
@@ -31,11 +32,15 @@ fn main() {
 		std::process::exit(-1);
 	};
 
-	let mut command = Command::new(binary_path);
-	let mut child = command.spawn().unwrap();
-	let status = child.wait().unwrap();
+	if cli_arguments.command == CompileCommand::Run {
+		eprintln!("  {BOLD_GREEN}Running executable{RESET}");
 
-	if !status.success() {
-		eprintln!("Child process exited with code {}", status.into_raw())
+		let mut command = Command::new(binary_path);
+		let mut child = command.spawn().unwrap();
+		let status = child.wait().unwrap();
+
+		if !status.success() {
+			eprintln!("Child process exited with code {}", status.into_raw())
+		}
 	}
 }
