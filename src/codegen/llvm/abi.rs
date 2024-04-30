@@ -1,164 +1,166 @@
-use inkwell::attributes::Attribute;
-use inkwell::basic_block::BasicBlock;
-use inkwell::builder::Builder;
-use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
-use inkwell::AddressSpace;
+use std::ffi::CString;
+
+use llvm_sys::core::{
+	LLVMAddAttributeAtIndex, LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAlloca, LLVMBuildCall2, LLVMBuildFPCast,
+	LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSExt, LLVMBuildStore, LLVMBuildStructGEP2,
+	LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateEnumAttribute, LLVMDoubleTypeInContext,
+	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetParam, LLVMHalfTypeInContext, LLVMInt16TypeInContext, LLVMInt1TypeInContext,
+	LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
+	LLVMSetLinkage, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType, LLVMVoidTypeInContext,
+};
+use llvm_sys::prelude::*;
+use llvm_sys::{self, LLVMLinkage};
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
 use crate::codegen::llvm::generator::{self, AttributeKinds, BindingKind, LLVMGenerator, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
 use crate::frontend::type_store::{Layout, NumericKind, TypeId, TypeStore};
 
-pub trait LLVMAbi<'ctx> {
+pub trait LLVMAbi {
 	fn new() -> Self;
 
 	fn define_function(
 		&mut self,
 		type_store: &TypeStore,
-		context: &'ctx Context,
-		module: &mut Module<'ctx>,
-		builder: &mut Builder<'ctx>,
+		context: LLVMContextRef,
+		module: LLVMModuleRef,
+		builder: LLVMBuilderRef,
 		attribute_kinds: &AttributeKinds,
-		llvm_types: &LLVMTypes<'ctx>,
+		llvm_types: &LLVMTypes,
 		function_shape: &FunctionShape,
 		function: &Function,
-	) -> DefinedFunction<'ctx>;
+	) -> DefinedFunction;
 
 	fn call_function(
 		&mut self,
-		generator: &LLVMGenerator<'ctx, Self>,
+		generator: &LLVMGenerator<Self>,
 		type_store: &TypeStore,
-		function: &DefinedFunction<'ctx>,
-		arguments: &[Option<generator::Binding<'ctx>>],
-	) -> Option<generator::Binding<'ctx>>
+		function: &DefinedFunction,
+		arguments: &[Option<generator::Binding>],
+	) -> Option<generator::Binding>
 	where
 		Self: Sized;
 
 	fn return_value(
 		&mut self,
-		context: &'ctx Context,
-		builder: &mut Builder<'ctx>,
-		function: &DefinedFunction<'ctx>,
-		value: Option<generator::Binding<'ctx>>,
+		context: LLVMContextRef,
+		builder: LLVMBuilderRef,
+		function: &DefinedFunction,
+		value: Option<generator::Binding>,
 	);
 }
 
 #[derive(Clone, Copy)]
-pub enum FunctionReturnType<'ctx> {
+pub enum FunctionReturnType {
 	Void,
-
-	ByValue {
-		value_type: BasicTypeEnum<'ctx>,
-		abi_type: BasicTypeEnum<'ctx>,
-	},
-
-	// sret
-	ByPointer {
-		pointed_type: BasicTypeEnum<'ctx>,
-		layout: Layout,
-	},
+	ByValue { value_type: LLVMTypeRef, abi_type: LLVMTypeRef },
+	ByPointer { pointed_type: LLVMTypeRef, layout: Layout }, // sret
 }
 
-pub struct DefinedFunction<'ctx> {
-	pub llvm_function: FunctionValue<'ctx>,
-	pub return_type: FunctionReturnType<'ctx>,
+pub struct DefinedFunction {
+	pub fn_type: LLVMTypeRef,
+	pub llvm_function: LLVMValueRef,
+	pub return_type: FunctionReturnType,
 	pub return_type_id: TypeId,
-	pub parameter_information: Vec<Option<ParameterInformation<'ctx>>>,
+	pub parameter_information: Vec<Option<ParameterInformation>>,
 	pub c_varargs: bool,
-	pub initial_values: Vec<Option<generator::Binding<'ctx>>>,
-	pub alloca_block: Option<BasicBlock<'ctx>>,      // None for extern functions
-	pub logic_begin_block: Option<BasicBlock<'ctx>>, // None for extern functions
+	pub initial_values: Vec<Option<generator::Binding>>,
+	pub alloca_block: Option<LLVMBasicBlockRef>,      // None for extern functions
+	pub logic_begin_block: Option<LLVMBasicBlockRef>, // None for extern functions
 }
 
 struct ParameterAttribute {
 	index: u32,
-	attribute: Attribute,
+	attribute: LLVMAttributeRef,
 }
 
 #[derive(Debug, Clone)]
-pub enum ParameterInformation<'ctx> {
+pub enum ParameterInformation {
 	BareValue {
 		type_id: TypeId,
 	},
 
 	ByPointer {
-		pointed_type: BasicTypeEnum<'ctx>,
+		pointed_type: LLVMTypeRef,
 		pointed_type_id: TypeId,
 		layout: Layout,
 	},
 
-	Composition(ParameterComposition<'ctx>),
+	Composition(ParameterComposition),
 }
 
 #[derive(Debug, Clone)]
-pub struct ParameterComposition<'ctx> {
-	pub composition_struct: StructType<'ctx>,
-	pub actual_type: BasicTypeEnum<'ctx>,
+pub struct ParameterComposition {
+	pub composition_struct: LLVMTypeRef,
+	pub actual_type: LLVMTypeRef,
 	pub actual_type_id: TypeId,
 	pub layout: Layout,
 }
 
-pub struct SysvAbi<'ctx> {
-	return_type_buffer: Vec<BasicTypeEnum<'ctx>>,
-	parameter_type_buffer: Vec<BasicMetadataTypeEnum<'ctx>>,
-	parameter_basic_type_buffer: Vec<BasicTypeEnum<'ctx>>,
-	parameter_information_buffer: Vec<Option<ParameterInformation<'ctx>>>,
+pub struct SysvAbi {
+	return_type_buffer: Vec<LLVMTypeRef>,
+	parameter_type_buffer: Vec<LLVMTypeRef>,
+	parameter_basic_type_buffer: Vec<LLVMTypeRef>,
+	parameter_information_buffer: Vec<Option<ParameterInformation>>,
 	attribute_buffer: Vec<ParameterAttribute>,
-	argument_value_buffer: Vec<BasicMetadataValueEnum<'ctx>>,
+	argument_value_buffer: Vec<LLVMValueRef>,
 }
 
-impl<'ctx> SysvAbi<'ctx> {
+impl SysvAbi {
 	fn map_classes_into_basic_type_buffer<'a>(
-		context: &'ctx Context,
-		buffer: &mut Vec<BasicTypeEnum<'ctx>>,
+		context: LLVMContextRef,
+		buffer: &mut Vec<LLVMTypeRef>,
 		iterator: impl Iterator<Item = &'a Class>,
 	) {
 		for class in iterator {
 			match class.kind {
 				sysv_abi::ClassKind::Integer => {
-					let llvm_type = match class.size {
-						1 => context.i8_type(),
-						2 => context.i16_type(),
-						4 => context.i32_type(),
-						8 => context.i64_type(),
-						unknown_size => panic!("{unknown_size}"),
+					let llvm_type = unsafe {
+						match class.size {
+							1 => LLVMInt8TypeInContext(context),
+							2 => LLVMInt16TypeInContext(context),
+							4 => LLVMInt32TypeInContext(context),
+							8 => LLVMInt64TypeInContext(context),
+							unknown_size => panic!("{unknown_size}"),
+						}
 					};
-					buffer.push(BasicTypeEnum::IntType(llvm_type));
+					buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::Boolean => {
 					assert_eq!(class.size, 1);
-					let llvm_type = context.bool_type();
-					buffer.push(BasicTypeEnum::IntType(llvm_type));
+					let llvm_type = unsafe { LLVMInt1TypeInContext(context) };
+					buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::SSE | sysv_abi::ClassKind::SSEUp => {
-					let llvm_type = match class.size {
-						2 => context.f16_type(),
-						4 => context.f32_type(),
-						8 => context.f64_type(),
-						unknown_size => panic!("{unknown_size}"),
+					let llvm_type = unsafe {
+						match class.size {
+							2 => LLVMHalfTypeInContext(context),
+							4 => LLVMFloatTypeInContext(context),
+							8 => LLVMDoubleTypeInContext(context),
+							unknown_size => panic!("{unknown_size}"),
+						}
 					};
-					buffer.push(BasicTypeEnum::FloatType(llvm_type));
+					buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::SSECombine => {
 					// The element type doesn't really matter, it's going to be reinterpreted anyway
-					let llvm_type = match class.size {
-						4 => context.f16_type().vec_type(2),
-						8 => context.f16_type().vec_type(4),
-						unknown_size => panic!("{unknown_size}"),
+					let llvm_type = unsafe {
+						match class.size {
+							4 => LLVMVectorType(LLVMHalfTypeInContext(context), 2),
+							8 => LLVMVectorType(LLVMHalfTypeInContext(context), 4),
+							unknown_size => panic!("{unknown_size}"),
+						}
 					};
-					buffer.push(BasicTypeEnum::VectorType(llvm_type));
+					buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
 					assert_eq!(class.size, 8);
-					let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
-					buffer.push(BasicTypeEnum::PointerType(ptr_type));
+					let ptr_type = unsafe { LLVMPointerTypeInContext(context, 0) };
+					buffer.push(ptr_type);
 				}
 
 				sysv_abi::ClassKind::X87
@@ -172,50 +174,56 @@ impl<'ctx> SysvAbi<'ctx> {
 	}
 
 	// It would be really nice to deduplicate this with `map_classes_into_basic_type_buffer`
-	fn map_classes_into_parameter_type_buffer<'a>(&mut self, context: &'ctx Context, iterator: impl Iterator<Item = &'a Class>) {
+	fn map_classes_into_parameter_type_buffer<'a>(&mut self, context: LLVMContextRef, iterator: impl Iterator<Item = &'a Class>) {
 		for class in iterator {
 			match class.kind {
 				sysv_abi::ClassKind::Integer => {
-					let llvm_type = match class.size {
-						1 => context.i8_type(),
-						2 => context.i16_type(),
-						4 => context.i32_type(),
-						8 => context.i64_type(),
-						unknown_size => panic!("{unknown_size}"),
+					let llvm_type = unsafe {
+						match class.size {
+							1 => LLVMInt8TypeInContext(context),
+							2 => LLVMInt16TypeInContext(context),
+							4 => LLVMInt32TypeInContext(context),
+							8 => LLVMInt64TypeInContext(context),
+							unknown_size => panic!("{unknown_size}"),
+						}
 					};
-					self.parameter_type_buffer.push(BasicMetadataTypeEnum::IntType(llvm_type));
+					self.parameter_type_buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::Boolean => {
 					assert_eq!(class.size, 1);
-					let llvm_type = context.bool_type();
-					self.parameter_type_buffer.push(BasicMetadataTypeEnum::IntType(llvm_type));
+					let llvm_type = unsafe { LLVMInt1TypeInContext(context) };
+					self.parameter_type_buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::SSE | sysv_abi::ClassKind::SSEUp => {
-					let llvm_type = match class.size {
-						2 => context.f16_type(),
-						4 => context.f32_type(),
-						8 => context.f64_type(),
-						unknown_size => panic!("{unknown_size}"),
+					let llvm_type = unsafe {
+						match class.size {
+							2 => LLVMHalfTypeInContext(context),
+							4 => LLVMFloatTypeInContext(context),
+							8 => LLVMDoubleTypeInContext(context),
+							unknown_size => panic!("{unknown_size}"),
+						}
 					};
-					self.parameter_type_buffer.push(BasicMetadataTypeEnum::FloatType(llvm_type));
+					self.parameter_type_buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::SSECombine => {
 					// The element type doesn't really matter, it's going to be reinterpreted anyway
-					let llvm_type = match class.size {
-						4 => context.f16_type().vec_type(2),
-						8 => context.f16_type().vec_type(4),
-						unknown_size => panic!("{unknown_size}"),
+					let llvm_type = unsafe {
+						match class.size {
+							4 => LLVMVectorType(LLVMHalfTypeInContext(context), 2),
+							8 => LLVMVectorType(LLVMHalfTypeInContext(context), 4),
+							unknown_size => panic!("{unknown_size}"),
+						}
 					};
-					self.parameter_type_buffer.push(BasicMetadataTypeEnum::VectorType(llvm_type));
+					self.parameter_type_buffer.push(llvm_type);
 				}
 
 				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
 					assert_eq!(class.size, 8);
-					let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
-					self.parameter_type_buffer.push(BasicMetadataTypeEnum::PointerType(ptr_type));
+					let ptr_type = unsafe { LLVMPointerTypeInContext(context, 0) };
+					self.parameter_type_buffer.push(ptr_type);
 				}
 
 				sysv_abi::ClassKind::X87
@@ -231,10 +239,10 @@ impl<'ctx> SysvAbi<'ctx> {
 	fn construct_parameter_information(
 		&mut self,
 		type_store: &TypeStore,
-		context: &'ctx Context,
-		llvm_types: &LLVMTypes<'ctx>,
+		context: LLVMContextRef,
+		llvm_types: &LLVMTypes,
 		parameter_type_id: TypeId,
-	) -> Option<ParameterInformation<'ctx>> {
+	) -> Option<ParameterInformation> {
 		let layout = type_store.type_layout(parameter_type_id);
 		if layout.size <= 0 {
 			return None;
@@ -259,7 +267,14 @@ impl<'ctx> SysvAbi<'ctx> {
 			let pointed_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter_type_id);
 			Some(ParameterInformation::ByPointer { pointed_type, pointed_type_id: parameter_type_id, layout })
 		} else {
-			let composition_struct = context.struct_type(&self.parameter_basic_type_buffer, false);
+			let composition_struct = unsafe {
+				LLVMStructTypeInContext(
+					context,
+					self.parameter_basic_type_buffer.as_mut_ptr(),
+					self.parameter_basic_type_buffer.len() as u32,
+					false as _,
+				)
+			};
 			let actual_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter_type_id);
 			let actual_type_id = parameter_type_id;
 			let composition = ParameterComposition { composition_struct, actual_type, actual_type_id, layout };
@@ -269,9 +284,9 @@ impl<'ctx> SysvAbi<'ctx> {
 
 	fn generate_parameter(
 		&mut self,
-		generator: &LLVMGenerator<'ctx, Self>,
-		value: generator::Binding<'ctx>,
-		information: &ParameterInformation<'ctx>,
+		generator: &LLVMGenerator<Self>,
+		value: generator::Binding,
+		information: &ParameterInformation,
 	) {
 		let composition = match information {
 			ParameterInformation::Composition(composition) => composition,
@@ -280,19 +295,19 @@ impl<'ctx> SysvAbi<'ctx> {
 				match value.kind {
 					generator::BindingKind::Value(value) => {
 						let alloca = generator.build_alloca(pointed_type);
-						generator.builder.build_store(alloca, value).unwrap();
-						let argument = BasicMetadataValueEnum::PointerValue(alloca);
-						self.argument_value_buffer.push(argument);
+						unsafe { LLVMBuildStore(generator.builder, value, alloca) };
+						self.argument_value_buffer.push(alloca);
 					}
 
 					generator::BindingKind::Pointer { pointer, pointed_type: ty } => {
 						assert_eq!(pointed_type, ty);
 						let alloca = generator.build_alloca(pointed_type);
-						let size = generator.context.i64_type().const_int(layout.size as u64, false);
-						let align = layout.alignment as u32;
-						generator.builder.build_memcpy(alloca, align, pointer, align, size).unwrap();
-						let argument = BasicMetadataValueEnum::PointerValue(alloca);
-						self.argument_value_buffer.push(argument);
+						unsafe {
+							let size = LLVMConstInt(LLVMInt64TypeInContext(generator.context), layout.size as u64, false as _);
+							let align = layout.alignment as u32;
+							LLVMBuildMemCpy(generator.builder, alloca, align, pointer, align, size);
+						}
+						self.argument_value_buffer.push(alloca);
 					}
 				};
 
@@ -300,39 +315,36 @@ impl<'ctx> SysvAbi<'ctx> {
 			}
 
 			ParameterInformation::BareValue { .. } => {
-				let value = value.to_value(&generator.builder);
-				let argument = basic_value_enum_to_basic_metadata_value_enum(value);
-				self.argument_value_buffer.push(argument);
+				let value = value.to_value(generator.builder);
+				self.argument_value_buffer.push(value);
 				return;
 			}
 		};
 
 		let pointer = match value.kind {
-			generator::BindingKind::Value(value) => {
-				let alloca = generator.build_alloca(value.get_type());
-				generator.builder.build_store(alloca, value).unwrap();
+			generator::BindingKind::Value(value) => unsafe {
+				let alloca = generator.build_alloca(LLVMTypeOf(value));
+				LLVMBuildStore(generator.builder, value, alloca);
 				alloca
-			}
+			},
 
 			generator::BindingKind::Pointer { pointer, .. } => pointer,
 		};
 
-		let composition_field_count = composition.composition_struct.count_fields();
 		let composition = composition.composition_struct;
+		let composition_field_count = unsafe { LLVMCountStructElementTypes(composition) };
 		for field_index in 0..composition_field_count {
-			let field_type = composition.get_field_type_at_index(field_index).unwrap();
-			let field_pointer = generator
-				.builder
-				.build_struct_gep(composition, pointer, field_index, "")
-				.unwrap();
-			let value = generator.builder.build_load(field_type, field_pointer, "").unwrap();
-			let argument = basic_value_enum_to_basic_metadata_value_enum(value);
-			self.argument_value_buffer.push(argument);
+			unsafe {
+				let field_type = LLVMStructGetTypeAtIndex(composition, field_index);
+				let field_pointer = LLVMBuildStructGEP2(generator.builder, composition, pointer, field_index, c"".as_ptr());
+				let value = LLVMBuildLoad2(generator.builder, field_type, field_pointer, c"".as_ptr());
+				self.argument_value_buffer.push(value);
+			}
 		}
 	}
 }
 
-impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
+impl LLVMAbi for SysvAbi {
 	fn new() -> Self {
 		SysvAbi {
 			return_type_buffer: Vec::new(),
@@ -347,14 +359,14 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 	fn define_function(
 		&mut self,
 		type_store: &TypeStore,
-		context: &'ctx Context,
-		module: &mut Module<'ctx>,
-		builder: &mut Builder<'ctx>,
+		context: LLVMContextRef,
+		module: LLVMModuleRef,
+		builder: LLVMBuilderRef,
 		attribute_kinds: &AttributeKinds,
-		llvm_types: &LLVMTypes<'ctx>,
+		llvm_types: &LLVMTypes,
 		function_shape: &FunctionShape,
 		function: &Function,
-	) -> DefinedFunction<'ctx> {
+	) -> DefinedFunction {
 		self.return_type_buffer.clear();
 		self.parameter_type_buffer.clear();
 		self.attribute_buffer.clear();
@@ -371,10 +383,10 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				assert_eq!(classes.len(), 1);
 				assert_eq!(self.return_type_buffer.len(), 1);
 
-				let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
-				self.parameter_type_buffer.push(BasicMetadataTypeEnum::PointerType(ptr_type));
+				let ptr_type = unsafe { LLVMPointerTypeInContext(context, 0) };
+				self.parameter_type_buffer.push(ptr_type);
 
-				let attribute = context.create_enum_attribute(attribute_kinds.sret, 0);
+				let attribute = unsafe { LLVMCreateEnumAttribute(context, attribute_kinds.sret, 0) };
 				self.attribute_buffer.push(ParameterAttribute { index: 0, attribute });
 				self.return_type_buffer.clear(); // Make us use void return type
 
@@ -384,8 +396,15 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				let abi_type = if let [abi_type] = self.return_type_buffer.as_slice() {
 					*abi_type
 				} else {
-					let struct_type = context.struct_type(&self.return_type_buffer, false);
-					BasicTypeEnum::StructType(struct_type)
+					let struct_type = unsafe {
+						LLVMStructTypeInContext(
+							context,
+							self.return_type_buffer.as_mut_ptr(),
+							self.return_type_buffer.len() as u32,
+							false as _,
+						)
+					};
+					struct_type
 				};
 
 				FunctionReturnType::ByValue { value_type: return_type, abi_type }
@@ -404,17 +423,31 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 		let varargs = function_shape.c_varargs;
 		let fn_type = match return_type {
-			FunctionReturnType::Void | FunctionReturnType::ByPointer { .. } => {
-				context.void_type().fn_type(&self.parameter_type_buffer, varargs)
-			}
+			FunctionReturnType::Void | FunctionReturnType::ByPointer { .. } => unsafe {
+				LLVMFunctionType(
+					LLVMVoidTypeInContext(context),
+					self.parameter_type_buffer.as_mut_ptr(),
+					self.parameter_type_buffer.len() as u32,
+					varargs as _,
+				)
+			},
 
-			FunctionReturnType::ByValue { abi_type, .. } => abi_type.fn_type(&self.parameter_type_buffer, varargs),
+			FunctionReturnType::ByValue { abi_type, .. } => unsafe {
+				LLVMFunctionType(
+					abi_type,
+					self.parameter_type_buffer.as_mut_ptr(),
+					self.parameter_type_buffer.len() as u32,
+					varargs as _,
+				)
+			},
 		};
 
 		if let Some(extern_attribute) = function_shape.extern_attribute {
-			let name = extern_attribute.item.name;
-			let llvm_function = module.add_function(name, fn_type, Some(Linkage::External));
+			let name = CString::new(extern_attribute.item.name).unwrap();
+			let llvm_function = unsafe { LLVMAddFunction(module, name.as_ptr(), fn_type) };
+			unsafe { LLVMSetLinkage(llvm_function, LLVMLinkage::LLVMExternalLinkage) };
 			return DefinedFunction {
+				fn_type,
 				llvm_function,
 				return_type,
 				return_type_id,
@@ -427,21 +460,27 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 		}
 
 		let (name, linkage) = if let Some(export_attribute) = function_shape.export_attribute {
-			(export_attribute.item.name, Some(Linkage::DLLExport))
+			(CString::new(export_attribute.item.name).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
 		} else if function_shape.is_main {
-			("fae_user_main", Some(Linkage::Private))
+			(CString::from(c"fae_user_main"), LLVMLinkage::LLVMPrivateLinkage)
 		} else {
-			(function_shape.name.item, Some(Linkage::Private))
+			(CString::new(function_shape.name.item).unwrap(), LLVMLinkage::LLVMPrivateLinkage)
 		};
 
-		let llvm_function = module.add_function(name, fn_type, linkage);
-		for attribute in &self.attribute_buffer {
-			llvm_function.add_attribute(inkwell::attributes::AttributeLoc::Param(attribute.index), attribute.attribute);
-		}
+		let llvm_function = unsafe {
+			let llvm_function = LLVMAddFunction(module, name.as_ptr(), fn_type);
+			LLVMSetLinkage(llvm_function, linkage);
 
-		let alloca_block = context.append_basic_block(llvm_function, "alloca_block");
-		let logic_begin_block = context.append_basic_block(llvm_function, "logic_begin_block");
-		builder.position_at_end(logic_begin_block);
+			for attribute in &self.attribute_buffer {
+				LLVMAddAttributeAtIndex(llvm_function, attribute.index + 1, attribute.attribute);
+			}
+
+			llvm_function
+		};
+
+		let alloca_block = unsafe { LLVMAppendBasicBlockInContext(context, llvm_function, c"alloca_block".as_ptr()) };
+		let logic_begin_block = unsafe { LLVMAppendBasicBlockInContext(context, llvm_function, c"logic_begin_block".as_ptr()) };
+		unsafe { LLVMPositionBuilderAtEnd(builder, logic_begin_block) };
 
 		let mut initial_values = Vec::with_capacity(self.parameter_information_buffer.len());
 		let mut parameter_index = if matches!(return_type, FunctionReturnType::ByPointer { .. }) {
@@ -459,7 +498,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 			let composition = match information {
 				&ParameterInformation::BareValue { type_id } => {
-					let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
+					let parameter = unsafe { LLVMGetParam(llvm_function, parameter_index) };
 					let kind = generator::BindingKind::Value(parameter);
 					initial_values.push(Some(generator::Binding { type_id, kind }));
 					parameter_index += 1;
@@ -467,9 +506,8 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 				}
 
 				&ParameterInformation::ByPointer { pointed_type, pointed_type_id, .. } => {
-					let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
-					let pointer = parameter.into_pointer_value();
-					let kind = generator::BindingKind::Pointer { pointer, pointed_type };
+					let parameter = unsafe { LLVMGetParam(llvm_function, parameter_index) };
+					let kind = generator::BindingKind::Pointer { pointer: parameter, pointed_type };
 					initial_values.push(Some(generator::Binding { type_id: pointed_type_id, kind }));
 					parameter_index += 1;
 					continue;
@@ -480,24 +518,33 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 			assert!(composition.layout.size > 0, "{:?}", composition.layout);
 
-			builder.position_at_end(alloca_block);
-			let pointer = builder.build_alloca(composition.actual_type, "").unwrap();
-			builder.position_at_end(logic_begin_block);
-			let pointed_type = BasicTypeEnum::StructType(composition.composition_struct);
-			let type_id = composition.actual_type_id;
-			let kind = generator::BindingKind::Pointer { pointer, pointed_type };
-			initial_values.push(Some(generator::Binding { type_id, kind }));
-			let composition = composition.composition_struct;
+			let alloca = unsafe {
+				LLVMPositionBuilderAtEnd(builder, alloca_block);
+				let alloca = LLVMBuildAlloca(builder, composition.actual_type, c"".as_ptr());
+				LLVMPositionBuilderAtEnd(builder, logic_begin_block);
+				alloca
+			};
 
-			for field_index in 0..composition.count_fields() as u32 {
-				let ptr = builder.build_struct_gep(composition, pointer, field_index, "").unwrap();
-				let parameter = llvm_function.get_nth_param(parameter_index as u32).unwrap();
-				builder.build_store(ptr, parameter).unwrap();
+			let pointed_type = composition.composition_struct;
+			let type_id = composition.actual_type_id;
+			let kind = generator::BindingKind::Pointer { pointer: alloca, pointed_type };
+			initial_values.push(Some(generator::Binding { type_id, kind }));
+
+			let composition = composition.composition_struct;
+			let composition_field_count = unsafe { LLVMCountStructElementTypes(composition) };
+			for field_index in 0..composition_field_count as u32 {
+				unsafe {
+					let ptr = LLVMBuildStructGEP2(builder, composition, alloca, field_index, c"".as_ptr());
+					let parameter = LLVMGetParam(llvm_function, parameter_index);
+					LLVMBuildStore(builder, parameter, ptr);
+				}
+
 				parameter_index += 1;
 			}
 		}
 
 		DefinedFunction {
+			fn_type,
 			llvm_function,
 			return_type,
 			return_type_id,
@@ -511,17 +558,17 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 	fn call_function(
 		&mut self,
-		generator: &LLVMGenerator<'ctx, Self>,
+		generator: &LLVMGenerator<Self>,
 		type_store: &TypeStore,
-		function: &DefinedFunction<'ctx>,
-		arguments: &[Option<generator::Binding<'ctx>>],
-	) -> Option<generator::Binding<'ctx>> {
+		function: &DefinedFunction,
+		arguments: &[Option<generator::Binding>],
+	) -> Option<generator::Binding> {
 		self.argument_value_buffer.clear();
 		let context = generator.context;
 
 		let sret_alloca = if let FunctionReturnType::ByPointer { pointed_type, .. } = function.return_type {
 			let alloca = generator.build_alloca(pointed_type);
-			self.argument_value_buffer.push(BasicMetadataValueEnum::PointerValue(alloca));
+			self.argument_value_buffer.push(alloca);
 			Some(alloca)
 		} else {
 			None
@@ -559,28 +606,32 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 						match numeric_kind {
 							// Sign extend
 							NumericKind::I8 | NumericKind::I16 => {
-								let int = argument.to_value(&generator.builder).into_int_value();
-								let widened = generator.builder.build_int_s_extend(int, context.i32_type(), "").unwrap();
-								let argument = BasicMetadataValueEnum::IntValue(widened);
-								self.argument_value_buffer.push(argument);
+								let int = argument.to_value(generator.builder);
+								let widened = unsafe {
+									LLVMBuildSExt(generator.builder, int, LLVMInt32TypeInContext(context), c"".as_ptr())
+								};
+								self.argument_value_buffer.push(widened);
 								continue;
 							}
 
 							// Zero extend
 							NumericKind::U8 | NumericKind::U16 => {
-								let int = argument.to_value(&generator.builder).into_int_value();
-								let widened = generator.builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
-								let argument = BasicMetadataValueEnum::IntValue(widened);
-								self.argument_value_buffer.push(argument);
+								let int = argument.to_value(generator.builder);
+								let widened = unsafe {
+									LLVMBuildZExt(generator.builder, int, LLVMInt32TypeInContext(context), c"".as_ptr())
+								};
+								self.argument_value_buffer.push(widened);
 								continue;
 							}
 
 							// TODO: Add f16 once added to the language
 							NumericKind::F32 => {
-								let float = argument.to_value(&generator.builder).into_float_value();
-								let double = generator.builder.build_float_cast(float, context.f64_type(), "").unwrap();
-								let argument = BasicMetadataValueEnum::FloatValue(double);
-								self.argument_value_buffer.push(argument);
+								let float = argument.to_value(generator.builder);
+								// TODO: Should this be a FPExtend instead?
+								let double = unsafe {
+									LLVMBuildFPCast(generator.builder, float, LLVMDoubleTypeInContext(context), c"".as_ptr())
+								};
+								self.argument_value_buffer.push(double);
 								continue;
 							}
 
@@ -590,10 +641,10 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 					// Zero extend
 					if type_id.is_bool(type_store) {
-						let int = argument.to_value(&generator.builder).into_int_value();
-						let widened = generator.builder.build_int_z_extend(int, context.i32_type(), "").unwrap();
-						let argument = BasicMetadataValueEnum::IntValue(widened);
-						self.argument_value_buffer.push(argument);
+						let int = argument.to_value(generator.builder);
+						let llvm_type = unsafe { LLVMInt32TypeInContext(context) };
+						let widened = unsafe { LLVMBuildZExt(generator.builder, int, llvm_type, c"".as_ptr()) };
+						self.argument_value_buffer.push(widened);
 						continue;
 					}
 				}
@@ -602,10 +653,16 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 			}
 		}
 
-		let callsite_value = generator
-			.builder
-			.build_direct_call(function.llvm_function, &self.argument_value_buffer, "")
-			.unwrap();
+		let callsite_value = unsafe {
+			LLVMBuildCall2(
+				generator.builder,
+				function.fn_type,
+				function.llvm_function,
+				self.argument_value_buffer.as_mut_ptr(),
+				self.argument_value_buffer.len() as u32,
+				c"".as_ptr(),
+			)
+		};
 
 		let type_id = function.return_type_id;
 		match function.return_type {
@@ -613,8 +670,7 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 			FunctionReturnType::ByValue { value_type, .. } => {
 				let alloca = generator.build_alloca(value_type);
-				let value = callsite_value.try_as_basic_value().left().unwrap();
-				generator.builder.build_store(alloca, value).unwrap();
+				unsafe { LLVMBuildStore(generator.builder, callsite_value, alloca) };
 
 				let kind = generator::BindingKind::Pointer { pointer: alloca, pointed_type: value_type };
 				Some(generator::Binding { type_id, kind })
@@ -630,62 +686,52 @@ impl<'ctx> LLVMAbi<'ctx> for SysvAbi<'ctx> {
 
 	fn return_value(
 		&mut self,
-		context: &'ctx Context,
-		builder: &mut Builder<'ctx>,
-		function: &DefinedFunction<'ctx>,
-		value: Option<generator::Binding<'ctx>>,
+		context: LLVMContextRef,
+		builder: LLVMBuilderRef,
+		function: &DefinedFunction,
+		value: Option<generator::Binding>,
 	) {
 		match function.return_type {
 			FunctionReturnType::Void => {
 				assert!(value.is_none(), "{value:?}");
-				builder.build_return(None).unwrap();
+				unsafe { LLVMBuildRetVoid(builder) };
 			}
 
 			FunctionReturnType::ByValue { abi_type, .. } => {
 				let value = value.unwrap();
 				let pointer = match value.kind {
 					BindingKind::Value(value) => {
-						builder.build_return(Some(&value)).unwrap();
+						unsafe { LLVMBuildRet(builder, value) };
 						return;
 					}
 
 					BindingKind::Pointer { pointer, .. } => pointer,
 				};
 
-				let value = builder.build_load(abi_type, pointer, "").unwrap();
-				builder.build_return(Some(&value)).unwrap();
+				unsafe {
+					let value = LLVMBuildLoad2(builder, abi_type, pointer, c"".as_ptr());
+					LLVMBuildRet(builder, value);
+				}
 			}
 
 			FunctionReturnType::ByPointer { pointed_type, layout } => {
-				let first_parameter = function.llvm_function.get_nth_param(0).unwrap();
-				let sret_pointer = first_parameter.into_pointer_value();
+				let sret_pointer = unsafe { LLVMGetParam(function.llvm_function, 0) };
 
 				match value.unwrap().kind {
 					generator::BindingKind::Value(value) => {
-						builder.build_store(sret_pointer, value).unwrap();
+						unsafe { LLVMBuildStore(builder, value, sret_pointer) };
 					}
 
-					generator::BindingKind::Pointer { pointer, pointed_type: ty } => {
+					generator::BindingKind::Pointer { pointer, pointed_type: ty } => unsafe {
 						assert_eq!(pointed_type, ty);
-						let size = context.i64_type().const_int(layout.size as u64, false);
+						let size = LLVMConstInt(LLVMInt64TypeInContext(context), layout.size as u64, false as _);
 						let align = layout.alignment as u32;
-						builder.build_memcpy(sret_pointer, align, pointer, align, size).unwrap();
-					}
+						LLVMBuildMemCpy(builder, sret_pointer, align, pointer, align, size);
+					},
 				}
 
-				builder.build_return(None).unwrap();
+				unsafe { LLVMBuildRetVoid(builder) };
 			}
 		}
-	}
-}
-
-fn basic_value_enum_to_basic_metadata_value_enum(value: BasicValueEnum) -> BasicMetadataValueEnum {
-	match value {
-		BasicValueEnum::ArrayValue(value) => BasicMetadataValueEnum::ArrayValue(value),
-		BasicValueEnum::IntValue(value) => BasicMetadataValueEnum::IntValue(value),
-		BasicValueEnum::FloatValue(value) => BasicMetadataValueEnum::FloatValue(value),
-		BasicValueEnum::PointerValue(value) => BasicMetadataValueEnum::PointerValue(value),
-		BasicValueEnum::StructValue(value) => BasicMetadataValueEnum::StructValue(value),
-		BasicValueEnum::VectorValue(value) => BasicMetadataValueEnum::VectorValue(value),
 	}
 }

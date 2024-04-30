@@ -1,11 +1,23 @@
-use inkwell::attributes::Attribute;
-use inkwell::basic_block::BasicBlock;
-use inkwell::builder::Builder;
-use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicType, BasicTypeEnum, PointerType, StructType};
-use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
-use inkwell::{AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate};
+use std::ffi::CString;
+
+use llvm_sys::core::{
+	LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBuildAShr,
+	LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv,
+	LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp,
+	LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul, LLVMBuildNeg,
+	LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem,
+	LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildTrunc, LLVMBuildUDiv,
+	LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor, LLVMClearInsertionPosition, LLVMConstInt,
+	LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstStringInContext, LLVMCreateBuilderInContext,
+	LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
+	LLVMGetEnumAttributeKindForName, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind, LLVMInt16TypeInContext,
+	LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
+	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetGlobalConstant,
+	LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility, LLVMStructGetTypeAtIndex,
+	LLVMStructTypeInContext, LLVMTypeOf,
+};
+use llvm_sys::prelude::{LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef};
+use llvm_sys::{LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr, LLVMVisibility};
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
@@ -26,7 +38,7 @@ pub struct AttributeKinds {
 impl AttributeKinds {
 	fn new() -> AttributeKinds {
 		fn kind(name: &str) -> u32 {
-			let kind = Attribute::get_named_enum_kind_id(name);
+			let kind = unsafe { LLVMGetEnumAttributeKindForName(name.as_ptr() as _, name.len()) };
 			assert_ne!(kind, 0);
 			kind
 		}
@@ -42,80 +54,71 @@ enum State {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Binding<'ctx> {
+pub struct Binding {
 	pub type_id: TypeId,
-	pub kind: BindingKind<'ctx>,
+	pub kind: BindingKind,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum BindingKind<'ctx> {
-	Value(BasicValueEnum<'ctx>),
+pub enum BindingKind {
+	Value(LLVMValueRef),
 
-	Pointer {
-		pointer: PointerValue<'ctx>,
-		pointed_type: BasicTypeEnum<'ctx>,
-	},
+	Pointer { pointer: LLVMValueRef, pointed_type: LLVMTypeRef },
 }
 
-struct ValuePointer<'ctx> {
-	pointer: PointerValue<'ctx>,
-	pointed_type: BasicTypeEnum<'ctx>,
+struct ValuePointer {
+	pointer: LLVMValueRef,
+	pointed_type: LLVMTypeRef,
 }
 
-impl<'ctx> Binding<'ctx> {
-	pub fn to_value(self, builder: &Builder<'ctx>) -> BasicValueEnum<'ctx> {
+impl Binding {
+	pub fn to_value(self, builder: LLVMBuilderRef) -> LLVMValueRef {
 		let (pointer, pointed_type) = match self.kind {
 			BindingKind::Value(value) => return value,
 			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
 		};
 
-		builder.build_load(pointed_type, pointer, "").unwrap()
+		unsafe { LLVMBuildLoad2(builder, pointed_type, pointer, c"".as_ptr()) }
 	}
 }
 
-pub struct LLVMTypes<'ctx> {
-	pub opaque_pointer: PointerType<'ctx>,
-	pub slice_struct: StructType<'ctx>,
+pub struct LLVMTypes {
+	pub opaque_pointer: LLVMTypeRef,
+	pub slice_struct: LLVMTypeRef,
 
-	user_type_structs: Vec<Vec<Option<StructType<'ctx>>>>,
+	user_type_structs: Vec<Vec<Option<LLVMTypeRef>>>,
 }
 
-impl<'ctx> LLVMTypes<'ctx> {
-	fn new(context: &'ctx Context) -> Self {
-		let opaque_pointer = context.i8_type().ptr_type(AddressSpace::default());
-		let slice_struct = context.struct_type(
-			&[
-				BasicTypeEnum::PointerType(opaque_pointer),
-				BasicTypeEnum::IntType(context.i64_type()),
-			],
-			false,
-		);
+impl LLVMTypes {
+	fn new(context: LLVMContextRef) -> Self {
+		unsafe {
+			let opaque_pointer = LLVMPointerTypeInContext(context, 0);
+			let i64_type = LLVMInt64TypeInContext(context);
+			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
 
-		LLVMTypes { opaque_pointer, slice_struct, user_type_structs: Vec::new() }
+			LLVMTypes { opaque_pointer, slice_struct, user_type_structs: Vec::new() }
+		}
 	}
 
 	// Cannot accept `void` type and assumes that any struct asked for has been registered; does not follow pointers
-	pub fn type_to_basic_type_enum(
-		&self,
-		context: &'ctx Context,
-		type_store: &TypeStore,
-		type_id: TypeId,
-	) -> BasicTypeEnum<'ctx> {
+	pub fn type_to_basic_type_enum(&self, context: LLVMContextRef, type_store: &TypeStore, type_id: TypeId) -> LLVMTypeRef {
 		let entry = &type_store.type_entries[type_id.index()];
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
-				PrimativeKind::Bool => BasicTypeEnum::IntType(context.bool_type()),
+				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
 
 				PrimativeKind::Numeric(numeric_kind) => {
 					use NumericKind::*;
-					match numeric_kind {
-						I8 | U8 => BasicTypeEnum::IntType(context.i8_type()),
-						I16 | U16 => BasicTypeEnum::IntType(context.i16_type()),
-						I32 | U32 => BasicTypeEnum::IntType(context.i32_type()),
-						I64 | U64 | ISize | USize => BasicTypeEnum::IntType(context.i64_type()),
-						F32 => BasicTypeEnum::FloatType(context.f32_type()),
-						F64 => BasicTypeEnum::FloatType(context.f64_type()),
+					unsafe {
+						match numeric_kind {
+							I8 | U8 => LLVMInt8TypeInContext(context),
+							I16 | U16 => LLVMInt16TypeInContext(context),
+							I32 | U32 => LLVMInt32TypeInContext(context),
+							I64 | U64 | ISize | USize => LLVMInt64TypeInContext(context),
+							F32 => LLVMFloatTypeInContext(context),
+							F64 => LLVMDoubleTypeInContext(context),
+						}
 					}
 				}
 
@@ -127,12 +130,12 @@ impl<'ctx> LLVMTypes<'ctx> {
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let struct_type = self.user_type_structs[shape_index][specialization_index];
-				BasicTypeEnum::StructType(struct_type.unwrap())
+				struct_type.unwrap()
 			}
 
-			TypeEntryKind::Pointer { .. } => BasicTypeEnum::PointerType(self.opaque_pointer),
+			TypeEntryKind::Pointer { .. } => self.opaque_pointer,
 
-			TypeEntryKind::Slice(_) => BasicTypeEnum::StructType(self.slice_struct),
+			TypeEntryKind::Slice(_) => self.slice_struct,
 
 			TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => unreachable!("{:?}", entry.kind),
 		}
@@ -143,30 +146,30 @@ struct BlockFrame {
 	intial_readables_len: usize,
 }
 
-pub struct LLVMGenerator<'ctx, ABI: LLVMAbi<'ctx>> {
-	pub context: &'ctx Context,
-	pub module: Module<'ctx>,
-	pub builder: Builder<'ctx>,
+pub struct LLVMGenerator<ABI: LLVMAbi> {
+	pub context: LLVMContextRef,
+	pub module: LLVMModuleRef,
+	pub builder: LLVMBuilderRef,
 
 	abi: Option<ABI>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
-	pub llvm_types: LLVMTypes<'ctx>,
+	pub llvm_types: LLVMTypes,
 
 	state: State,
 	block_frames: Vec<BlockFrame>,
-	loop_condition_blocks: Vec<BasicBlock<'ctx>>,
-	loop_follow_blocks: Vec<BasicBlock<'ctx>>,
-	functions: Vec<Vec<Option<DefinedFunction<'ctx>>>>,
-	statics: Vec<Binding<'ctx>>,
-	readables: Vec<Option<Binding<'ctx>>>,
+	loop_condition_blocks: Vec<LLVMBasicBlockRef>,
+	loop_follow_blocks: Vec<LLVMBasicBlockRef>,
+	functions: Vec<Vec<Option<DefinedFunction>>>,
+	statics: Vec<Binding>,
+	readables: Vec<Option<Binding>>,
 
 	_marker: std::marker::PhantomData<ABI>,
 }
 
-impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
-	pub fn new(context: &'ctx Context) -> Self {
-		let module = context.create_module("fae_translation_unit_module");
-		let builder = context.create_builder();
+impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
+	pub fn new(context: LLVMContextRef) -> Self {
+		let module = unsafe { LLVMModuleCreateWithNameInContext(c"fae_translation_unit_module".as_ptr(), context) };
+		let builder = unsafe { LLVMCreateBuilderInContext(context) };
 		let llvm_types = LLVMTypes::new(context);
 
 		LLVMGenerator::<ABI> {
@@ -192,11 +195,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 
 	fn finalize_function_if_in_function(&mut self) {
 		if let State::InFunction { function_id, void_returning } = self.state {
-			if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+			let terminator = unsafe { LLVMGetBasicBlockTerminator(LLVMGetInsertBlock(self.builder)) };
+			if terminator.is_null() {
 				if void_returning {
-					self.builder.build_return(None).unwrap();
+					unsafe { LLVMBuildRetVoid(self.builder) };
 				} else {
-					self.builder.build_unreachable().unwrap();
+					unsafe { LLVMBuildUnreachable(self.builder) };
 				}
 			}
 
@@ -210,21 +214,23 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 				.logic_begin_block
 				.expect("Should only be None for extern functions");
 
-			self.builder.position_at_end(alloca_block);
-			self.builder.build_unconditional_branch(logic_begin_block).unwrap();
-			self.builder.clear_insertion_position();
+			unsafe {
+				LLVMPositionBuilderAtEnd(self.builder, alloca_block);
+				LLVMBuildBr(self.builder, logic_begin_block);
+				LLVMClearInsertionPosition(self.builder);
+			}
 		}
 
 		self.state = State::InModule;
 	}
 
-	pub fn build_alloca<T: BasicType<'ctx>>(&self, llvm_type: T) -> PointerValue<'ctx> {
+	pub fn build_alloca(&self, llvm_type: LLVMTypeRef) -> LLVMValueRef {
 		let function_id = match self.state {
 			State::InFunction { function_id, .. } => function_id,
 			State::InModule => unreachable!(),
 		};
 
-		let original_block = self.builder.get_insert_block().unwrap();
+		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 
 		let maybe = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let defined_function = maybe.as_ref().unwrap();
@@ -232,19 +238,21 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 			.alloca_block
 			.expect("Should only be None for extern functions");
 
-		self.builder.position_at_end(alloca_block);
-		let pointer = self.builder.build_alloca(llvm_type, "").unwrap();
+		let pointer = unsafe {
+			LLVMPositionBuilderAtEnd(self.builder, alloca_block);
+			LLVMBuildAlloca(self.builder, llvm_type, c"".as_ptr())
+		};
 
-		self.builder.position_at_end(original_block);
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, original_block) };
 		pointer
 	}
 
-	fn value_pointer(&mut self, binding: Binding<'ctx>) -> ValuePointer<'ctx> {
+	fn value_pointer(&mut self, binding: Binding) -> ValuePointer {
 		match binding.kind {
 			BindingKind::Value(value) => {
-				let pointed_type = value.get_type();
+				let pointed_type = unsafe { LLVMTypeOf(value) };
 				let pointer = self.build_alloca(pointed_type);
-				self.builder.build_store(pointer, value).unwrap();
+				unsafe { LLVMBuildStore(self.builder, value, pointer) };
 				ValuePointer { pointer, pointed_type }
 			}
 
@@ -253,8 +261,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> LLVMGenerator<'ctx, ABI> {
 	}
 }
 
-impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
-	type Binding = Binding<'ctx>;
+impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
+	type Binding = Binding;
 
 	fn register_type_descriptions(&mut self, type_store: &TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
@@ -283,7 +291,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 					field_types_buffer.push(llvm_type);
 				}
 
-				let llvm_struct = self.context.struct_type(&field_types_buffer, false);
+				let llvm_struct = unsafe {
+					LLVMStructTypeInContext(
+						self.context,
+						field_types_buffer.as_mut_ptr(),
+						field_types_buffer.len() as u32,
+						false as _,
+					)
+				};
 				self.llvm_types.user_type_structs[description.shape_index][description.specialization_index] = Some(llvm_struct);
 			}
 		}
@@ -296,10 +311,10 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				.type_to_basic_type_enum(self.context, type_store, static_instance.type_id);
 
 			let extern_attribute = static_instance.extern_attribute.unwrap();
-			let global = self.module.add_global(llvm_type, None, extern_attribute.name);
+			let name = CString::new(extern_attribute.name).unwrap();
+			let global = unsafe { LLVMAddGlobal(self.module, llvm_type, name.as_ptr()) };
 
-			let value = global.as_basic_value_enum();
-			let kind = BindingKind::Value(value);
+			let kind = BindingKind::Value(global);
 			let binding = Binding { type_id: static_instance.type_id, kind };
 			self.statics.push(binding);
 		}
@@ -333,8 +348,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				let defined_function = abi.define_function(
 					type_store,
 					self.context,
-					&mut self.module,
-					&mut self.builder,
+					self.module,
+					self.builder,
 					&self.attribute_kinds,
 					&self.llvm_types,
 					shape,
@@ -368,7 +383,7 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let logic_begin_block = defined_function
 			.logic_begin_block
 			.expect("Should only be None for extern functions");
-		self.builder.position_at_end(logic_begin_block);
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, logic_begin_block) };
 
 		self.readables.clear();
 		self.readables.extend_from_slice(&defined_function.initial_values);
@@ -384,57 +399,65 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		mut condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
 		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
 	) {
-		let original_block = self.builder.get_insert_block().unwrap();
-		let following_block = self.context.insert_basic_block_after(original_block, "if_else_following");
+		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
+		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else_following".as_ptr()) };
 
-		let mut next_condition_block = self.context.insert_basic_block_after(original_block, "condition");
-		let mut insert_after = next_condition_block;
-
-		self.builder.build_unconditional_branch(next_condition_block).unwrap();
+		let mut next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
+		unsafe { LLVMBuildBr(self.builder, next_condition_block) };
 
 		for entry in &chain_expression.entries {
 			let condition_block = next_condition_block;
-			self.builder.position_at_end(condition_block);
-			next_condition_block = self.context.insert_basic_block_after(insert_after, "condition");
+			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_block) };
+			next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
 
 			let condition = condition_callback(context, self, &entry.condition);
-			let condition = condition.to_value(&self.builder).into_int_value();
+			let condition = condition.to_value(self.builder);
 
-			let if_block = self.context.insert_basic_block_after(insert_after, "if");
-			insert_after = if_block;
+			let if_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if".as_ptr()) };
 
-			let zero = condition.get_type().const_zero();
-			let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
-			self.builder
-				.build_conditional_branch(flag, if_block, next_condition_block)
-				.unwrap();
+			unsafe {
+				let zero = LLVMConstNull(LLVMTypeOf(condition));
+				let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"".as_ptr());
+				LLVMBuildCondBr(self.builder, flag, if_block, next_condition_block);
+			};
 
-			self.builder.position_at_end(if_block);
+			unsafe { LLVMPositionBuilderAtEnd(self.builder, if_block) };
 			body_callback(context, self, &entry.body);
-			let current_block = self.builder.get_insert_block().unwrap();
-			if current_block.get_terminator().is_none() {
-				self.builder.build_unconditional_branch(following_block).unwrap();
+
+			unsafe {
+				let current_block = LLVMGetInsertBlock(self.builder);
+				if LLVMGetBasicBlockTerminator(current_block).is_null() {
+					LLVMBuildBr(self.builder, following_block);
+				}
 			}
 		}
 
 		if let Some(body) = &chain_expression.else_body {
 			let block = next_condition_block;
-			block.set_name("else");
+			let else_name = "else";
+			unsafe { LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len()) };
 
-			self.builder.position_at_end(block);
+			unsafe { LLVMPositionBuilderAtEnd(self.builder, block) };
 			body_callback(context, self, body);
-			let current_block = self.builder.get_insert_block().unwrap();
-			if current_block.get_terminator().is_none() {
-				self.builder.build_unconditional_branch(following_block).unwrap();
+
+			unsafe {
+				let current_block = LLVMGetInsertBlock(self.builder);
+				if LLVMGetBasicBlockTerminator(current_block).is_null() {
+					LLVMBuildBr(self.builder, following_block);
+				}
 			}
 		} else {
 			let block = next_condition_block;
-			block.set_name("non_existant_else");
-			self.builder.position_at_end(block);
-			self.builder.build_unconditional_branch(following_block).unwrap();
+			let else_name = "non_existant_else";
+			unsafe {
+				LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len());
+				LLVMPositionBuilderAtEnd(self.builder, block);
+				LLVMBuildBr(self.builder, following_block);
+			}
 		}
 
-		self.builder.position_at_end(following_block);
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 	}
 
 	fn generate_while(
@@ -443,56 +466,64 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
 		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
 	) {
-		let original_block = self.builder.get_insert_block().unwrap();
-		let condition_block = self.context.insert_basic_block_after(original_block, "while_condition");
+		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
+		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
+		let condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while_condition".as_ptr()) };
 		self.loop_condition_blocks.push(condition_block);
-		let while_block = self.context.insert_basic_block_after(condition_block, "while_body");
+		let while_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while_body".as_ptr()) };
 
-		let following_block = self.context.insert_basic_block_after(while_block, "while_following");
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while_following".as_ptr()) };
 		self.loop_follow_blocks.push(following_block);
 
-		self.builder.build_unconditional_branch(condition_block).unwrap();
-		self.builder.position_at_end(condition_block);
-
-		let condition_binding = condition_callback(context, self);
-		let condition = condition_binding.to_value(&self.builder).into_int_value();
-		let zero = condition.get_type().const_zero();
-		let flag = self.builder.build_int_compare(IntPredicate::NE, condition, zero, "").unwrap();
-		self.builder
-			.build_conditional_branch(flag, while_block, following_block)
-			.unwrap();
-
-		self.builder.position_at_end(while_block);
-		body_callback(context, self);
-		let current_block = self.builder.get_insert_block().unwrap();
-		if current_block.get_terminator().is_none() {
-			self.builder.build_unconditional_branch(condition_block).unwrap();
+		unsafe {
+			LLVMBuildBr(self.builder, condition_block);
+			LLVMPositionBuilderAtEnd(self.builder, condition_block);
 		}
 
-		self.builder.position_at_end(following_block);
+		let condition_binding = condition_callback(context, self);
+		let condition = condition_binding.to_value(self.builder);
+		unsafe {
+			let zero = LLVMConstNull(LLVMTypeOf(condition));
+			let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"".as_ptr());
+			LLVMBuildCondBr(self.builder, flag, while_block, following_block);
+		}
+
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, while_block) };
+		body_callback(context, self);
+
+		unsafe {
+			let current_block = LLVMGetInsertBlock(self.builder);
+			if LLVMGetBasicBlockTerminator(current_block).is_null() {
+				LLVMBuildBr(self.builder, condition_block);
+			}
+		}
+
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 		self.loop_condition_blocks.pop();
 		self.loop_follow_blocks.pop();
 	}
 
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding {
-		let value = match type_id.numeric_kind(type_store).unwrap() {
-			NumericKind::I8 | NumericKind::U8 => BasicValueEnum::IntValue(self.context.i8_type().const_int(value as u64, false)),
+		let value = unsafe {
+			match type_id.numeric_kind(type_store).unwrap() {
+				NumericKind::I8 | NumericKind::U8 => LLVMConstInt(LLVMInt8TypeInContext(self.context), value as u64, false as _),
 
-			NumericKind::I16 | NumericKind::U16 => {
-				BasicValueEnum::IntValue(self.context.i16_type().const_int(value as u64, false))
+				NumericKind::I16 | NumericKind::U16 => {
+					LLVMConstInt(LLVMInt16TypeInContext(self.context), value as u64, false as _)
+				}
+
+				NumericKind::I32 | NumericKind::U32 => {
+					LLVMConstInt(LLVMInt32TypeInContext(self.context), value as u64, false as _)
+				}
+
+				NumericKind::I64 | NumericKind::U64 | NumericKind::ISize | NumericKind::USize => {
+					LLVMConstInt(LLVMInt64TypeInContext(self.context), value as u64, false as _)
+				}
+
+				NumericKind::F32 => LLVMConstReal(LLVMFloatTypeInContext(self.context), value as f64),
+
+				NumericKind::F64 => LLVMConstReal(LLVMDoubleTypeInContext(self.context), value as f64),
 			}
-
-			NumericKind::I32 | NumericKind::U32 => {
-				BasicValueEnum::IntValue(self.context.i32_type().const_int(value as u64, false))
-			}
-
-			NumericKind::I64 | NumericKind::U64 | NumericKind::ISize | NumericKind::USize => {
-				BasicValueEnum::IntValue(self.context.i64_type().const_int(value as u64, false))
-			}
-
-			NumericKind::F32 => BasicValueEnum::FloatValue(self.context.f32_type().const_float(value as f64)),
-
-			NumericKind::F64 => BasicValueEnum::FloatValue(self.context.f64_type().const_float(value as f64)),
 		};
 
 		let kind = BindingKind::Value(value);
@@ -500,10 +531,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_decimal_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: f64) -> Self::Binding {
-		let value = match type_id.numeric_kind(type_store).unwrap() {
-			NumericKind::F32 => BasicValueEnum::FloatValue(self.context.f32_type().const_float(value)),
-			NumericKind::F64 => BasicValueEnum::FloatValue(self.context.f64_type().const_float(value)),
-			kind => unreachable!("{kind}"),
+		let value = unsafe {
+			match type_id.numeric_kind(type_store).unwrap() {
+				NumericKind::F32 => LLVMConstReal(LLVMFloatTypeInContext(self.context), value),
+				NumericKind::F64 => LLVMConstReal(LLVMDoubleTypeInContext(self.context), value),
+				kind => unreachable!("{kind}"),
+			}
 		};
 
 		let kind = BindingKind::Value(value);
@@ -511,30 +544,29 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_boolean_literal(&mut self, type_store: &TypeStore, literal: bool) -> Self::Binding {
-		let value = self.context.bool_type().const_int(literal as u64, false);
-		let kind = BindingKind::Value(BasicValueEnum::IntValue(value));
+		let value = unsafe { LLVMConstInt(LLVMInt1TypeInContext(self.context), literal as u64, false as _) };
+		let kind = BindingKind::Value(value);
 		Binding { type_id: type_store.bool_type_id(), kind }
 	}
 
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
-		let array = self.context.const_string(text.as_bytes(), true);
-		let global = self.module.add_global(array.get_type(), None, "");
-		global.set_initializer(&array);
-		global.set_constant(true);
-		global.set_visibility(GlobalVisibility::Hidden);
-		global.set_linkage(Linkage::Private);
-		global.set_unnamed_addr(true);
+		unsafe {
+			let array = LLVMConstStringInContext(self.context, text.as_ptr() as _, text.len() as u32, false as _);
+			let global = LLVMAddGlobal(self.module, LLVMTypeOf(array), c"".as_ptr());
+			LLVMSetInitializer(global, array);
+			LLVMSetGlobalConstant(global, true as _);
+			LLVMSetVisibility(global, LLVMVisibility::LLVMHiddenVisibility);
+			LLVMSetLinkage(global, LLVMLinkage::LLVMPrivateLinkage);
+			LLVMSetUnnamedAddress(global, LLVMUnnamedAddr::LLVMGlobalUnnamedAddr);
 
-		let pointer = global.as_pointer_value();
-		let len = self.context.i64_type().const_int(text.len() as u64, false);
+			let llvm_type = self.llvm_types.slice_struct;
+			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), text.len() as u64, false as _);
+			let slice = LLVMConstNamedStruct(llvm_type, [global, len].as_mut_ptr(), 2);
 
-		let a = BasicValueEnum::PointerValue(pointer);
-		let b = BasicValueEnum::IntValue(len);
-		let slice = self.llvm_types.slice_struct.const_named_struct(&[a, b]);
-
-		let type_id = type_store.string_type_id();
-		let kind = BindingKind::Value(BasicValueEnum::StructValue(slice));
-		Binding { type_id, kind }
+			let type_id = type_store.string_type_id();
+			let kind = BindingKind::Value(slice);
+			Binding { type_id, kind }
+		}
 	}
 
 	fn generate_array_literal(
@@ -549,23 +581,25 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let element_type = self
 			.llvm_types
 			.type_to_basic_type_enum(self.context, type_store, element_type_id);
-		let array_type = element_type.array_type(elements.len() as u32);
+		let array_type = unsafe { LLVMArrayType2(element_type, elements.len() as u64) };
 		let alloca = self.build_alloca(array_type);
 
-		let zero = self.context.i64_type().const_int(0, false);
+		let zero = unsafe { LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, false as _) };
 		for (index, element) in elements.iter().enumerate() {
-			let index = self.context.i64_type().const_int(index as u64, false);
-			let pointer = unsafe { self.builder.build_gep(array_type, alloca, &[zero, index], "").unwrap() };
-			match element.kind {
-				BindingKind::Value(value) => {
-					self.builder.build_store(pointer, value).unwrap();
-				}
+			unsafe {
+				let index = LLVMConstInt(LLVMInt64TypeInContext(self.context), index as u64, false as _);
+				let pointer = LLVMBuildGEP2(self.builder, array_type, alloca, [zero, index].as_mut_ptr(), 2, c"".as_ptr());
+				match element.kind {
+					BindingKind::Value(value) => {
+						LLVMBuildStore(self.builder, value, pointer);
+					}
 
-				BindingKind::Pointer { pointer: value_pointer, .. } => {
-					let layout = type_store.type_layout(element_type_id);
-					let align = layout.alignment as u32;
-					let size = self.context.i64_type().const_int(layout.size as u64, false);
-					self.builder.build_memcpy(pointer, align, value_pointer, align, size).unwrap();
+					BindingKind::Pointer { pointer: value_pointer, .. } => {
+						let layout = type_store.type_layout(element_type_id);
+						let align = layout.alignment as u32;
+						let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
+						LLVMBuildMemCpy(self.builder, pointer, align, value_pointer, align, size);
+					}
 				}
 			}
 		}
@@ -573,13 +607,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let slice_type = self.llvm_types.slice_struct;
 		let slice_alloca = self.build_alloca(slice_type);
 
-		let pointer_pointer = self.builder.build_struct_gep(slice_type, slice_alloca, 0, "").unwrap();
-		let pointer_value = BasicValueEnum::PointerValue(alloca);
-		self.builder.build_store(pointer_pointer, pointer_value).unwrap();
+		unsafe {
+			let pointer_pointer = LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 0, c"".as_ptr());
+			LLVMBuildStore(self.builder, alloca, pointer_pointer);
 
-		let len_pointer = self.builder.build_struct_gep(slice_type, slice_alloca, 1, "").unwrap();
-		let len = self.context.i64_type().const_int(elements.len() as u64, false);
-		self.builder.build_store(len_pointer, BasicValueEnum::IntValue(len)).unwrap();
+			let len_pointer = LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 1, c"".as_ptr());
+			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), elements.len() as u64, false as _);
+			LLVMBuildStore(self.builder, len, len_pointer);
+		}
 
 		let pointed_type = self
 			.llvm_types
@@ -600,13 +635,14 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let alloca = self.build_alloca(struct_type);
 		for (index, field) in fields.iter().enumerate() {
-			let value = field.to_value(&self.builder);
-			let field_pointer = self.builder.build_struct_gep(struct_type, alloca, index as u32, "").unwrap();
-			self.builder.build_store(field_pointer, value).unwrap();
+			let value = field.to_value(self.builder);
+			unsafe {
+				let field_pointer = LLVMBuildStructGEP2(self.builder, struct_type, alloca, index as u32, c"".as_ptr());
+				LLVMBuildStore(self.builder, value, field_pointer);
+			}
 		}
 
-		let pointed_type = BasicTypeEnum::StructType(struct_type);
-		let kind = BindingKind::Pointer { pointer: alloca, pointed_type };
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: struct_type };
 		Binding { type_id, kind }
 	}
 
@@ -614,8 +650,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		&mut self,
 		type_store: &TypeStore,
 		function_id: FunctionId,
-		arguments: &[Option<Binding<'ctx>>],
-	) -> Option<Binding<'ctx>> {
+		arguments: &[Option<Binding>],
+	) -> Option<Binding> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 
@@ -638,30 +674,32 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 		let base = arguments[0].unwrap();
 		let first_argument = match base.kind {
-			BindingKind::Value(value) => {
-				if value.is_pointer_value() {
+			BindingKind::Value(value) => unsafe {
+				let type_kind = LLVMGetTypeKind(LLVMTypeOf(value));
+				if type_kind == LLVMPointerTypeKind {
 					let kind = BindingKind::Value(value);
 					Binding { type_id: base_pointer_type_id, kind }
 				} else {
-					let pointed_type = value.get_type();
+					let pointed_type = LLVMTypeOf(value);
 					let pointer = self.build_alloca(pointed_type);
-					self.builder.build_store(pointer, value).unwrap();
+					LLVMBuildStore(self.builder, value, pointer);
 
-					let kind = BindingKind::Value(pointer.as_basic_value_enum());
+					let kind = BindingKind::Value(pointer);
 					Binding { type_id: base_pointer_type_id, kind }
 				}
-			}
+			},
 
-			BindingKind::Pointer { pointer, pointed_type } => {
-				if pointed_type.is_pointer_type() {
-					let pointer = self.builder.build_load(pointed_type, pointer, "").unwrap();
-					let kind = BindingKind::Value(pointer.as_basic_value_enum());
+			BindingKind::Pointer { pointer, pointed_type } => unsafe {
+				let type_kind = LLVMGetTypeKind(pointed_type);
+				if type_kind == LLVMPointerTypeKind {
+					let pointer = LLVMBuildLoad2(self.builder, pointed_type, pointer, c"".as_ptr());
+					let kind = BindingKind::Value(pointer);
 					Binding { type_id: base_pointer_type_id, kind }
 				} else {
-					let kind = BindingKind::Value(pointer.as_basic_value_enum());
+					let kind = BindingKind::Value(pointer);
 					Binding { type_id: base_pointer_type_id, kind }
 				}
-			}
+			},
 		};
 		arguments[0] = Some(first_argument);
 
@@ -683,20 +721,22 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
 		let index = field_index as u32;
 
-		let (pointer, pointed_struct, type_id) = {
+		let (pointer, pointed_struct, type_id) = unsafe {
 			let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
-			if pointed_type.is_pointer_type() {
-				let pointer = self.builder.build_load(self.llvm_types.opaque_pointer, pointer, "").unwrap();
+			let type_kind = LLVMGetTypeKind(pointed_type);
+
+			if type_kind == LLVMPointerTypeKind {
+				let pointer = LLVMBuildLoad2(self.builder, self.llvm_types.opaque_pointer, pointer, c"".as_ptr());
 				let type_id = base.type_id.as_pointed(type_store).unwrap().type_id;
 				let llvm_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, type_id);
-				(pointer.into_pointer_value(), llvm_type.into_struct_type(), type_id)
+				(pointer, llvm_type, type_id)
 			} else {
-				(pointer, pointed_type.into_struct_type(), base.type_id)
+				(pointer, pointed_type, base.type_id)
 			}
 		};
 
-		let field_type = pointed_struct.get_field_type_at_index(index).unwrap();
-		let field_pointer = self.builder.build_struct_gep(pointed_struct, pointer, index, "").unwrap();
+		let field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_struct, index) };
+		let field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_struct, pointer, index, c"".as_ptr()) };
 
 		let type_id = if base.type_id.as_slice(type_store).is_some() {
 			type_store.usize_type_id()
@@ -711,16 +751,17 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding {
-		let value = value.to_value(&self.builder);
+		let value = value.to_value(self.builder);
 
-		let negated = if value.is_int_value() {
-			let int = self.builder.build_int_neg(value.into_int_value(), "").unwrap();
-			BasicValueEnum::IntValue(int)
-		} else if value.is_float_value() {
-			let float = self.builder.build_float_neg(value.into_float_value(), "").unwrap();
-			BasicValueEnum::FloatValue(float)
-		} else {
-			unreachable!("{value:?}");
+		let negated = unsafe {
+			let type_kind = LLVMGetTypeKind(LLVMTypeOf(value));
+			if type_kind == LLVMIntegerTypeKind {
+				LLVMBuildNeg(self.builder, value, c"".as_ptr())
+			} else if matches!(type_kind, LLVMFloatTypeKind | LLVMDoubleTypeKind) {
+				LLVMBuildFNeg(self.builder, value, c"".as_ptr())
+			} else {
+				unreachable!("{value:?}");
+			}
 		};
 
 		let kind = BindingKind::Value(negated);
@@ -729,26 +770,25 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_invert(&mut self, value: Self::Binding) -> Self::Binding {
 		let type_id = value.type_id;
-		let value = value.to_value(&self.builder);
-		let inverted = self.builder.build_not(value.into_int_value(), "").unwrap();
-		let kind = BindingKind::Value(BasicValueEnum::IntValue(inverted));
+		let value = value.to_value(self.builder);
+		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"".as_ptr()) };
+		let kind = BindingKind::Value(inverted);
 		Binding { type_id, kind }
 	}
 
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding {
 		let pointer = self.value_pointer(base);
-		let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer.pointer));
+		let kind = BindingKind::Value(pointer.pointer);
 		Binding { type_id: pointer_type_id, kind }
 	}
 
 	fn generate_dereference(&mut self, type_store: &TypeStore, base: Self::Binding, pointed_type_id: TypeId) -> Self::Binding {
 		let pointer = match base.kind {
-			BindingKind::Value(value) => value.into_pointer_value(),
+			BindingKind::Value(value) => value,
 
-			BindingKind::Pointer { pointer, pointed_type } => {
-				let value = self.builder.build_load(pointed_type, pointer, "").unwrap();
-				value.into_pointer_value()
-			}
+			BindingKind::Pointer { pointer, pointed_type } => unsafe {
+				LLVMBuildLoad2(self.builder, pointed_type, pointer, c"".as_ptr())
+			},
 		};
 
 		let pointed_type = self
@@ -759,8 +799,9 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 	}
 
 	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
-		let from = base.to_value(&self.builder);
-		let from_pointer = from.is_pointer_value();
+		let from = base.to_value(self.builder);
+		let from_type_kind = unsafe { LLVMGetTypeKind(LLVMTypeOf(from)) };
+		let from_pointer = from_type_kind == LLVMPointerTypeKind;
 		let to_pointer = to.is_pointer(type_store);
 
 		// Pointer to pointer, nop
@@ -769,34 +810,36 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			return Binding { type_id: to, kind };
 		}
 
-		let from_int = from.is_int_value();
+		let from_int = from_type_kind == LLVMIntegerTypeKind;
 
 		// Int to pointer
 		if from_int && to_pointer {
-			let int = from.into_int_value();
+			let int = from;
 			let pointer_type = self.llvm_types.opaque_pointer;
-			let pointer = self.builder.build_int_to_ptr(int, pointer_type, "").unwrap();
+			let pointer = unsafe { LLVMBuildIntToPtr(self.builder, int, pointer_type, c"".as_ptr()) };
 
-			let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer));
+			let kind = BindingKind::Value(pointer);
 			return Binding { type_id: to, kind };
 		}
 
 		let to_kind = to.numeric_kind(type_store).unwrap();
 		use NumericKind::*;
-		let (to_int_type, to_float_type) = match to_kind {
-			I8 | U8 => (Some(self.context.i8_type()), None),
-			I16 | U16 => (Some(self.context.i16_type()), None),
-			I32 | U32 => (Some(self.context.i32_type()), None),
-			I64 | U64 | ISize | USize => (Some(self.context.i64_type()), None),
-			F32 => (None, Some(self.context.f32_type())),
-			F64 => (None, Some(self.context.f64_type())),
+		let (to_int_type, to_float_type) = unsafe {
+			match to_kind {
+				I8 | U8 => (Some(LLVMInt8TypeInContext(self.context)), None),
+				I16 | U16 => (Some(LLVMInt16TypeInContext(self.context)), None),
+				I32 | U32 => (Some(LLVMInt32TypeInContext(self.context)), None),
+				I64 | U64 | ISize | USize => (Some(LLVMInt64TypeInContext(self.context)), None),
+				F32 => (None, Some(LLVMFloatTypeInContext(self.context))),
+				F64 => (None, Some(LLVMDoubleTypeInContext(self.context))),
+			}
 		};
 
 		// Pointer to int
 		if from_pointer {
 			if let Some(to_type) = to_int_type {
-				let int = self.builder.build_ptr_to_int(from.into_pointer_value(), to_type, "").unwrap();
-				let kind = BindingKind::Value(BasicValueEnum::IntValue(int));
+				let int = unsafe { LLVMBuildPtrToInt(self.builder, from, to_type, c"".as_ptr()) };
+				let kind = BindingKind::Value(int);
 				return Binding { type_id: to, kind };
 			}
 		}
@@ -804,8 +847,8 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		// Int to int
 		if from_int {
 			if let Some(to_type) = to_int_type {
-				let int = self.builder.build_int_cast(from.into_int_value(), to_type, "").unwrap();
-				let kind = BindingKind::Value(BasicValueEnum::IntValue(int));
+				let int = unsafe { LLVMBuildIntCast(self.builder, from, to_type, c"".as_ptr()) };
+				let kind = BindingKind::Value(int);
 				return Binding { type_id: to, kind };
 			}
 		}
@@ -815,29 +858,28 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		// Int to float
 		if from_int {
 			if let Some(to_type) = to_float_type {
-				let int = from.into_int_value();
+				let int = from;
 				let float = if from_kind.is_signed() {
-					self.builder.build_signed_int_to_float(int, to_type, "").unwrap()
+					unsafe { LLVMBuildSIToFP(self.builder, int, to_type, c"".as_ptr()) }
 				} else {
-					self.builder.build_unsigned_int_to_float(int, to_type, "").unwrap()
+					unsafe { LLVMBuildUIToFP(self.builder, int, to_type, c"".as_ptr()) }
 				};
-				let kind = BindingKind::Value(BasicValueEnum::FloatValue(float));
+				let kind = BindingKind::Value(float);
 				return Binding { type_id: to, kind };
 			}
 		}
 
-		let from_float = from.is_float_value();
+		let from_float = matches!(from_type_kind, LLVMFloatTypeKind | LLVMDoubleTypeKind);
 
 		// Float to int
 		if from_float {
 			if let Some(to_type) = to_int_type {
-				let float = from.into_float_value();
 				let int = if to_kind.is_signed() {
-					self.builder.build_float_to_signed_int(float, to_type, "").unwrap()
+					unsafe { LLVMBuildFPToSI(self.builder, from, to_type, c"".as_ptr()) }
 				} else {
-					self.builder.build_float_to_unsigned_int(float, to_type, "").unwrap()
+					unsafe { LLVMBuildFPToUI(self.builder, from, to_type, c"".as_ptr()) }
 				};
-				let kind = BindingKind::Value(BasicValueEnum::IntValue(int));
+				let kind = BindingKind::Value(int);
 				return Binding { type_id: to, kind };
 			}
 		}
@@ -845,14 +887,13 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		// Float to float
 		if from_float {
 			if let Some(to_type) = to_float_type {
-				let float = from.into_float_value();
-				let float = self.builder.build_float_cast(float, to_type, "").unwrap();
-				let kind = BindingKind::Value(BasicValueEnum::FloatValue(float));
+				let float = unsafe { LLVMBuildFPCast(self.builder, from, to_type, c"".as_ptr()) };
+				let kind = BindingKind::Value(float);
 				return Binding { type_id: to, kind };
 			}
 		}
 
-		unreachable!()
+		unreachable!("{from_type_kind:?}")
 	}
 
 	fn generate_slice_index(
@@ -864,58 +905,65 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		index: Self::Binding,
 		_index_span: Span,
 	) -> Option<Self::Binding> {
-		let original_block = self.builder.get_insert_block().unwrap();
-		let failure_block = self.context.insert_basic_block_after(original_block, "bounds_check_failure");
-		let success_block = self.context.insert_basic_block_after(failure_block, "");
+		unsafe {
+			let original_block = LLVMGetInsertBlock(self.builder);
+			let function = LLVMGetBasicBlockParent(original_block);
+			let failure_block = LLVMAppendBasicBlockInContext(self.context, function, c"bounds_check_failure".as_ptr());
+			let success_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
-		let ValuePointer { pointer: value_pointer, .. } = self.value_pointer(base);
+			let ValuePointer { pointer: value_pointer, .. } = self.value_pointer(base);
 
-		let pointer_type = self.llvm_types.opaque_pointer;
-		let struct_type = self.llvm_types.slice_struct;
-		let pointer_pointer = self.builder.build_struct_gep(struct_type, value_pointer, 0, "").unwrap();
-		let pointer_value = self.builder.build_load(pointer_type, pointer_pointer, "").unwrap();
-		let pointer = pointer_value.into_pointer_value();
+			let pointer_type = self.llvm_types.opaque_pointer;
+			let struct_type = self.llvm_types.slice_struct;
+			let pointer_pointer = LLVMBuildStructGEP2(self.builder, struct_type, value_pointer, 0, c"".as_ptr());
+			let pointer = LLVMBuildLoad2(self.builder, pointer_type, pointer_pointer, c"".as_ptr());
 
-		let i64_type = self.context.i64_type();
-		let len_pointer = self.builder.build_struct_gep(struct_type, value_pointer, 1, "").unwrap();
-		let len = self.builder.build_load(i64_type, len_pointer, "").unwrap().into_int_value();
+			let i64_type = LLVMInt64TypeInContext(self.context);
+			let len_pointer = LLVMBuildStructGEP2(self.builder, struct_type, value_pointer, 1, c"".as_ptr());
+			let len = LLVMBuildLoad2(self.builder, i64_type, len_pointer, c"".as_ptr());
 
-		let index = index.to_value(&self.builder).into_int_value();
+			let index = index.to_value(self.builder);
 
-		let zero = i64_type.const_int(0, false);
-		let greater_than_zero = self.builder.build_int_compare(IntPredicate::SGE, index, zero, "").unwrap();
-		let less_than_len = self.builder.build_int_compare(IntPredicate::SLT, index, len, "").unwrap();
-		let in_bounds = self.builder.build_and(greater_than_zero, less_than_len, "").unwrap();
+			let zero = LLVMConstNull(i64_type);
+			let greater_than_zero = LLVMBuildICmp(self.builder, LLVMIntSGE, index, zero, c"".as_ptr());
+			let less_than_len = LLVMBuildICmp(self.builder, LLVMIntSLT, index, len, c"".as_ptr());
+			let in_bounds = LLVMBuildAnd(self.builder, greater_than_zero, less_than_len, c"".as_ptr());
 
-		self.builder
-			.build_conditional_branch(in_bounds, success_block, failure_block)
-			.unwrap();
+			LLVMBuildCondBr(self.builder, in_bounds, success_block, failure_block);
 
-		self.builder.position_at_end(failure_block);
-		// TODO: Build some abstraction for calling lang item functions
-		let failure_args = {
-			let kind = BindingKind::Value(BasicValueEnum::IntValue(len));
-			let len = Some(Binding { type_id: type_store.isize_type_id(), kind });
-			let kind = BindingKind::Value(BasicValueEnum::IntValue(index));
-			let index = Some(Binding { type_id: type_store.isize_type_id(), kind });
-			[len, index]
-		};
-		self.generate_call(type_store, lang_items.slice_bound_check_failure.unwrap(), &failure_args);
-		self.builder.build_unreachable().unwrap();
+			LLVMPositionBuilderAtEnd(self.builder, failure_block);
+			// TODO: Build some abstraction for calling lang item functions
+			let failure_args = {
+				let kind = BindingKind::Value(len);
+				let len = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				let kind = BindingKind::Value(index);
+				let index = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				[len, index]
+			};
+			self.generate_call(type_store, lang_items.slice_bound_check_failure.unwrap(), &failure_args);
+			LLVMBuildUnreachable(self.builder);
 
-		self.builder.position_at_end(success_block);
+			LLVMPositionBuilderAtEnd(self.builder, success_block);
 
-		let item_layout = type_store.type_layout(item_type);
-		if item_layout.size <= 0 {
-			return None;
+			let item_layout = type_store.type_layout(item_type);
+			if item_layout.size <= 0 {
+				return None;
+			}
+
+			let indicies = &mut [index];
+			let pointed_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, item_type);
+			let adjusted = LLVMBuildGEP2(
+				self.builder,
+				pointed_type,
+				pointer,
+				indicies.as_mut_ptr(),
+				indicies.len() as u32,
+				c"".as_ptr(),
+			);
+
+			let kind = BindingKind::Pointer { pointer: adjusted, pointed_type };
+			Some(Binding { type_id: item_type, kind })
 		}
-
-		let indicies = &[index];
-		let pointed_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, item_type);
-		let adjusted = unsafe { self.builder.build_gep(pointed_type, pointer, indicies, "").unwrap() };
-
-		let kind = BindingKind::Pointer { pointer: adjusted, pointed_type };
-		Some(Binding { type_id: item_type, kind })
 	}
 
 	fn generate_assign(&mut self, type_store: &TypeStore, left: Self::Binding, right: Self::Binding) {
@@ -925,16 +973,16 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		};
 
 		match right.kind {
-			BindingKind::Value(value) => {
-				self.builder.build_store(left, value).unwrap();
-			}
+			BindingKind::Value(value) => unsafe {
+				LLVMBuildStore(self.builder, value, left);
+			},
 
-			BindingKind::Pointer { pointer: right_pointer, .. } => {
+			BindingKind::Pointer { pointer: right_pointer, .. } => unsafe {
 				let layout = type_store.type_layout(right.type_id);
 				let align = layout.alignment as u32;
-				let size = self.context.i64_type().const_int(layout.size as u64, false);
-				self.builder.build_memcpy(left, align, right_pointer, align, size).unwrap();
-			}
+				let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
+				LLVMBuildMemCpy(self.builder, left, align, right_pointer, align, size);
+			},
 		}
 	}
 
@@ -957,64 +1005,59 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 			};
 
 			match right.kind {
-				BindingKind::Value(value) => {
-					self.builder.build_store(left, value).unwrap();
-				}
+				BindingKind::Value(value) => unsafe {
+					LLVMBuildStore(self.builder, value, left);
+				},
 
-				BindingKind::Pointer { pointer: right_pointer, .. } => {
+				BindingKind::Pointer { pointer: right_pointer, .. } => unsafe {
 					let layout = context.type_store.type_layout(right.type_id);
 					let align = layout.alignment as u32;
-					let size = self.context.i64_type().const_int(layout.size as u64, false);
-					self.builder.build_memcpy(left, align, right_pointer, align, size).unwrap();
-				}
+					let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
+					LLVMBuildMemCpy(self.builder, left, align, right_pointer, align, size);
+				},
 			}
 
 			return None;
 		}
 
 		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr) {
-			let current_block = self.builder.get_insert_block().unwrap();
-			let left_block = self.context.insert_basic_block_after(current_block, "logical_and_left");
-			let right_block = self.context.insert_basic_block_after(left_block, "logical_and_right");
-			let following_block = self.context.insert_basic_block_after(right_block, "logical_and_following");
+			unsafe {
+				let current_block = LLVMGetInsertBlock(self.builder);
+				let function = LLVMGetBasicBlockParent(current_block);
+				let left_block = LLVMAppendBasicBlockInContext(self.context, function, c"logical_and_left".as_ptr());
+				let right_block = LLVMAppendBasicBlockInContext(self.context, function, c"logical_and_right".as_ptr());
+				let following_block = LLVMAppendBasicBlockInContext(self.context, function, c"logical_and_following".as_ptr());
 
-			self.builder.build_unconditional_branch(left_block).unwrap();
+				LLVMBuildBr(self.builder, left_block);
 
-			self.builder.position_at_end(left_block);
-			let left_binding = codegen::generate_expression(context, self, left).unwrap();
-			let mut left = left_binding.to_value(&self.builder).into_int_value();
-			if left.get_type().get_bit_width() > 1 {
-				left = self.builder.build_int_truncate(left, self.context.bool_type(), "").unwrap();
+				LLVMPositionBuilderAtEnd(self.builder, left_block);
+				let left_binding = codegen::generate_expression(context, self, left).unwrap();
+				let mut left = left_binding.to_value(self.builder);
+				if LLVMGetIntTypeWidth(LLVMTypeOf(left)) > 1 {
+					left = LLVMBuildTrunc(self.builder, left, LLVMInt1TypeInContext(self.context), c"".as_ptr());
+				}
+
+				match op {
+					BinaryOperator::LogicalAnd => LLVMBuildCondBr(self.builder, left, right_block, following_block),
+					BinaryOperator::LogicalOr => LLVMBuildCondBr(self.builder, left, following_block, right_block),
+					_ => unreachable!("{op:?}"),
+				};
+
+				LLVMPositionBuilderAtEnd(self.builder, right_block);
+				let right_binding = codegen::generate_expression(context, self, right).unwrap();
+				let mut right = right_binding.to_value(self.builder);
+				if LLVMGetIntTypeWidth(LLVMTypeOf(right)) > 1 {
+					right = LLVMBuildTrunc(self.builder, right, LLVMInt1TypeInContext(self.context), c"".as_ptr());
+				}
+				LLVMBuildBr(self.builder, following_block);
+
+				LLVMPositionBuilderAtEnd(self.builder, following_block);
+				let phi = LLVMBuildPhi(self.builder, LLVMInt1TypeInContext(self.context), c"".as_ptr());
+				LLVMAddIncoming(phi, [left, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
+
+				let kind = BindingKind::Value(phi);
+				return Some(Binding { type_id: result_type_id, kind });
 			}
-
-			match op {
-				BinaryOperator::LogicalAnd => self
-					.builder
-					.build_conditional_branch(left, right_block, following_block)
-					.unwrap(),
-
-				BinaryOperator::LogicalOr => self
-					.builder
-					.build_conditional_branch(left, following_block, right_block)
-					.unwrap(),
-
-				_ => unreachable!("{op:?}"),
-			};
-
-			self.builder.position_at_end(right_block);
-			let right_binding = codegen::generate_expression(context, self, right).unwrap();
-			let mut right = right_binding.to_value(&self.builder).into_int_value();
-			if right.get_type().get_bit_width() > 1 {
-				right = self.builder.build_int_truncate(right, self.context.bool_type(), "").unwrap();
-			}
-			self.builder.build_unconditional_branch(following_block).unwrap();
-
-			self.builder.position_at_end(following_block);
-			let phi = self.builder.build_phi(self.context.bool_type(), "").unwrap();
-			phi.add_incoming(&[(&left, left_block), (&right, right_block)]);
-
-			let kind = BindingKind::Value(phi.as_basic_value());
-			return Some(Binding { type_id: result_type_id, kind });
 		}
 
 		if matches!(
@@ -1037,101 +1080,97 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				BindingKind::Pointer { pointer, .. } => pointer,
 				BindingKind::Value(value) => unreachable!("{value:?}"),
 			};
-			let left = left.to_value(&self.builder).into_int_value();
-			let right = right.to_value(&self.builder).into_int_value();
-			assert_eq!(left.get_type(), right.get_type());
+			let left = left.to_value(self.builder);
+			let right = right.to_value(self.builder);
+			unsafe { assert_eq!(LLVMTypeOf(left), LLVMTypeOf(right)) };
 
 			match op {
-				BinaryOperator::AddAssign => {
-					let int = self.builder.build_int_add(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::AddAssign => unsafe {
+					let int = LLVMBuildAdd(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::SubAssign => {
-					let int = self.builder.build_int_sub(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::SubAssign => unsafe {
+					let int = LLVMBuildSub(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::MulAssign => {
-					let int = self.builder.build_int_mul(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::MulAssign => unsafe {
+					let int = LLVMBuildMul(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::DivAssign => {
+				BinaryOperator::DivAssign => unsafe {
 					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_int_signed_div(left, right, "").unwrap()
+						LLVMBuildSDiv(self.builder, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_int_unsigned_div(left, right, "").unwrap()
+						LLVMBuildUDiv(self.builder, left, right, c"".as_ptr())
 					};
 
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::ModuloAssign => {
+				BinaryOperator::ModuloAssign => unsafe {
 					let value = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						use IntPredicate::*;
-						let zero = left.get_type().const_zero();
-						let srem_result = self.builder.build_int_signed_rem(left, right, "").unwrap();
+						let zero = LLVMConstNull(LLVMTypeOf(left));
+						let srem_result = LLVMBuildSRem(self.builder, left, right, c"".as_ptr());
 
 						let absolute_value = {
-							let negated = self.builder.build_int_neg(right, "").unwrap();
-							let is_negative = self.builder.build_int_compare(SLT, right, zero, "").unwrap();
-							let selected = self.builder.build_select(is_negative, negated, right, "").unwrap();
-							selected.into_int_value()
+							let negated = LLVMBuildNeg(self.builder, right, c"".as_ptr());
+							let is_negative = LLVMBuildICmp(self.builder, LLVMIntSLT, right, zero, c"".as_ptr());
+							let selected = LLVMBuildSelect(self.builder, is_negative, negated, right, c"".as_ptr());
+							selected
 						};
 
-						let is_negative = self.builder.build_int_compare(SLT, srem_result, zero, "").unwrap();
-						let selected = self.builder.build_select(is_negative, absolute_value, zero, "").unwrap();
-						let addened = selected.into_int_value();
+						let is_negative = LLVMBuildICmp(self.builder, LLVMIntSLT, srem_result, zero, c"".as_ptr());
+						let addened = LLVMBuildSelect(self.builder, is_negative, absolute_value, zero, c"".as_ptr());
 
-						let result = self.builder.build_int_add(srem_result, addened, "").unwrap();
-						BasicValueEnum::IntValue(result)
+						LLVMBuildAdd(self.builder, srem_result, addened, c"".as_ptr())
 					} else {
-						let int = self.builder.build_int_unsigned_rem(left, right, "").unwrap();
-						BasicValueEnum::IntValue(int)
+						LLVMBuildURem(self.builder, left, right, c"".as_ptr())
 					};
 
-					self.builder.build_store(target, value).unwrap();
+					LLVMBuildStore(self.builder, value, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::BitshiftLeftAssign => {
-					let int = self.builder.build_left_shift(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::BitshiftLeftAssign => unsafe {
+					let int = LLVMBuildShl(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::BitshiftRightAssign => {
+				BinaryOperator::BitshiftRightAssign => unsafe {
 					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_right_shift(left, right, true, "").unwrap()
+						LLVMBuildAShr(self.builder, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_right_shift(left, right, false, "").unwrap()
+						LLVMBuildLShr(self.builder, left, right, c"".as_ptr())
 					};
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::BitwiseAndAssign => {
-					let int = self.builder.build_and(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::BitwiseAndAssign => unsafe {
+					let int = LLVMBuildAnd(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::BitwiseOrAssign => {
-					let int = self.builder.build_or(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::BitwiseOrAssign => unsafe {
+					let int = LLVMBuildOr(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
-				BinaryOperator::BitwiseXorAssign => {
-					let int = self.builder.build_xor(left, right, "").unwrap();
-					self.builder.build_store(target, BasicValueEnum::IntValue(int)).unwrap();
+				BinaryOperator::BitwiseXorAssign => unsafe {
+					let int = LLVMBuildXor(self.builder, left, right, c"".as_ptr());
+					LLVMBuildStore(self.builder, int, target);
 					return None;
-				}
+				},
 
 				_ => unreachable!(),
 			}
@@ -1140,138 +1179,101 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let left_binding = codegen::generate_expression(context, self, left).unwrap();
 		let right_binding = codegen::generate_expression(context, self, right).unwrap();
 
-		let left = left_binding.to_value(&self.builder);
-		let right = right_binding.to_value(&self.builder);
-		assert_eq!(left.get_type(), right.get_type());
+		let left = left_binding.to_value(self.builder);
+		let right = right_binding.to_value(self.builder);
+		unsafe { assert_eq!(LLVMTypeOf(left), LLVMTypeOf(right)) };
 
-		let value = if left.is_int_value() {
-			let left = left.into_int_value();
-			let right = right.into_int_value();
+		let left_is_int = unsafe { LLVMGetTypeKind(LLVMTypeOf(left)) == LLVMIntegerTypeKind };
+		let value = if left_is_int {
+			let left = left;
+			let right = right;
 
-			use IntPredicate::*;
 			match op {
-				BinaryOperator::Add => {
-					let int = self.builder.build_int_add(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::Add => unsafe { LLVMBuildAdd(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::Sub => {
-					let int = self.builder.build_int_sub(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::Sub => unsafe { LLVMBuildSub(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::Mul => {
-					let int = self.builder.build_int_mul(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::Mul => unsafe { LLVMBuildMul(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::Div => {
-					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_int_signed_div(left, right, "").unwrap()
-					} else {
-						self.builder.build_int_unsigned_div(left, right, "").unwrap()
-					};
-					BasicValueEnum::IntValue(int)
-				}
-
-				BinaryOperator::Modulo => {
+				BinaryOperator::Div => unsafe {
 					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						let zero = left.get_type().const_zero();
-						let srem_result = self.builder.build_int_signed_rem(left, right, "").unwrap();
+						LLVMBuildSDiv(self.builder, left, right, c"".as_ptr())
+					} else {
+						LLVMBuildUDiv(self.builder, left, right, c"".as_ptr())
+					}
+				},
+
+				BinaryOperator::Modulo => unsafe {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+						let zero = LLVMConstNull(LLVMTypeOf(left));
+						let srem_result = LLVMBuildSRem(self.builder, left, right, c"".as_ptr());
 
 						let absolute_value = {
-							let negated = self.builder.build_int_neg(right, "").unwrap();
-							let is_negative = self.builder.build_int_compare(SLT, right, zero, "").unwrap();
-							let selected = self.builder.build_select(is_negative, negated, right, "").unwrap();
-							selected.into_int_value()
+							let negated = LLVMBuildNeg(self.builder, right, c"".as_ptr());
+							let is_negative = LLVMBuildICmp(self.builder, LLVMIntSLT, right, zero, c"".as_ptr());
+							LLVMBuildSelect(self.builder, is_negative, negated, right, c"".as_ptr())
 						};
 
-						let is_negative = self.builder.build_int_compare(SLT, srem_result, zero, "").unwrap();
-						let selected = self.builder.build_select(is_negative, absolute_value, zero, "").unwrap();
-						let addened = selected.into_int_value();
+						let is_negative = LLVMBuildICmp(self.builder, LLVMIntSLT, srem_result, zero, c"".as_ptr());
+						let addened = LLVMBuildSelect(self.builder, is_negative, absolute_value, zero, c"".as_ptr());
 
-						let result = self.builder.build_int_add(srem_result, addened, "").unwrap();
-						BasicValueEnum::IntValue(result)
+						LLVMBuildAdd(self.builder, srem_result, addened, c"".as_ptr())
 					} else {
-						let int = self.builder.build_int_unsigned_rem(left, right, "").unwrap();
-						BasicValueEnum::IntValue(int)
+						LLVMBuildURem(self.builder, left, right, c"".as_ptr())
 					}
-				}
+				},
 
-				BinaryOperator::BitshiftLeft => {
-					let int = self.builder.build_left_shift(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::BitshiftLeft => unsafe { LLVMBuildShl(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::BitshiftRight => {
-					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_right_shift(left, right, true, "").unwrap()
+				BinaryOperator::BitshiftRight => unsafe {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+						LLVMBuildAShr(self.builder, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_right_shift(left, right, false, "").unwrap()
-					};
-					BasicValueEnum::IntValue(int)
-				}
+						LLVMBuildLShr(self.builder, left, right, c"".as_ptr())
+					}
+				},
 
-				BinaryOperator::BitwiseAnd => {
-					let int = self.builder.build_and(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::BitwiseAnd => unsafe { LLVMBuildAnd(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::BitwiseOr => {
-					let int = self.builder.build_or(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::BitwiseOr => unsafe { LLVMBuildOr(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::BitwiseXor => {
-					let int = self.builder.build_xor(left, right, "").unwrap();
-					BasicValueEnum::IntValue(int)
-				}
+				BinaryOperator::BitwiseXor => unsafe { LLVMBuildXor(self.builder, left, right, c"".as_ptr()) },
 
-				BinaryOperator::Equals => {
-					let result = self.builder.build_int_compare(EQ, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::Equals => unsafe { LLVMBuildICmp(self.builder, LLVMIntEQ, left, right, c"".as_ptr()) },
 
-				BinaryOperator::NotEquals => {
-					let result = self.builder.build_int_compare(NE, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::NotEquals => unsafe { LLVMBuildICmp(self.builder, LLVMIntNE, left, right, c"".as_ptr()) },
 
-				BinaryOperator::GreaterThan => {
-					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_int_compare(SGT, left, right, "").unwrap()
+				BinaryOperator::GreaterThan => unsafe {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+						LLVMBuildICmp(self.builder, LLVMIntSGT, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_int_compare(UGT, left, right, "").unwrap()
-					};
-					BasicValueEnum::IntValue(result)
-				}
+						LLVMBuildICmp(self.builder, LLVMIntUGT, left, right, c"".as_ptr())
+					}
+				},
 
-				BinaryOperator::GreaterThanEquals => {
-					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_int_compare(SGE, left, right, "").unwrap()
+				BinaryOperator::GreaterThanEquals => unsafe {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+						LLVMBuildICmp(self.builder, LLVMIntSGE, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_int_compare(UGE, left, right, "").unwrap()
-					};
-					BasicValueEnum::IntValue(result)
-				}
+						LLVMBuildICmp(self.builder, LLVMIntUGE, left, right, c"".as_ptr())
+					}
+				},
 
-				BinaryOperator::LessThan => {
-					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_int_compare(SLT, left, right, "").unwrap()
+				BinaryOperator::LessThan => unsafe {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+						LLVMBuildICmp(self.builder, LLVMIntSLT, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_int_compare(ULT, left, right, "").unwrap()
-					};
-					BasicValueEnum::IntValue(result)
-				}
+						LLVMBuildICmp(self.builder, LLVMIntULT, left, right, c"".as_ptr())
+					}
+				},
 
-				BinaryOperator::LessThanEquals => {
-					let result = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						self.builder.build_int_compare(SLE, left, right, "").unwrap()
+				BinaryOperator::LessThanEquals => unsafe {
+					if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+						LLVMBuildICmp(self.builder, LLVMIntSLE, left, right, c"".as_ptr())
 					} else {
-						self.builder.build_int_compare(ULE, left, right, "").unwrap()
-					};
-					BasicValueEnum::IntValue(result)
-				}
+						LLVMBuildICmp(self.builder, LLVMIntULE, left, right, c"".as_ptr())
+					}
+				},
 
 				BinaryOperator::Assign
 				| BinaryOperator::AddAssign
@@ -1288,60 +1290,28 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 				| BinaryOperator::LogicalOr => unreachable!(),
 			}
 		} else {
-			let left = left.into_float_value();
-			let right = right.into_float_value();
-
-			use FloatPredicate::*;
+			use LLVMRealPredicate::*;
+			let n = c"".as_ptr();
 			match op {
-				BinaryOperator::Add => {
-					let float = self.builder.build_float_add(left, right, "").unwrap();
-					BasicValueEnum::FloatValue(float)
-				}
+				BinaryOperator::Add => unsafe { LLVMBuildFAdd(self.builder, left, right, n) },
 
-				BinaryOperator::Sub => {
-					let float = self.builder.build_float_sub(left, right, "").unwrap();
-					BasicValueEnum::FloatValue(float)
-				}
+				BinaryOperator::Sub => unsafe { LLVMBuildFSub(self.builder, left, right, n) },
 
-				BinaryOperator::Mul => {
-					let float = self.builder.build_float_mul(left, right, "").unwrap();
-					BasicValueEnum::FloatValue(float)
-				}
+				BinaryOperator::Mul => unsafe { LLVMBuildFMul(self.builder, left, right, n) },
 
-				BinaryOperator::Div => {
-					let float = self.builder.build_float_div(left, right, "").unwrap();
-					BasicValueEnum::FloatValue(float)
-				}
+				BinaryOperator::Div => unsafe { LLVMBuildFDiv(self.builder, left, right, n) },
 
-				BinaryOperator::Equals => {
-					let result = self.builder.build_float_compare(OEQ, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::Equals => unsafe { LLVMBuildFCmp(self.builder, LLVMRealOEQ, left, right, n) },
 
-				BinaryOperator::NotEquals => {
-					let result = self.builder.build_float_compare(ONE, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::NotEquals => unsafe { LLVMBuildFCmp(self.builder, LLVMRealONE, left, right, n) },
 
-				BinaryOperator::GreaterThan => {
-					let result = self.builder.build_float_compare(OGT, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::GreaterThan => unsafe { LLVMBuildFCmp(self.builder, LLVMRealOGT, left, right, n) },
 
-				BinaryOperator::GreaterThanEquals => {
-					let result = self.builder.build_float_compare(OGE, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::GreaterThanEquals => unsafe { LLVMBuildFCmp(self.builder, LLVMRealOGE, left, right, n) },
 
-				BinaryOperator::LessThan => {
-					let result = self.builder.build_float_compare(OLT, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::LessThan => unsafe { LLVMBuildFCmp(self.builder, LLVMRealOLT, left, right, n) },
 
-				BinaryOperator::LessThanEquals => {
-					let result = self.builder.build_float_compare(OLE, left, right, "").unwrap();
-					BasicValueEnum::IntValue(result)
-				}
+				BinaryOperator::LessThanEquals => unsafe { LLVMBuildFCmp(self.builder, LLVMRealOLE, left, right, n) },
 
 				BinaryOperator::Assign
 				| BinaryOperator::AddAssign
@@ -1377,11 +1347,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		};
 
 		let (pointer, pointed_type) = match value.kind {
-			BindingKind::Value(value) => {
-				let alloca = self.build_alloca(value.get_type());
-				self.builder.build_store(alloca, value).unwrap();
-				(alloca, value.get_type())
-			}
+			BindingKind::Value(value) => unsafe {
+				let llvm_type = LLVMTypeOf(value);
+				let alloca = self.build_alloca(llvm_type);
+				LLVMBuildStore(self.builder, value, alloca);
+				(alloca, llvm_type)
+			},
 
 			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
 		};
@@ -1393,12 +1364,12 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 
 	fn generate_break(&mut self, loop_index: usize) {
 		let follow_block = self.loop_follow_blocks[loop_index];
-		self.builder.build_unconditional_branch(follow_block).unwrap();
+		unsafe { LLVMBuildBr(self.builder, follow_block) };
 	}
 
 	fn generate_continue(&mut self, loop_index: usize) {
 		let condition_block = self.loop_condition_blocks[loop_index];
-		self.builder.build_unconditional_branch(condition_block).unwrap();
+		unsafe { LLVMBuildBr(self.builder, condition_block) };
 	}
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {
@@ -1406,30 +1377,34 @@ impl<'ctx, ABI: LLVMAbi<'ctx>> Generator for LLVMGenerator<'ctx, ABI> {
 		let function = maybe_function.as_ref().unwrap();
 
 		let mut abi = self.abi.take().unwrap();
-		abi.return_value(self.context, &mut self.builder, function, value);
+		abi.return_value(self.context, self.builder, function, value);
 		self.abi = Some(abi);
 	}
 
 	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding {
-		let value = self.context.i64_type().const_int(1, false);
-		let pointer_type = self.llvm_types.opaque_pointer;
-		let pointer = self.builder.build_int_to_ptr(value, pointer_type, "").unwrap();
+		unsafe {
+			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
+			let pointer_type = self.llvm_types.opaque_pointer;
+			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"".as_ptr());
 
-		let kind = BindingKind::Value(BasicValueEnum::PointerValue(pointer));
-		Binding { type_id: pointer_type_id, kind }
+			let kind = BindingKind::Value(pointer);
+			Binding { type_id: pointer_type_id, kind }
+		}
 	}
 
 	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, len: u64) -> Self::Binding {
-		let alignment = self.context.i64_type().const_int(1, false);
-		let pointer_type = self.llvm_types.opaque_pointer;
-		let pointer = self.builder.build_int_to_ptr(alignment, pointer_type, "").unwrap();
+		unsafe {
+			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
+			let pointer_type = self.llvm_types.opaque_pointer;
+			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"".as_ptr());
 
-		let len = BasicValueEnum::IntValue(self.context.i64_type().const_int(len, false));
-		let fields = &[BasicValueEnum::PointerValue(pointer), len];
-		let slice = self.llvm_types.slice_struct.const_named_struct(fields);
+			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), len, false as _);
+			let fields = &mut [pointer, len];
+			let slice = LLVMConstNamedStruct(self.llvm_types.slice_struct, fields.as_mut_ptr(), fields.len() as u32);
 
-		let kind = BindingKind::Value(BasicValueEnum::StructValue(slice));
-		Binding { type_id: slice_type_id, kind }
+			let kind = BindingKind::Value(slice);
+			Binding { type_id: slice_type_id, kind }
+		}
 	}
 
 	fn finalize_generator(&mut self) {
