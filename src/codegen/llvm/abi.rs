@@ -3,7 +3,7 @@ use std::ffi::CString;
 use llvm_sys::core::{
 	LLVMAddAttributeAtIndex, LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAlloca, LLVMBuildCall2, LLVMBuildFPCast,
 	LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSExt, LLVMBuildStore, LLVMBuildStructGEP2,
-	LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateEnumAttribute, LLVMDoubleTypeInContext,
+	LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateTypeAttribute, LLVMDoubleTypeInContext,
 	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetParam, LLVMHalfTypeInContext, LLVMInt16TypeInContext, LLVMInt1TypeInContext,
 	LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
 	LLVMSetLinkage, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType, LLVMVoidTypeInContext,
@@ -386,7 +386,7 @@ impl LLVMAbi for SysvAbi {
 				let ptr_type = unsafe { LLVMPointerTypeInContext(context, 0) };
 				self.parameter_type_buffer.push(ptr_type);
 
-				let attribute = unsafe { LLVMCreateEnumAttribute(context, attribute_kinds.sret, 0) };
+				let attribute = unsafe { LLVMCreateTypeAttribute(context, attribute_kinds.sret, ptr_type) };
 				self.attribute_buffer.push(ParameterAttribute { index: 0, attribute });
 				self.return_type_buffer.clear(); // Make us use void return type
 
