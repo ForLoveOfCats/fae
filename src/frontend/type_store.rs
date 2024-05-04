@@ -332,10 +332,6 @@ impl TypeEntry {
 							.type_arguments
 							.iter()
 							.any(|t| type_store.type_entries[t.index()].generic_poisoned)
-							|| specialization // TODO DO NOT MERGE REMOVE THIS
-								.fields
-								.iter()
-								.any(|f| type_store.type_entries[f.type_id.index()].generic_poisoned)
 					}
 				}
 			}
