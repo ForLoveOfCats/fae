@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	DecimalValue, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId, SliceMutableToImmutable, TypeArguments,
+	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId,
+	SliceMutableToImmutable, TypeArguments,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
@@ -622,6 +623,7 @@ impl<'a> TypeStore<'a> {
 		// if either are any collapse then collapse to the other, even if it is also any collapse
 		// if both are untyped numbers then we know they are different, collapse to the decimal
 		// if either type is an untyped number we know the other isn't, collapse to the other type
+		// if either type is an enum, collapse the other to it
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
 			return Ok(b.type_id);
@@ -666,6 +668,33 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
+		let is_enum = |e: &Expression| {
+			let entry = self.type_entries[e.type_id.index()];
+			match entry.kind {
+				TypeEntryKind::UserType { shape_index, .. } => match self.user_types[shape_index].kind {
+					UserTypeKind::Enum { .. } => return true,
+					_ => return false,
+				},
+				_ => return false,
+			}
+		};
+
+		if is_enum(a) {
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			return match collapsed {
+				true => Ok(a.type_id),
+				false => Err(()),
+			};
+		}
+
+		if is_enum(b) {
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			return match collapsed {
+				true => Ok(b.type_id),
+				false => Err(()),
+			};
+		}
+
 		Err(())
 	}
 
@@ -685,6 +714,7 @@ impl<'a> TypeStore<'a> {
 		// untyped decimal -> float of large enough
 		// mutable reference -> immutable reference
 		// mutable slice -> immutable slice
+		// enum variant -> enum
 
 		if from.type_id.entry == self.any_collapse_type_id.entry {
 			// From any collapse
@@ -833,9 +863,10 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
-		// mutable reference -> immutable reference
 		let to_entry = self.type_entries[to.index()];
 		let from_entry = self.type_entries[from.type_id.index()];
+
+		// mutable reference -> immutable reference
 		if let TypeEntryKind::Pointer { type_id: to, mutable: to_mutable } = to_entry.kind {
 			if let TypeEntryKind::Pointer { type_id: from, mutable: from_mutable } = from_entry.kind {
 				if to.entry == from.entry && from_mutable && !to_mutable {
@@ -845,8 +876,6 @@ impl<'a> TypeStore<'a> {
 		}
 
 		// mutable slice -> immutable slice
-		let to_entry = self.type_entries[to.index()];
-		let from_entry = self.type_entries[from.type_id.index()];
 		if let TypeEntryKind::Slice(Slice { type_id: to_type_id, mutable: to_mutable }) = to_entry.kind {
 			if let TypeEntryKind::Slice(Slice { type_id: from_type_id, mutable: from_mutable }) = from_entry.kind {
 				if to_type_id.entry == from_type_id.entry && from_mutable && !to_mutable {
@@ -865,6 +894,26 @@ impl<'a> TypeStore<'a> {
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
 					*from = Expression { span: from.span, type_id, mutable: false, returns, kind };
 					return Ok(true);
+				}
+			}
+		}
+
+		// enum variant -> enum
+		if let TypeEntryKind::UserType { shape_index, .. } = from_entry.kind {
+			let user_type = &self.user_types[shape_index];
+			if let UserTypeKind::Struct { shape } = &user_type.kind {
+				if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
+					if let TypeEntryKind::UserType { shape_index, .. } = to_entry.kind {
+						if shape_index == parent_enum_shape_index {
+							// TODO: This replace is a dumb solution
+							let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
+							let returns = expression.returns;
+							let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
+							let kind = ExpressionKind::EnumVariantToEnum(conversion);
+							*from = Expression { span: from.span, type_id: to, mutable: false, returns, kind };
+							return Ok(true);
+						}
+					}
 				}
 			}
 		}
@@ -1183,7 +1232,7 @@ impl<'a> TypeStore<'a> {
 		enclosing_generic_parameters: &GenericParameters<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
 	) -> Option<TypeId> {
-		let (path_segments, type_arguments) = match &parsed_type.item {
+		let (path_segments, type_arguments, dot_access) = match &parsed_type.item {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Pointer { pointee, mutable } => {
@@ -1216,7 +1265,7 @@ impl<'a> TypeStore<'a> {
 				return Some(self.slice_of(id, *mutable));
 			}
 
-			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
+			tree::Type::Path { path_segments, type_arguments, dot_access } => (path_segments, type_arguments, dot_access),
 		};
 
 		let symbol = symbols.lookup_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
@@ -1227,18 +1276,35 @@ impl<'a> TypeStore<'a> {
 					return None;
 				}
 
+				if let Some(dot_access) = dot_access {
+					messages.message(error!("Builtin types do not have variants").span(dot_access.span));
+					return None;
+				}
+
 				return Some(type_id);
 			}
 
 			SymbolKind::Type { shape_index } => shape_index,
 
 			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
+				if let Some(dot_access) = dot_access {
+					let error = error!("User type generic type parameters do not have variants");
+					messages.message(error.span(dot_access.span));
+					return None;
+				}
+
 				let user_type = &self.user_types[shape_index];
 				let generic = user_type.generic_parameters.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
 
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
+				if let Some(dot_access) = dot_access {
+					let error = error!("Function generic type parameters do not have variants");
+					messages.message(error.span(dot_access.span));
+					return None;
+				}
+
 				let generics = &function_store.generics[function_shape_index];
 				let generic = &generics.parameters()[generic_index];
 				return Some(generic.generic_type_id);
@@ -1251,7 +1317,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		let invoke_span = Some(parsed_type.span);
-		self.get_or_add_shape_specialization_in_scope(
+		let type_id = self.get_or_add_shape_specialization_in_scope(
 			messages,
 			function_store,
 			module_path,
@@ -1263,7 +1329,50 @@ impl<'a> TypeStore<'a> {
 			function_initial_symbols_len,
 			enclosing_generic_parameters,
 			type_arguments,
-		)
+		)?;
+
+		if let &Some(dot_access) = dot_access {
+			self.get_enum_variant(messages, function_store, module_path, type_id, dot_access)
+		} else {
+			Some(type_id)
+		}
+	}
+
+	pub fn get_enum_variant(
+		&self,
+		messages: &mut Messages<'a>,
+		function_store: &mut FunctionStore<'a>,
+		module_path: &'a [String],
+		base: TypeId,
+		name: Node<&'a str>,
+	) -> Option<TypeId> {
+		let entry = self.type_entries[base.index()];
+		let specialization = match entry.kind {
+			TypeEntryKind::UserType { shape_index, specialization_index } => match &self.user_types[shape_index].kind {
+				UserTypeKind::Struct { .. } => None,
+				UserTypeKind::Enum { shape } => Some(&shape.specializations[specialization_index]),
+			},
+
+			_ => None,
+		};
+
+		let Some(specialization) = specialization else {
+			let found = self.type_name(function_store, module_path, base);
+			let error = error!("Type {found} does not have variants as it is a struct");
+			messages.message(error.span(name.span));
+			return None;
+		};
+
+		match specialization.variants.get(name.item) {
+			Some(variant) => return Some(variant.type_id),
+
+			None => {
+				let found = self.type_name(function_store, module_path, base);
+				let error = error!("No variant `{}` found on enum {found}", name.item);
+				messages.message(error.span(name.span));
+				return None;
+			}
+		}
 	}
 
 	pub fn get_or_add_shape_specialization_in_scope(
@@ -1831,10 +1940,6 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let user_type = &self.user_types[shape_index];
-				if user_type.generic_parameters.explicit_len() == 0 {
-					return user_type.name.to_owned();
-				}
-
 				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[specialization_index];
@@ -1846,13 +1951,25 @@ impl<'a> TypeStore<'a> {
 
 						if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
 							let enum_name = self.user_types[parent_enum_shape_index].name;
-							format!("{enum_name}.{}<{}>", user_type.name, type_arguments)
+							if user_type.generic_parameters.explicit_len() == 0 {
+								format!("{enum_name}.{}", user_type.name)
+							} else {
+								format!("{enum_name}.{}<{}>", user_type.name, type_arguments)
+							}
 						} else {
-							format!("{}<{}>", user_type.name, type_arguments)
+							if user_type.generic_parameters.explicit_len() == 0 {
+								user_type.name.to_owned()
+							} else {
+								format!("{}<{}>", user_type.name, type_arguments)
+							}
 						}
 					}
 
 					UserTypeKind::Enum { shape } => {
+						if user_type.generic_parameters.explicit_len() == 0 {
+							return user_type.name.to_owned();
+						}
+
 						let specialization = &shape.specializations[specialization_index];
 						let type_arguments = specialization.type_arguments[0..user_type.generic_parameters.explicit_len()]
 							.iter()

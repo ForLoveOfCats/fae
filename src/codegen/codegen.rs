@@ -201,6 +201,10 @@ pub fn generate_expression<G: Generator>(
 			generate_mutable_slice_to_immutable(context, generator, conversion)
 		}
 
+		ExpressionKind::EnumVariantToEnum(_conversion) => {
+			todo!()
+		}
+
 		ExpressionKind::Void => None,
 
 		ExpressionKind::AnyCollapse | ExpressionKind::Type(_) => unreachable!(),

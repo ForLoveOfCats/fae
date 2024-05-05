@@ -422,7 +422,7 @@ fn parse_expression_atom<'a>(
 					None => path_segments.span,
 				};
 				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-				let type_object = Type::Path { path_segments, type_arguments };
+				let type_object = Type::Path { path_segments, type_arguments, dot_access: None };
 				let parsed_type = Node::new(type_object, type_span);
 
 				let initializer = parse_struct_initializer(messages, tokenizer)?;
@@ -544,6 +544,8 @@ fn parse_following_period<'a>(
 		let expression = Expression::UnaryOperation(Box::new(operation));
 		return Ok(Node::new(expression, span));
 	}
+
+	if tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {}
 
 	if tokenizer.peek_kind() == Ok(TokenKind::OpenParen) {
 		let open_paren = tokenizer.expect(messages, TokenKind::OpenParen)?;
@@ -1136,7 +1138,17 @@ fn parse_type<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Par
 				_ => path_segments.span,
 			};
 
-			Node::new(Type::Path { path_segments, type_arguments }, span)
+			let dot_access = if tokenizer.peek_kind() == Ok(TokenKind::Period) {
+				let dot_token = tokenizer.expect(messages, TokenKind::Period)?;
+				let name_token = tokenizer.expect(messages, TokenKind::Word)?;
+				let span = dot_token.span + name_token.span;
+				Some(Node::new(name_token.text, span))
+			} else {
+				None
+			};
+
+			let path = Type::Path { path_segments, type_arguments, dot_access };
+			Node::new(path, span)
 		}
 	};
 

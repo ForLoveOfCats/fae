@@ -131,6 +131,7 @@ pub enum Type<'a> {
 	Path {
 		path_segments: Node<PathSegments<'a>>,
 		type_arguments: Vec<Node<Type<'a>>>,
+		dot_access: Option<Node<&'a str>>,
 	},
 }
 

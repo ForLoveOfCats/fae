@@ -40,7 +40,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub readables: &'b mut Readables<'a>,
 
 	pub initial_local_function_shape_indicies_len: usize,
-	pub local_function_shape_indicies: &'b mut Vec<usize>,
+	pub local_function_shape_indicies: &'b mut Vec<Option<usize>>,
 
 	pub initial_symbols_len: usize,
 	pub function_initial_symbols_len: usize,
@@ -205,7 +205,12 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		)
 	}
 
-	pub fn local_function_shape_index(&self, index: usize) -> usize {
+	pub fn get_enum_variant(&mut self, base: TypeId, name: Node<&'a str>) -> Option<TypeId> {
+		self.type_store
+			.get_enum_variant(self.messages, self.function_store, self.module_path, base, name)
+	}
+
+	pub fn local_function_shape_index(&self, index: usize) -> Option<usize> {
 		self.local_function_shape_indicies[self.initial_local_function_shape_indicies_len + index]
 	}
 
@@ -418,7 +423,7 @@ fn create_root_functions<'a>(
 	externs: &mut Externs,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
-	local_function_shape_indicies: &mut Vec<Vec<usize>>,
+	local_function_shape_indicies: &mut Vec<Vec<Option<usize>>>,
 ) {
 	for (index, parsed_file) in parsed_files.iter().enumerate() {
 		let block = &parsed_file.block;
@@ -1110,7 +1115,7 @@ fn create_block_functions<'a>(
 	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &'a tree::Block<'a>,
-	local_function_shape_indicies: &mut Vec<usize>,
+	local_function_shape_indicies: &mut Vec<Option<usize>>,
 	scope_id: ScopeId,
 ) {
 	let original_generic_usages_len = generic_usages.len();
@@ -1193,7 +1198,11 @@ fn create_block_functions<'a>(
 
 				let return_type = match type_id {
 					Some(type_id) => type_id,
-					None => continue,
+
+					None => {
+						local_function_shape_indicies.push(None);
+						continue;
+					}
 				};
 
 				if return_type.is_void(type_store) {
@@ -1322,7 +1331,7 @@ fn create_block_functions<'a>(
 			};
 			function_store.shapes.push(shape);
 
-			local_function_shape_indicies.push(function_shape_index);
+			local_function_shape_indicies.push(Some(function_shape_index));
 
 			if let Some(method_attribute) = &statement.method_attribute {
 				if let Some(shape_index) = method_base_shape_index {
@@ -1593,7 +1602,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		return;
 	}
 
-	let function_shape_index = context.local_function_shape_index(statement.index_in_block);
+	let Some(function_shape_index) = context.local_function_shape_index(statement.index_in_block) else {
+		return;
+	};
+
 	let return_type = context.function_store.shapes[function_shape_index].return_type;
 	let generics = context.function_store.shapes[function_shape_index].generic_parameters.clone();
 	let mut scope = context.child_scope_for_function(return_type, &generics);
@@ -2762,6 +2774,10 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 		return Expression::any_collapse(context.type_store, span);
 	}
 
+	if let ExpressionKind::Type(base) = base.kind {
+		return validate_field_less_enum_literal(context, base, field_read.name, span);
+	}
+
 	let (type_id, mutable) = match base.type_id.as_pointed(context.type_store) {
 		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
 		None => (base.type_id, base.mutable),
@@ -2839,6 +2855,21 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 	};
 	let kind = ExpressionKind::FieldRead(Box::new(field_read));
 	Expression { span, type_id, mutable, returns: false, kind }
+}
+
+fn validate_field_less_enum_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	base: TypeId,
+	name: Node<&'a str>,
+	span: Span,
+) -> Expression<'a> {
+	let Some(variant) = context.get_enum_variant(base, name) else {
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let literal = StructLiteral { type_id: variant, field_initializers: Vec::new() };
+	let kind = ExpressionKind::StructLiteral(literal);
+	Expression { span, type_id: variant, mutable: true, returns: false, kind }
 }
 
 fn validate_unary_operation<'a>(
