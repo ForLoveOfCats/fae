@@ -109,6 +109,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes, index) {
 					items.push(Statement::Function(Box::new(statement)));
 				} else {
+					next_function_index -= 1;
 					consume_error_syntax(messages, tokenizer);
 				}
 			}
