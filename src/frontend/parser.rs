@@ -121,6 +121,14 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 				}
 			}
 
+			Token { kind: TokenKind::Word, text: "enum", .. } => {
+				if let Ok(statement) = parse_enum_declaration(messages, tokenizer, attributes) {
+					items.push(Statement::Enum(statement));
+				} else {
+					consume_error_syntax(messages, tokenizer);
+				}
+			}
+
 			Token { kind: TokenKind::Word, text: "while", .. } => {
 				disallow_all_attributes(messages, attributes, token.span, "A while loop");
 				if let Ok(statement) = parse_while_statement(messages, tokenizer) {
@@ -1261,38 +1269,8 @@ fn parse_struct_declaration<'a>(
 
 		while !reached_close_brace(tokenizer) {
 			let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
-			check_not_reserved(messages, field_name_token, "struct field")?;
-			let name = Node::from_token(field_name_token.text, field_name_token);
-
-			tokenizer.expect(messages, TokenKind::Colon)?;
-			let parsed_type = parse_type(messages, tokenizer)?;
-
-			let mut read_only = false;
-			let attribute = match tokenizer.peek() {
-				Ok(Token { text: "readable", .. }) => {
-					let token = tokenizer.expect_word(messages, "readable")?;
-					Some(Node::from_token(FieldAttribute::Readable, token))
-				}
-
-				Ok(Token { text: "private", .. }) => {
-					let token = tokenizer.expect_word(messages, "private")?;
-					if let Ok(Token { text: "readonly", .. }) = tokenizer.peek() {
-						tokenizer.expect_word(messages, "readonly")?;
-						read_only = true;
-					}
-					Some(Node::from_token(FieldAttribute::Private, token))
-				}
-
-				_ => {
-					if let Ok(Token { text: "readonly", .. }) = tokenizer.peek() {
-						tokenizer.expect_word(messages, "readonly")?;
-						read_only = true;
-					}
-					None
-				}
-			};
-
-			fields.push(Field { name, parsed_type, attribute, read_only });
+			let field = parse_field(messages, tokenizer, field_name_token, "struct field")?;
+			fields.push(field);
 
 			tokenizer.expect(messages, TokenKind::Newline)?;
 			while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
@@ -1304,6 +1282,117 @@ fn parse_struct_declaration<'a>(
 	tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
 	Ok(Struct { generics, name, fields })
+}
+
+fn parse_enum_declaration<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	attributes: Attributes<'a>,
+) -> ParseResult<Enum<'a>> {
+	let generics = match attributes.generic_attribute {
+		Some(attribute) => attribute.item.names,
+		None => Vec::new(),
+	};
+
+	tokenizer.expect_word(messages, "enum")?;
+
+	let enum_name_token = tokenizer.expect(messages, TokenKind::Word)?;
+	check_not_reserved(messages, enum_name_token, "enum name")?;
+	let name = Node::from_token(enum_name_token.text, enum_name_token);
+
+	tokenizer.expect(messages, TokenKind::OpenBrace)?;
+
+	let mut shared_fields = Vec::new();
+	let mut variants = Vec::new();
+
+	if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
+		while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+			tokenizer.expect(messages, TokenKind::Newline)?;
+		}
+
+		while !reached_close_brace(tokenizer) {
+			let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
+			if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
+				if !variants.is_empty() {
+					let warning = warning!("Enum shared fields should proceed all variants, consider moving this field up");
+					messages.message(warning.span(field_name_token.span));
+				}
+
+				let field = parse_field(messages, tokenizer, field_name_token, "enum shared field")?;
+				shared_fields.push(field);
+			} else {
+				let mut variant_fields = Vec::new();
+
+				if tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
+					tokenizer.expect(messages, TokenKind::OpenBrace)?;
+
+					while !reached_close_brace(tokenizer) {
+						let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
+						let field = parse_field(messages, tokenizer, field_name_token, "enum variant field")?;
+						variant_fields.push(field);
+
+						if variant_fields.len() == 1 && tokenizer.peek_kind() == Ok(TokenKind::CloseBrace) {
+							tokenizer.expect(messages, TokenKind::CloseBrace)?;
+							break;
+						}
+					}
+				}
+
+				let name = Node::from_token(field_name_token.text, field_name_token);
+				let variant = EnumVariant { name, fields: variant_fields };
+				variants.push(variant);
+			}
+
+			tokenizer.expect(messages, TokenKind::Newline)?;
+			while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+				tokenizer.expect(messages, TokenKind::Newline)?;
+			}
+		}
+	}
+
+	tokenizer.expect(messages, TokenKind::CloseBrace)?;
+
+	Ok(Enum { generics, name, shared_fields, variants })
+}
+
+fn parse_field<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	field_name_token: Token<'a>,
+	label: &str,
+) -> ParseResult<Field<'a>> {
+	check_not_reserved(messages, field_name_token, label)?;
+	let name = Node::from_token(field_name_token.text, field_name_token);
+
+	tokenizer.expect(messages, TokenKind::Colon)?;
+	let parsed_type = parse_type(messages, tokenizer)?;
+
+	let mut read_only = false;
+	let attribute = match tokenizer.peek() {
+		Ok(Token { text: "readable", .. }) => {
+			let token = tokenizer.expect_word(messages, "readable")?;
+			Some(Node::from_token(FieldAttribute::Readable, token))
+		}
+
+		Ok(Token { text: "private", .. }) => {
+			let token = tokenizer.expect_word(messages, "private")?;
+			if let Ok(Token { text: "readonly", .. }) = tokenizer.peek() {
+				tokenizer.expect_word(messages, "readonly")?;
+				read_only = true;
+			}
+			Some(Node::from_token(FieldAttribute::Private, token))
+		}
+
+		_ => {
+			if let Ok(Token { text: "readonly", .. }) = tokenizer.peek() {
+				tokenizer.expect_word(messages, "readonly")?;
+				read_only = true;
+			}
+			None
+		}
+	};
+
+	Ok(Field { name, parsed_type, attribute, read_only })
 }
 
 fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Const<'a>>> {

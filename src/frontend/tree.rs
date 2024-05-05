@@ -141,6 +141,20 @@ pub struct Struct<'a> {
 	pub fields: Vec<Field<'a>>,
 }
 
+#[derive(Debug)]
+pub struct Enum<'a> {
+	pub generics: Vec<Node<&'a str>>,
+	pub name: Node<&'a str>,
+	pub shared_fields: Vec<Field<'a>>,
+	pub variants: Vec<EnumVariant<'a>>,
+}
+
+#[derive(Debug)]
+pub struct EnumVariant<'a> {
+	pub name: Node<&'a str>,
+	pub fields: Vec<Field<'a>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldAttribute {
 	Private,
@@ -451,6 +465,7 @@ pub enum Statement<'a> {
 	Import(Node<Import<'a>>),
 
 	Struct(Struct<'a>),
+	Enum(Enum<'a>),
 	Function(Box<Function<'a>>),
 
 	Const(Box<Node<Const<'a>>>),
@@ -473,6 +488,7 @@ impl<'a> Statement<'a> {
 			While(statement) => statement.span,
 			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
+			Enum(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
 			Const(statement) => statement.span,
 			Static(statement) => statement.span,
@@ -492,6 +508,7 @@ impl<'a> Statement<'a> {
 			While(..) => "A while loop",
 			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
+			Enum(..) => "An enum definition",
 			Function(..) => "A function definition",
 			Const(..) => "A const definition",
 			Static(..) => "A static definition",

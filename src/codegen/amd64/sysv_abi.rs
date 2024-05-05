@@ -88,6 +88,7 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 			let user_type = &type_store.user_types[shape_index];
 			let shape = match &user_type.kind {
 				UserTypeKind::Struct { shape } => shape,
+				_ => todo!(),
 			};
 			let specialization = &shape.specializations[specialization_index];
 

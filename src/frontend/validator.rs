@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cli::CliArguments;
@@ -691,6 +692,7 @@ fn create_block_types<'a>(
 
 				tree::Statement::Import(..)
 				| tree::Statement::Struct(..)
+				| tree::Statement::Enum(..)
 				| tree::Statement::Function(..)
 				| tree::Statement::Const(..)
 				| tree::Statement::Static(..) => {}
@@ -704,35 +706,120 @@ fn create_block_types<'a>(
 		}
 
 		if let tree::Statement::Struct(statement) = statement {
-			//Start off with no fields, they will be added during the next pre-pass
-			//so that all types exist in order to populate field types
-
-			let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
-			let mut explicit_generics = Vec::with_capacity(capacity);
-
-			let shape_index = type_store.user_types.len();
-			for (generic_index, &generic) in statement.generics.iter().enumerate() {
-				let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
-				explicit_generics.push(GenericParameter { name: generic, generic_type_id });
-			}
-
-			let explicit_generics_len = explicit_generics.len();
-			let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
-			for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
-				let generic_index = explicit_generics_len + index;
-				let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
-				let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
-				generic_parameters.push_implicit(parameter);
-			}
-
-			let name = statement.name.item;
-			let shape = StructShape::new();
-			let kind = UserTypeKind::Struct { shape };
-			let span = statement.name.span;
-			let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
-			symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+			create_block_struct(
+				messages,
+				type_store,
+				symbols,
+				function_initial_symbols_len,
+				module_path,
+				enclosing_generic_parameters,
+				scope_id,
+				statement,
+			);
+		} else if let tree::Statement::Enum(statement) = statement {
+			create_block_enum(
+				messages,
+				type_store,
+				symbols,
+				function_initial_symbols_len,
+				module_path,
+				enclosing_generic_parameters,
+				scope_id,
+				statement,
+			);
 		}
 	}
+}
+
+fn create_block_struct<'a>(
+	messages: &mut Messages,
+	type_store: &mut TypeStore<'a>,
+	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
+	module_path: &'a [String],
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	scope_id: ScopeId,
+	statement: &tree::Struct<'a>,
+) {
+	//Start off with no fields, they will be added during the next pre-pass
+	//so that all types exist in order to populate field types
+
+	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
+	let mut explicit_generics = Vec::with_capacity(capacity);
+
+	let shape_index = type_store.user_types.len();
+	for (generic_index, &generic) in statement.generics.iter().enumerate() {
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
+	}
+
+	let explicit_generics_len = explicit_generics.len();
+	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
+	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+		let generic_index = explicit_generics_len + index;
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+		generic_parameters.push_implicit(parameter);
+	}
+
+	let name = statement.name.item;
+	let shape = StructShape::new(None);
+	let kind = UserTypeKind::Struct { shape };
+	let span = statement.name.span;
+	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
+	symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+}
+
+fn create_block_enum<'a>(
+	messages: &mut Messages,
+	type_store: &mut TypeStore<'a>,
+	symbols: &mut Symbols<'a>,
+	function_initial_symbols_len: usize,
+	module_path: &'a [String],
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	scope_id: ScopeId,
+	statement: &tree::Enum<'a>,
+) {
+	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
+	let mut explicit_generics = Vec::with_capacity(capacity);
+
+	let shape_index = type_store.user_types.len();
+	for (generic_index, &generic) in statement.generics.iter().enumerate() {
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
+	}
+
+	let explicit_generics_len = explicit_generics.len();
+	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
+	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+		let generic_index = explicit_generics_len + index;
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+		generic_parameters.push_implicit(parameter);
+	}
+
+	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
+	let mut variants = HashMap::new();
+
+	for variant in &statement.variants {
+		let struct_shape_index = type_store.user_types.len();
+
+		let name = variant.name.item;
+		let shape = StructShape::new(Some(enum_shape_index));
+		let kind = UserTypeKind::Struct { shape };
+		let span = variant.name.span;
+		type_store.register_type(name, generic_parameters.clone(), kind, module_path, scope_id, span);
+
+		let variant_shape = EnumVariantShape { name, span, struct_shape_index };
+		variants.insert(name, variant_shape);
+	}
+
+	let name = statement.name.item;
+	let shape = EnumShape::new(variants);
+	let kind = UserTypeKind::Enum { shape };
+	let span = statement.name.span;
+	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
+	symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 }
 
 fn fill_block_types<'a>(
@@ -747,8 +834,8 @@ fn fill_block_types<'a>(
 	block: &tree::Block<'a>,
 ) {
 	for statement in &block.statements {
-		// TODO: Rip this out similar to how it was for functions
 		if let tree::Statement::Struct(statement) = statement {
+			// TODO: Rip this out similar to how it was for functions
 			let shape_index = symbols
 				.symbols
 				.iter()
@@ -770,6 +857,22 @@ fn fill_block_types<'a>(
 				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
 				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+			}
+
+			if let UserTypeKind::Enum { shape } = &mut type_store.user_types[shape_index].kind {
+				assert!(!shape.been_filled);
+				shape.been_filled = true;
+
+				if !shape.specializations.is_empty() {
+					fill_pre_existing_enum_specializations(
+						messages,
+						type_store,
+						function_store,
+						generic_usages,
+						module_path,
+						shape_index,
+					);
+				}
 			}
 
 			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -805,10 +908,11 @@ fn fill_block_types<'a>(
 			match &mut type_store.user_types[shape_index].kind {
 				UserTypeKind::Struct { shape } => {
 					shape.fields = fields;
+					assert!(!shape.been_filled);
 					shape.been_filled = true;
 
 					if !shape.specializations.is_empty() {
-						fill_pre_existing_user_type_specializations(
+						fill_pre_existing_struct_specializations(
 							messages,
 							type_store,
 							function_store,
@@ -818,12 +922,14 @@ fn fill_block_types<'a>(
 						);
 					}
 				}
+
+				UserTypeKind::Enum { .. } => unreachable!(),
 			}
 		}
 	}
 }
 
-fn fill_pre_existing_user_type_specializations<'a>(
+fn fill_pre_existing_struct_specializations<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
@@ -835,6 +941,7 @@ fn fill_pre_existing_user_type_specializations<'a>(
 	let span = user_type.span;
 	let shape = match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
+		kind => unreachable!("{kind:?}"),
 	};
 
 	let mut fields = Vec::with_capacity(shape.fields.len());
@@ -873,6 +980,8 @@ fn fill_pre_existing_user_type_specializations<'a>(
 		UserTypeKind::Struct { shape } => {
 			shape.specializations = specializations;
 		}
+
+		kind => unreachable!("{kind:?}"),
 	}
 
 	let mut type_ids = Vec::new();
@@ -890,6 +999,74 @@ fn fill_pre_existing_user_type_specializations<'a>(
 				}
 			}
 		}
+
+		kind => unreachable!("{kind:?}"),
+	}
+
+	for type_id in type_ids {
+		type_store.calculate_layout(type_id);
+	}
+}
+
+fn fill_pre_existing_enum_specializations<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	module_path: &'a [String],
+	shape_index: usize,
+) {
+	let user_type = &mut type_store.user_types[shape_index];
+	let span = user_type.span;
+	let shape = match &mut user_type.kind {
+		UserTypeKind::Enum { shape } => shape,
+		kind => unreachable!("{kind:?}"),
+	};
+
+	let mut specializations = shape.specializations.clone(); // Belch
+	for specialization in &mut specializations {
+		assert!(!specialization.been_filled);
+		specialization.been_filled;
+		assert_eq!(specialization.variants.len(), 0);
+
+		for variant in specialization.variants.values_mut() {
+			variant.type_id = type_store.specialize_with_user_type_generics(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				shape_index,
+				&specialization.type_arguments,
+				variant.type_id,
+			);
+		}
+	}
+
+	match &mut type_store.user_types[shape_index].kind {
+		UserTypeKind::Enum { shape } => {
+			shape.specializations = specializations;
+		}
+
+		kind => unreachable!("{kind:?}"),
+	}
+
+	let mut type_ids = Vec::new();
+	match &type_store.user_types[shape_index].kind {
+		UserTypeKind::Enum { shape } => {
+			type_ids.reserve(shape.specializations.len());
+
+			for specialization in &shape.specializations {
+				let type_id = specialization.type_id;
+				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
+				if let Some(chain) = chain {
+					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
+				} else {
+					type_ids.push(type_id);
+				}
+			}
+		}
+
+		kind => unreachable!("{kind:?}"),
 	}
 
 	for type_id in type_ids {
@@ -1040,7 +1217,7 @@ fn create_block_functions<'a>(
 				if let (Some(shape_index), Some(mutable)) = (method_base_shape_index, mutable) {
 					let base_shape_generics = base_shape_generics.unwrap();
 
-					let type_arguments = generic_parameters
+					let type_arguments: Vec<_> = generic_parameters
 						.method_base_parameters()
 						.iter()
 						.map(|parameter| parameter.generic_type_id)
@@ -1053,7 +1230,7 @@ fn create_block_functions<'a>(
 						generic_usages,
 						shape_index,
 						Some(method_attribute.span),
-						type_arguments,
+						&type_arguments,
 						base_shape_generics.explicit_len(),
 					);
 					let type_id = match base_type {
@@ -1336,6 +1513,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			tree::Statement::Import(..) => {}
 
 			tree::Statement::Struct(..) => {}
+
+			tree::Statement::Enum(..) => {}
 
 			tree::Statement::Function(statement) => validate_function(&mut context, statement),
 
@@ -1934,20 +2113,29 @@ fn validate_struct_literal<'a>(
 	};
 
 	let type_entry = &context.type_store.type_entries[type_id.index()];
-	let (shape_index, specialization_index) = match &type_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (*shape_index, *specialization_index),
-
-		_ => {
-			let name = context.type_name(type_id);
-			let message = error!("Cannot construct type {name} like a struct as it is not a struct");
-			context.message(message.span(literal.parsed_type.span));
-			return Expression::any_collapse(context.type_store, span);
+	let indices = match &type_entry.kind {
+		&TypeEntryKind::UserType { shape_index, specialization_index } => {
+			let user_type = &mut context.type_store.user_types[shape_index];
+			match &mut user_type.kind {
+				UserTypeKind::Struct { .. } => Some((shape_index, specialization_index)),
+				_ => None,
+			}
 		}
+
+		_ => None,
+	};
+
+	let Some((shape_index, specialization_index)) = indices else {
+		let name = context.type_name(type_id);
+		let message = error!("Cannot construct type {name} like a struct as it is not a struct");
+		context.message(message.span(literal.parsed_type.span));
+		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let user_type = &mut context.type_store.user_types[shape_index];
 	let shape = match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
+		kind => unreachable!("{kind:?}"),
 	};
 
 	// Hate this clone
@@ -2015,6 +2203,7 @@ fn validate_struct_literal<'a>(
 	let user_type = &context.type_store.user_types[shape_index];
 	let shape = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
+		kind => unreachable!("{kind:?}"),
 	};
 	let specialization = &shape.specializations[specialization_index];
 	if field_initializers.len() < specialization.fields.len() {
@@ -2195,6 +2384,7 @@ fn get_method_function_specialization<'a>(
 	let user_type = &context.type_store.user_types[base_shape_index];
 	let method_base_arguments = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape.specializations[base_specialization_index].type_arguments.as_slice(),
+		UserTypeKind::Enum { shape } => shape.specializations[base_specialization_index].type_arguments.as_slice(),
 	};
 
 	for &base_argument in method_base_arguments {
@@ -2611,6 +2801,7 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 		return Expression::any_collapse(context.type_store, span);
 	};
 
+	// TODO: Hashmapify this linear lookup
 	let mut fields = fields.iter().enumerate();
 	let Some((field_index, field)) = fields.find(|f| f.1.name == field_read.name.item) else {
 		let type_name = context.type_name(base.type_id);

@@ -398,6 +398,8 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 					return None;
 				}
 			}
+
+			_ => todo!(),
 		}
 	}
 

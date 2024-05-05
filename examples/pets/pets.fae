@@ -1,0 +1,14 @@
+enum Pet {
+	name: []u8
+
+	Cat
+	Dog { hours_since_last_walk: i32 }
+}
+
+fn adopt_cat(): Pet.Cat {
+}
+
+fn main() {
+	//let cat = Pet.Cat { name: "Lola" }
+	//let dog = Pet.Dog { name: "Odie", hours_since_last_walk 3 }
+}

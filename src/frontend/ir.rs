@@ -136,7 +136,7 @@ impl GenericUsage {
 					generic_usages,
 					*shape_index,
 					None,
-					specialized_type_arguments,
+					&specialized_type_arguments,
 					*explicit_type_argument_len,
 				);
 			}

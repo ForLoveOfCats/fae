@@ -270,6 +270,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for shape in &type_store.user_types {
 			let specialization_count = match &shape.kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
+				_ => todo!(),
 			};
 
 			let specializations = Vec::from_iter((0..specialization_count).map(|_| None));
