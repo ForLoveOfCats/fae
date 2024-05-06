@@ -244,7 +244,7 @@ fn parse_expression_climb<'a>(
 
 	loop {
 		if tokenizer.peek_kind() == Ok(TokenKind::Period) {
-			atom = parse_following_period(messages, tokenizer, atom)?;
+			atom = parse_following_period(messages, tokenizer, atom, allow_struct_literal)?;
 		} else if tokenizer.peek_kind() == Ok(TokenKind::OpenBracket) {
 			atom = parse_bracket_index(messages, tokenizer, atom)?;
 		} else {
@@ -503,6 +503,7 @@ fn parse_following_period<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 	atom: Node<Expression<'a>>,
+	allow_struct_literal: bool,
 ) -> ParseResult<Node<Expression<'a>>> {
 	tokenizer.expect(messages, TokenKind::Period)?;
 
@@ -545,8 +546,6 @@ fn parse_following_period<'a>(
 		return Ok(Node::new(expression, span));
 	}
 
-	if tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {}
-
 	if tokenizer.peek_kind() == Ok(TokenKind::OpenParen) {
 		let open_paren = tokenizer.expect(messages, TokenKind::OpenParen)?;
 		let parsed_type = parse_type(messages, tokenizer)?;
@@ -564,6 +563,13 @@ fn parse_following_period<'a>(
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 	let name = Node::from_token(name_token.text, name_token);
 
+	if allow_struct_literal && tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
+		let struct_initializer = Some(parse_struct_initializer(messages, tokenizer)?);
+		let span = atom.span + name.span;
+		let field_read = Box::new(DotAccess { base: atom, name, struct_initializer });
+		return Ok(Node::new(Expression::DotAcccess(field_read), span));
+	}
+
 	if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokenizer.peek_kind() {
 		let type_arguments = parse_type_arguments(messages, tokenizer)?.map(|a| a.item).unwrap_or_default();
 		let arguments_node = parse_arguments(messages, tokenizer)?;
@@ -574,8 +580,8 @@ fn parse_following_period<'a>(
 	}
 
 	let span = atom.span + name.span;
-	let field_read = Box::new(FieldRead { base: atom, name });
-	return Ok(Node::new(Expression::FieldRead(field_read), span));
+	let field_read = Box::new(DotAccess { base: atom, name, struct_initializer: None });
+	return Ok(Node::new(Expression::DotAcccess(field_read), span));
 }
 
 fn parse_bracket_index<'a>(
@@ -715,10 +721,10 @@ fn parse_type_arguments<'a>(
 	let open_token = tokenizer.expect(messages, TokenKind::OpenGeneric)?;
 
 	let mut types = Vec::new();
-	while !reached_close_generic(tokenizer) {
+	while tokenizer.peek_kind() != Ok(TokenKind::CompGreater) {
 		types.push(parse_type(messages, tokenizer)?);
 
-		if reached_close_generic(tokenizer) {
+		if tokenizer.peek_kind() == Ok(TokenKind::CompGreater) {
 			break;
 		}
 
@@ -745,10 +751,10 @@ fn parse_arguments<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -
 	}
 
 	let mut expressions = Vec::new();
-	while !reached_close_paren(tokenizer) {
+	while tokenizer.peek_kind() != Ok(TokenKind::CloseParen) {
 		expressions.push(parse_expression(messages, tokenizer, true)?);
 
-		if reached_close_paren(tokenizer) {
+		if tokenizer.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
 		}
 
@@ -808,10 +814,9 @@ fn parse_struct_initializer<'a>(
 
 	let close_brace_token = tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
-	Ok(Node::new(
-		StructInitializer { field_initializers },
-		open_brace_token.span + close_brace_token.span,
-	))
+	let initializer = StructInitializer { field_initializers };
+	let span = open_brace_token.span + close_brace_token.span;
+	Ok(Node::new(initializer, span))
 }
 
 fn parse_number<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
@@ -1213,7 +1218,7 @@ fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 	let mut parameters = Vec::new();
 	let mut c_vararg = None;
 
-	while !reached_close_paren(tokenizer) {
+	while tokenizer.peek_kind() != Ok(TokenKind::CloseParen) {
 		let is_mutable = match tokenizer.peek() {
 			Ok(Token { text: "mut", .. }) => {
 				tokenizer.expect_word(messages, "mut")?;
@@ -1243,7 +1248,7 @@ fn parse_parameters<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) 
 		let parameter = Parameter { name, parsed_type, is_mutable };
 		parameters.push(Node::new(parameter, span));
 
-		if reached_close_paren(tokenizer) {
+		if tokenizer.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
 		}
 
@@ -1280,7 +1285,7 @@ fn parse_struct_declaration<'a>(
 			tokenizer.expect(messages, TokenKind::Newline)?;
 		}
 
-		while !reached_close_brace(tokenizer) {
+		while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 			let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
 			let field = parse_field(messages, tokenizer, field_name_token, "struct field")?;
 			fields.push(field);
@@ -1323,7 +1328,7 @@ fn parse_enum_declaration<'a>(
 			tokenizer.expect(messages, TokenKind::Newline)?;
 		}
 
-		while !reached_close_brace(tokenizer) {
+		while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 			let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
 			if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 				if !variants.is_empty() {
@@ -1339,7 +1344,7 @@ fn parse_enum_declaration<'a>(
 				if tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
 					tokenizer.expect(messages, TokenKind::OpenBrace)?;
 
-					while !reached_close_brace(tokenizer) {
+					while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 						let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
 						let field = parse_field(messages, tokenizer, field_name_token, "enum variant field")?;
 						variant_fields.push(field);
@@ -1537,27 +1542,6 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 	} else {
 		Ok(())
 	}
-}
-
-fn reached_close_paren(tokenizer: &mut Tokenizer) -> bool {
-	tokenizer
-		.peek()
-		.map(|peeked| peeked.kind == TokenKind::CloseParen)
-		.unwrap_or(false)
-}
-
-fn reached_close_brace(tokenizer: &mut Tokenizer) -> bool {
-	tokenizer
-		.peek()
-		.map(|peeked| peeked.kind == TokenKind::CloseBrace)
-		.unwrap_or(false)
-}
-
-fn reached_close_generic(tokenizer: &mut Tokenizer) -> bool {
-	tokenizer
-		.peek()
-		.map(|peeked| peeked.kind == TokenKind::CompGreater)
-		.unwrap_or(false)
 }
 
 fn consume_error_syntax(messages: &mut Messages, tokenizer: &mut Tokenizer) {

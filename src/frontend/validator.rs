@@ -806,7 +806,7 @@ fn create_block_enum<'a>(
 	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
 	let mut variants = HashMap::new();
 
-	for variant in &statement.variants {
+	for (index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = type_store.user_types.len();
 
 		let name = variant.name.item;
@@ -815,7 +815,7 @@ fn create_block_enum<'a>(
 		let span = variant.name.span;
 		type_store.register_type(name, generic_parameters.clone(), kind, module_path, scope_id, span);
 
-		let variant_shape = EnumVariantShape { name, span, struct_shape_index };
+		let variant_shape = EnumVariantShape { name, span, index, struct_shape_index };
 		variants.insert(name, variant_shape);
 	}
 
@@ -980,8 +980,8 @@ fn fill_block_types<'a>(
 			// Yuck
 			let mut variant_shapes = shape.variant_shapes.clone();
 
-			for (variant_index, variant_shape) in variant_shapes.values_mut().enumerate() {
-				let tree_variant = &statement.variants[variant_index];
+			for variant_shape in variant_shapes.values_mut() {
+				let tree_variant = &statement.variants[variant_shape.index];
 
 				let mut fields = Vec::with_capacity(shared_fields.len() + tree_variant.fields.len());
 				fields.extend(shared_fields.iter().copied());
@@ -2077,7 +2077,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::Call(call) => validate_call(context, call, span),
 		tree::Expression::MethodCall(method_call) => validate_method_call(context, method_call, span),
 		tree::Expression::Read(read) => validate_read(context, read, span),
-		tree::Expression::FieldRead(field_read) => validate_field_read(context, field_read, span),
+		tree::Expression::DotAcccess(dot_access) => validate_dot_access(context, dot_access, span),
 		tree::Expression::UnaryOperation(operation) => validate_unary_operation(context, operation, span),
 		tree::Expression::BinaryOperation(operation) => validate_binary_operation(context, operation, span),
 	}
@@ -2276,14 +2276,36 @@ fn validate_struct_literal<'a>(
 
 	// Hate this clone
 	let fields = shape.specializations[specialization_index].fields.clone();
-	let mut fields = fields.iter();
-
 	let mut returns = false;
+	let field_initializers = validate_struct_initializer(
+		context,
+		shape_index,
+		specialization_index,
+		type_id,
+		&literal.initializer,
+		&fields,
+		&mut returns,
+	);
+
+	let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
+	Expression { span, type_id, mutable: true, returns, kind }
+}
+
+fn validate_struct_initializer<'a>(
+	context: &mut Context<'a, '_, '_>,
+	shape_index: usize,
+	specialization_index: usize,
+	type_id: TypeId,
+	initializer: &'a Node<tree::StructInitializer<'a>>,
+	fields: &[Field<'a>],
+	returns: &mut bool,
+) -> Vec<FieldInitializer<'a>> {
+	let mut fields = fields.iter();
 	let mut field_initializers = Vec::new();
 
-	for intializer in &literal.initializer.item.field_initializers {
+	for intializer in &initializer.item.field_initializers {
 		let mut expression = validate_expression(context, &intializer.expression);
-		returns |= expression.returns;
+		*returns |= expression.returns;
 
 		let field = match fields.next() {
 			Some(field) => field,
@@ -2343,18 +2365,15 @@ fn validate_struct_literal<'a>(
 	};
 	let specialization = &shape.specializations[specialization_index];
 	if field_initializers.len() < specialization.fields.len() {
-		context.message(
-			error!(
-				"Too few field initializers, expected {}, but only found {}",
-				specialization.fields.len(),
-				field_initializers.len(),
-			)
-			.span(literal.initializer.span),
+		let error = error!(
+			"Too few field initializers, expected {}, but only found {}",
+			specialization.fields.len(),
+			field_initializers.len(),
 		);
+		context.message(error.span(initializer.span));
 	}
 
-	let kind = ExpressionKind::StructLiteral(StructLiteral { type_id, field_initializers });
-	Expression { span, type_id, mutable: true, returns, kind }
+	field_initializers
 }
 
 fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>, span: Span) -> Expression<'a> {
@@ -2892,14 +2911,14 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 	Expression { span, type_id, mutable, returns: false, kind }
 }
 
-fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tree::FieldRead<'a>, span: Span) -> Expression<'a> {
-	let base = validate_expression(context, &field_read.base);
+fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tree::DotAccess<'a>, span: Span) -> Expression<'a> {
+	let base = validate_expression(context, &dot_access.base);
 	if base.type_id.is_any_collapse(context.type_store) {
 		return Expression::any_collapse(context.type_store, span);
 	}
 
 	if let ExpressionKind::Type(base) = base.kind {
-		return validate_field_less_enum_literal(context, base, field_read.name, span);
+		return validate_enum_literal(context, base, dot_access, span);
 	}
 
 	let (type_id, mutable) = match base.type_id.as_pointed(context.type_store) {
@@ -2943,10 +2962,10 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 
 	// TODO: Hashmapify this linear lookup
 	let mut fields = fields.iter().enumerate();
-	let Some((field_index, field)) = fields.find(|f| f.1.name == field_read.name.item) else {
+	let Some((field_index, field)) = fields.find(|f| f.1.name == dot_access.name.item) else {
 		let type_name = context.type_name(base.type_id);
-		let error = error!("No field `{}` on {}", field_read.name.item, type_name);
-		context.message(error.span(field_read.name.span));
+		let error = error!("No field `{}` on {}", dot_access.name.item, type_name);
+		context.message(error.span(dot_access.name.span));
 		return Expression::any_collapse(context.type_store, span);
 	};
 
@@ -2956,8 +2975,8 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 
 	if external_access && is_private {
 		let type_name = context.type_name(base.type_id);
-		let error = error!("Cannot publicly access private field `{}` on type {}", field_read.name.item, type_name);
-		context.message(error.span(field_read.name.span));
+		let error = error!("Cannot publicly access private field `{}` on type {}", dot_access.name.item, type_name);
+		context.message(error.span(dot_access.name.span));
 		return Expression::any_collapse(context.type_store, span);
 	}
 
@@ -2981,37 +3000,46 @@ fn validate_field_read<'a>(context: &mut Context<'a, '_, '_>, field_read: &'a tr
 	Expression { span, type_id, mutable, returns: false, kind }
 }
 
-fn validate_field_less_enum_literal<'a>(
+fn validate_enum_literal<'a>(
 	context: &mut Context<'a, '_, '_>,
 	base: TypeId,
-	name: Node<&'a str>,
+	dot_access: &'a tree::DotAccess<'a>,
 	span: Span,
 ) -> Expression<'a> {
-	let Some(variant) = context.get_enum_variant(base, name) else {
+	let Some(variant) = context.get_enum_variant(base, dot_access.name) else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let entry = context.type_store.type_entries[variant.index()];
-	let shape_index = match entry.kind {
-		TypeEntryKind::UserType { shape_index, .. } => shape_index,
+	let (shape_index, specialization_index) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 		kind => unreachable!("{kind:?}"),
 	};
 
 	let user_type = &context.type_store.user_types[shape_index];
-	let field_count = match &user_type.kind {
-		UserTypeKind::Struct { shape } => shape.fields.len(),
+	let fields = match &user_type.kind {
+		UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.clone(),
 		UserTypeKind::Enum { .. } => unreachable!(),
 	};
 
-	if field_count > 0 {
-		let error = error!("Cannot construct enum variant `{}` without fields", name.item);
+	let mut returns = false;
+
+	if let Some(initializer) = &dot_access.struct_initializer {
+		validate_struct_initializer(context, shape_index, specialization_index, variant, initializer, &fields, &mut returns);
+	} else if !fields.is_empty() {
+		let name = dot_access.name.item;
+		let error = error!("Cannot construct enum variant `{}` without providing fields initializers", name);
+		context.message(error.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	} else if fields.is_empty() {
+		let error = error!("Cannot construct enum variant `{}` with field initializers", dot_access.name.item);
 		context.message(error.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	}
 
 	let literal = StructLiteral { type_id: variant, field_initializers: Vec::new() };
 	let kind = ExpressionKind::StructLiteral(literal);
-	Expression { span, type_id: variant, mutable: true, returns: false, kind }
+	Expression { span, type_id: variant, mutable: true, returns, kind }
 }
 
 fn validate_unary_operation<'a>(

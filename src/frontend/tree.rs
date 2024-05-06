@@ -440,9 +440,10 @@ pub struct Read<'a> {
 }
 
 #[derive(Debug)]
-pub struct FieldRead<'a> {
+pub struct DotAccess<'a> {
 	pub base: Node<Expression<'a>>,
 	pub name: Node<&'a str>,
+	pub struct_initializer: Option<Node<StructInitializer<'a>>>,
 }
 
 #[derive(Debug)]
@@ -563,7 +564,7 @@ pub enum Expression<'a> {
 	Call(Call<'a>),
 	MethodCall(Box<MethodCall<'a>>),
 	Read(Read<'a>),
-	FieldRead(Box<FieldRead<'a>>),
+	DotAcccess(Box<DotAccess<'a>>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),

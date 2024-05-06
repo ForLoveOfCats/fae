@@ -201,6 +201,7 @@ impl<'a> EnumShape<'a> {
 pub struct EnumVariantShape<'a> {
 	pub name: &'a str,
 	pub span: Span,
+	pub index: usize,
 	pub struct_shape_index: usize,
 }
 

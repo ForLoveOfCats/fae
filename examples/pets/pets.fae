@@ -10,12 +10,12 @@ enum Pet {
 	Dog { hours_since_last_walk: i32 }
 }
 
-fn adopt_cat(): Pet.Cat {
-	return Pet.Cat
+fn adopt_cat(): Pet {
+	return Pet.Cat { name: "Lola" }
 }
 
 fn main() {
-	//let cat = Pet.Cat { name: "Lola" }
-	//let dog = Pet.Dog { name: "Odie", hours_since_last_walk 3 }
+	let cat = Pet.Cat { name: "Lola" }
+	let dog = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
 }
    
