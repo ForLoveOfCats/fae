@@ -152,7 +152,7 @@ impl<'a> StructShape<'a> {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FieldShape<'a> {
 	pub name: &'a str,
 	pub field_type: TypeId,

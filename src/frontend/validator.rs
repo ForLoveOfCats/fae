@@ -864,22 +864,6 @@ fn fill_block_types<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			if let UserTypeKind::Enum { shape } = &mut type_store.user_types[shape_index].kind {
-				assert!(!shape.been_filled);
-				shape.been_filled = true;
-
-				if !shape.specializations.is_empty() {
-					fill_pre_existing_enum_specializations(
-						messages,
-						type_store,
-						function_store,
-						generic_usages,
-						module_path,
-						shape_index,
-					);
-				}
-			}
-
 			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 			let mut fields = Vec::with_capacity(statement.fields.len());
 
@@ -906,7 +890,7 @@ fn fill_block_types<'a>(
 					read_only: field.read_only,
 				};
 				let span = field.name.span + field.parsed_type.span;
-				let node = tree::Node::new(field_shape, span);
+				let node = Node::new(field_shape, span);
 				fields.push(node);
 			}
 
@@ -929,6 +913,146 @@ fn fill_block_types<'a>(
 				}
 
 				UserTypeKind::Enum { .. } => unreachable!(),
+			}
+		}
+
+		if let tree::Statement::Enum(statement) = statement {
+			// TODO: Rip this out similar to how it was for functions
+			let shape_index = symbols
+				.symbols
+				.iter()
+				.rev()
+				.find_map(|symbol| {
+					if let SymbolKind::Type { shape_index } = symbol.kind {
+						if symbol.name == statement.name.item {
+							return Some(shape_index);
+						}
+					}
+					None
+				})
+				.unwrap();
+
+			let user_type = &type_store.user_types[shape_index];
+			let scope = symbols.child_scope();
+
+			for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
+				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
+				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+			}
+
+			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+			let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
+
+			for shared_field in &statement.shared_fields {
+				let field_type = match type_store.lookup_type(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					root_layers,
+					scope.symbols,
+					function_initial_symbols_len,
+					&blank_generic_parameters,
+					&shared_field.parsed_type,
+				) {
+					Some(type_id) => type_id,
+					None => type_store.any_collapse_type_id(),
+				};
+
+				let field_shape = FieldShape {
+					name: shared_field.name.item,
+					field_type,
+					attribute: shared_field.attribute,
+					read_only: shared_field.read_only,
+				};
+				let span = shared_field.name.span + shared_field.parsed_type.span;
+				let node = Node::new(field_shape, span);
+				shared_fields.push(node);
+			}
+
+			let user_type = &type_store.user_types[shape_index];
+			let shape = match &user_type.kind {
+				UserTypeKind::Enum { shape } => shape,
+				UserTypeKind::Struct { .. } => unreachable!(),
+			};
+
+			// Yuck
+			let mut variant_shapes = shape.variant_shapes.clone();
+
+			for (variant_index, variant_shape) in variant_shapes.values_mut().enumerate() {
+				let tree_variant = &statement.variants[variant_index];
+
+				let mut fields = Vec::with_capacity(shared_fields.len() + tree_variant.fields.len());
+				fields.extend(shared_fields.iter().copied());
+
+				for field in &tree_variant.fields {
+					let field_type = match type_store.lookup_type(
+						messages,
+						function_store,
+						module_path,
+						generic_usages,
+						root_layers,
+						scope.symbols,
+						function_initial_symbols_len,
+						&blank_generic_parameters,
+						&field.parsed_type,
+					) {
+						Some(type_id) => type_id,
+						None => type_store.any_collapse_type_id(),
+					};
+
+					let field_shape = FieldShape {
+						name: field.name.item,
+						field_type,
+						attribute: field.attribute,
+						read_only: field.read_only,
+					};
+					let span = field.name.span + field.parsed_type.span;
+					let node = Node::new(field_shape, span);
+					fields.push(node);
+				}
+
+				match &mut type_store.user_types[variant_shape.struct_shape_index].kind {
+					UserTypeKind::Struct { shape } => {
+						shape.fields = fields;
+						assert!(!shape.been_filled);
+						shape.been_filled = true;
+
+						if !shape.specializations.is_empty() {
+							fill_pre_existing_enum_specializations(
+								messages,
+								type_store,
+								function_store,
+								generic_usages,
+								module_path,
+								shape_index,
+							);
+						}
+					}
+
+					UserTypeKind::Enum { .. } => unreachable!(),
+				}
+			}
+
+			match &mut type_store.user_types[shape_index].kind {
+				UserTypeKind::Struct { .. } => unreachable!(),
+
+				UserTypeKind::Enum { shape } => {
+					assert!(!shape.been_filled);
+					shape.been_filled = true;
+
+					if !shape.specializations.is_empty() {
+						fill_pre_existing_enum_specializations(
+							messages,
+							type_store,
+							function_store,
+							generic_usages,
+							module_path,
+							shape_index,
+						);
+					}
+				}
 			}
 		}
 	}
@@ -2866,6 +2990,24 @@ fn validate_field_less_enum_literal<'a>(
 	let Some(variant) = context.get_enum_variant(base, name) else {
 		return Expression::any_collapse(context.type_store, span);
 	};
+
+	let entry = context.type_store.type_entries[variant.index()];
+	let shape_index = match entry.kind {
+		TypeEntryKind::UserType { shape_index, .. } => shape_index,
+		kind => unreachable!("{kind:?}"),
+	};
+
+	let user_type = &context.type_store.user_types[shape_index];
+	let field_count = match &user_type.kind {
+		UserTypeKind::Struct { shape } => shape.fields.len(),
+		UserTypeKind::Enum { .. } => unreachable!(),
+	};
+
+	if field_count > 0 {
+		let error = error!("Cannot construct enum variant `{}` without fields", name.item);
+		context.message(error.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	}
 
 	let literal = StructLiteral { type_id: variant, field_initializers: Vec::new() };
 	let kind = ExpressionKind::StructLiteral(literal);
