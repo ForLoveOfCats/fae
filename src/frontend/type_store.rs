@@ -1093,6 +1093,7 @@ impl<'a> TypeStore<'a> {
 
 						let mut size = 0;
 						let mut alignment = 0;
+
 						for variant in variants {
 							self.calculate_layout(variant);
 							let variant_layout = self.type_layout(variant);
@@ -1105,6 +1106,11 @@ impl<'a> TypeStore<'a> {
 							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
 							self.user_type_generate_order.push(description);
 						}
+
+						// Include size for tag. Currently the compiler only guarentee a u8 for as the tag representation
+						// but it needs to provide padding for the variants. Ideally this would use the max alignment of
+						// the variants' *first* fields rather than the variants overall
+						size += alignment.max(1);
 
 						Layout { size, alignment }
 					}
