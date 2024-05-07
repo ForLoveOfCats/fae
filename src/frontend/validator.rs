@@ -2059,8 +2059,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	};
 	let readable_index = context.push_readable(statement.item.name, type_id, kind);
 
-	let name = statement.item.name.item;
-	Some(Binding { name, type_id, expression, readable_index, is_mutable })
+	Some(Binding { type_id, expression, readable_index, is_mutable })
 }
 
 pub fn validate_expression<'a>(
@@ -3579,9 +3578,21 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		return Expression::any_collapse(context.type_store, span);
 	};
 
+	let binding = if let Some(binding_name) = check.binding_name {
+		let kind = match left.mutable {
+			true => ReadableKind::Mut,
+			false => ReadableKind::Let,
+		};
+		let type_id = context.type_store.pointer_to(variant, left.mutable);
+		let readable_index = context.push_readable(binding_name, type_id, kind);
+		Some(CheckIsResultBinding { type_id, readable_index, is_mutable: left.mutable })
+	} else {
+		None
+	};
+
 	let type_id = context.type_store.bool_type_id();
 	let returns = left.returns;
-	let check_is = CheckIs { left, variant_type_id: variant };
+	let check_is = CheckIs { left, binding, variant_type_id: variant };
 	let kind = ExpressionKind::CheckIs(Box::new(check_is));
 	Expression { span, type_id, mutable: true, returns, kind }
 }

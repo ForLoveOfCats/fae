@@ -1,0 +1,28 @@
+import fae::stdout::print_string
+
+enum VehicleKind {
+	Car
+	Truck
+	GolfCart
+}
+
+method VehicleKind
+fn print_if_golf_cart() {
+	if self.* is GolfCart {
+		print_string("self is a golf cart\n")
+	}
+}
+
+fn main() {
+	let a: VehicleKind = VehicleKind.Car
+	let b: VehicleKind = VehicleKind.Truck
+	let c: VehicleKind = VehicleKind.GolfCart
+
+	if a is Car {
+		print_string("a is a car\n")
+	}
+
+	a.print_if_golf_cart()
+	b.print_if_golf_cart()
+	c.print_if_golf_cart()
+}

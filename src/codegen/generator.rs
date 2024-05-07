@@ -1,6 +1,6 @@
 use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, Expression, Function, FunctionId, IfElseChain};
+use crate::frontend::ir::{Block, CheckIsResultBinding, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
@@ -42,7 +42,7 @@ pub trait Generator {
 		context: &mut codegen::Context,
 		chain_expression: &IfElseChain,
 		condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
-		body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+		body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block, bool),
 	);
 
 	// I hate this API but it has to pass the context back through to avoid having both closures
@@ -131,7 +131,15 @@ pub trait Generator {
 		result_type_id: TypeId,
 	) -> Option<Self::Binding>;
 
-	fn generate_check_is(&mut self, context: &mut codegen::Context, value: Self::Binding, variant_index: usize) -> Self::Binding;
+	fn generate_check_is(
+		&mut self,
+		context: &mut codegen::Context,
+		value: Self::Binding,
+		enum_shape_index: usize,
+		enum_specialization_index: usize,
+		new_binding: &Option<CheckIsResultBinding>,
+		variant_index: usize,
+	) -> Self::Binding;
 
 	fn generate_enum_variant_to_enum(
 		&mut self,

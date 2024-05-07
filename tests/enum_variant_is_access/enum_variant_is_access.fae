@@ -1,0 +1,24 @@
+import fae::stdout::print_f64, print_string, print_newline
+
+enum JsonValue {
+	String { value: []u8 }
+	Number { value: f64 }
+	Boolean { value: bool }
+}
+
+fn print_number(value: JsonValue) {
+	if value is number: Number {
+		print_string("Number is ")
+		print_f64(number.value)
+		print_newline()
+
+		// Check that the type is what we expect
+		let _: &JsonValue.Number = number
+	}
+}
+
+fn main() {
+	print_number(JsonValue.String { value: "Hello" })
+	print_number(JsonValue.Number { value: 42 })
+	print_number(JsonValue.Boolean { value: true })
+}

@@ -392,7 +392,6 @@ pub enum StatementKind<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Binding<'a> {
-	pub name: &'a str,
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 	pub readable_index: usize,
@@ -885,7 +884,15 @@ pub struct BinaryOperation<'a> {
 #[derive(Debug, Clone)]
 pub struct CheckIs<'a> {
 	pub left: Expression<'a>,
+	pub binding: Option<CheckIsResultBinding>,
 	pub variant_type_id: TypeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckIsResultBinding {
+	pub type_id: TypeId,
+	pub readable_index: usize,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -23,7 +23,7 @@ use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, Expression, Function, FunctionId, IfElseChain};
+use crate::frontend::ir::{Block, CheckIsResultBinding, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
@@ -433,7 +433,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		context: &mut codegen::Context,
 		chain_expression: &IfElseChain,
 		mut condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
-		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block, bool),
 	) {
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
@@ -459,7 +459,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			};
 
 			unsafe { LLVMPositionBuilderAtEnd(self.builder, if_block) };
-			body_callback(context, self, &entry.body);
+			body_callback(context, self, &entry.body, false);
 
 			unsafe {
 				let current_block = LLVMGetInsertBlock(self.builder);
@@ -475,7 +475,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			unsafe { LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len()) };
 
 			unsafe { LLVMPositionBuilderAtEnd(self.builder, block) };
-			body_callback(context, self, body);
+			body_callback(context, self, body, true);
 
 			unsafe {
 				let current_block = LLVMGetInsertBlock(self.builder);
@@ -1375,7 +1375,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Some(Binding { type_id: result_type_id, kind })
 	}
 
-	fn generate_check_is(&mut self, context: &mut codegen::Context, value: Self::Binding, variant_index: usize) -> Self::Binding {
+	fn generate_check_is(
+		&mut self,
+		context: &mut codegen::Context,
+		value: Self::Binding,
+		enum_shape_index: usize,
+		enum_specialization_index: usize,
+		new_binding: &Option<CheckIsResultBinding>,
+		variant_index: usize,
+	) -> Self::Binding {
 		// TODO: Make `is` auto-deref?
 		let ValuePointer { pointer, .. } = self.value_pointer(value);
 
@@ -1385,6 +1393,17 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let expected = LLVMConstInt(i8_type, variant_index as _, false as _);
 			LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr())
 		};
+
+		if let Some(new_binding) = new_binding {
+			assert_eq!(self.readables.len(), new_binding.readable_index);
+			let shape = &self.llvm_types.user_type_structs[enum_shape_index];
+			let llvm_struct = shape[enum_specialization_index].unwrap();
+			let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
+
+			let kind = BindingKind::Value(variant_pointer);
+			let binding = Binding { type_id: new_binding.type_id, kind };
+			self.readables.push(Some(binding));
+		}
 
 		let kind = BindingKind::Value(result);
 		Binding { type_id: context.type_store.bool_type_id(), kind }

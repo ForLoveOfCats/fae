@@ -282,6 +282,7 @@ fn parse_expression_climb<'a>(
 				let first = tokenizer.expect(messages, TokenKind::Word)?;
 
 				if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
+					tokenizer.expect(messages, TokenKind::Colon)?;
 					let variant_name = tokenizer.expect(messages, TokenKind::Word)?;
 					let binding_name = Some(Node::from_token(first.text, first));
 					(binding_name, Node::from_token(variant_name.text, variant_name))

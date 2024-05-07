@@ -1,4 +1,4 @@
-import fae::stdout::print_string
+import fae::stdout::print_i32, print_string
 
 enum VetSpecialty {
 	Cat
@@ -41,11 +41,24 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 	return BeenTreated.NotTreated
 }
 
-fn main() {
-	let cat: Pet = Pet.Cat { name: "Lola" }
-	let dog: Pet = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
+method mut Pet
+fn take_on_walk() {
+	if self.* is dog: Dog and dog.hours_since_last_walk > 2 {
+		print_string("Walking a dog, it has not been walked in ")
+		print_i32(dog.hours_since_last_walk)
+		print_string(" hours\n")
+		dog.hours_since_last_walk = 0
+	}
+}
 
-	if dog.visit_vet(VetSpecialty.Dog) is NotTreated {
-		print_string("The pet has not been treated\n")
+fn main() {
+	mut cat: Pet = Pet.Cat { name: "Lola" }
+	mut dog: Pet = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
+
+	cat.take_on_walk()
+	dog.take_on_walk()
+
+	if cat.visit_vet(VetSpecialty.Dog) is NotTreated {
+		print_string("The cat has not been treated\n")
 	}
 }

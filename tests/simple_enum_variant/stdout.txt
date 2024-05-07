@@ -1,0 +1,2 @@
+a is a car
+self is a golf cart

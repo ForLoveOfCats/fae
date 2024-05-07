@@ -219,8 +219,17 @@ fn generate_if_else_chain<G: Generator>(
 	generator.generate_if_else_chain(
 		context,
 		chain_expression,
-		|context, generator, condition| generate_expression(context, generator, condition).unwrap(),
-		|context, generator, body| generate_block(context, generator, body),
+		|context, generator, condition| {
+			generator.start_block();
+			generate_expression(context, generator, condition).unwrap()
+		},
+		|context, generator, body, is_else| {
+			let block = generate_block(context, generator, body);
+			if !is_else {
+				generator.end_block();
+			}
+			block
+		},
 	);
 
 	None
@@ -502,18 +511,34 @@ fn generate_binary_operation<G: Generator>(
 fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, check_is: &CheckIs) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &check_is.left).unwrap();
 
-	let entry = context.type_store.type_entries[check_is.variant_type_id.index()];
-	let TypeEntryKind::UserType { shape_index, .. } = entry.kind else {
+	let entry = context.type_store.type_entries[check_is.left.type_id.index()];
+	let TypeEntryKind::UserType {
+		shape_index: enum_shape_index,
+		specialization_index: enum_specialization_index,
+	} = entry.kind
+	else {
 		unreachable!("{:?}", entry.kind);
 	};
 
-	let user_type = &context.type_store.user_types[shape_index];
-	let UserTypeKind::Struct { shape } = &user_type.kind else {
-		unreachable!("{:?}", user_type.kind);
+	let entry = context.type_store.type_entries[check_is.variant_type_id.index()];
+	let TypeEntryKind::UserType { shape_index: variant_shape_index, .. } = entry.kind else {
+		unreachable!("{:?}", entry.kind);
 	};
 
-	let variant_index = shape.variant_index.unwrap();
-	Some(generator.generate_check_is(context, value, variant_index))
+	let variant_user_type = &context.type_store.user_types[variant_shape_index];
+	let UserTypeKind::Struct { shape: variant_shape } = &variant_user_type.kind else {
+		unreachable!("{:?}", variant_user_type.kind);
+	};
+
+	let variant_index = variant_shape.variant_index.unwrap();
+	Some(generator.generate_check_is(
+		context,
+		value,
+		enum_shape_index,
+		enum_specialization_index,
+		&check_is.binding,
+		variant_index,
+	))
 }
 
 fn generate_mutable_slice_to_immutable<G: Generator>(
