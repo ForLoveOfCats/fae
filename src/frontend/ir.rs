@@ -473,6 +473,7 @@ pub enum ExpressionKind<'a> {
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
+	CheckIs(Box<CheckIs<'a>>),
 
 	EnumVariantToEnum(Box<EnumVariantToEnum<'a>>),
 	SliceMutableToImmutable(Box<SliceMutableToImmutable<'a>>),
@@ -501,6 +502,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::FieldRead(_) => "field read",
 			ExpressionKind::UnaryOperation(_) => "unary operation",
 			ExpressionKind::BinaryOperation(_) => "binary operation",
+			ExpressionKind::CheckIs(_) => "check is operation",
 			ExpressionKind::EnumVariantToEnum(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
 		}
@@ -528,6 +530,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::FieldRead(_) => "a field read",
 			ExpressionKind::UnaryOperation(_) => "an unary operation",
 			ExpressionKind::BinaryOperation(_) => "a binary operation",
+			ExpressionKind::CheckIs(_) => "a check is operation",
 			ExpressionKind::EnumVariantToEnum(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
 		}
@@ -877,6 +880,12 @@ pub struct BinaryOperation<'a> {
 	pub left: Expression<'a>,
 	pub right: Expression<'a>,
 	pub type_id: TypeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckIs<'a> {
+	pub left: Expression<'a>,
+	pub variant_type_id: TypeId,
 }
 
 #[derive(Debug, Clone)]

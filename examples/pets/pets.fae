@@ -5,9 +5,18 @@ enum VetSpecialty {
 	Dog
 }
 
-enum Treated {
-	Yes
-	No
+enum BeenTreated {
+	Treated
+	NotTreated
+}
+
+method static BeenTreated
+fn from_bool(value: bool): BeenTreated {
+	if value {
+		return BeenTreated.Treated
+	} else {
+		return BeenTreated.NotTreated
+	}
 }
 
 enum Pet {
@@ -18,14 +27,25 @@ enum Pet {
 }
 
 method Pet
-fn visit_vet(specialty: VetSpecialty): Treated {
-	return Treated.Yes
+fn visit_vet(specialty: VetSpecialty): BeenTreated {
+	if self.* is Cat and specialty is Cat {
+		print_string("Cat vet is treating the cat\n")
+		return BeenTreated.Treated
+	}
+
+	if self.* is Dog and specialty is Dog {
+		print_string("Dog vet is treating the dog\n")
+		return BeenTreated.from_bool(true)
+	}
+
+	return BeenTreated.NotTreated
 }
 
 fn main() {
 	let cat: Pet = Pet.Cat { name: "Lola" }
 	let dog: Pet = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
 
-	cat.visit_vet(VetSpecialty.Cat)
-	dog.visit_vet(VetSpecialty.Cat)
+	if dog.visit_vet(VetSpecialty.Dog) is NotTreated {
+		print_string("The pet has not been treated\n")
+	}
 }

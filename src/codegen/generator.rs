@@ -131,6 +131,8 @@ pub trait Generator {
 		result_type_id: TypeId,
 	) -> Option<Self::Binding>;
 
+	fn generate_check_is(&mut self, context: &mut codegen::Context, value: Self::Binding, variant_index: usize) -> Self::Binding;
+
 	fn generate_enum_variant_to_enum(
 		&mut self,
 		type_store: &TypeStore,

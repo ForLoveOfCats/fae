@@ -252,29 +252,54 @@ fn parse_expression_climb<'a>(
 		}
 	}
 
-	while let Some(operator) = tokenizer.peek().ok().and_then(token_to_operator) {
-		let precedence = operator.item.precedence();
-		if precedence < min_precedence {
+	loop {
+		if let Some(operator) = tokenizer.peek().ok().and_then(token_to_operator) {
+			let precedence = operator.item.precedence();
+			if precedence < min_precedence {
+				break;
+			}
+
+			tokenizer.next(messages).expect("Known peeked token");
+
+			let associativity = operator.item.associativity();
+			let next_min_precedence = match associativity {
+				Associativity::Left => precedence + 1,
+				Associativity::Right => precedence,
+			};
+
+			let right = parse_expression_climb(messages, tokenizer, allow_struct_literal, next_min_precedence)?;
+			let left_span = atom.span;
+			let right_span = right.span;
+
+			let binary_operation = BinaryOperation { op: operator, left: atom, right };
+			let expression = Expression::BinaryOperation(Box::new(binary_operation));
+
+			atom = Node::new(expression, left_span + right_span);
+		} else if let Ok(Token { text: "is", .. }) = tokenizer.peek() {
+			tokenizer.expect_word(messages, "is")?;
+
+			let (binding_name, variant_name) = {
+				let first = tokenizer.expect(messages, TokenKind::Word)?;
+
+				if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
+					let variant_name = tokenizer.expect(messages, TokenKind::Word)?;
+					let binding_name = Some(Node::from_token(first.text, first));
+					(binding_name, Node::from_token(variant_name.text, variant_name))
+				} else {
+					(None, Node::from_token(first.text, first))
+				}
+			};
+
+			let left_span = atom.span;
+			let right_span = variant_name.span;
+
+			let check_is = CheckIs { left: atom, binding_name, variant_name };
+			let expression = Expression::CheckIs(Box::new(check_is));
+
+			atom = Node::new(expression, left_span + right_span);
+		} else {
 			break;
 		}
-
-		tokenizer.next(messages).expect("Known peeked token");
-
-		let associativity = operator.item.associativity();
-		let next_min_precedence = match associativity {
-			Associativity::Left => precedence + 1,
-			Associativity::Right => precedence,
-		};
-
-		let right = parse_expression_climb(messages, tokenizer, allow_struct_literal, next_min_precedence)?;
-		let left_span = atom.span;
-		let right_span = right.span;
-
-		let binary_operation = BinaryOperation { op: operator, right, left: atom };
-		let boxed = Box::new(binary_operation);
-		let expression = Expression::BinaryOperation(boxed);
-
-		atom = Node::new(expression, left_span + right_span);
 	}
 
 	Ok(atom)

@@ -2,9 +2,9 @@ use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CodepointLiteral, Continue, DecimalValue,
-	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, MethodCall,
-	Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments,
+	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
+	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue,
+	MethodCall, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments,
 	UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
@@ -196,6 +196,8 @@ pub fn generate_expression<G: Generator>(
 		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation),
 
 		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, generator, operation),
+
+		ExpressionKind::CheckIs(check_is) => generate_check_is(context, generator, check_is),
 
 		ExpressionKind::SliceMutableToImmutable(conversion) => {
 			generate_mutable_slice_to_immutable(context, generator, conversion)
@@ -497,6 +499,23 @@ fn generate_binary_operation<G: Generator>(
 	generator.generate_binary_operation(context, &operation.left, &operation.right, operation.op, left_type_id, result_type_id)
 }
 
+fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, check_is: &CheckIs) -> Option<G::Binding> {
+	let value = generate_expression(context, generator, &check_is.left).unwrap();
+
+	let entry = context.type_store.type_entries[check_is.variant_type_id.index()];
+	let TypeEntryKind::UserType { shape_index, .. } = entry.kind else {
+		unreachable!("{:?}", entry.kind);
+	};
+
+	let user_type = &context.type_store.user_types[shape_index];
+	let UserTypeKind::Struct { shape } = &user_type.kind else {
+		unreachable!("{:?}", user_type.kind);
+	};
+
+	let variant_index = shape.variant_index.unwrap();
+	Some(generator.generate_check_is(context, value, variant_index))
+}
+
 fn generate_mutable_slice_to_immutable<G: Generator>(
 	context: &mut Context,
 	generator: &mut G,
@@ -513,7 +532,7 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	let entry = context.type_store.type_entries[conversion.expression.type_id.index()];
 	let variant_index = match entry.kind {
 		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types[shape_index].kind {
-			UserTypeKind::Struct { shape } => shape.parent_enum_shape_index.unwrap(),
+			UserTypeKind::Struct { shape } => shape.variant_index.unwrap(),
 			kind => unreachable!("{kind:?}"),
 		},
 

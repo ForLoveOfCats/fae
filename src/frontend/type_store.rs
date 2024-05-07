@@ -138,16 +138,18 @@ pub struct StructShape<'a> {
 	pub been_filled: bool,
 	pub fields: Vec<Node<FieldShape<'a>>>,
 	pub parent_enum_shape_index: Option<usize>,
+	pub variant_index: Option<usize>,
 
 	pub specializations: Vec<Struct<'a>>,
 }
 
 impl<'a> StructShape<'a> {
-	pub fn new(parent_enum_shape_index: Option<usize>) -> Self {
+	pub fn new(parent_enum_shape_index: Option<usize>, variant_index: Option<usize>) -> Self {
 		StructShape {
 			been_filled: false,
 			fields: Vec::new(),
 			parent_enum_shape_index,
+			variant_index,
 			specializations: Vec::new(),
 		}
 	}

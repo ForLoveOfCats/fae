@@ -1375,6 +1375,21 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Some(Binding { type_id: result_type_id, kind })
 	}
 
+	fn generate_check_is(&mut self, context: &mut codegen::Context, value: Self::Binding, variant_index: usize) -> Self::Binding {
+		// TODO: Make `is` auto-deref?
+		let ValuePointer { pointer, .. } = self.value_pointer(value);
+
+		let result = unsafe {
+			let i8_type = LLVMInt8TypeInContext(self.context);
+			let tag = LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr());
+			let expected = LLVMConstInt(i8_type, variant_index as _, false as _);
+			LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr())
+		};
+
+		let kind = BindingKind::Value(result);
+		Binding { type_id: context.type_store.bool_type_id(), kind }
+	}
+
 	fn generate_enum_variant_to_enum(
 		&mut self,
 		type_store: &TypeStore,

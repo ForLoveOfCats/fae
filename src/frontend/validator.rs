@@ -768,7 +768,7 @@ fn create_block_struct<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = StructShape::new(None);
+	let shape = StructShape::new(None, None);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
@@ -810,7 +810,7 @@ fn create_block_enum<'a>(
 		let struct_shape_index = type_store.user_types.len();
 
 		let name = variant.name.item;
-		let shape = StructShape::new(Some(enum_shape_index));
+		let shape = StructShape::new(Some(enum_shape_index), Some(index));
 		let kind = UserTypeKind::Struct { shape };
 		let span = variant.name.span;
 		type_store.register_type(name, generic_parameters.clone(), kind, module_path, scope_id, span);
@@ -2080,6 +2080,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::DotAcccess(dot_access) => validate_dot_access(context, dot_access, span),
 		tree::Expression::UnaryOperation(operation) => validate_unary_operation(context, operation, span),
 		tree::Expression::BinaryOperation(operation) => validate_binary_operation(context, operation, span),
+		tree::Expression::CheckIs(check) => validate_check_is(context, check, span),
 	}
 }
 
@@ -3554,4 +3555,27 @@ fn perform_constant_binary_operation<'a>(
 	}
 
 	None
+}
+
+fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::CheckIs<'a>, span: Span) -> Expression<'a> {
+	let left = validate_expression(context, &check.left);
+	if left.type_id.is_any_collapse(context.type_store) {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	let Some(variant) = context.type_store.get_enum_variant(
+		context.messages,
+		context.function_store,
+		context.module_path,
+		left.type_id,
+		check.variant_name,
+	) else {
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let type_id = context.type_store.bool_type_id();
+	let returns = left.returns;
+	let check_is = CheckIs { left, variant_type_id: variant };
+	let kind = ExpressionKind::CheckIs(Box::new(check_is));
+	Expression { span, type_id, mutable: true, returns, kind }
 }

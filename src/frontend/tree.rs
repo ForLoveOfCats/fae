@@ -419,6 +419,13 @@ pub struct BinaryOperation<'a> {
 }
 
 #[derive(Debug)]
+pub struct CheckIs<'a> {
+	pub left: Node<Expression<'a>>,
+	pub binding_name: Option<Node<&'a str>>,
+	pub variant_name: Node<&'a str>,
+}
+
+#[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
 	pub type_arguments: Vec<Node<Type<'a>>>,
@@ -568,6 +575,7 @@ pub enum Expression<'a> {
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
+	CheckIs(Box<CheckIs<'a>>),
 }
 
 #[derive(Debug)]
