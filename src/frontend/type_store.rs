@@ -130,6 +130,7 @@ pub struct AsPointed {
 pub struct Layout {
 	pub size: i64,
 	pub alignment: i64,
+	pub first_alignment: i64,
 }
 
 #[derive(Debug)]
@@ -213,6 +214,7 @@ pub struct Enum<'a> {
 	pub been_filled: bool,
 	pub variants: HashMap<&'a str, EnumVariant>,
 	pub layout: Option<Layout>,
+	pub tag_memory_size: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -297,18 +299,18 @@ impl NumericKind {
 
 	pub fn layout(self) -> Layout {
 		match self {
-			NumericKind::I8 => Layout { size: 1, alignment: 1 },
-			NumericKind::I16 => Layout { size: 2, alignment: 2 },
-			NumericKind::I32 => Layout { size: 4, alignment: 4 },
-			NumericKind::I64 => Layout { size: 8, alignment: 8 },
-			NumericKind::U8 => Layout { size: 1, alignment: 1 },
-			NumericKind::U16 => Layout { size: 2, alignment: 2 },
-			NumericKind::U32 => Layout { size: 4, alignment: 4 },
-			NumericKind::U64 => Layout { size: 8, alignment: 8 },
-			NumericKind::ISize => Layout { size: 8, alignment: 8 },
-			NumericKind::USize => Layout { size: 8, alignment: 8 },
-			NumericKind::F32 => Layout { size: 4, alignment: 4 },
-			NumericKind::F64 => Layout { size: 8, alignment: 8 },
+			NumericKind::I8 => Layout { size: 1, alignment: 1, first_alignment: 1 },
+			NumericKind::I16 => Layout { size: 2, alignment: 2, first_alignment: 2 },
+			NumericKind::I32 => Layout { size: 4, alignment: 4, first_alignment: 4 },
+			NumericKind::I64 => Layout { size: 8, alignment: 8, first_alignment: 8 },
+			NumericKind::U8 => Layout { size: 1, alignment: 1, first_alignment: 1 },
+			NumericKind::U16 => Layout { size: 2, alignment: 2, first_alignment: 2 },
+			NumericKind::U32 => Layout { size: 4, alignment: 4, first_alignment: 4 },
+			NumericKind::U64 => Layout { size: 8, alignment: 8, first_alignment: 8 },
+			NumericKind::ISize => Layout { size: 8, alignment: 8, first_alignment: 8 },
+			NumericKind::USize => Layout { size: 8, alignment: 8, first_alignment: 8 },
+			NumericKind::F32 => Layout { size: 4, alignment: 4, first_alignment: 4 },
+			NumericKind::F64 => Layout { size: 8, alignment: 8, first_alignment: 8 },
 		}
 	}
 
@@ -348,11 +350,11 @@ impl PrimativeKind {
 
 	pub fn layout(self) -> Layout {
 		match self {
-			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0 },
-			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
+			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0, first_alignment: 0 },
+			PrimativeKind::Void => Layout { size: 0, alignment: 0, first_alignment: 0 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
-			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
+			PrimativeKind::Bool => Layout { size: 1, alignment: 1, first_alignment: 1 },
 			PrimativeKind::Numeric(numeric) => numeric.layout(),
 		}
 	}
@@ -1043,91 +1045,98 @@ impl<'a> TypeStore<'a> {
 
 	pub fn calculate_layout(&mut self, type_id: TypeId) {
 		let entry = self.type_entries[type_id.index()];
-		match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let calculated_layout = match &self.user_types[shape_index].kind {
-					UserTypeKind::Struct { shape } => {
-						let specialization = &shape.specializations[specialization_index];
-						if specialization.layout.is_some() {
-							return;
-						}
-
-						// Belch
-						let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
-
-						let mut size = 0;
-						let mut alignment = 0;
-
-						for type_id in field_types {
-							self.calculate_layout(type_id);
-							let field_layout = self.type_layout(type_id);
-
-							if field_layout.alignment != 0 {
-								size += size % field_layout.alignment;
-							}
-
-							size += field_layout.size;
-							alignment = alignment.max(field_layout.alignment);
-						}
-
-						if size != 0 && size % alignment != 0 {
-							size = (size / alignment) * alignment + alignment;
-						}
-
-						if !entry.generic_poisoned {
-							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-							self.user_type_generate_order.push(description);
-						}
-
-						Layout { size, alignment }
+		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+			match &self.user_types[shape_index].kind {
+				UserTypeKind::Struct { shape } => {
+					let specialization = &shape.specializations[specialization_index];
+					if specialization.layout.is_some() {
+						return;
 					}
 
-					UserTypeKind::Enum { shape } => {
-						let specialization = &shape.specializations[specialization_index];
-						if specialization.layout.is_some() {
-							return;
+					// Belch
+					let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
+
+					let mut size = 0;
+					let mut alignment = 0;
+					let mut first_alignment = 0;
+
+					for type_id in field_types {
+						self.calculate_layout(type_id);
+						let field_layout = self.type_layout(type_id);
+
+						if field_layout.alignment != 0 {
+							size += size % field_layout.alignment;
 						}
 
-						// Belch, not only does this allocate a new Vec, the values iteration is O(capacity), big sad
-						let variants: Vec<_> = specialization.variants.values().map(|v| v.type_id).collect();
+						size += field_layout.size;
+						alignment = alignment.max(field_layout.alignment);
 
-						let mut size = 0;
-						let mut alignment = 0;
-
-						for variant in variants {
-							self.calculate_layout(variant);
-							let variant_layout = self.type_layout(variant);
-
-							size = size.max(variant_layout.size);
-							alignment = alignment.max(variant_layout.alignment);
+						if first_alignment <= 0 {
+							first_alignment = field_layout.alignment;
 						}
-
-						if !entry.generic_poisoned {
-							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-							self.user_type_generate_order.push(description);
-						}
-
-						// Include size for tag. Currently the compiler only guarentee a u8 for as the tag representation
-						// but it needs to provide padding for the variants. Ideally this would use the max alignment of
-						// the variants' *first* fields rather than the variants overall
-						size += alignment.max(1);
-
-						Layout { size, alignment }
-					}
-				};
-
-				match &mut self.user_types[shape_index].kind {
-					UserTypeKind::Struct { shape } => {
-						shape.specializations[specialization_index].layout = Some(calculated_layout);
 					}
 
-					UserTypeKind::Enum { shape } => {
-						shape.specializations[specialization_index].layout = Some(calculated_layout);
+					if size != 0 && size % alignment != 0 {
+						size = (size / alignment) * alignment + alignment;
+					}
+
+					if !entry.generic_poisoned {
+						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+						self.user_type_generate_order.push(description);
+					}
+
+					let layout = Layout { size, alignment, first_alignment };
+					match &mut self.user_types[shape_index].kind {
+						UserTypeKind::Struct { shape } => {
+							shape.specializations[specialization_index].layout = Some(layout);
+						}
+
+						kind => unreachable!("{kind:?}"),
+					}
+				}
+
+				UserTypeKind::Enum { shape } => {
+					let specialization = &shape.specializations[specialization_index];
+					if specialization.layout.is_some() {
+						return;
+					}
+
+					// Belch, not only does this allocate a new Vec, the values iteration is O(capacity), big sad
+					let variants: Vec<_> = specialization.variants.values().map(|v| v.type_id).collect();
+
+					let mut size = 0;
+					let mut alignment = 0;
+					let mut max_first_alignment = 0;
+
+					for variant in variants {
+						self.calculate_layout(variant);
+						let variant_layout = self.type_layout(variant);
+
+						size = size.max(variant_layout.size);
+						alignment = alignment.max(variant_layout.alignment);
+						max_first_alignment = max_first_alignment.max(variant_layout.first_alignment);
+					}
+
+					if !entry.generic_poisoned {
+						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+						self.user_type_generate_order.push(description);
+					}
+
+					let tag_memory_size = max_first_alignment.max(1);
+					size += tag_memory_size;
+
+					let layout = Layout { size, alignment, first_alignment: tag_memory_size };
+					match &mut self.user_types[shape_index].kind {
+						UserTypeKind::Enum { shape } => {
+							let specialization = &mut shape.specializations[specialization_index];
+							specialization.layout = Some(layout);
+							specialization.tag_memory_size = Some(tag_memory_size);
+						}
+
+						kind => unreachable!("{kind:?}"),
 					}
 				}
 			}
-
-			_ => {}
 		}
 	}
 
@@ -1151,13 +1160,13 @@ impl<'a> TypeStore<'a> {
 				}
 			},
 
-			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
+			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8, first_alignment: 8 },
 
-			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8 },
+			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8, first_alignment: 8 },
 
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
-			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0 },
-			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 0 },
+			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0, first_alignment: 0 },
+			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 0, first_alignment: 0 },
 		}
 	}
 
@@ -1639,6 +1648,7 @@ impl<'a> TypeStore<'a> {
 			been_filled,
 			variants,
 			layout: None,
+			tag_memory_size: None,
 		};
 		shape.specializations.push(specialization);
 

@@ -3024,20 +3024,24 @@ fn validate_enum_literal<'a>(
 
 	let mut returns = false;
 
-	if let Some(initializer) = &dot_access.struct_initializer {
-		validate_struct_initializer(context, shape_index, specialization_index, variant, initializer, &fields, &mut returns);
+	let field_initializers = if let Some(initializer) = &dot_access.struct_initializer {
+		if fields.is_empty() {
+			let error = error!("Cannot construct enum variant `{}` with field initializers", dot_access.name.item);
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		validate_struct_initializer(context, shape_index, specialization_index, variant, initializer, &fields, &mut returns)
 	} else if !fields.is_empty() {
 		let name = dot_access.name.item;
 		let error = error!("Cannot construct enum variant `{}` without providing fields initializers", name);
 		context.message(error.span(span));
 		return Expression::any_collapse(context.type_store, span);
-	} else if fields.is_empty() {
-		let error = error!("Cannot construct enum variant `{}` with field initializers", dot_access.name.item);
-		context.message(error.span(span));
-		return Expression::any_collapse(context.type_store, span);
-	}
+	} else {
+		Vec::new()
+	};
 
-	let literal = StructLiteral { type_id: variant, field_initializers: Vec::new() };
+	let literal = StructLiteral { type_id: variant, field_initializers };
 	let kind = ExpressionKind::StructLiteral(literal);
 	Expression { span, type_id: variant, mutable: true, returns, kind }
 }

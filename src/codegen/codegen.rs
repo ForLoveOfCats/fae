@@ -3,9 +3,9 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CodepointLiteral, Continue, DecimalValue,
-	Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, MethodCall, Read, Return,
-	SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments, UnaryOperation,
-	UnaryOperator, While,
+	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue, MethodCall,
+	Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments,
+	UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -201,9 +201,7 @@ pub fn generate_expression<G: Generator>(
 			generate_mutable_slice_to_immutable(context, generator, conversion)
 		}
 
-		ExpressionKind::EnumVariantToEnum(_conversion) => {
-			todo!()
-		}
+		ExpressionKind::EnumVariantToEnum(conversion) => generate_enum_variant_to_enum(context, generator, conversion),
 
 		ExpressionKind::Void => None,
 
@@ -505,6 +503,40 @@ fn generate_mutable_slice_to_immutable<G: Generator>(
 	conversion: &SliceMutableToImmutable,
 ) -> Option<G::Binding> {
 	Some(generate_expression(context, generator, &conversion.expression).unwrap())
+}
+
+fn generate_enum_variant_to_enum<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	conversion: &EnumVariantToEnum,
+) -> Option<G::Binding> {
+	let entry = context.type_store.type_entries[conversion.expression.type_id.index()];
+	let variant_index = match entry.kind {
+		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types[shape_index].kind {
+			UserTypeKind::Struct { shape } => shape.parent_enum_shape_index.unwrap(),
+			kind => unreachable!("{kind:?}"),
+		},
+
+		kind => unreachable!("{kind:?}"),
+	};
+
+	let variant_binding = generate_expression(context, generator, &conversion.expression);
+
+	let type_id = context.specialize_type_id(conversion.type_id);
+	let entry = context.type_store.type_entries[type_id.index()];
+	let (shape_index, specialization_index) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		_ => unreachable!("{:?}", entry.kind),
+	};
+
+	Some(generator.generate_enum_variant_to_enum(
+		context.type_store,
+		type_id,
+		shape_index,
+		specialization_index,
+		variant_index,
+		variant_binding,
+	))
 }
 
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {

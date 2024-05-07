@@ -1,6 +1,13 @@
-enum DoctorKind {
-	Vet
-	Pediatric
+import fae::stdout::print_string
+
+enum VetSpecialty {
+	Cat
+	Dog
+}
+
+enum Treated {
+	Yes
+	No
 }
 
 enum Pet {
@@ -10,12 +17,15 @@ enum Pet {
 	Dog { hours_since_last_walk: i32 }
 }
 
-fn adopt_cat(): Pet {
-	return Pet.Cat { name: "Lola" }
+method Pet
+fn visit_vet(specialty: VetSpecialty): Treated {
+	return Treated.Yes
 }
 
 fn main() {
-	let cat = Pet.Cat { name: "Lola" }
-	let dog = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
+	let cat: Pet = Pet.Cat { name: "Lola" }
+	let dog: Pet = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
+
+	cat.visit_vet(VetSpecialty.Cat)
+	dog.visit_vet(VetSpecialty.Cat)
 }
-   

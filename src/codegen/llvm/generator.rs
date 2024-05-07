@@ -14,7 +14,7 @@ use llvm_sys::core::{
 	LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
 	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetGlobalConstant,
 	LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility, LLVMStructGetTypeAtIndex,
-	LLVMStructTypeInContext, LLVMTypeOf,
+	LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType,
 };
 use llvm_sys::prelude::{LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef};
 use llvm_sys::{LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr, LLVMVisibility};
@@ -97,6 +97,18 @@ impl LLVMTypes {
 			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
 
 			LLVMTypes { opaque_pointer, slice_struct, user_type_structs: Vec::new() }
+		}
+	}
+
+	pub fn size_to_int_type(context: LLVMContextRef, size: i64) -> LLVMTypeRef {
+		unsafe {
+			match size {
+				1 => LLVMInt8TypeInContext(context),
+				2 => LLVMInt16TypeInContext(context),
+				4 => LLVMInt32TypeInContext(context),
+				8 => LLVMInt64TypeInContext(context),
+				_ => unreachable!("{size}"),
+			}
 		}
 	}
 
@@ -270,7 +282,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for shape in &type_store.user_types {
 			let specialization_count = match &shape.kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
-				_ => todo!(),
+				UserTypeKind::Enum { shape } => shape.specializations.len(),
 			};
 
 			let specializations = Vec::from_iter((0..specialization_count).map(|_| None));
@@ -282,26 +294,49 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			field_types_buffer.clear();
 			let shape = &type_store.user_types[description.shape_index];
 
-			#[allow(irrefutable_let_patterns)]
-			if let UserTypeKind::Struct { shape } = &shape.kind {
-				let specialization = &shape.specializations[description.specialization_index];
-				for field in &specialization.fields {
-					let llvm_type = self
-						.llvm_types
-						.type_to_basic_type_enum(self.context, type_store, field.type_id);
-					field_types_buffer.push(llvm_type);
+			match &shape.kind {
+				UserTypeKind::Struct { shape } => {
+					let specialization = &shape.specializations[description.specialization_index];
+					for field in &specialization.fields {
+						let llvm_type = self
+							.llvm_types
+							.type_to_basic_type_enum(self.context, type_store, field.type_id);
+						field_types_buffer.push(llvm_type);
+					}
 				}
 
-				let llvm_struct = unsafe {
-					LLVMStructTypeInContext(
-						self.context,
-						field_types_buffer.as_mut_ptr(),
-						field_types_buffer.len() as u32,
-						false as _,
-					)
-				};
-				self.llvm_types.user_type_structs[description.shape_index][description.specialization_index] = Some(llvm_struct);
+				UserTypeKind::Enum { shape } => unsafe {
+					let specialization = &shape.specializations[description.specialization_index];
+					let layout = specialization.layout.unwrap();
+					let tag_memory_size = specialization.tag_memory_size.unwrap();
+
+					let tag = LLVMTypes::size_to_int_type(self.context, tag_memory_size);
+					field_types_buffer.push(tag);
+
+					let variants_size = layout.size - tag_memory_size;
+					assert!(variants_size >= 0);
+
+					if variants_size > 0 {
+						assert_eq!(variants_size % layout.alignment, 0);
+						let count = variants_size / layout.alignment;
+						let item = LLVMTypes::size_to_int_type(self.context, layout.alignment);
+						let space = LLVMVectorType(item, count as u32);
+						field_types_buffer.push(space);
+					}
+				},
 			}
+
+			let llvm_struct = unsafe {
+				LLVMStructTypeInContext(
+					self.context,
+					field_types_buffer.as_mut_ptr(),
+					field_types_buffer.len() as u32,
+					false as _,
+				)
+			};
+
+			let specializations = &mut self.llvm_types.user_type_structs[description.shape_index];
+			specializations[description.specialization_index] = Some(llvm_struct);
 		}
 	}
 
@@ -1338,6 +1373,47 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let kind = BindingKind::Value(value);
 		Some(Binding { type_id: result_type_id, kind })
+	}
+
+	fn generate_enum_variant_to_enum(
+		&mut self,
+		type_store: &TypeStore,
+		enum_type_id: TypeId,
+		enum_shape_index: usize,
+		enum_specialization_index: usize,
+		variant_index: usize,
+		variant_binding: Option<Binding>,
+	) -> Self::Binding {
+		let shape = &self.llvm_types.user_type_structs[enum_shape_index];
+		let enum_type = shape[enum_specialization_index].unwrap();
+
+		let alloca = self.build_alloca(enum_type);
+
+		unsafe {
+			let i8_type = LLVMInt8TypeInContext(self.context);
+			let tag_value = LLVMConstInt(i8_type, variant_index as _, false as _);
+			let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"".as_ptr());
+			LLVMBuildStore(self.builder, tag_value, tag_pointer);
+
+			if let Some(variant_binding) = variant_binding {
+				let variant_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 1, c"".as_ptr());
+				match variant_binding.kind {
+					BindingKind::Value(value) => {
+						LLVMBuildStore(self.builder, value, variant_pointer);
+					}
+
+					BindingKind::Pointer { pointer, .. } => {
+						let layout = type_store.type_layout(variant_binding.type_id);
+						let align = layout.alignment as u32;
+						let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
+						LLVMBuildMemCpy(self.builder, variant_pointer, align, pointer, align, size);
+					}
+				}
+			}
+		}
+
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: enum_type };
+		Binding { type_id: enum_type_id, kind }
 	}
 
 	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId) {
