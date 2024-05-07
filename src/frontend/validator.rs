@@ -803,6 +803,12 @@ fn create_block_enum<'a>(
 		generic_parameters.push_implicit(parameter);
 	}
 
+	if statement.variants.len() > 256 {
+		let name = statement.name.item;
+		let error = error!("Enum `{name}` has more than 256 variants, this is currently unsupported and disallowed");
+		messages.message(error.span(statement.name.span));
+	}
+
 	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
 	let mut variants = HashMap::new();
 
