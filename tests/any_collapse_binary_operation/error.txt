@@ -1,0 +1,3 @@
+Validation error: ./tests/any_collapse_binary_operation/any_collapse_binary_operation.fae, line 2: No symbol `a` in the current scope
+  2|     if a and false {}
+            ^

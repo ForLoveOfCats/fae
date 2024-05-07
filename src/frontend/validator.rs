@@ -3332,88 +3332,90 @@ fn validate_binary_operation<'a>(
 		return constant_operation;
 	}
 
-	match op {
-		BinaryOperator::Assign => {}
+	if !left.type_id.is_any_collapse(context.type_store) {
+		match op {
+			BinaryOperator::Assign => {}
 
-		BinaryOperator::Modulo | BinaryOperator::ModuloAssign => {
-			if !left.type_id.is_integer(context.type_store) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform modulo on non-integer type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::Modulo | BinaryOperator::ModuloAssign => {
+				if !left.type_id.is_integer(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform modulo on non-integer type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
-		}
 
-		BinaryOperator::BitwiseAnd
-		| BinaryOperator::BitwiseAndAssign
-		| BinaryOperator::BitwiseOr
-		| BinaryOperator::BitwiseOrAssign
-		| BinaryOperator::BitwiseXor
-		| BinaryOperator::BitwiseXorAssign => {
-			if !left.type_id.is_bool(context.type_store) && !left.type_id.is_integer(context.type_store) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform bitwise operation on {found}, type must be integer or boolean");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::BitwiseAnd
+			| BinaryOperator::BitwiseAndAssign
+			| BinaryOperator::BitwiseOr
+			| BinaryOperator::BitwiseOrAssign
+			| BinaryOperator::BitwiseXor
+			| BinaryOperator::BitwiseXorAssign => {
+				if !left.type_id.is_bool(context.type_store) && !left.type_id.is_integer(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform bitwise operation on {found}, type must be integer or boolean");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
-		}
 
-		BinaryOperator::Add
-		| BinaryOperator::AddAssign
-		| BinaryOperator::Sub
-		| BinaryOperator::SubAssign
-		| BinaryOperator::Mul
-		| BinaryOperator::MulAssign
-		| BinaryOperator::Div
-		| BinaryOperator::DivAssign => {
-			if !left.type_id.is_numeric(context.type_store) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform arithmetic on non-numerical type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::Add
+			| BinaryOperator::AddAssign
+			| BinaryOperator::Sub
+			| BinaryOperator::SubAssign
+			| BinaryOperator::Mul
+			| BinaryOperator::MulAssign
+			| BinaryOperator::Div
+			| BinaryOperator::DivAssign => {
+				if !left.type_id.is_numeric(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform arithmetic on non-numerical type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
-		}
 
-		BinaryOperator::BitshiftLeft
-		| BinaryOperator::BitshiftLeftAssign
-		| BinaryOperator::BitshiftRight
-		| BinaryOperator::BitshiftRightAssign => {
-			if !left.type_id.is_integer(context.type_store) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform bitshift on non-integer type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::BitshiftLeft
+			| BinaryOperator::BitshiftLeftAssign
+			| BinaryOperator::BitshiftRight
+			| BinaryOperator::BitshiftRightAssign => {
+				if !left.type_id.is_integer(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform bitshift on non-integer type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
-		}
 
-		BinaryOperator::Equals | BinaryOperator::NotEquals => {
-			if !left.type_id.is_primative(context.type_store) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform equality comparison on non-primative type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::Equals | BinaryOperator::NotEquals => {
+				if !left.type_id.is_primative(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform equality comparison on non-primative type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
-		}
 
-		BinaryOperator::GreaterThan
-		| BinaryOperator::GreaterThanEquals
-		| BinaryOperator::LessThan
-		| BinaryOperator::LessThanEquals => {
-			if !left.type_id.is_numeric(context.type_store) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform comparison on non-numerical type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::GreaterThan
+			| BinaryOperator::GreaterThanEquals
+			| BinaryOperator::LessThan
+			| BinaryOperator::LessThanEquals => {
+				if !left.type_id.is_numeric(context.type_store) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform comparison on non-numerical type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
-		}
 
-		BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
-			let boolean = context.type_store.bool_type_id();
-			if !context.type_store.direct_match(left.type_id, boolean) {
-				let found = context.type_name(left.type_id);
-				let error = error!("Cannot perform logical operation on non-boolean type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
+				let boolean = context.type_store.bool_type_id();
+				if !context.type_store.direct_match(left.type_id, boolean) {
+					let found = context.type_name(left.type_id);
+					let error = error!("Cannot perform logical operation on non-boolean type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
 		}
 	}
