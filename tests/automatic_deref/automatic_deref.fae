@@ -32,6 +32,6 @@ fn main() {
 	let slice = [1.(f64), 3.8, 5]
 	let ptr = slice.&
 	print_string("Slice length: ")
-	print_isize(ptr.len)
+	print_isize(ptr.length)
 	print_newline()
 }

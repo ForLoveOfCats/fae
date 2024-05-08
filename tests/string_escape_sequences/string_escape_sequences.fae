@@ -22,7 +22,7 @@ fn main() {
 
 fn print_cases(cases: [][]u8) {
 	mut index: isize = 0
-	while index < cases.len {
+	while index < cases.length {
 		fae::stdout::print_string(cases[index])
 		fae::stdout::print_newline()
 		index += 1

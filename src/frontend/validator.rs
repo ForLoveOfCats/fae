@@ -2951,7 +2951,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			},
 			Field {
 				span: None,
-				name: "len",
+				name: "length",
 				type_id: context.type_store.isize_type_id(),
 				attribute: None,
 				read_only: true,
