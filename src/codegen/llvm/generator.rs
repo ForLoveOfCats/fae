@@ -1421,13 +1421,17 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		if let Some(new_binding) = new_binding {
 			assert_eq!(self.readables.len(), new_binding.readable_index);
-			let shape = &self.llvm_types.user_type_structs[enum_shape_index];
-			let llvm_struct = shape[enum_specialization_index].unwrap();
-			let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
+			if new_binding.is_zero_sized {
+				self.readables.push(None);
+			} else {
+				let shape = &self.llvm_types.user_type_structs[enum_shape_index];
+				let llvm_struct = shape[enum_specialization_index].unwrap();
+				let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
 
-			let kind = BindingKind::Value(variant_pointer);
-			let binding = Binding { type_id: new_binding.type_id, kind };
-			self.readables.push(Some(binding));
+				let kind = BindingKind::Value(variant_pointer);
+				let binding = Binding { type_id: new_binding.type_id, kind };
+				self.readables.push(Some(binding));
+			}
 		}
 
 		let kind = BindingKind::Value(result);

@@ -363,7 +363,7 @@ fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, 
 	} else {
 		context
 			.type_store
-			.pointer_to(method_call.base.type_id, method_call.base.mutable)
+			.pointer_to(method_call.base.type_id, method_call.base.is_mutable)
 	};
 
 	let base = generate_expression(context, generator, &method_call.base)

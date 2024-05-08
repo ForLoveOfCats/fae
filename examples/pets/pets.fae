@@ -43,11 +43,11 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 
 method mut Pet
 fn take_on_walk() {
-	if self is dog: Dog and dog.hours_since_last_walk > 2 {
+	if self is Dog and self.hours_since_last_walk > 2 {
 		print_string("Walking a dog, it has not been walked in ")
-		print_i32(dog.hours_since_last_walk)
+		print_i32(self.hours_since_last_walk)
 		print_string(" hours\n")
-		dog.hours_since_last_walk = 0
+		self.hours_since_last_walk = 0
 	}
 }
 

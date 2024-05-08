@@ -748,10 +748,10 @@ impl<'a> TypeStore<'a> {
 				}
 
 				let type_id = self.decimal_type_id;
-				let mutable = from.mutable;
+				let mutable = from.is_mutable;
 				let returns = from.returns;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
-				*from = Expression { span: from.span, type_id, mutable, returns, kind };
+				*from = Expression { span: from.span, type_id, is_mutable: mutable, returns, kind };
 				return Ok(true);
 			}
 
@@ -897,7 +897,7 @@ impl<'a> TypeStore<'a> {
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
 					let conversion = Box::new(SliceMutableToImmutable { type_id, expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
-					*from = Expression { span: from.span, type_id, mutable: false, returns, kind };
+					*from = Expression { span: from.span, type_id, is_mutable: false, returns, kind };
 					return Ok(true);
 				}
 			}
@@ -915,7 +915,13 @@ impl<'a> TypeStore<'a> {
 							let returns = expression.returns;
 							let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
 							let kind = ExpressionKind::EnumVariantToEnum(conversion);
-							*from = Expression { span: from.span, type_id: to, mutable: false, returns, kind };
+							*from = Expression {
+								span: from.span,
+								type_id: to,
+								is_mutable: false,
+								returns,
+								kind,
+							};
 							return Ok(true);
 						}
 					}

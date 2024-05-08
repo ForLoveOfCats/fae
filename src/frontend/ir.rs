@@ -417,7 +417,7 @@ pub struct Return<'a> {
 pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
-	pub mutable: bool,
+	pub is_mutable: bool,
 	pub returns: bool,
 	pub kind: ExpressionKind<'a>,
 }
@@ -427,7 +427,7 @@ impl<'a> Expression<'a> {
 		Expression {
 			span,
 			type_id: type_store.any_collapse_type_id(),
-			mutable: true,
+			is_mutable: true,
 			returns: false, // TODO: This could cause erronious error messages?
 			kind: ExpressionKind::AnyCollapse,
 		}
@@ -437,7 +437,7 @@ impl<'a> Expression<'a> {
 		Expression {
 			span,
 			type_id: type_store.void_type_id(),
-			mutable: true, // TODO: Think about this harder?
+			is_mutable: true, // TODO: Think about this harder?
 			returns: false,
 			kind: ExpressionKind::Void,
 		}
@@ -893,6 +893,7 @@ pub struct CheckIsResultBinding {
 	pub type_id: TypeId,
 	pub readable_index: usize,
 	pub is_mutable: bool,
+	pub is_zero_sized: bool,
 }
 
 #[derive(Debug, Clone)]
