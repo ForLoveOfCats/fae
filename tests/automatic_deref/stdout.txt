@@ -1,3 +1,5 @@
-field: 2
+2
+Value of field: 2
 Incrementing
-field: 4
+Value of field: 4
+Slice length: 3

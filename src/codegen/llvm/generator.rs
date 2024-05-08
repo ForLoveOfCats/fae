@@ -280,7 +280,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 				let type_kind = LLVMGetTypeKind(llvm_type);
 
 				if type_kind == LLVMPointerTypeKind {
-					let pointed_type_id = type_store.pointed_to(binding.type_id).unwrap().0;
+					let pointed_type_id = binding.type_id.as_pointed(type_store).unwrap().type_id;
 					let pointed_type = self
 						.llvm_types
 						.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
@@ -292,7 +292,18 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 				}
 			},
 
-			BindingKind::Pointer { pointer, pointed_type } => ValuePointer { pointer, pointed_type, type_id: binding.type_id },
+			BindingKind::Pointer { pointer, pointed_type } => unsafe {
+				if LLVMGetTypeKind(pointed_type) == LLVMPointerTypeKind {
+					let pointer = LLVMBuildLoad2(self.builder, self.llvm_types.opaque_pointer, pointer, c"".as_ptr());
+					let pointed_type_id = binding.type_id.as_pointed(type_store).unwrap().type_id;
+					let pointed_type = self
+						.llvm_types
+						.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
+					ValuePointer { pointer, pointed_type, type_id: pointed_type_id }
+				} else {
+					ValuePointer { pointer, pointed_type, type_id: binding.type_id }
+				}
+			},
 		}
 	}
 }
@@ -781,31 +792,21 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
 		let index = field_index as u32;
 		let ValuePointer { pointer, pointed_type, type_id } = self.value_auto_deref_pointer(type_store, base);
-
-		// TODO: If auto-deref-ing this will incidentally stick the pointer into a new alloca and then load it right after
-		// let (pointer, pointed_struct, type_id) = unsafe {
-		// 	let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
-		// 	let type_kind = LLVMGetTypeKind(pointed_type);
-
-		// 	if type_kind == LLVMPointerTypeKind {
-		// 		let pointer = LLVMBuildLoad2(self.builder, self.llvm_types.opaque_pointer, pointer, c"".as_ptr());
-		// 		let type_id = base.type_id.as_pointed(type_store).unwrap().type_id;
-		// 		let llvm_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, type_id);
-		// 		(pointer, llvm_type, type_id)
-		// 	} else {
-		// 		(pointer, pointed_type, base.type_id)
-		// 	}
-		// };
+		unsafe {
+			if LLVMGetTypeKind(pointed_type) == LLVMPointerTypeKind {
+				panic!();
+			}
+		}
 
 		let field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
 		let field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"".as_ptr()) };
 
-		let type_id = if base.type_id.as_slice(type_store).is_some() {
+		let type_id = if type_id.as_slice(type_store).is_some() {
 			type_store.usize_type_id()
 		} else if let Some(struct_type) = type_id.as_struct(type_store) {
 			struct_type.fields[field_index].type_id
 		} else {
-			unreachable!("{:#?}", &type_store.type_entries[type_id.index()]);
+			unreachable!("{}", type_store.debugging_type_name(type_id));
 		};
 
 		let kind = BindingKind::Pointer { pointer: field_pointer, pointed_type: field_type };

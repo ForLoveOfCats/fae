@@ -2940,8 +2940,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			external_access = method_base_index != as_struct.shape_index;
 		}
 		&as_struct.fields
-	} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
-		// TODO: This borks auto-deref?
+	} else if let Some(as_slice) = type_id.as_slice(context.type_store) {
 		slice_fields = [
 			Field {
 				span: None,

@@ -1955,11 +1955,21 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn type_name(&self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
-		format!("`{}`", self.internal_type_name(function_store, module_path, type_id))
+		format!("`{}`", self.internal_type_name(Some(function_store), module_path, type_id))
+	}
+
+	#[allow(unused)]
+	pub fn debugging_type_name(&self, type_id: TypeId) -> String {
+		format!("`{}`", self.internal_type_name(None, &[], type_id))
 	}
 
 	// TODO: Use module path to have or not have paths for local types?
-	pub fn internal_type_name(&self, function_store: &FunctionStore, _module_path: &'a [String], type_id: TypeId) -> String {
+	pub fn internal_type_name(
+		&self,
+		function_store: Option<&FunctionStore>,
+		_module_path: &'a [String],
+		type_id: TypeId,
+	) -> String {
 		match self.type_entries[type_id.index()].kind {
 			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 
@@ -2024,9 +2034,13 @@ impl<'a> TypeStore<'a> {
 			}
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
-				let shape = &function_store.shapes[function_shape_index];
-				let generic = &shape.generic_parameters.parameters()[generic_index];
-				generic.name.item.to_owned()
+				if let Some(function_store) = function_store {
+					let shape = &function_store.shapes[function_shape_index];
+					let generic = &shape.generic_parameters.parameters()[generic_index];
+					generic.name.item.to_owned()
+				} else {
+					String::from("FunctionGeneric")
+				}
 			}
 
 			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
