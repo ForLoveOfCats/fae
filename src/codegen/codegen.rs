@@ -510,8 +510,12 @@ fn generate_binary_operation<G: Generator>(
 
 fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, check_is: &CheckIs) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &check_is.left).unwrap();
+	let value_type_id = match check_is.left.type_id.as_pointed(context.type_store) {
+		Some(as_pointer) => as_pointer.type_id,
+		None => check_is.left.type_id,
+	};
 
-	let entry = context.type_store.type_entries[check_is.left.type_id.index()];
+	let entry = context.type_store.type_entries[value_type_id.index()];
 	let TypeEntryKind::UserType {
 		shape_index: enum_shape_index,
 		specialization_index: enum_specialization_index,
@@ -532,7 +536,7 @@ fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, che
 
 	let variant_index = variant_shape.variant_index.unwrap();
 	Some(generator.generate_check_is(
-		context,
+		context.type_store,
 		value,
 		enum_shape_index,
 		enum_specialization_index,

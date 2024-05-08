@@ -1,0 +1,18 @@
+import fae::stdout::print_i64, print_newline
+
+enum Enum {
+	A
+	B { field: i64 }
+}
+
+fn main() {
+	let value: Enum = Enum.B { field: -42 }
+	function(value.&)
+}
+
+fn function(ptr: &Enum) {
+	if ptr is b: B {
+		print_i64(b.field)
+		print_newline()
+	}
+}

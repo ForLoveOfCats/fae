@@ -2941,6 +2941,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		}
 		&as_struct.fields
 	} else if let Some(as_slice) = base.type_id.as_slice(context.type_store) {
+		// TODO: This borks auto-deref?
 		slice_fields = [
 			Field {
 				span: None,
@@ -3570,24 +3571,29 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		return Expression::any_collapse(context.type_store, span);
 	}
 
+	let (left_type_id, mutable) = match left.type_id.as_pointed(context.type_store) {
+		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
+		None => (left.type_id, left.mutable),
+	};
+
 	let Some(variant) = context.type_store.get_enum_variant(
 		context.messages,
 		context.function_store,
 		context.module_path,
-		left.type_id,
+		left_type_id,
 		check.variant_name,
 	) else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let binding = if let Some(binding_name) = check.binding_name {
-		let kind = match left.mutable {
+		let kind = match mutable {
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
 		};
-		let type_id = context.type_store.pointer_to(variant, left.mutable);
+		let type_id = context.type_store.pointer_to(variant, mutable);
 		let readable_index = context.push_readable(binding_name, type_id, kind);
-		Some(CheckIsResultBinding { type_id, readable_index, is_mutable: left.mutable })
+		Some(CheckIsResultBinding { type_id, readable_index, is_mutable: mutable })
 	} else {
 		None
 	};

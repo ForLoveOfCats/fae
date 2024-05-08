@@ -133,7 +133,7 @@ pub trait Generator {
 
 	fn generate_check_is(
 		&mut self,
-		context: &mut codegen::Context,
+		type_store: &TypeStore,
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,

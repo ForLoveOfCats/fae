@@ -69,6 +69,7 @@ pub enum BindingKind {
 struct ValuePointer {
 	pointer: LLVMValueRef,
 	pointed_type: LLVMTypeRef,
+	type_id: TypeId,
 }
 
 impl Binding {
@@ -259,16 +260,39 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		pointer
 	}
 
-	fn value_pointer(&mut self, binding: Binding) -> ValuePointer {
+	fn value_pointer(&mut self, binding: Binding) -> LLVMValueRef {
 		match binding.kind {
 			BindingKind::Value(value) => {
 				let pointed_type = unsafe { LLVMTypeOf(value) };
 				let pointer = self.build_alloca(pointed_type);
 				unsafe { LLVMBuildStore(self.builder, value, pointer) };
-				ValuePointer { pointer, pointed_type }
+				pointer
 			}
 
-			BindingKind::Pointer { pointer, pointed_type } => ValuePointer { pointer, pointed_type },
+			BindingKind::Pointer { pointer, .. } => pointer,
+		}
+	}
+
+	fn value_auto_deref_pointer(&mut self, type_store: &TypeStore, binding: Binding) -> ValuePointer {
+		match binding.kind {
+			BindingKind::Value(value) => unsafe {
+				let llvm_type = LLVMTypeOf(value);
+				let type_kind = LLVMGetTypeKind(llvm_type);
+
+				if type_kind == LLVMPointerTypeKind {
+					let pointed_type_id = type_store.pointed_to(binding.type_id).unwrap().0;
+					let pointed_type = self
+						.llvm_types
+						.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
+					ValuePointer { pointer: value, pointed_type, type_id: pointed_type_id }
+				} else {
+					let pointer = self.build_alloca(llvm_type);
+					LLVMBuildStore(self.builder, value, pointer);
+					ValuePointer { pointer, pointed_type: llvm_type, type_id: binding.type_id }
+				}
+			},
+
+			BindingKind::Pointer { pointer, pointed_type } => ValuePointer { pointer, pointed_type, type_id: binding.type_id },
 		}
 	}
 }
@@ -756,23 +780,25 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
 		let index = field_index as u32;
+		let ValuePointer { pointer, pointed_type, type_id } = self.value_auto_deref_pointer(type_store, base);
 
-		let (pointer, pointed_struct, type_id) = unsafe {
-			let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
-			let type_kind = LLVMGetTypeKind(pointed_type);
+		// TODO: If auto-deref-ing this will incidentally stick the pointer into a new alloca and then load it right after
+		// let (pointer, pointed_struct, type_id) = unsafe {
+		// 	let ValuePointer { pointer, pointed_type } = self.value_pointer(base);
+		// 	let type_kind = LLVMGetTypeKind(pointed_type);
 
-			if type_kind == LLVMPointerTypeKind {
-				let pointer = LLVMBuildLoad2(self.builder, self.llvm_types.opaque_pointer, pointer, c"".as_ptr());
-				let type_id = base.type_id.as_pointed(type_store).unwrap().type_id;
-				let llvm_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, type_id);
-				(pointer, llvm_type, type_id)
-			} else {
-				(pointer, pointed_type, base.type_id)
-			}
-		};
+		// 	if type_kind == LLVMPointerTypeKind {
+		// 		let pointer = LLVMBuildLoad2(self.builder, self.llvm_types.opaque_pointer, pointer, c"".as_ptr());
+		// 		let type_id = base.type_id.as_pointed(type_store).unwrap().type_id;
+		// 		let llvm_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, type_id);
+		// 		(pointer, llvm_type, type_id)
+		// 	} else {
+		// 		(pointer, pointed_type, base.type_id)
+		// 	}
+		// };
 
-		let field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_struct, index) };
-		let field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_struct, pointer, index, c"".as_ptr()) };
+		let field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
+		let field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"".as_ptr()) };
 
 		let type_id = if base.type_id.as_slice(type_store).is_some() {
 			type_store.usize_type_id()
@@ -814,7 +840,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding {
 		let pointer = self.value_pointer(base);
-		let kind = BindingKind::Value(pointer.pointer);
+		let kind = BindingKind::Value(pointer);
 		Binding { type_id: pointer_type_id, kind }
 	}
 
@@ -947,7 +973,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let failure_block = LLVMAppendBasicBlockInContext(self.context, function, c"bounds_check_failure".as_ptr());
 			let success_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
-			let ValuePointer { pointer: value_pointer, .. } = self.value_pointer(base);
+			let value_pointer = self.value_pointer(base);
 
 			let pointer_type = self.llvm_types.opaque_pointer;
 			let struct_type = self.llvm_types.slice_struct;
@@ -1377,15 +1403,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_check_is(
 		&mut self,
-		context: &mut codegen::Context,
+		type_store: &TypeStore,
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
 		new_binding: &Option<CheckIsResultBinding>,
 		variant_index: usize,
 	) -> Self::Binding {
-		// TODO: Make `is` auto-deref?
-		let ValuePointer { pointer, .. } = self.value_pointer(value);
+		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(type_store, value);
 
 		let result = unsafe {
 			let i8_type = LLVMInt8TypeInContext(self.context);
@@ -1406,7 +1431,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		let kind = BindingKind::Value(result);
-		Binding { type_id: context.type_store.bool_type_id(), kind }
+		Binding { type_id: type_store.bool_type_id(), kind }
 	}
 
 	fn generate_enum_variant_to_enum(
