@@ -412,7 +412,14 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 				}
 			}
 
-			_ => todo!(),
+			UserTypeKind::Enum { shape } => {
+				let specialization = &shape.specializations[specialization_index];
+				let field_type_id = specialization.shared_fields[read.field_index].type_id;
+				let field_layout = context.type_store.type_layout(field_type_id);
+				if field_layout.size <= 0 {
+					return None;
+				}
+			}
 		}
 	}
 

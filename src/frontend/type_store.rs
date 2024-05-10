@@ -98,8 +98,19 @@ impl TypeId {
 		let entry = type_store.type_entries[self.index()];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
 			let shape = &type_store.user_types[shape_index];
-			#[allow(irrefutable_let_patterns)] // TODO: Remove once enums are added
 			if let UserTypeKind::Struct { shape } = &shape.kind {
+				return Some(&shape.specializations[specialization_index]);
+			}
+		}
+
+		None
+	}
+
+	pub fn as_enum<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Enum<'a>> {
+		let entry = type_store.type_entries[self.index()];
+		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+			let shape = &type_store.user_types[shape_index];
+			if let UserTypeKind::Enum { shape } = &shape.kind {
 				return Some(&shape.specializations[specialization_index]);
 			}
 		}
@@ -130,7 +141,6 @@ pub struct AsPointed {
 pub struct Layout {
 	pub size: i64,
 	pub alignment: i64,
-	pub first_alignment: i64,
 }
 
 #[derive(Debug)]
@@ -185,6 +195,7 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct EnumShape<'a> {
 	pub been_filled: bool,
+	pub shared_fields: Vec<Node<FieldShape<'a>>>,
 	pub variant_shapes: HashMap<&'a str, EnumVariantShape<'a>>,
 
 	pub specializations: Vec<Enum<'a>>,
@@ -194,6 +205,7 @@ impl<'a> EnumShape<'a> {
 	pub fn new(variant_shapes: HashMap<&'a str, EnumVariantShape<'a>>) -> Self {
 		EnumShape {
 			been_filled: false,
+			shared_fields: Vec::new(),
 			variant_shapes,
 			specializations: Vec::new(),
 		}
@@ -214,6 +226,7 @@ pub struct Enum<'a> {
 	pub type_id: TypeId,
 	pub type_arguments: Vec<TypeId>,
 	pub been_filled: bool,
+	pub shared_fields: Vec<Field<'a>>,
 	pub variants: HashMap<&'a str, EnumVariant>,
 	pub layout: Option<Layout>,
 	pub tag_memory_size: Option<i64>,
@@ -301,18 +314,18 @@ impl NumericKind {
 
 	pub fn layout(self) -> Layout {
 		match self {
-			NumericKind::I8 => Layout { size: 1, alignment: 1, first_alignment: 1 },
-			NumericKind::I16 => Layout { size: 2, alignment: 2, first_alignment: 2 },
-			NumericKind::I32 => Layout { size: 4, alignment: 4, first_alignment: 4 },
-			NumericKind::I64 => Layout { size: 8, alignment: 8, first_alignment: 8 },
-			NumericKind::U8 => Layout { size: 1, alignment: 1, first_alignment: 1 },
-			NumericKind::U16 => Layout { size: 2, alignment: 2, first_alignment: 2 },
-			NumericKind::U32 => Layout { size: 4, alignment: 4, first_alignment: 4 },
-			NumericKind::U64 => Layout { size: 8, alignment: 8, first_alignment: 8 },
-			NumericKind::ISize => Layout { size: 8, alignment: 8, first_alignment: 8 },
-			NumericKind::USize => Layout { size: 8, alignment: 8, first_alignment: 8 },
-			NumericKind::F32 => Layout { size: 4, alignment: 4, first_alignment: 4 },
-			NumericKind::F64 => Layout { size: 8, alignment: 8, first_alignment: 8 },
+			NumericKind::I8 => Layout { size: 1, alignment: 1 },
+			NumericKind::I16 => Layout { size: 2, alignment: 2 },
+			NumericKind::I32 => Layout { size: 4, alignment: 4 },
+			NumericKind::I64 => Layout { size: 8, alignment: 8 },
+			NumericKind::U8 => Layout { size: 1, alignment: 1 },
+			NumericKind::U16 => Layout { size: 2, alignment: 2 },
+			NumericKind::U32 => Layout { size: 4, alignment: 4 },
+			NumericKind::U64 => Layout { size: 8, alignment: 8 },
+			NumericKind::ISize => Layout { size: 8, alignment: 8 },
+			NumericKind::USize => Layout { size: 8, alignment: 8 },
+			NumericKind::F32 => Layout { size: 4, alignment: 4 },
+			NumericKind::F64 => Layout { size: 8, alignment: 8 },
 		}
 	}
 
@@ -352,11 +365,11 @@ impl PrimativeKind {
 
 	pub fn layout(self) -> Layout {
 		match self {
-			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0, first_alignment: 0 },
-			PrimativeKind::Void => Layout { size: 0, alignment: 0, first_alignment: 0 },
+			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0 },
+			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
-			PrimativeKind::Bool => Layout { size: 1, alignment: 1, first_alignment: 1 },
+			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
 			PrimativeKind::Numeric(numeric) => numeric.layout(),
 		}
 	}
@@ -1066,7 +1079,6 @@ impl<'a> TypeStore<'a> {
 
 					let mut size = 0;
 					let mut alignment = 0;
-					let mut first_alignment = 0;
 
 					for type_id in field_types {
 						self.calculate_layout(type_id);
@@ -1078,10 +1090,6 @@ impl<'a> TypeStore<'a> {
 
 						size += field_layout.size;
 						alignment = alignment.max(field_layout.alignment);
-
-						if first_alignment <= 0 {
-							first_alignment = field_layout.alignment;
-						}
 					}
 
 					if size != 0 && size % alignment != 0 {
@@ -1093,7 +1101,7 @@ impl<'a> TypeStore<'a> {
 						self.user_type_generate_order.push(description);
 					}
 
-					let layout = Layout { size, alignment, first_alignment };
+					let layout = Layout { size, alignment };
 					match &mut self.user_types[shape_index].kind {
 						UserTypeKind::Struct { shape } => {
 							shape.specializations[specialization_index].layout = Some(layout);
@@ -1114,7 +1122,6 @@ impl<'a> TypeStore<'a> {
 
 					let mut size = 0;
 					let mut alignment = 0;
-					let mut max_first_alignment = 0;
 
 					for variant in variants {
 						self.calculate_layout(variant);
@@ -1122,7 +1129,6 @@ impl<'a> TypeStore<'a> {
 
 						size = size.max(variant_layout.size);
 						alignment = alignment.max(variant_layout.alignment);
-						max_first_alignment = max_first_alignment.max(variant_layout.first_alignment);
 					}
 
 					if !entry.generic_poisoned {
@@ -1130,10 +1136,10 @@ impl<'a> TypeStore<'a> {
 						self.user_type_generate_order.push(description);
 					}
 
-					let tag_memory_size = max_first_alignment.max(1);
+					let tag_memory_size = alignment.max(1);
 					size += tag_memory_size;
 
-					let layout = Layout { size, alignment, first_alignment: tag_memory_size };
+					let layout = Layout { size, alignment };
 					match &mut self.user_types[shape_index].kind {
 						UserTypeKind::Enum { shape } => {
 							let specialization = &mut shape.specializations[specialization_index];
@@ -1168,13 +1174,13 @@ impl<'a> TypeStore<'a> {
 				}
 			},
 
-			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8, first_alignment: 8 },
+			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
 
-			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8, first_alignment: 8 },
+			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8 },
 
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
-			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0, first_alignment: 0 },
-			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 0, first_alignment: 0 },
+			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0 },
+			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 0 },
 		}
 	}
 
@@ -1620,6 +1626,18 @@ impl<'a> TypeStore<'a> {
 		}
 
 		let type_arguments_generic_poisoned = type_arguments.iter().any(|id| self.type_entries[id.index()].generic_poisoned);
+
+		let mut shared_fields = Vec::with_capacity(shape.shared_fields.len() + 1);
+		for field in &shape.shared_fields {
+			shared_fields.push(Field {
+				span: Some(field.span),
+				name: field.item.name,
+				type_id: field.item.field_type,
+				attribute: field.item.attribute,
+				read_only: field.item.read_only,
+			});
+		}
+
 		let variant_shapes: Vec<_> = shape.variant_shapes.values().copied().collect();
 
 		let mut variants = HashMap::new();
@@ -1640,6 +1658,17 @@ impl<'a> TypeStore<'a> {
 			variants.insert(variant_shape.name, EnumVariant { span: variant_shape.span, type_id });
 		}
 
+		shared_fields.insert(
+			0,
+			Field {
+				span: None,
+				name: "tag",
+				type_id: self.u8_type_id,
+				attribute: None,
+				read_only: true,
+			},
+		);
+
 		let user_type = &mut self.user_types[shape_index];
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
@@ -1654,6 +1683,7 @@ impl<'a> TypeStore<'a> {
 			type_id,
 			type_arguments: type_arguments.to_vec(),
 			been_filled,
+			shared_fields,
 			variants,
 			layout: None,
 			tag_memory_size: None,

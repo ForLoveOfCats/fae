@@ -1,6 +1,8 @@
-import fae::stdout::print_f64, print_string, print_newline
+import fae::stdout::print_f64, print_isize, print_string, print_newline
 
 enum JsonValue {
+	offset: isize
+
 	String { value: []u8 }
 	Number { value: f64 }
 	Boolean { value: bool }
@@ -12,13 +14,17 @@ fn print_number(value: JsonValue) {
 		print_f64(number.value)
 		print_newline()
 
+		print_string("It had offset ")
+		print_isize(number.offset)
+		print_newline()
+
 		// Check that the type is what we expect
 		let _: &JsonValue.Number = number
 	}
 }
 
 fn main() {
-	print_number(JsonValue.String { value: "Hello" })
-	print_number(JsonValue.Number { value: 42 })
-	print_number(JsonValue.Boolean { value: true })
+	print_number(JsonValue.String { offset: 1, value: "Hello" })
+	print_number(JsonValue.Number { offset: 2, value: 42 })
+	print_number(JsonValue.Boolean { offset: 3, value: true })
 }

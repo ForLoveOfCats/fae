@@ -1045,6 +1045,8 @@ fn fill_block_types<'a>(
 				UserTypeKind::Struct { .. } => unreachable!(),
 
 				UserTypeKind::Enum { shape } => {
+					assert!(shape.shared_fields.is_empty());
+					shape.shared_fields = shared_fields;
 					assert!(!shape.been_filled);
 					shape.been_filled = true;
 
@@ -1163,6 +1165,18 @@ fn fill_pre_existing_enum_specializations<'a>(
 		assert!(!specialization.been_filled);
 		specialization.been_filled;
 		assert_eq!(specialization.variants.len(), 0);
+
+		for field in &mut specialization.shared_fields {
+			field.type_id = type_store.specialize_with_user_type_generics(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				shape_index,
+				&specialization.type_arguments,
+				field.type_id,
+			);
+		}
 
 		for variant in specialization.variants.values_mut() {
 			variant.type_id = type_store.specialize_with_user_type_generics(
@@ -2940,6 +2954,11 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			external_access = method_base_index != as_struct.shape_index;
 		}
 		&as_struct.fields
+	} else if let Some(as_enum) = type_id.as_enum(context.type_store) {
+		if let Some(method_base_index) = context.method_base_index {
+			external_access = method_base_index != as_enum.shape_index;
+		}
+		&as_enum.shared_fields
 	} else if let Some(as_slice) = type_id.as_slice(context.type_store) {
 		slice_fields = [
 			Field {

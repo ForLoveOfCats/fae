@@ -1369,17 +1369,30 @@ fn parse_enum_declaration<'a>(
 
 				if tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
 					tokenizer.expect(messages, TokenKind::OpenBrace)?;
+					let multi_line = if tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+						tokenizer.expect(messages, TokenKind::Newline)?;
+						true
+					} else {
+						false
+					};
 
 					while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
+						while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
+							tokenizer.expect(messages, TokenKind::Newline)?;
+						}
+
 						let field_name_token = tokenizer.expect(messages, TokenKind::Word)?;
 						let field = parse_field(messages, tokenizer, field_name_token, "enum variant field")?;
 						variant_fields.push(field);
 
-						if variant_fields.len() == 1 && tokenizer.peek_kind() == Ok(TokenKind::CloseBrace) {
-							tokenizer.expect(messages, TokenKind::CloseBrace)?;
+						if !multi_line {
 							break;
 						}
+
+						tokenizer.expect(messages, TokenKind::Newline)?;
 					}
+
+					tokenizer.expect(messages, TokenKind::CloseBrace)?;
 				}
 
 				let name = Node::from_token(field_name_token.text, field_name_token);
@@ -1555,11 +1568,12 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 		"const"
 			| "fn" | "let"
 			| "mut" | "return"
-			| "struct" | "import"
-			| "generic" | "extern"
-			| "export" | "method"
-			| "if" | "else"
-			| "while" | "break"
+			| "struct" | "enum"
+			| "import" | "generic"
+			| "extern" | "export"
+			| "method" | "if"
+			| "else" | "while"
+			| "break"
 	);
 
 	if is_reserved {

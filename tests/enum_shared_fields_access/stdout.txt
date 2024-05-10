@@ -1,0 +1,34 @@
+Sizes:
+56
+40
+48
+
+Tags:
+0
+1
+
+a:
+2
+3
+
+b:
+3.400000
+8.100000
+
+c:
+First
+Second
+
+Variant A fields:
+2
+3.400000
+First
+16
+300
+
+Variant B fields:
+3
+8.100000
+Second
+2.250000
+-300

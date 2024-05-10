@@ -28,6 +28,9 @@ enum Pet {
 
 method Pet
 fn visit_vet(specialty: VetSpecialty): BeenTreated {
+	print_string(self.name)
+	print_string(" is visiting the vet\n")
+
 	if self is Cat and specialty is Cat {
 		print_string("Cat vet is treating the cat\n")
 		return BeenTreated.Treated
