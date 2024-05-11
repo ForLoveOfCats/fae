@@ -49,6 +49,8 @@ pub struct Context<'a, 'b, 'c> {
 	pub next_loop_index: usize,
 	pub current_loop_index: Option<usize>,
 
+	pub can_is_bind: bool,
+
 	pub return_type: Option<TypeId>,
 	pub generic_parameters: &'c GenericParameters<'a>,
 	pub method_base_index: Option<usize>,
@@ -102,6 +104,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			next_loop_index: self.next_loop_index,
 			current_loop_index: self.current_loop_index,
 
+			can_is_bind: false,
+
 			return_type: self.return_type,
 			generic_parameters: self.generic_parameters,
 			method_base_index: self.method_base_index,
@@ -153,6 +157,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			next_loop_index: 0,
 			current_loop_index: None,
+
+			can_is_bind: false,
 
 			return_type: Some(return_type),
 			generic_parameters,
@@ -320,6 +326,7 @@ pub fn validate<'a>(
 			symbols: &mut symbols,
 			next_loop_index: 0,
 			current_loop_index: None,
+			can_is_bind: false,
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 			method_base_index: None,
@@ -510,6 +517,7 @@ fn validate_root_consts<'a>(
 			symbols,
 			next_loop_index: 0,
 			current_loop_index: None,
+			can_is_bind: false,
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 			method_base_index: None,
@@ -2080,25 +2088,95 @@ pub fn validate_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
 ) -> Expression<'a> {
+	// This function is a bit overzealous in setting/resetting `can_is_bind` but that's fine
+	// I'd rather be safe than make a mistake and miss a necessary case
+
 	let span = expression.span;
+	let original_can_is_bind = context.can_is_bind;
 
 	match &expression.item {
-		tree::Expression::Block(block) => validate_block_expression(context, block, span),
-		tree::Expression::IfElseChain(chain_expression) => validate_if_else_chain_expression(context, chain_expression, span),
+		tree::Expression::Block(block) => {
+			context.can_is_bind = false;
+			let expression = validate_block_expression(context, block, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::IfElseChain(chain_expression) => {
+			context.can_is_bind = false;
+			let expression = validate_if_else_chain_expression(context, chain_expression, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
 		tree::Expression::IntegerLiteral(literal) => validate_integer_literal(context, literal, span),
+
 		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
+
 		tree::Expression::BooleanLiteral(literal) => validate_bool_literal(context, *literal, span),
+
 		tree::Expression::CodepointLiteral(literal) => validate_codepoint_literal(context, literal, span),
+
 		tree::Expression::ByteCodepointLiteral(literal) => validate_byte_codepoint_literal(context, literal, span),
+
 		tree::Expression::StringLiteral(literal) => validate_string_literal(context, literal, span),
-		tree::Expression::ArrayLiteral(literal) => validate_array_literal(context, literal, span),
-		tree::Expression::StructLiteral(literal) => validate_struct_literal(context, literal, span),
-		tree::Expression::Call(call) => validate_call(context, call, span),
-		tree::Expression::MethodCall(method_call) => validate_method_call(context, method_call, span),
-		tree::Expression::Read(read) => validate_read(context, read, span),
-		tree::Expression::DotAcccess(dot_access) => validate_dot_access(context, dot_access, span),
-		tree::Expression::UnaryOperation(operation) => validate_unary_operation(context, operation, span),
-		tree::Expression::BinaryOperation(operation) => validate_binary_operation(context, operation, span),
+
+		tree::Expression::ArrayLiteral(literal) => {
+			context.can_is_bind = false;
+			let expression = validate_array_literal(context, literal, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::StructLiteral(literal) => {
+			context.can_is_bind = false;
+			let expression = validate_struct_literal(context, literal, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::Call(call) => {
+			context.can_is_bind = false;
+			let expression = validate_call(context, call, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::MethodCall(method_call) => {
+			context.can_is_bind = false;
+			let expression = validate_method_call(context, method_call, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::Read(read) => {
+			context.can_is_bind = false;
+			let expression = validate_read(context, read, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::DotAcccess(dot_access) => {
+			context.can_is_bind = false;
+			let expression = validate_dot_access(context, dot_access, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::UnaryOperation(operation) => {
+			context.can_is_bind = false;
+			let expression = validate_unary_operation(context, operation, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		tree::Expression::BinaryOperation(operation) => {
+			// Modifies flag internally
+			let expression = validate_binary_operation(context, operation, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
 		tree::Expression::CheckIs(check) => validate_check_is(context, check, span),
 	}
 }
@@ -2137,7 +2215,9 @@ fn validate_if_else_chain_expression<'a>(
 
 	for (index, entry) in chain_expression.entries.iter().enumerate() {
 		let mut scope = context.child_scope();
+		scope.can_is_bind = true;
 		let condition = validate_expression(&mut scope, &entry.condition);
+		scope.can_is_bind = false;
 		if index == 0 && condition.returns {
 			first_condition_returns = true;
 		}
@@ -3333,10 +3413,15 @@ fn validate_binary_operation<'a>(
 ) -> Expression<'a> {
 	let op = operation.op.item;
 
+	let original_can_is_bind = context.can_is_bind;
+	if op != BinaryOperator::LogicalAnd {
+		context.can_is_bind = false;
+	}
 	let mut left = validate_expression(context, &operation.left);
 	let mut right = validate_expression(context, &operation.right);
-	let collapsed = context.collapse_fair(&mut left, &mut right);
+	context.can_is_bind = original_can_is_bind;
 
+	let collapsed = context.collapse_fair(&mut left, &mut right);
 	let Ok(collapsed) = collapsed else {
 		context.message(
 			error!("{} type mismatch", op.name())
@@ -3604,13 +3689,20 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let binding_name = check.binding_name.or_else(|| {
-		if let ExpressionKind::Read(read) = &left.kind {
-			Some(Node::new(read.name, left.span))
-		} else {
-			None
+	let binding_name = if !context.can_is_bind {
+		if let Some(binding_name) = check.binding_name {
+			// TODO: Figure out how to explain this to the user better
+			let error = error!("Cannot bind `is` check to a name in the current context");
+			context.message(error.span(binding_name.span));
 		}
-	});
+		None
+	} else if let Some(binding_name) = check.binding_name {
+		Some(binding_name)
+	} else if let ExpressionKind::Read(read) = &left.kind {
+		Some(Node::new(read.name, left.span))
+	} else {
+		None
+	};
 
 	let binding = if let Some(binding_name) = binding_name {
 		let kind = match is_mutable {

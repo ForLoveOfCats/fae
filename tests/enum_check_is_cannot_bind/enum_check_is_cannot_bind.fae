@@ -1,0 +1,20 @@
+fn main() {
+	let value: Enum = Enum.B { field: 3 }
+
+	value is A // allowed
+	value is B // allowed
+
+	value is a: A
+	value is b: B
+
+	if value is B or value.field == 3 {}
+	if value is B and value.field == 3 {} // allowed
+
+	if value is b: B or b.field == 3 {}
+	if value is b: B and b.field == 3 {} // allowed
+}
+
+enum Enum {
+	A
+	B { field: u8 }
+}
