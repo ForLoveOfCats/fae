@@ -856,10 +856,7 @@ fn parse_struct_initializer<'a>(
 ) -> ParseResult<Node<StructInitializer<'a>>> {
 	let open_brace_token = tokenizer.expect(messages, TokenKind::OpenBrace)?;
 
-	let multi_line = tokenizer.peek_kind() == Ok(TokenKind::Newline);
-	if multi_line {
-		tokenizer.expect(messages, TokenKind::Newline)?;
-	}
+	tokenizer.consume_newlines(messages);
 
 	let mut field_initializers = Vec::new();
 
@@ -878,18 +875,17 @@ fn parse_struct_initializer<'a>(
 			Node::new(Expression::Read(read), name.span)
 		};
 
-		if multi_line {
-			if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
-				tokenizer.expect(messages, TokenKind::Comma)?;
-			}
-			if tokenizer.peek_kind() == Ok(TokenKind::Newline) {
-				tokenizer.expect(messages, TokenKind::Newline)?;
-			}
-		} else if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
-			tokenizer.expect(messages, TokenKind::Comma)?;
+		field_initializers.push(FieldInitializer { name, expression });
+		if tokenizer.peek_kind() == Ok(TokenKind::CloseBrace) {
+			break;
 		}
 
-		field_initializers.push(FieldInitializer { name, expression });
+		if tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+			tokenizer.expect(messages, TokenKind::Comma)?;
+			tokenizer.consume_newlines(messages);
+		} else {
+			tokenizer.expect(messages, TokenKind::Newline)?;
+		}
 	}
 
 	let close_brace_token = tokenizer.expect(messages, TokenKind::CloseBrace)?;

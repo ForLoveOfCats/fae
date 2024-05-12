@@ -200,6 +200,12 @@ impl<'a> Tokenizer<'a> {
 		self.previous.map(|t| t.kind)
 	}
 
+	pub fn consume_newlines(&mut self, messages: &mut Messages) {
+		while self.peek_kind() == Ok(TokenKind::Newline) {
+			self.next(messages).unwrap();
+		}
+	}
+
 	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
 		self.next_with_optional_messages(&mut Some(messages), false)
 	}
