@@ -1,0 +1,33 @@
+import fae::stdout::print_i8, print_f32, print_f64, print_newline
+
+struct Struct {
+	field: f64
+	other: i8
+}
+
+enum Enum {
+	shared: f32
+
+	A { field: f64 }
+}
+
+fn main() {
+	let field: f64 = 3.4
+	let other: i8 = -2
+	let shared: f32 = 8
+
+	let s = Struct { field, other }
+	let e = Enum.A { shared, field }
+
+	print_f64(s.field)
+	print_newline()
+	print_i8(s.other)
+	print_newline()
+
+	print_newline()
+
+	print_f32(e.shared)
+	print_newline()
+	print_f64(e.field)
+	print_newline()
+}

@@ -868,9 +868,15 @@ fn parse_struct_initializer<'a>(
 		check_not_reserved(messages, name_token, "field name")?;
 		let name = Node::from_token(name_token.text, name_token);
 
-		tokenizer.expect(messages, TokenKind::Colon)?;
-
-		let expression = parse_expression(messages, tokenizer, true)?;
+		let expression = if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
+			tokenizer.expect(messages, TokenKind::Colon)?;
+			parse_expression(messages, tokenizer, true)?
+		} else {
+			let path = PathSegments { segments: vec![name] };
+			let type_arguments = Vec::new();
+			let read = Read { path_segments: Node::new(path, name.span), type_arguments };
+			Node::new(Expression::Read(read), name.span)
+		};
 
 		if multi_line {
 			if tokenizer.peek_kind() == Ok(TokenKind::Comma) {

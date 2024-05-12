@@ -8,9 +8,7 @@ struct File {
 
 method static File
 fn from_fd(file_descriptor: i32): File {
-	return File {
-		file_descriptor: file_descriptor
-	}
+	return File { file_descriptor }
 }
 
 method mut File
