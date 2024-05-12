@@ -21,9 +21,7 @@ method mut List
 fn push(item: T) {
 	if self.length + 1 >= self.capacity {
 		mut new_capacity = self.capacity * 2
-		if new_capacity == 0 {
-			new_capacity = 4
-		}
+		if new_capacity == 0 => new_capacity = 4
 		self.reserve_capacity(new_capacity)
 	}
 
@@ -45,12 +43,7 @@ fn truncate(to_length: isize) {
 method mut List
 fn reserve_capacity(new_capacity: isize) {
 	let new_size = size_of<T>() * new_capacity
-
 	let pointer = realloc(self.items_pointer.(&mut u8), new_size.(usize))
-	if pointer.(usize) != self.items_pointer.(usize) {
-		free(self.items_pointer.(&mut u8))
-	}
-
 	self.items_pointer = pointer.(&mut T)
 	self.capacity = new_capacity
 }

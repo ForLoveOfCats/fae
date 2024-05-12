@@ -12,11 +12,8 @@ enum BeenTreated {
 
 method static BeenTreated
 fn from_bool(value: bool): BeenTreated {
-	if value {
-		return BeenTreated.Treated
-	} else {
-		return BeenTreated.NotTreated
-	}
+	if value => return BeenTreated.Treated
+	else => return BeenTreated.NotTreated
 }
 
 enum Pet {

@@ -19,10 +19,33 @@ pub fn parse_root_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 	Block { statements }
 }
 
-pub fn parse_block<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Block<'a>>> {
+pub fn parse_block<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	allow_braceless: bool,
+	consume_newline: bool,
+) -> ParseResult<Node<Block<'a>>> {
+	if allow_braceless && tokenizer.peek_kind() == Ok(TokenKind::FatArrow) {
+		let fat_arrow = tokenizer.expect(messages, TokenKind::FatArrow)?;
+
+		let token = tokenizer.peek()?;
+		let statement = parse_statement(messages, tokenizer, &mut 0, Attributes::blank(), token, false);
+		let statements: Vec<_> = statement.into_iter().collect();
+
+		tokenizer.expect(messages, TokenKind::Newline)?;
+
+		let block = Block { statements };
+		let span = fat_arrow.span; // TODO: Wong span
+		return Ok(Node::new(block, span));
+	}
+
 	let open = tokenizer.expect(messages, TokenKind::OpenBrace)?;
 	let statements = parse_statements(messages, tokenizer);
 	let close = tokenizer.expect(messages, TokenKind::CloseBrace)?;
+
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let block = Block { statements };
 	let span = open.span + close.span;
@@ -58,140 +81,161 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'
 			Err(_) => return items,
 		};
 
-		match token {
-			Token { kind: TokenKind::Word, text: "import", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "An import statement");
-				if let Ok(statement) = parse_import_statement(messages, tokenizer) {
-					items.push(Statement::Import(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
+		if token.kind == TokenKind::CloseBrace {
+			break;
+		}
 
-			Token { kind: TokenKind::Word, text: "const", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A const definition");
-				if let Ok(statement) = parse_const_statement(messages, tokenizer) {
-					items.push(Statement::Const(Box::new(statement)));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "static", .. } => {
-				const ALLOWED: AllowedAttributes = AllowedAttributes {
-					generic_attribute: false,
-					extern_attribute: true,
-					export_attribute: false, // TODO: Allow exporting
-					method_attribute: false,
-					intrinsic_attribute: false,
-					lang_attribute: false,
-				};
-				disallow_attributes(messages, &attributes, ALLOWED, "A static definition");
-				if let Ok(statement) = parse_static_statement(messages, tokenizer, attributes) {
-					items.push(Statement::Static(Box::new(statement)));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A let statement");
-				if let Ok(statement) = parse_binding_statement(messages, tokenizer) {
-					items.push(Statement::Binding(Box::new(statement)));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "fn", .. } => {
-				let index = next_function_index;
-				next_function_index += 1;
-				if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes, index) {
-					items.push(Statement::Function(Box::new(statement)));
-				} else {
-					next_function_index -= 1;
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "struct", .. } => {
-				if let Ok(statement) = parse_struct_declaration(messages, tokenizer, attributes) {
-					items.push(Statement::Struct(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "enum", .. } => {
-				if let Ok(statement) = parse_enum_declaration(messages, tokenizer, attributes) {
-					items.push(Statement::Enum(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "while", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A while loop");
-				if let Ok(statement) = parse_while_statement(messages, tokenizer) {
-					items.push(Statement::While(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "break", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A break statement");
-				if let Ok(statement) = parse_break_statement(messages, tokenizer) {
-					items.push(Statement::Break(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "continue", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A continue statement");
-				if let Ok(statement) = parse_continue_statement(messages, tokenizer) {
-					items.push(Statement::Continue(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::Word, text: "return", .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A return statement");
-				if let Ok(statement) = parse_return_statement(messages, tokenizer) {
-					items.push(Statement::Return(Box::new(statement)));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::OpenBrace, .. } => {
-				disallow_all_attributes(messages, attributes, token.span, "A block");
-				if let Ok(statement) = parse_block(messages, tokenizer) {
-					items.push(Statement::Block(statement));
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
-
-			Token { kind: TokenKind::CloseBrace, .. } => break,
-
-			_ => {
-				disallow_all_attributes(messages, attributes, token.span, "An expression");
-				if let Ok(expression) = parse_expression(messages, tokenizer, true) {
-					items.push(Statement::Expression(expression));
-					if tokenizer.expect(messages, TokenKind::Newline).is_err() {
-						consume_error_syntax(messages, tokenizer);
-					}
-				} else {
-					consume_error_syntax(messages, tokenizer);
-				}
-			}
+		if let Some(statement) = parse_statement(messages, tokenizer, &mut next_function_index, attributes, token, true) {
+			items.push(statement);
 		}
 	}
 
 	items
+}
+
+fn parse_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	next_function_index: &mut usize,
+	attributes: Attributes<'a>,
+	token: Token<'a>,
+	consume_newline: bool,
+) -> Option<Statement<'a>> {
+	match token {
+		Token { kind: TokenKind::Word, text: "import", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "An import statement");
+			if let Ok(statement) = parse_import_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::Import(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "const", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A const definition");
+			if let Ok(statement) = parse_const_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::Const(Box::new(statement)));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "static", .. } => {
+			const ALLOWED: AllowedAttributes = AllowedAttributes {
+				generic_attribute: false,
+				extern_attribute: true,
+				export_attribute: false, // TODO: Allow exporting
+				method_attribute: false,
+				intrinsic_attribute: false,
+				lang_attribute: false,
+			};
+			disallow_attributes(messages, &attributes, ALLOWED, "A static definition");
+			if let Ok(statement) = parse_static_statement(messages, tokenizer, attributes, consume_newline) {
+				return Some(Statement::Static(Box::new(statement)));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A let statement");
+			if let Ok(statement) = parse_binding_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::Binding(Box::new(statement)));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "fn", .. } => {
+			let index = *next_function_index;
+			*next_function_index += 1;
+			if let Ok(statement) = parse_function_declaration(messages, tokenizer, attributes, index, consume_newline) {
+				return Some(Statement::Function(Box::new(statement)));
+			} else {
+				*next_function_index -= 1;
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "struct", .. } => {
+			if let Ok(statement) = parse_struct_declaration(messages, tokenizer, attributes, consume_newline) {
+				return Some(Statement::Struct(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "enum", .. } => {
+			if let Ok(statement) = parse_enum_declaration(messages, tokenizer, attributes, consume_newline) {
+				return Some(Statement::Enum(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "while", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A while loop");
+			if let Ok(statement) = parse_while_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::While(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "break", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A break statement");
+			if let Ok(statement) = parse_break_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::Break(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "continue", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A continue statement");
+			if let Ok(statement) = parse_continue_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::Continue(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "return", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A return statement");
+			if let Ok(statement) = parse_return_statement(messages, tokenizer, consume_newline) {
+				return Some(Statement::Return(Box::new(statement)));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		Token { kind: TokenKind::OpenBrace, .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A block");
+			if let Ok(statement) = parse_block(messages, tokenizer, false, consume_newline) {
+				return Some(Statement::Block(statement));
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+
+		_ => {
+			disallow_all_attributes(messages, attributes, token.span, "An expression");
+			if let Ok(expression) = parse_expression(messages, tokenizer, true) {
+				let expression = Statement::Expression(expression);
+
+				let expect_newline = consume_newline && tokenizer.previous_kind() != Some(TokenKind::Newline);
+				if expect_newline && tokenizer.expect(messages, TokenKind::Newline).is_err() {
+					consume_error_syntax(messages, tokenizer);
+				}
+
+				return Some(expression);
+			} else {
+				consume_error_syntax(messages, tokenizer);
+			}
+		}
+	}
+
+	None
 }
 
 fn disallow_all_attributes(messages: &mut Messages, attributes: Attributes, span: Span, label: &str) {
@@ -508,7 +552,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::OpenBrace => {
-			let parsed_block = parse_block(messages, tokenizer)?;
+			let parsed_block = parse_block(messages, tokenizer, false, false)?;
 
 			let span = parsed_block.span;
 			let block = parsed_block.item;
@@ -697,7 +741,7 @@ fn parse_if_else_chain<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	let mut span = if_token.span;
 
 	let condition = parse_expression(messages, tokenizer, false)?;
-	let body = parse_block(messages, tokenizer)?;
+	let body = parse_block(messages, tokenizer, true, false)?;
 	span += body.span;
 	entries.push(IfElseChainEntry { condition, body });
 
@@ -707,11 +751,11 @@ fn parse_if_else_chain<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 		if let Ok(Token { text: "if", .. }) = tokenizer.peek() {
 			tokenizer.expect_word(messages, "if")?;
 			let condition = parse_expression(messages, tokenizer, false)?;
-			let body = parse_block(messages, tokenizer)?;
+			let body = parse_block(messages, tokenizer, true, false)?;
 			span += body.span;
 			entries.push(IfElseChainEntry { condition, body });
 		} else {
-			let body = parse_block(messages, tokenizer)?;
+			let body = parse_block(messages, tokenizer, true, false)?;
 			span += body.span;
 			else_body = Some(body);
 			break;
@@ -723,11 +767,15 @@ fn parse_if_else_chain<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 	Ok(Node::new(expression, span))
 }
 
-fn parse_while_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<While<'a>>> {
+fn parse_while_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<While<'a>>> {
 	let while_token = tokenizer.expect_word(messages, "while")?;
 
 	let condition = parse_expression(messages, tokenizer, false)?;
-	let body = parse_block(messages, tokenizer)?;
+	let body = parse_block(messages, tokenizer, true, consume_newline)?;
 
 	let span = while_token.span + body.span;
 	let value = While { condition, body };
@@ -1041,7 +1089,11 @@ fn parse_lang_attribute<'a>(
 	Ok(Node::new(attribute, span))
 }
 
-fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Import<'a>>> {
+fn parse_import_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Import<'a>>> {
 	let import_token = tokenizer.expect_word(messages, "import")?;
 
 	let mut segments = Vec::new();
@@ -1074,7 +1126,9 @@ fn parse_import_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 		symbol_names.push(word);
 	}
 
-	tokenizer.expect(messages, TokenKind::Newline)?;
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let span = import_token.span + end;
 	if segments.is_empty() {
@@ -1191,6 +1245,7 @@ fn parse_function_declaration<'a>(
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
 	index_in_block: usize,
+	consume_newline: bool,
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
@@ -1220,8 +1275,12 @@ fn parse_function_declaration<'a>(
 	let block = if extern_attribute.is_some() || intrinsic_attribute.is_some() {
 		None
 	} else {
-		Some(parse_block(messages, tokenizer)?)
+		Some(parse_block(messages, tokenizer, false, false)?)
 	};
+
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	Ok(Function {
 		generics,
@@ -1290,6 +1349,7 @@ fn parse_struct_declaration<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
+	consume_newline: bool,
 ) -> ParseResult<Struct<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
@@ -1325,6 +1385,10 @@ fn parse_struct_declaration<'a>(
 
 	tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
+
 	Ok(Struct { generics, name, fields })
 }
 
@@ -1332,6 +1396,7 @@ fn parse_enum_declaration<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
+	consume_newline: bool,
 ) -> ParseResult<Enum<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
@@ -1409,6 +1474,10 @@ fn parse_enum_declaration<'a>(
 
 	tokenizer.expect(messages, TokenKind::CloseBrace)?;
 
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
+
 	Ok(Enum { generics, name, shared_fields, variants })
 }
 
@@ -1452,7 +1521,11 @@ fn parse_field<'a>(
 	Ok(Field { name, parsed_type, attribute, read_only })
 }
 
-fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Const<'a>>> {
+fn parse_const_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Const<'a>>> {
 	let const_token = tokenizer.expect_word(messages, "const")?;
 
 	let name_token = tokenizer.expect(messages, TokenKind::Word)?;
@@ -1470,7 +1543,9 @@ fn parse_const_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<
 
 	let expression = parse_expression(messages, tokenizer, true)?;
 
-	tokenizer.expect(messages, TokenKind::Newline)?;
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let span = const_token.span + expression.span;
 	let item = Const { name, parsed_type, expression };
@@ -1481,6 +1556,7 @@ fn parse_static_statement<'a>(
 	messages: &mut Messages,
 	tokenizer: &mut Tokenizer<'a>,
 	attributes: Attributes<'a>,
+	consume_newline: bool,
 ) -> ParseResult<Node<Static<'a>>> {
 	let keyword_token = tokenizer.expect_word(messages, "static")?;
 
@@ -1490,6 +1566,10 @@ fn parse_static_statement<'a>(
 
 	tokenizer.expect(messages, TokenKind::Colon)?;
 	let parsed_type = parse_type(messages, tokenizer)?;
+
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let span = keyword_token.span + parsed_type.span;
 	let item = Static {
@@ -1501,7 +1581,11 @@ fn parse_static_statement<'a>(
 	Ok(Node { item, span })
 }
 
-fn parse_binding_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Binding<'a>>> {
+fn parse_binding_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Binding<'a>>> {
 	let is_mutable;
 	let keyword_token = if let Ok(Token { text: "mut", .. }) = tokenizer.peek() {
 		is_mutable = true;
@@ -1526,24 +1610,48 @@ fn parse_binding_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenize
 
 	let expression = parse_expression(messages, tokenizer, true)?;
 
-	tokenizer.expect(messages, TokenKind::Newline)?;
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let span = keyword_token.span + expression.span;
 	let item = Binding { name, parsed_type, expression, is_mutable };
 	Ok(Node { item, span })
 }
 
-fn parse_break_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Break>> {
+fn parse_break_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Break>> {
 	let break_token = tokenizer.expect_word(messages, "break")?;
+
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
+
 	Ok(Node::from_token(Break, break_token))
 }
 
-fn parse_continue_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Continue>> {
+fn parse_continue_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Continue>> {
 	let continue_token = tokenizer.expect_word(messages, "continue")?;
+
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
+
 	Ok(Node::from_token(Continue, continue_token))
 }
 
-fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Return<'a>>> {
+fn parse_return_statement<'a>(
+	messages: &mut Messages,
+	tokenizer: &mut Tokenizer<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Return<'a>>> {
 	let return_token = tokenizer.expect_word(messages, "return")?;
 
 	let expression = match tokenizer.peek_kind() {
@@ -1551,7 +1659,9 @@ fn parse_return_statement<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer
 		_ => Some(parse_expression(messages, tokenizer, true)?),
 	};
 
-	tokenizer.expect(messages, TokenKind::Newline)?;
+	if consume_newline {
+		tokenizer.expect(messages, TokenKind::Newline)?;
+	}
 
 	let span = match &expression {
 		Some(expression) => return_token.span + expression.span,
@@ -1577,7 +1687,8 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 	);
 
 	if is_reserved {
-		messages.message(error!("Cannot use reserved word {:?} as {use_as}", token.text).span(token.span));
+		let error = error!("Cannot use reserved word {:?} as {use_as}", token.text);
+		messages.message(error.span(token.span));
 		Err(())
 	} else {
 		Ok(())
@@ -1607,7 +1718,7 @@ fn consume_error_syntax(messages: &mut Messages, tokenizer: &mut Tokenizer) {
 		}
 
 		tokenizer
-			.next_with_optional_messages(&mut None)
+			.next_with_optional_messages(&mut None, false)
 			.expect("This should never fail");
 	}
 

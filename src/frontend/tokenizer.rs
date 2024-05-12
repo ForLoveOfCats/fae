@@ -60,6 +60,7 @@ pub enum TokenKind {
 	Period,
 	Comma,
 	PoundSign,
+	FatArrow,
 
 	Exclamation,
 }
@@ -123,6 +124,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::Period => "'.'",
 			TokenKind::Comma => "','",
 			TokenKind::PoundSign => "'#'",
+			TokenKind::FatArrow => "'=>'",
 
 			TokenKind::Exclamation => "'!'",
 		};
@@ -157,6 +159,7 @@ pub struct Tokenizer<'a> {
 	bytes: &'a [u8],
 	offset: usize,
 	peeked: Option<PeekedInfo<'a>>,
+	previous: Option<Token<'a>>,
 	token_count: usize,
 }
 
@@ -168,6 +171,7 @@ impl<'a> Tokenizer<'a> {
 			bytes: source.as_bytes(),
 			offset: 0,
 			peeked: None,
+			previous: None,
 			token_count: 0,
 		}
 	}
@@ -179,7 +183,7 @@ impl<'a> Tokenizer<'a> {
 		}
 
 		let mut local = *self;
-		let peeked = local.next_with_optional_messages(&mut None);
+		let peeked = local.next_with_optional_messages(&mut None, false);
 
 		if let Ok(peeked) = peeked {
 			self.peeked = Some(PeekedInfo { token: peeked, byte_index: local.offset });
@@ -192,11 +196,30 @@ impl<'a> Tokenizer<'a> {
 		self.peek().map(|token| token.kind)
 	}
 
-	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
-		self.next_with_optional_messages(&mut Some(messages))
+	pub fn previous_kind(&mut self) -> Option<TokenKind> {
+		self.previous.map(|t| t.kind)
 	}
 
-	pub fn next_with_optional_messages(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<Token<'a>> {
+	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
+		self.next_with_optional_messages(&mut Some(messages), false)
+	}
+
+	pub fn next_with_optional_messages(
+		&mut self,
+		messages: &mut Option<&mut Messages>,
+		expects_newline: bool,
+	) -> ParseResult<Token<'a>> {
+		let token = self.impl_next_with_optional_messages(messages, expects_newline)?;
+		self.previous = Some(token);
+		Ok(token)
+	}
+
+	// Do not call directly, will not update previous token
+	fn impl_next_with_optional_messages(
+		&mut self,
+		messages: &mut Option<&mut Messages>,
+		expects_newline: bool,
+	) -> ParseResult<Token<'a>> {
 		use TokenKind::*;
 
 		if let Some(peeked) = self.peeked.take() {
@@ -210,7 +233,7 @@ impl<'a> Tokenizer<'a> {
 			return Ok(newline_token);
 		}
 
-		self.verify_not_eof(messages)?;
+		self.verify_not_eof(messages, expects_newline)?;
 
 		let token = match self.bytes[self.offset..] {
 			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1, self.file_index)),
@@ -256,13 +279,13 @@ impl<'a> Tokenizer<'a> {
 					self.offset += 1;
 				}
 
-				return self.next_with_optional_messages(messages);
+				return self.next_with_optional_messages(messages, false);
 			}
 
 			[b'/', b'*', ..] => {
 				loop {
 					self.offset += 1;
-					self.verify_not_eof(messages)?;
+					self.verify_not_eof(messages, false)?;
 
 					if matches!(self.bytes[self.offset..], [b'*', b'/', ..]) {
 						self.offset += 2;
@@ -270,7 +293,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				return self.next_with_optional_messages(messages);
+				return self.next_with_optional_messages(messages, false);
 			}
 
 			[b'/', b'=', ..] => {
@@ -310,6 +333,11 @@ impl<'a> Tokenizer<'a> {
 			[b'=', b'=', ..] => {
 				self.offset += 1;
 				Ok(Token::new("==", CompEqual, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'=', b'>', ..] => {
+				self.offset += 1;
+				Ok(Token::new("=>", FatArrow, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
 			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1, self.file_index)),
@@ -379,7 +407,7 @@ impl<'a> Tokenizer<'a> {
 			[b'b', b'\'', ..] => {
 				let start_index = self.offset;
 				self.offset += 2;
-				self.verify_not_eof(messages)?;
+				self.verify_not_eof(messages, false)?;
 
 				if self.bytes[self.offset] == b'\\' {
 					self.offset += 2;
@@ -413,7 +441,7 @@ impl<'a> Tokenizer<'a> {
 			[b'\'', ..] => {
 				let start_index = self.offset;
 				self.offset += 1;
-				self.verify_not_eof(messages)?;
+				self.verify_not_eof(messages, false)?;
 
 				if self.bytes[self.offset] == b'\\' {
 					self.offset += 2;
@@ -435,7 +463,7 @@ impl<'a> Tokenizer<'a> {
 				let start_index = self.offset;
 				loop {
 					self.offset += 1;
-					self.verify_not_eof(messages)?;
+					self.verify_not_eof(messages, false)?;
 
 					if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
 						self.offset += 1;
@@ -524,7 +552,7 @@ impl<'a> Tokenizer<'a> {
 
 	// This is such a hack
 	fn advance_by_codepoint(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
-		self.verify_not_eof(messages)?;
+		self.verify_not_eof(messages, false)?;
 
 		let mut chars = self.source[self.offset..].char_indices();
 		chars.next().ok_or(())?;
@@ -535,7 +563,7 @@ impl<'a> Tokenizer<'a> {
 
 	//TODO: Remove this
 	fn expect_byte(&mut self, messages: &mut Option<&mut Messages>, expected: u8) -> ParseResult<()> {
-		self.verify_not_eof(messages)?;
+		self.verify_not_eof(messages, false)?;
 
 		let found = self.bytes[self.offset];
 		if found != expected {
@@ -573,14 +601,21 @@ impl<'a> Tokenizer<'a> {
 		Ok(None)
 	}
 
-	fn verify_not_eof(&self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
+	fn verify_not_eof(&self, messages: &mut Option<&mut Messages>, expects_newline: bool) -> ParseResult<()> {
 		if self.offset >= self.source.len() {
 			if let Some(messages) = messages {
-				messages.message(error!("Unexpected end of file").span(Span {
+				let error = if expects_newline {
+					error!("Unexpected end of file, expected newline")
+				} else {
+					error!("Unexpected end of file")
+				};
+
+				let span = Span {
 					start: self.source.len().saturating_sub(1),
 					end: self.source.len().saturating_sub(1),
 					file_index: self.file_index,
-				}));
+				};
+				messages.message(error.span(span));
 			}
 			Err(())
 		} else {
@@ -589,7 +624,7 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
-		let token = self.next(messages)?;
+		let token = self.next_with_optional_messages(&mut Some(messages), expected == TokenKind::Newline)?;
 		if token.kind == expected {
 			return Ok(token);
 		}

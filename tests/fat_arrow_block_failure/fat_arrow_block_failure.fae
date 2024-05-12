@@ -1,0 +1,10 @@
+import fae::stdout::print_i32, print_string, print_newline
+
+fn function() => print_string("Functions do not allow fat arrow")
+
+fn main() {
+	mut index: i32 = 0
+	while index < 10 =>
+	print_i32(index)
+	print_newline()
+}

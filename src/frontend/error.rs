@@ -263,7 +263,7 @@ impl Message {
 		let whitespace: String = (0..column_start.saturating_sub(1)).map(|_| ' ').collect();
 		write!(output, "{}{}{underline_color}", gutter_spacer, whitespace);
 
-		let column_end = calc_spaces_from_byte_offset(line, end - 1);
+		let column_end = calc_spaces_from_byte_offset(line, end.saturating_sub(1));
 		for _ in column_start..column_end + 1 {
 			write!(output, "^");
 		}

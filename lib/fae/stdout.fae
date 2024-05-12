@@ -11,11 +11,8 @@ fn print_newline() {
 }
 
 fn print_bool(arg: bool) {
-	if arg {
-		print_string("true")
-	} else {
-		print_string("false")
-	}
+	if arg => print_string("true")
+	else => print_string("false")
 }
 
 fn print_i8(arg: i8) {
