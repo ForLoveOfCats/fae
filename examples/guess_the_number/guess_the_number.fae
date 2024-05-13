@@ -29,7 +29,7 @@ fn play_round() {
 		let guess = atol(buffer.items_pointer)
 		printf("You guessed %d\n".pointer, guess)
 
-		if guess < number  => print_string("Too low\n")
+		if guess < number => print_string("Too low\n")
 		else if guess > number  => print_string("Too high\n")
 		else {
 			print_string("That was the number!\n")

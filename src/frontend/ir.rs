@@ -366,6 +366,19 @@ pub struct IfElseChain<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct Match<'a> {
+	pub expression: Expression<'a>,
+	pub arms: Vec<MatchArm<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchArm<'a> {
+	pub binding: Option<CheckIsResultBinding>,
+	pub block: Block<'a>,
+	pub variant_type_id: TypeId,
+}
+
+#[derive(Debug, Clone)]
 pub struct While<'a> {
 	pub condition: Expression<'a>,
 	pub body: Block<'a>,
@@ -452,6 +465,7 @@ pub enum ExpressionKind<'a> {
 
 	Block(Block<'a>),
 	IfElseChain(Box<IfElseChain<'a>>),
+	Match(Box<Match<'a>>),
 
 	IntegerValue(IntegerValue),
 	DecimalValue(DecimalValue),
@@ -486,6 +500,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::Type(_) => "type",
 			ExpressionKind::Block(_) => "block",
 			ExpressionKind::IfElseChain(_) => "if expression",
+			ExpressionKind::Match(_) => "match expression",
 			ExpressionKind::IntegerValue(_) => "untyped integer",
 			ExpressionKind::DecimalValue(_) => "untyped decimal",
 			ExpressionKind::BooleanLiteral(_) => "boolean literal",
@@ -514,6 +529,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::Type(_) => "a type",
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::IfElseChain(_) => "a if expression",
+			ExpressionKind::Match(_) => "a match expression",
 			ExpressionKind::IntegerValue(_) => "an untyped integer",
 			ExpressionKind::DecimalValue(_) => "an untyped decimal",
 			ExpressionKind::BooleanLiteral(_) => "a boolean literal",

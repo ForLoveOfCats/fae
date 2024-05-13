@@ -454,6 +454,8 @@ fn parse_expression_atom<'a>(
 			match peeked.text {
 				"if" => return parse_if_else_chain(messages, tokenizer),
 
+				"match" => return parse_match(messages, tokenizer),
+
 				"true" => {
 					tokenizer.next(messages)?;
 					return Ok(Node::new(Expression::BooleanLiteral(true), peeked.span));
@@ -764,6 +766,44 @@ fn parse_if_else_chain<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a
 
 	let value = IfElseChain { entries, else_body };
 	let expression = Expression::IfElseChain(Box::new(value));
+	Ok(Node::new(expression, span))
+}
+
+fn parse_match<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> ParseResult<Node<Expression<'a>>> {
+	let match_token = tokenizer.expect_word(messages, "match")?;
+
+	let expression = parse_expression(messages, tokenizer, false)?;
+
+	tokenizer.expect(messages, TokenKind::OpenBrace)?;
+	let mut arms = Vec::new();
+
+	while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
+		tokenizer.consume_newlines(messages);
+
+		let (binding_name, variant_name) = {
+			let first = tokenizer.expect(messages, TokenKind::Word)?;
+
+			if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
+				tokenizer.expect(messages, TokenKind::Colon)?;
+				let variant_name = tokenizer.expect(messages, TokenKind::Word)?;
+				let binding_name = Some(Node::from_token(first.text, first));
+				(binding_name, Node::from_token(variant_name.text, variant_name))
+			} else {
+				(None, Node::from_token(first.text, first))
+			}
+		};
+
+		let block = parse_block(messages, tokenizer, true, true)?;
+
+		let arm = MatchArm { binding_name, variant_name, block };
+		arms.push(arm);
+	}
+
+	let close_brace = tokenizer.expect(messages, TokenKind::CloseBrace)?;
+	let span = match_token.span + close_brace.span;
+
+	let boxed_match = Box::new(Match { expression, arms });
+	let expression = Expression::Match(boxed_match);
 	Ok(Node::new(expression, span))
 }
 

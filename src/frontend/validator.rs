@@ -818,23 +818,25 @@ fn create_block_enum<'a>(
 	}
 
 	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
-	let mut variants = HashMap::new();
+	let mut variants = Vec::new();
+	let mut variants_by_name = HashMap::new();
 
-	for (index, variant) in statement.variants.iter().enumerate() {
+	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = type_store.user_types.len();
 
 		let name = variant.name.item;
-		let shape = StructShape::new(Some(enum_shape_index), Some(index));
+		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index));
 		let kind = UserTypeKind::Struct { shape };
 		let span = variant.name.span;
 		type_store.register_type(name, generic_parameters.clone(), kind, module_path, scope_id, span);
 
-		let variant_shape = EnumVariantShape { name, span, index, struct_shape_index };
-		variants.insert(name, variant_shape);
+		let variant_shape = EnumVariantShape { name, span, variant_index, struct_shape_index };
+		variants.push(variant_shape);
+		variants_by_name.insert(name, variant_index);
 	}
 
 	let name = statement.name.item;
-	let shape = EnumShape::new(variants);
+	let shape = EnumShape::new(variants, variants_by_name);
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
@@ -992,10 +994,10 @@ fn fill_block_types<'a>(
 			};
 
 			// Yuck
-			let mut variant_shapes = shape.variant_shapes.clone();
+			let variant_shapes = shape.variant_shapes.clone();
 
-			for variant_shape in variant_shapes.values_mut() {
-				let tree_variant = &statement.variants[variant_shape.index];
+			for variant_shape in variant_shapes {
+				let tree_variant = &statement.variants[variant_shape.variant_index];
 
 				let mut fields = Vec::with_capacity(shared_fields.len() + tree_variant.fields.len());
 				fields.extend(shared_fields.iter().copied());
@@ -1172,7 +1174,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 	for specialization in &mut specializations {
 		assert!(!specialization.been_filled);
 		specialization.been_filled;
-		assert_eq!(specialization.variants.len(), 0);
+		assert_eq!(specialization.variants_by_name.len(), 0);
 
 		for field in &mut specialization.shared_fields {
 			field.type_id = type_store.specialize_with_user_type_generics(
@@ -1186,7 +1188,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 			);
 		}
 
-		for variant in specialization.variants.values_mut() {
+		for variant in &mut specialization.variants {
 			variant.type_id = type_store.specialize_with_user_type_generics(
 				messages,
 				function_store,
@@ -2109,6 +2111,13 @@ pub fn validate_expression<'a>(
 			expression
 		}
 
+		tree::Expression::Match(match_expression) => {
+			context.can_is_bind = false;
+			let expression = validate_match_expression(context, match_expression, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
 		tree::Expression::IntegerLiteral(literal) => validate_integer_literal(context, literal, span),
 
 		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
@@ -2245,6 +2254,140 @@ fn validate_if_else_chain_expression<'a>(
 	let chain = IfElseChain { type_id, entries, else_body };
 	let kind = ExpressionKind::IfElseChain(Box::new(chain));
 	Expression { span, type_id, is_mutable: true, returns, kind }
+}
+
+fn validate_match_expression<'a>(
+	context: &mut Context<'a, '_, '_>,
+	match_expression: &'a tree::Match<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let expression = validate_expression(context, &match_expression.expression);
+	if expression.type_id.is_any_collapse(context.type_store) {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	let (expression_type_id, is_mutable) = match expression.type_id.as_pointed(context.type_store) {
+		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
+		None => (expression.type_id, expression.is_mutable),
+	};
+
+	let enum_entry = context.type_store.type_entries[expression_type_id.index()];
+	let enum_specialization = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
+			UserTypeKind::Struct { .. } => None,
+			UserTypeKind::Enum { shape } => Some(&shape.specializations[specialization_index]),
+		},
+
+		_ => None,
+	};
+
+	let Some(enum_specialization) = enum_specialization else {
+		let found = context.type_name(expression_type_id);
+		let error = error!("Cannot match on type {found} as it is not an enum");
+		context.message(error.span(expression.span));
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let mut encountered_variants = Vec::<Option<Span>>::with_capacity(enum_specialization.variants_by_name.len());
+	for _ in 0..enum_specialization.variants_by_name.len() {
+		encountered_variants.push(None);
+	}
+
+	let mut returns = expression.returns;
+	let mut arms = Vec::new();
+
+	for arm in &match_expression.arms {
+		let mut scope = context.child_scope();
+
+		let enum_entry = scope.type_store.type_entries[expression_type_id.index()];
+		let enum_specialization = match enum_entry.kind {
+			TypeEntryKind::UserType { shape_index, specialization_index } => {
+				match &scope.type_store.user_types[shape_index].kind {
+					UserTypeKind::Struct { .. } => unreachable!(),
+					UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
+				}
+			}
+
+			kind => unreachable!("{kind:?}"),
+		};
+
+		let (variant, variant_index) = match enum_specialization.variants_by_name.get(arm.variant_name.item) {
+			Some(&variant_index) => {
+				let variant = &enum_specialization.variants[variant_index];
+				(variant.type_id, variant_index)
+			}
+
+			None => {
+				let found = scope.type_name(expression_type_id);
+				let error = error!("No variant `{}` found on enum {found}", arm.variant_name.item);
+				scope.message(error.span(arm.variant_name.span));
+				continue;
+			}
+		};
+
+		if let Some(existing) = encountered_variants[variant_index] {
+			let span = arm.variant_name.span;
+			let found = scope.type_name(variant);
+			let error = error!("Duplicate match arm for enum variant {found}");
+			scope.message(error.note(note!(existing, "Existing arm here")).span(span));
+		}
+		encountered_variants[variant_index] = Some(arm.variant_name.span);
+
+		let binding_name = if let Some(binding_name) = arm.binding_name {
+			Some(binding_name)
+		} else if let ExpressionKind::Read(read) = &expression.kind {
+			Some(Node::new(read.name, expression.span))
+		} else {
+			None
+		};
+
+		let binding = if let Some(binding_name) = binding_name {
+			let kind = match is_mutable {
+				true => ReadableKind::Mut,
+				false => ReadableKind::Let,
+			};
+
+			let type_id = scope.type_store.pointer_to(variant, is_mutable);
+			let readable_index = scope.push_readable(binding_name, type_id, kind);
+
+			let layout = scope.type_store.type_layout(variant);
+			let is_zero_sized = layout.size <= 0;
+
+			Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
+		} else {
+			None
+		};
+
+		let block = validate_block(scope.child_scope(), &arm.block.item, false);
+		returns &= block.returns;
+
+		let arm = MatchArm { binding, block, variant_type_id: variant };
+		arms.push(arm);
+	}
+
+	let enum_entry = context.type_store.type_entries[expression_type_id.index()];
+	let enum_specialization = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
+			UserTypeKind::Struct { .. } => unreachable!(),
+			UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
+		},
+
+		kind => unreachable!("{kind:?}"),
+	};
+
+	for (variant_index, variant) in enum_specialization.variants.iter().enumerate() {
+		if encountered_variants[variant_index].is_none() {
+			let missing = context.type_name(variant.type_id);
+			let error = error!("Missing match arm for enum variant {missing}");
+			context.messages.message(error.span(span));
+		}
+	}
+
+	// TODO: When adding `give` make sure to infer match type from arms
+	let type_id = context.type_store.void_type_id();
+	let match_expression = Box::new(Match { expression, arms });
+	let kind = ExpressionKind::Match(match_expression);
+	Expression { span, type_id, is_mutable, returns, kind }
 }
 
 fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a Node<tree::While<'a>>) -> While<'a> {

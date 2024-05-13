@@ -1,4 +1,4 @@
-import fae::stdout::print_i32, print_string
+import fae::stdout::print_i32, print_string, print_newline
 
 enum VetSpecialty {
 	Cat
@@ -6,8 +6,8 @@ enum VetSpecialty {
 }
 
 enum BeenTreated {
-	Treated
 	NotTreated
+	Treated
 }
 
 method static BeenTreated
@@ -23,19 +23,24 @@ enum Pet {
 	Dog { hours_since_last_walk: i32 }
 }
 
-method Pet
+method mut Pet
 fn visit_vet(specialty: VetSpecialty): BeenTreated {
 	print_string(self.name)
 	print_string(" is visiting the vet\n")
 
-	if self is Cat and specialty is Cat {
-		print_string("Cat vet is treating the cat\n")
-		return BeenTreated.Treated
-	}
+	match self {
+		Cat => if specialty is Cat {
+			print_string("The cat vet is treating the cat\n")
+			return BeenTreated.Treated
+		}
 
-	if self is Dog and specialty is Dog {
-		print_string("Dog vet is treating the dog\n")
-		return BeenTreated.from_bool(true)
+		Dog => if specialty is Dog {
+			// Let's say the vet visit was two hours
+			self.hours_since_last_walk += 2
+
+			print_string("The dog vet is treating the dog\n")
+			return BeenTreated.from_bool(true)
+		}
 	}
 
 	return BeenTreated.NotTreated
@@ -43,7 +48,7 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 
 method mut Pet
 fn take_on_walk() {
-	if self is Dog and self.hours_since_last_walk > 2 {
+	if self is Dog and self.hours_since_last_walk >= 2 {
 		print_string("Walking a dog, it has not been walked in ")
 		print_i32(self.hours_since_last_walk)
 		print_string(" hours\n")
@@ -61,4 +66,11 @@ fn main() {
 	if cat.visit_vet(VetSpecialty.Dog) is NotTreated {
 		print_string("The cat has not been treated\n")
 	}
+
+	if dog.visit_vet(VetSpecialty.Dog) is NotTreated {
+		print_string("The dog has not been treated\n")
+	}
+
+	cat.take_on_walk()
+	dog.take_on_walk()
 }

@@ -547,6 +547,19 @@ pub struct IfElseChain<'a> {
 }
 
 #[derive(Debug)]
+pub struct Match<'a> {
+	pub expression: Node<Expression<'a>>,
+	pub arms: Vec<MatchArm<'a>>,
+}
+
+#[derive(Debug)]
+pub struct MatchArm<'a> {
+	pub binding_name: Option<Node<&'a str>>,
+	pub variant_name: Node<&'a str>,
+	pub block: Node<Block<'a>>,
+}
+
+#[derive(Debug)]
 pub struct While<'a> {
 	pub condition: Node<Expression<'a>>,
 	pub body: Node<Block<'a>>,
@@ -556,6 +569,7 @@ pub struct While<'a> {
 pub enum Expression<'a> {
 	Block(Block<'a>),
 	IfElseChain(Box<IfElseChain<'a>>),
+	Match(Box<Match<'a>>),
 
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),

@@ -1,0 +1,28 @@
+import fae::stdout::print_u8, print_f64, print_string
+
+fn main() {
+	do_thing(Enum.A)
+	do_thing(Enum.B { field: 99.2 })
+	do_thing(Enum.C)
+	do_thing(Enum.D { other: b'A' })
+}
+
+fn do_thing(arg: Enum) {
+	match arg {
+		C => print_string("C\n")
+
+		B {
+			print_f64(arg.field)
+			print_string(" is B\n")
+		}
+
+		C => print_string("other C\n")
+	}
+}
+
+enum Enum {
+	A
+	B { field: f64}
+	C
+	D { other: u8 }
+}

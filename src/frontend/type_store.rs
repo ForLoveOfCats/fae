@@ -196,17 +196,20 @@ pub struct Field<'a> {
 pub struct EnumShape<'a> {
 	pub been_filled: bool,
 	pub shared_fields: Vec<Node<FieldShape<'a>>>,
-	pub variant_shapes: HashMap<&'a str, EnumVariantShape<'a>>,
+
+	pub variant_shapes: Vec<EnumVariantShape<'a>>,
+	pub variant_shapes_by_name: HashMap<&'a str, usize>, // Index into variant shapes vec
 
 	pub specializations: Vec<Enum<'a>>,
 }
 
 impl<'a> EnumShape<'a> {
-	pub fn new(variant_shapes: HashMap<&'a str, EnumVariantShape<'a>>) -> Self {
+	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: HashMap<&'a str, usize>) -> Self {
 		EnumShape {
 			been_filled: false,
 			shared_fields: Vec::new(),
 			variant_shapes,
+			variant_shapes_by_name,
 			specializations: Vec::new(),
 		}
 	}
@@ -216,7 +219,7 @@ impl<'a> EnumShape<'a> {
 pub struct EnumVariantShape<'a> {
 	pub name: &'a str,
 	pub span: Span,
-	pub index: usize,
+	pub variant_index: usize,
 	pub struct_shape_index: usize,
 }
 
@@ -227,7 +230,8 @@ pub struct Enum<'a> {
 	pub type_arguments: Vec<TypeId>,
 	pub been_filled: bool,
 	pub shared_fields: Vec<Field<'a>>,
-	pub variants: HashMap<&'a str, EnumVariant>,
+	pub variants: Vec<EnumVariant>,
+	pub variants_by_name: HashMap<&'a str, usize>, // Index into variants vec
 	pub layout: Option<Layout>,
 	pub tag_memory_size: Option<i64>,
 }
@@ -1117,8 +1121,7 @@ impl<'a> TypeStore<'a> {
 						return;
 					}
 
-					// Belch, not only does this allocate a new Vec, the values iteration is O(capacity), big sad
-					let variants: Vec<_> = specialization.variants.values().map(|v| v.type_id).collect();
+					let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
 
 					let mut size = 0;
 					let mut alignment = 0;
@@ -1222,7 +1225,8 @@ impl<'a> TypeStore<'a> {
 			UserTypeKind::Enum { shape } => {
 				let specialization = &shape.specializations[specialization_index];
 
-				for (name, variant) in &specialization.variants {
+				for (name, &variant_index) in &specialization.variants_by_name {
+					let variant = &specialization.variants[variant_index];
 					if self.direct_match(variant.type_id, to) {
 						let link = UserTypeChainLink {
 							user_type: specialization.type_id,
@@ -1388,13 +1392,13 @@ impl<'a> TypeStore<'a> {
 
 		let Some(specialization) = specialization else {
 			let found = self.type_name(function_store, module_path, base);
-			let error = error!("Type {found} does not have variants as it is a struct");
+			let error = error!("Type {found} does not have variants as it is not an enum");
 			messages.message(error.span(name.span));
 			return None;
 		};
 
-		match specialization.variants.get(name.item) {
-			Some(variant) => return Some(variant.type_id),
+		match specialization.variants_by_name.get(name.item) {
+			Some(&variant_index) => return Some(specialization.variants[variant_index].type_id),
 
 			None => {
 				let found = self.type_name(function_store, module_path, base);
@@ -1638,9 +1642,11 @@ impl<'a> TypeStore<'a> {
 			});
 		}
 
-		let variant_shapes: Vec<_> = shape.variant_shapes.values().copied().collect();
+		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
 
-		let mut variants = HashMap::new();
+		let mut variants_by_name = HashMap::new();
+		let mut variants = Vec::new();
+
 		for variant_shape in variant_shapes {
 			let type_id = self
 				.get_or_add_struct_shape_specialization(
@@ -1655,7 +1661,11 @@ impl<'a> TypeStore<'a> {
 				)
 				.unwrap();
 
-			variants.insert(variant_shape.name, EnumVariant { span: variant_shape.span, type_id });
+			let span = variant_shape.span;
+			let variant_index = variant_shape.variant_index;
+			assert_eq!(variant_index, variants.len());
+			variants.push(EnumVariant { span, type_id });
+			variants_by_name.insert(variant_shape.name, variant_index);
 		}
 
 		shared_fields.insert(
@@ -1685,6 +1695,7 @@ impl<'a> TypeStore<'a> {
 			been_filled,
 			shared_fields,
 			variants,
+			variants_by_name,
 			layout: None,
 			tag_memory_size: None,
 		};

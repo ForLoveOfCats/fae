@@ -23,7 +23,7 @@ use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIsResultBinding, Expression, Function, FunctionId, IfElseChain};
+use crate::frontend::ir::{Block, CheckIsResultBinding, Expression, Function, FunctionId, IfElseChain, MatchArm};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
@@ -565,6 +565,79 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
+	}
+
+	fn generate_match(
+		&mut self,
+		context: &mut codegen::Context,
+		value: Self::Binding,
+		enum_shape_index: usize,
+		enum_specialization_index: usize,
+		match_expression: &crate::frontend::ir::Match,
+		mut variant_index_callback: impl FnMut(&mut codegen::Context, &mut Self, &MatchArm) -> usize,
+		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+	) {
+		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
+		let tag = unsafe {
+			let i8_type = LLVMInt8TypeInContext(self.context);
+			LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr())
+		};
+
+		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
+		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match_following".as_ptr()) };
+
+		let mut next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
+		unsafe { LLVMBuildBr(self.builder, next_condition_block) };
+
+		for arm in &match_expression.arms {
+			let condition_block = next_condition_block;
+			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_block) };
+			next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
+			let case_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"case".as_ptr()) };
+
+			let variant_index = variant_index_callback(context, self, arm);
+
+			unsafe {
+				let i8_type = LLVMInt8TypeInContext(self.context);
+				let expected = LLVMConstInt(i8_type, variant_index as _, false as _);
+				let flag = LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr());
+				LLVMBuildCondBr(self.builder, flag, case_block, next_condition_block);
+
+				LLVMPositionBuilderAtEnd(self.builder, case_block);
+
+				if let Some(new_binding) = &arm.binding {
+					assert_eq!(self.readables.len(), new_binding.readable_index);
+					if new_binding.is_zero_sized {
+						self.readables.push(None);
+					} else {
+						let shape = &self.llvm_types.user_type_structs[enum_shape_index];
+						let llvm_struct = shape[enum_specialization_index].unwrap().actual;
+						let variant_pointer = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr());
+
+						let kind = BindingKind::Value(variant_pointer);
+						let binding = Binding { type_id: new_binding.type_id, kind };
+						self.readables.push(Some(binding));
+					}
+				}
+
+				body_callback(context, self, &arm.block);
+
+				let current_block = LLVMGetInsertBlock(self.builder);
+				if LLVMGetBasicBlockTerminator(current_block).is_null() {
+					LLVMBuildBr(self.builder, following_block);
+				}
+			}
+		}
+
+		let block = next_condition_block;
+		let case_name = "non_existant_case";
+		unsafe {
+			LLVMSetValueName2(LLVMBasicBlockAsValue(block), case_name.as_ptr() as _, case_name.len());
+			LLVMPositionBuilderAtEnd(self.builder, block);
+			LLVMBuildBr(self.builder, following_block);
+			LLVMPositionBuilderAtEnd(self.builder, following_block);
+		}
 	}
 
 	fn generate_while(

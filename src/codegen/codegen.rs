@@ -4,8 +4,8 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
 	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue,
-	MethodCall, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral, TypeArguments,
-	UnaryOperation, UnaryOperator, While,
+	Match, MethodCall, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral,
+	TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -167,6 +167,8 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::IfElseChain(chain_expression) => generate_if_else_chain(context, generator, chain_expression),
 
+		ExpressionKind::Match(match_expression) => generate_match(context, generator, match_expression),
+
 		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
 
 		ExpressionKind::DecimalValue(value) => generate_decimal_value(context, generator, value),
@@ -229,6 +231,52 @@ fn generate_if_else_chain<G: Generator>(
 				generator.end_block();
 			}
 			block
+		},
+	);
+
+	None
+}
+
+fn generate_match<G: Generator>(context: &mut Context, generator: &mut G, match_expression: &Match) -> Option<G::Binding> {
+	let value = generate_expression(context, generator, &match_expression.expression).unwrap();
+	let value_type_id = match match_expression.expression.type_id.as_pointed(context.type_store) {
+		Some(as_pointer) => as_pointer.type_id,
+		None => match_expression.expression.type_id,
+	};
+
+	let entry = context.type_store.type_entries[value_type_id.index()];
+	let TypeEntryKind::UserType {
+		shape_index: enum_shape_index,
+		specialization_index: enum_specialization_index,
+	} = entry.kind
+	else {
+		unreachable!("{:?}", entry.kind);
+	};
+
+	generator.generate_match(
+		context,
+		value,
+		enum_shape_index,
+		enum_specialization_index,
+		match_expression,
+		|context, generator, arm| {
+			generator.start_block();
+
+			let entry = context.type_store.type_entries[arm.variant_type_id.index()];
+			let TypeEntryKind::UserType { shape_index: variant_shape_index, .. } = entry.kind else {
+				unreachable!("{:?}", entry.kind);
+			};
+
+			let variant_user_type = &context.type_store.user_types[variant_shape_index];
+			let UserTypeKind::Struct { shape: variant_shape } = &variant_user_type.kind else {
+				unreachable!("{:?}", variant_user_type.kind);
+			};
+
+			variant_shape.variant_index.unwrap()
+		},
+		|context, generator, block| {
+			generate_block(context, generator, block);
+			generator.end_block();
 		},
 	);
 
