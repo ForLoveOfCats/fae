@@ -30,6 +30,16 @@ pub fn parse_block<'a>(
 
 		let token = tokenizer.peek()?;
 		let statement = parse_statement(messages, tokenizer, &mut 0, Attributes::blank(), token, false);
+
+		if let Some(statement) = &statement {
+			if let Statement::Block(_) = statement {
+				let warning = warning!(
+					"A single statement block is extraneous if it only contains another block, consider removing the `=>`"
+				);
+				messages.message(warning.span(fat_arrow.span))
+			}
+		}
+
 		let statements: Vec<_> = statement.into_iter().collect();
 
 		tokenizer.expect(messages, TokenKind::Newline)?;
