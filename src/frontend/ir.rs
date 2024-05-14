@@ -69,6 +69,10 @@ impl<'a> GenericParameters<'a> {
 		&self.parameters[0..self.explicit_len]
 	}
 
+	pub fn implicit_parameters(&self) -> &[GenericParameter<'a>] {
+		&self.parameters[self.explicit_len..self.explicit_len + self.implicit_len]
+	}
+
 	pub fn method_base_parameters(&self) -> &[GenericParameter<'a>] {
 		let start = self.explicit_len + self.implicit_len;
 		&self.parameters[start..]

@@ -801,9 +801,9 @@ fn create_block_enum<'a>(
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
 	let mut explicit_generics = Vec::with_capacity(capacity);
 
-	let shape_index = type_store.user_types.len();
+	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
 	for (generic_index, &generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
 	}
 
@@ -811,7 +811,7 @@ fn create_block_enum<'a>(
 	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
-		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
@@ -822,18 +822,32 @@ fn create_block_enum<'a>(
 		messages.message(error.span(statement.name.span));
 	}
 
-	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
 	let mut variants = Vec::new();
 	let mut variants_by_name = HashMap::new();
 
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = type_store.user_types.len();
 
+		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
+		for (generic_index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
+			variant_explicit_generics.push(GenericParameter { name: enum_explicit_generic.name, generic_type_id });
+		}
+
+		let explicit_generics_len = variant_explicit_generics.len();
+		let mut variant_generic_parameters = GenericParameters::new_from_explicit(variant_explicit_generics);
+		for (index, enum_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
+			let generic_index = explicit_generics_len + index;
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
+			let parameter = GenericParameter { name: enum_parameter.name, generic_type_id };
+			variant_generic_parameters.push_implicit(parameter);
+		}
+
 		let name = variant.name.item;
 		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index));
 		let kind = UserTypeKind::Struct { shape };
 		let span = variant.name.span;
-		type_store.register_type(name, generic_parameters.clone(), kind, module_path, scope_id, span);
+		type_store.register_type(name, variant_generic_parameters, kind, module_path, scope_id, span);
 
 		let variant_shape = EnumVariantShape { name, span, variant_index, struct_shape_index };
 		variants.push(variant_shape);
@@ -844,6 +858,7 @@ fn create_block_enum<'a>(
 	let shape = EnumShape::new(variants, variants_by_name);
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
+	assert_eq!(type_store.user_types.len(), enum_shape_index);
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
 	symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 }
@@ -992,6 +1007,8 @@ fn fill_block_types<'a>(
 				shared_fields.push(node);
 			}
 
+			drop(scope);
+
 			let user_type = &type_store.user_types[shape_index];
 			let shape = match &user_type.kind {
 				UserTypeKind::Enum { shape } => shape,
@@ -1003,6 +1020,15 @@ fn fill_block_types<'a>(
 
 			for variant_shape in variant_shapes {
 				let tree_variant = &statement.variants[variant_shape.variant_index];
+
+				let scope = symbols.child_scope();
+
+				let struct_shape = &type_store.user_types[variant_shape.struct_shape_index];
+				for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
+					let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
+					let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+					scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+				}
 
 				let mut fields = Vec::with_capacity(shared_fields.len() + tree_variant.fields.len());
 				fields.extend(shared_fields.iter().copied());

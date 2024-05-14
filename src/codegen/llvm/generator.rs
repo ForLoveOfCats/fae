@@ -611,8 +611,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 						let llvm_struct = shape[enum_specialization_index].unwrap().actual;
 						let variant_pointer = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr());
 
+						let type_id = context.specialize_type_id(new_binding.type_id);
 						let kind = BindingKind::Value(variant_pointer);
-						let binding = Binding { type_id: new_binding.type_id, kind };
+						let binding = Binding { type_id, kind };
 						self.readables.push(Some(binding));
 					}
 				}
@@ -1558,13 +1559,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_check_is(
 		&mut self,
-		type_store: &TypeStore,
+		context: &mut codegen::Context,
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
 		check_expression: &CheckIs,
 	) -> Self::Binding {
-		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(type_store, value);
+		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
 
 		let result = unsafe {
 			let i1_type = LLVMInt1TypeInContext(self.context);
@@ -1591,14 +1592,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let llvm_struct = shape[enum_specialization_index].unwrap().actual;
 				let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
 
+				let type_id = context.specialize_type_id(new_binding.type_id);
 				let kind = BindingKind::Value(variant_pointer);
-				let binding = Binding { type_id: new_binding.type_id, kind };
+				let binding = Binding { type_id, kind };
 				self.readables.push(Some(binding));
 			}
 		}
 
 		let kind = BindingKind::Value(result);
-		Binding { type_id: type_store.bool_type_id(), kind }
+		Binding { type_id: context.type_store.bool_type_id(), kind }
 	}
 
 	fn generate_enum_variant_to_enum(

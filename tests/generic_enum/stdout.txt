@@ -1,0 +1,2 @@
+Error: Divide by zero
+2

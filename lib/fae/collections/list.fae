@@ -59,13 +59,14 @@ fn has_items(): bool {
 }
 
 method List
-fn last(): T {
+fn last(): Option<T> {
 	if self.is_empty() {
+		return .None
 		print_string("Cannot take last of empty List\n")
 		exit(-1)
 	}
 
-	return self.get(self.length - 1)
+	return .Some { value: self.get(self.length - 1) }
 }
 
 method List

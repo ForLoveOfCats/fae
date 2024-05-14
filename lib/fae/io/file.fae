@@ -24,6 +24,6 @@ fn read_until_newline(buffer: &mut List<u8>) {
 		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
 		buffer.length = original_length + bytes_read
 
-		if buffer.last() == b'\n' => return
+		if buffer.last() is last: Some and last.value == b'\n' => return
 	}
 }

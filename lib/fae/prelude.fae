@@ -20,3 +20,9 @@ generic T
 fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
 }
+
+generic T
+enum Option {
+	None
+	Some { value: T }
+}

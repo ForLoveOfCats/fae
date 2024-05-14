@@ -63,7 +63,7 @@ pub struct Context<'a, 'b> {
 }
 
 impl<'a, 'b> Context<'a, 'b> {
-	fn specialize_type_id(&mut self, type_id: TypeId) -> TypeId {
+	pub fn specialize_type_id(&mut self, type_id: TypeId) -> TypeId {
 		let mut generic_usages = Vec::new();
 		let type_id = self.type_store.specialize_with_function_generics(
 			self.messages,
@@ -239,9 +239,10 @@ fn generate_if_else_chain<G: Generator>(
 
 fn generate_match<G: Generator>(context: &mut Context, generator: &mut G, match_expression: &Match) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &match_expression.expression).unwrap();
-	let value_type_id = match match_expression.expression.type_id.as_pointed(context.type_store) {
+	let expression_type_id = context.specialize_type_id(match_expression.expression.type_id);
+	let value_type_id = match expression_type_id.as_pointed(context.type_store) {
 		Some(as_pointer) => as_pointer.type_id,
-		None => match_expression.expression.type_id,
+		None => expression_type_id,
 	};
 
 	let entry = context.type_store.type_entries[value_type_id.index()];
@@ -549,9 +550,10 @@ fn generate_binary_operation<G: Generator>(
 
 fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, check_is: &CheckIs) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &check_is.left).unwrap();
-	let value_type_id = match check_is.left.type_id.as_pointed(context.type_store) {
+	let left_type_id = context.specialize_type_id(check_is.left.type_id);
+	let value_type_id = match left_type_id.as_pointed(context.type_store) {
 		Some(as_pointer) => as_pointer.type_id,
-		None => check_is.left.type_id,
+		None => left_type_id,
 	};
 
 	let entry = context.type_store.type_entries[value_type_id.index()];
@@ -563,18 +565,7 @@ fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, che
 		unreachable!("{:?}", entry.kind);
 	};
 
-	// let entry = context.type_store.type_entries[check_is.variant_type_id.index()];
-	// let TypeEntryKind::UserType { shape_index: variant_shape_index, .. } = entry.kind else {
-	// 	unreachable!("{:?}", entry.kind);
-	// };
-
-	// let variant_user_type = &context.type_store.user_types[variant_shape_index];
-	// let UserTypeKind::Struct { shape: variant_shape } = &variant_user_type.kind else {
-	// 	unreachable!("{:?}", variant_user_type.kind);
-	// };
-
-	// let variant_index = variant_shape.variant_index.unwrap();
-	Some(generator.generate_check_is(context.type_store, value, enum_shape_index, enum_specialization_index, &check_is))
+	Some(generator.generate_check_is(context, value, enum_shape_index, enum_specialization_index, &check_is))
 }
 
 fn generate_mutable_slice_to_immutable<G: Generator>(
@@ -590,7 +581,8 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	generator: &mut G,
 	conversion: &EnumVariantToEnum,
 ) -> Option<G::Binding> {
-	let entry = context.type_store.type_entries[conversion.expression.type_id.index()];
+	let expression_type_id = context.specialize_type_id(conversion.expression.type_id);
+	let entry = context.type_store.type_entries[expression_type_id.index()];
 	let variant_index = match entry.kind {
 		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types[shape_index].kind {
 			UserTypeKind::Struct { shape } => shape.variant_index.unwrap(),
@@ -602,7 +594,8 @@ fn generate_enum_variant_to_enum<G: Generator>(
 
 	let variant_binding = generate_expression(context, generator, &conversion.expression);
 
-	let type_id = context.specialize_type_id(conversion.type_id);
+	let conversion_type_id = context.specialize_type_id(conversion.type_id);
+	let type_id = context.specialize_type_id(conversion_type_id);
 	let entry = context.type_store.type_entries[type_id.index()];
 	let (shape_index, specialization_index) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),

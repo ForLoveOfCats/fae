@@ -1,0 +1,46 @@
+// Important note: This is not how error handling is intended to be done in Fae
+// This is a contrived program intended to test generic enums
+
+import fae::stdout::print_i32, print_newline
+
+fn divide(value: i32, by: i32): Enum<i32, []u8> {
+	if by == 0 => return .Error { value: "Divide by zero" }
+	return .Ok { value: value / by }
+}
+
+fn main() {
+	match divide(4, 0) {
+		result: Ok {
+			print_i32(result.value)
+			print_newline()
+		}
+
+		error: Error => print_error<i32>(error.*)
+	}
+
+	match divide(4, 2) {
+		result: Ok {
+			print_i32(result.value)
+			print_newline()
+		}
+
+		error: Error => print_error<i32>(error.*)
+	}
+}
+
+generic T, E
+enum Enum {
+	Ok { value: T }
+	Error { value: E }
+}
+
+generic T
+fn print_error(arg: Enum<T, []u8>) {
+	import fae::stdout::print_string
+
+	if arg is Error {
+		print_string("Error: ")
+		print_string(arg.value)
+		print_newline()
+	}
+}
