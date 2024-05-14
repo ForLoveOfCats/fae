@@ -2354,7 +2354,10 @@ fn validate_match_expression<'a>(
 
 		let binding = if let Some(binding_name) = binding_name {
 			assert_eq!(arm.variant_names.len(), 1);
-			let variant_type_id = variant_infos.last().unwrap().type_id;
+			let variant_type_id = variant_infos
+				.last()
+				.map(|info| info.type_id)
+				.unwrap_or(scope.type_store.any_collapse_type_id());
 
 			let kind = match is_mutable {
 				true => ReadableKind::Mut,
@@ -2379,6 +2382,13 @@ fn validate_match_expression<'a>(
 		arms.push(arm);
 	}
 
+	let else_arm = if let Some(else_arm) = &match_expression.else_arm {
+		let block = validate_block(context.child_scope(), &else_arm.block.item, false);
+		Some(block)
+	} else {
+		None
+	};
+
 	let enum_entry = context.type_store.type_entries[expression_type_id.index()];
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
@@ -2389,18 +2399,31 @@ fn validate_match_expression<'a>(
 		kind => unreachable!("{kind:?}"),
 	};
 
+	let mut all_variants_covered = true;
 	for (variant_index, variant) in enum_specialization.variants.iter().enumerate() {
 		if encountered_variants[variant_index].is_none() {
+			all_variants_covered = false;
+			if else_arm.is_some() {
+				continue;
+			}
+
 			let missing = context.type_name(variant.type_id);
 			let error = error!("Missing match arm for enum variant {missing}");
 			context.messages.message(error.span(span));
 		}
 	}
 
+	if let Some(else_arm) = &match_expression.else_arm {
+		if all_variants_covered {
+			let warning = warning!("Match expression else arm will never execute, all enum variants are already covered");
+			context.message(warning.span(else_arm.else_span));
+		}
+	}
+
 	// TODO: When adding `give` make sure to infer match type from arms
 	let type_id = context.type_store.void_type_id();
 	let returns = expression.returns | arms_returns;
-	let match_expression = Box::new(Match { expression, arms });
+	let match_expression = Box::new(Match { expression, arms, else_arm });
 	let kind = ExpressionKind::Match(match_expression);
 	Expression { span, type_id, is_mutable, returns, kind }
 }
@@ -3909,7 +3932,10 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 
 	let binding = if let Some(binding_name) = binding_name {
 		assert_eq!(check.variant_names.len(), 1);
-		let variant_type_id = variant_infos.last().unwrap().type_id;
+		let variant_type_id = variant_infos
+			.last()
+			.map(|info| info.type_id)
+			.unwrap_or(context.type_store.any_collapse_type_id());
 
 		let kind = match is_mutable {
 			true => ReadableKind::Mut,

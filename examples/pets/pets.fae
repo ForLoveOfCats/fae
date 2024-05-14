@@ -117,4 +117,11 @@ fn main() {
 
 	if cat is Dog, Snake => print_string("This is a dog or a snake\n")
 	else => print_string("This is not a dog nor a snake\n")
+
+	print_newline()
+
+	match snake {
+		Dog => print_string("This is a dog\n")
+		else => print_string("This is something other than a dog\n")
+	}
 }

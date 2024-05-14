@@ -550,6 +550,7 @@ pub struct IfElseChain<'a> {
 pub struct Match<'a> {
 	pub expression: Node<Expression<'a>>,
 	pub arms: Vec<MatchArm<'a>>,
+	pub else_arm: Option<ElseArm<'a>>,
 }
 
 #[derive(Debug)]
@@ -557,6 +558,12 @@ pub struct MatchArm<'a> {
 	pub binding_name: Option<Node<&'a str>>,
 	pub variant_names: Vec<Node<&'a str>>,
 	pub block: Node<Block<'a>>,
+}
+
+#[derive(Debug)]
+pub struct ElseArm<'a> {
+	pub block: Node<Block<'a>>,
+	pub else_span: Span,
 }
 
 #[derive(Debug)]

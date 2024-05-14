@@ -369,6 +369,7 @@ pub struct IfElseChain<'a> {
 pub struct Match<'a> {
 	pub expression: Expression<'a>,
 	pub arms: Vec<MatchArm<'a>>,
+	pub else_arm: Option<Block<'a>>,
 }
 
 #[derive(Debug, Clone)]

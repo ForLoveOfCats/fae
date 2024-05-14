@@ -582,9 +582,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
+		let else_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match_else".as_ptr()) };
 		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match_following".as_ptr()) };
 
-		let switch = unsafe { LLVMBuildSwitch(self.builder, tag, following_block, match_expression.arms.len() as u32) };
+		let switch = unsafe { LLVMBuildSwitch(self.builder, tag, else_block, match_expression.arms.len() as u32) };
 
 		for arm in &match_expression.arms {
 			let case_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"case".as_ptr()) };
@@ -625,6 +626,24 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 
 			self.end_block();
+		}
+
+		if let Some(else_arm) = &match_expression.else_arm {
+			unsafe {
+				LLVMPositionBuilderAtEnd(self.builder, else_block);
+
+				body_callback(context, self, else_arm);
+
+				let current_block = LLVMGetInsertBlock(self.builder);
+				if LLVMGetBasicBlockTerminator(current_block).is_null() {
+					LLVMBuildBr(self.builder, following_block);
+				}
+			}
+		} else {
+			unsafe {
+				LLVMPositionBuilderAtEnd(self.builder, else_block);
+				LLVMBuildBr(self.builder, following_block);
+			}
 		}
 
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };

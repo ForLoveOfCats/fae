@@ -42,10 +42,10 @@ pub fn parse_block<'a>(
 
 		let statements: Vec<_> = statement.into_iter().collect();
 
-		tokenizer.expect(messages, TokenKind::Newline)?;
+		let newline = tokenizer.expect(messages, TokenKind::Newline)?;
 
 		let block = Block { statements };
-		let span = fat_arrow.span; // TODO: Wong span
+		let span = fat_arrow.span + newline.span;
 		return Ok(Node::new(block, span));
 	}
 
@@ -794,13 +794,39 @@ fn parse_match<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Pa
 	let expression = parse_expression(messages, tokenizer, false)?;
 
 	tokenizer.expect(messages, TokenKind::OpenBrace)?;
+
 	let mut arms = Vec::new();
+	let mut else_arm: Option<ElseArm> = None;
+	let mut warned_after_else = false;
 
 	while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 		tokenizer.consume_newlines(messages);
 
 		let (binding_name, variant_names) = {
 			let first = tokenizer.expect(messages, TokenKind::Word)?;
+
+			if first.text == "else" {
+				let block = parse_block(messages, tokenizer, true, true)?;
+
+				if let Some(else_arm) = &else_arm {
+					let error = error!("Match expression may not have multiple else arms");
+					let noted = error.note(note!(else_arm.else_span, "Previous else arm here"));
+					messages.message(noted.span(first.span));
+				}
+
+				else_arm = Some(ElseArm { block, else_span: first.span });
+				continue;
+			}
+
+			if let Some(else_arm) = &else_arm {
+				if !warned_after_else {
+					let warning = warning!("Match expression arm should not follow else arm");
+					let noted = warning.note(note!(else_arm.else_span, "Match else arm here, it should be the last arm"));
+					messages.message(noted.span(first.span));
+				}
+
+				warned_after_else = true;
+			}
 
 			if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 				tokenizer.expect(messages, TokenKind::Colon)?;
@@ -830,7 +856,7 @@ fn parse_match<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Pa
 	let close_brace = tokenizer.expect(messages, TokenKind::CloseBrace)?;
 	let span = match_token.span + close_brace.span;
 
-	let boxed_match = Box::new(Match { expression, arms });
+	let boxed_match = Box::new(Match { expression, arms, else_arm });
 	let expression = Expression::Match(boxed_match);
 	Ok(Node::new(expression, span))
 }

@@ -1,0 +1,26 @@
+import fae::stdout::print_string
+
+fn main() {
+	func(Enum.A)
+	func(Enum.B)
+	func(Enum.C)
+	func(Enum.D)
+}
+
+fn func(arg: Enum) {
+	match arg {
+		A => print_string("A\n")
+		else => print_string("else 1\n")
+		C => print_string("C\n")
+		B => print_string("B\n")
+		D => print_string("D\n")
+		else => print_string("else 2\n")
+	}
+}
+
+enum Enum {
+	A
+	B
+	C
+	D
+}
