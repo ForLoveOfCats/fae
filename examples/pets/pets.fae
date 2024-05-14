@@ -41,7 +41,7 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 	match self {
 		Cat => if specialty is Mammal {
 			print_string("The mammal vet is treating the cat\n")
-			return BeenTreated.Treated
+			return .Treated
 		}
 
 		Dog => if specialty is Mammal {
@@ -49,7 +49,7 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 			self.hours_since_last_walk += 2
 
 			print_string("The mammal vet is treating the dog\n")
-			return BeenTreated.Treated
+			return .Treated
 		}
 
 		Snake => if specialty is Reptile {
@@ -57,11 +57,11 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 			self.days_since_last_feeding = 0
 
 			print_string("The reptile vet is treating the snake\n")
-			return BeenTreated.Treated
+			return .Treated
 		}
 	}
 
-	return BeenTreated.NotTreated
+	return .NotTreated
 }
 
 method mut Pet
@@ -75,9 +75,9 @@ fn take_on_walk() {
 }
 
 fn main() {
-	mut cat: Pet = Pet.Cat { name: "Lola" }
-	mut dog: Pet = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
-	mut snake: Pet = Pet.Snake { name: "Mort", days_since_last_feeding: 5 }
+	mut cat: Pet = .Cat { name: "Lola" }
+	mut dog: Pet = .Dog { name: "Odie", hours_since_last_walk: 3 }
+	mut snake: Pet = .Snake { name: "Mort", days_since_last_feeding: 5 }
 
 	cat.take_on_walk()
 	dog.take_on_walk()
@@ -85,19 +85,19 @@ fn main() {
 
 	print_newline()
 
-	if cat.visit_vet(VetSpecialty.Mammal) is NotTreated {
+	if cat.visit_vet(.Mammal) is NotTreated {
 		print_string("The cat has not been treated\n")
 	}
 
 	print_newline()
 
-	if dog.visit_vet(VetSpecialty.Mammal) is NotTreated {
+	if dog.visit_vet(.Mammal) is NotTreated {
 		print_string("The dog has not been treated\n")
 	}
 
 	print_newline()
 
-	if snake.visit_vet(VetSpecialty.Mammal) is NotTreated {
+	if snake.visit_vet(.Mammal) is NotTreated {
 		print_string("The snake has not been treated\n")
 	}
 

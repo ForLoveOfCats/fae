@@ -454,6 +454,12 @@ pub struct DotAccess<'a> {
 }
 
 #[derive(Debug)]
+pub struct InferredEnum<'a> {
+	pub name: Node<&'a str>,
+	pub struct_initializer: Option<Node<StructInitializer<'a>>>,
+}
+
+#[derive(Debug)]
 pub struct Break;
 
 #[derive(Debug)]
@@ -593,6 +599,8 @@ pub enum Expression<'a> {
 	MethodCall(Box<MethodCall<'a>>),
 	Read(Read<'a>),
 	DotAcccess(Box<DotAccess<'a>>),
+
+	InferredEnum(InferredEnum<'a>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),

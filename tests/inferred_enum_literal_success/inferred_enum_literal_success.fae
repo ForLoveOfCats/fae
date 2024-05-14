@@ -1,0 +1,108 @@
+import fae::stdout::print_u8, print_i32, print_f64, print_string, print_newline
+
+fn main() {
+	let a: Enum = .A
+	let b: Enum = .B
+	let c: Enum = .C { something: b'A' }
+	let d: Enum = .D { another: 8.5 }
+
+	dump_enum(a)
+	dump_enum(b)
+	dump_enum(c)
+	dump_enum(d)
+
+	print_newline()
+
+	dump_enum(.A)
+	dump_enum(.B)
+	dump_enum(.C { something: b'B' })
+	dump_enum(.D { another: 9.9 })
+
+	print_newline()
+
+	mut value = Struct {
+		first: .B
+		second: -32
+		third: .C { something: b'C' }
+	}
+	dump_enum(value.first)
+	print_i32(value.second)
+	print_newline()
+	dump_enum(value.third)
+
+	print_newline()
+
+	value.update_enum(.A)
+	dump_enum(value.first)
+	print_i32(value.second)
+	print_newline()
+	dump_enum(value.third)
+
+	print_newline()
+
+	value = Struct.new(.D { another: 6.4 }, -8)
+	dump_enum(value.first)
+	print_i32(value.second)
+	print_newline()
+	dump_enum(value.third)
+
+	print_newline()
+
+	let other: OtherEnum = .Variant { shared: .A, unshared: .B }
+	dump_enum(other.shared)
+	if other is Variant => dump_enum(other.unshared)
+}
+
+fn dump_enum(arg: Enum) {
+	match arg {
+		A => print_string("A\n")
+
+		B => print_string("B\n")
+
+		C {
+			print_string("C: ")
+			print_u8(arg.something)
+			print_newline()
+		}
+
+		D {
+			print_string("D: ")
+			print_f64(arg.another)
+			print_newline()
+		}
+	}
+}
+
+enum Enum {
+	A
+	B
+	C { something: u8 }
+	D { another: f64 }
+}
+
+struct Struct {
+	first: Enum
+	second: i32
+	third: Enum
+}
+
+method static Struct
+fn new(enums: Enum, second: i32): Struct {
+	return Struct {
+		first: enums
+		second
+		third: enums
+	}
+}
+
+method mut Struct
+fn update_enum(arg: Enum) {
+	self.first  = arg
+	self.third = arg
+}
+
+enum OtherEnum {
+	shared: Enum
+
+	Variant { unshared: Enum }
+}

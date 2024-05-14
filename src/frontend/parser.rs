@@ -581,6 +581,22 @@ fn parse_expression_atom<'a>(
 			Ok(Node::new(Expression::Block(block), span))
 		}
 
+		TokenKind::Period => {
+			let period = tokenizer.expect(messages, TokenKind::Period)?;
+			let name_token = tokenizer.expect(messages, TokenKind::Word)?;
+			let name = Node::from_token(name_token.text, name_token);
+
+			let struct_initializer = if allow_struct_literal && tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
+				Some(parse_struct_initializer(messages, tokenizer)?)
+			} else {
+				None
+			};
+
+			let inferred_enum = InferredEnum { name, struct_initializer };
+			let span = period.span + name.span;
+			Ok(Node::new(Expression::InferredEnum(inferred_enum), span))
+		}
+
 		_ => {
 			messages.message(
 				error!("Unexpected token {:?} while attempting to parse expression atom", peeked.text).span(peeked.span),
