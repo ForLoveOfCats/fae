@@ -422,7 +422,7 @@ pub struct BinaryOperation<'a> {
 pub struct CheckIs<'a> {
 	pub left: Node<Expression<'a>>,
 	pub binding_name: Option<Node<&'a str>>,
-	pub variant_name: Node<&'a str>,
+	pub variant_names: Vec<Node<&'a str>>,
 }
 
 #[derive(Debug)]
@@ -555,7 +555,7 @@ pub struct Match<'a> {
 #[derive(Debug)]
 pub struct MatchArm<'a> {
 	pub binding_name: Option<Node<&'a str>>,
-	pub variant_name: Node<&'a str>,
+	pub variant_names: Vec<Node<&'a str>>,
 	pub block: Node<Block<'a>>,
 }
 

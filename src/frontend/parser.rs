@@ -322,23 +322,32 @@ fn parse_expression_climb<'a>(
 		} else if let Ok(Token { text: "is", .. }) = tokenizer.peek() {
 			tokenizer.expect_word(messages, "is")?;
 
-			let (binding_name, variant_name) = {
+			let (binding_name, variant_names) = {
 				let first = tokenizer.expect(messages, TokenKind::Word)?;
 
 				if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 					tokenizer.expect(messages, TokenKind::Colon)?;
 					let variant_name = tokenizer.expect(messages, TokenKind::Word)?;
 					let binding_name = Some(Node::from_token(first.text, first));
-					(binding_name, Node::from_token(variant_name.text, variant_name))
+					let variant_name = Node::from_token(variant_name.text, variant_name);
+					(binding_name, vec![variant_name])
 				} else {
-					(None, Node::from_token(first.text, first))
+					let mut variant_names = vec![Node::from_token(first.text, first)];
+
+					while tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+						tokenizer.expect(messages, TokenKind::Comma)?;
+						let name = tokenizer.expect(messages, TokenKind::Word)?;
+						variant_names.push(Node::from_token(name.text, name));
+					}
+
+					(None, variant_names)
 				}
 			};
 
 			let left_span = atom.span;
-			let right_span = variant_name.span;
+			let right_span = variant_names.last().unwrap().span;
 
-			let check_is = CheckIs { left: atom, binding_name, variant_name };
+			let check_is = CheckIs { left: atom, binding_name, variant_names };
 			let expression = Expression::CheckIs(Box::new(check_is));
 
 			atom = Node::new(expression, left_span + right_span);
@@ -780,22 +789,31 @@ fn parse_match<'a>(messages: &mut Messages, tokenizer: &mut Tokenizer<'a>) -> Pa
 	while tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 		tokenizer.consume_newlines(messages);
 
-		let (binding_name, variant_name) = {
+		let (binding_name, variant_names) = {
 			let first = tokenizer.expect(messages, TokenKind::Word)?;
 
 			if tokenizer.peek_kind() == Ok(TokenKind::Colon) {
 				tokenizer.expect(messages, TokenKind::Colon)?;
 				let variant_name = tokenizer.expect(messages, TokenKind::Word)?;
 				let binding_name = Some(Node::from_token(first.text, first));
-				(binding_name, Node::from_token(variant_name.text, variant_name))
+				let variant_name = Node::from_token(variant_name.text, variant_name);
+				(binding_name, vec![variant_name])
 			} else {
-				(None, Node::from_token(first.text, first))
+				let mut variant_names = vec![Node::from_token(first.text, first)];
+
+				while tokenizer.peek_kind() == Ok(TokenKind::Comma) {
+					tokenizer.expect(messages, TokenKind::Comma)?;
+					let name = tokenizer.expect(messages, TokenKind::Word)?;
+					variant_names.push(Node::from_token(name.text, name));
+				}
+
+				(None, variant_names)
 			}
 		};
 
 		let block = parse_block(messages, tokenizer, true, true)?;
 
-		let arm = MatchArm { binding_name, variant_name, block };
+		let arm = MatchArm { binding_name, variant_names, block };
 		arms.push(arm);
 	}
 
@@ -1472,6 +1490,7 @@ fn parse_enum_declaration<'a>(
 				let field = parse_field(messages, tokenizer, field_name_token, "enum shared field")?;
 				shared_fields.push(field);
 			} else {
+				check_not_reserved(messages, field_name_token, "enum variant")?;
 				let mut variant_fields = Vec::new();
 
 				if tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
@@ -1725,7 +1744,8 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 			| "extern" | "export"
 			| "method" | "if"
 			| "else" | "while"
-			| "break"
+			| "or" | "and"
+			| "break" | "continue"
 	);
 
 	if is_reserved {

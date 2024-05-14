@@ -1,8 +1,8 @@
 import fae::stdout::print_i32, print_string, print_newline
 
 enum VetSpecialty {
-	Cat
-	Dog
+	Mammal
+	Reptile
 }
 
 enum BeenTreated {
@@ -10,17 +10,27 @@ enum BeenTreated {
 	Treated
 }
 
-method static BeenTreated
-fn from_bool(value: bool): BeenTreated {
-	if value => return BeenTreated.Treated
-	else => return BeenTreated.NotTreated
-}
-
 enum Pet {
 	name: []u8
 
 	Cat
 	Dog { hours_since_last_walk: i32 }
+	Snake { days_since_last_feeding: i32 }
+}
+
+method Pet
+fn is_mammal(): bool {
+	match self {
+		Cat, Dog => return true
+		Snake => return false
+	}
+}
+
+method Pet
+fn print_is_mammal() {
+	print_string(self.name)
+	if self.is_mammal() => print_string(" is a mammal\n")
+	else => print_string(" is not a mammal\n")
 }
 
 method mut Pet
@@ -29,17 +39,25 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 	print_string(" is visiting the vet\n")
 
 	match self {
-		Cat => if specialty is Cat {
-			print_string("The cat vet is treating the cat\n")
+		Cat => if specialty is Mammal {
+			print_string("The mammal vet is treating the cat\n")
 			return BeenTreated.Treated
 		}
 
-		Dog => if specialty is Dog {
+		Dog => if specialty is Mammal {
 			// Let's say the vet visit was two hours
 			self.hours_since_last_walk += 2
 
-			print_string("The dog vet is treating the dog\n")
-			return BeenTreated.from_bool(true)
+			print_string("The mammal vet is treating the dog\n")
+			return BeenTreated.Treated
+		}
+
+		Snake => if specialty is Reptile {
+			// Pretend the vet decided to feed the snake
+			self.days_since_last_feeding = 0
+
+			print_string("The reptile vet is treating the snake\n")
+			return BeenTreated.Treated
 		}
 	}
 
@@ -59,18 +77,44 @@ fn take_on_walk() {
 fn main() {
 	mut cat: Pet = Pet.Cat { name: "Lola" }
 	mut dog: Pet = Pet.Dog { name: "Odie", hours_since_last_walk: 3 }
+	mut snake: Pet = Pet.Snake { name: "Mort", days_since_last_feeding: 5 }
 
 	cat.take_on_walk()
 	dog.take_on_walk()
+	snake.take_on_walk()
 
-	if cat.visit_vet(VetSpecialty.Dog) is NotTreated {
+	print_newline()
+
+	if cat.visit_vet(VetSpecialty.Mammal) is NotTreated {
 		print_string("The cat has not been treated\n")
 	}
 
-	if dog.visit_vet(VetSpecialty.Dog) is NotTreated {
+	print_newline()
+
+	if dog.visit_vet(VetSpecialty.Mammal) is NotTreated {
 		print_string("The dog has not been treated\n")
 	}
 
+	print_newline()
+
+	if snake.visit_vet(VetSpecialty.Mammal) is NotTreated {
+		print_string("The snake has not been treated\n")
+	}
+
+	print_newline()
+
 	cat.take_on_walk()
 	dog.take_on_walk()
+	snake.take_on_walk()
+
+	print_newline()
+
+	cat.print_is_mammal()
+	dog.print_is_mammal()
+	snake.print_is_mammal()
+
+	print_newline()
+
+	if cat is Dog, Snake => print_string("This is a dog or a snake\n")
+	else => print_string("This is not a dog nor a snake\n")
 }

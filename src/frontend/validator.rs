@@ -2293,7 +2293,7 @@ fn validate_match_expression<'a>(
 		encountered_variants.push(None);
 	}
 
-	let mut returns = expression.returns;
+	let mut arms_returns = true;
 	let mut arms = Vec::new();
 
 	for arm in &match_expression.arms {
@@ -2311,46 +2311,60 @@ fn validate_match_expression<'a>(
 			kind => unreachable!("{kind:?}"),
 		};
 
-		let (variant, variant_index) = match enum_specialization.variants_by_name.get(arm.variant_name.item) {
-			Some(&variant_index) => {
-				let variant = &enum_specialization.variants[variant_index];
-				(variant.type_id, variant_index)
-			}
+		let mut variant_infos = Vec::with_capacity(arm.variant_names.len());
 
-			None => {
-				let found = scope.type_name(expression_type_id);
-				let error = error!("No variant `{}` found on enum {found}", arm.variant_name.item);
-				scope.message(error.span(arm.variant_name.span));
-				continue;
-			}
-		};
+		for variant_name in &arm.variant_names {
+			let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
+				Some(&variant_index) => {
+					let variant = &enum_specialization.variants[variant_index];
+					(variant.type_id, variant_index)
+				}
 
-		if let Some(existing) = encountered_variants[variant_index] {
-			let span = arm.variant_name.span;
-			let found = scope.type_name(variant);
-			let error = error!("Duplicate match arm for enum variant {found}");
-			scope.message(error.note(note!(existing, "Existing arm here")).span(span));
+				None => {
+					let found = scope.type_name(expression_type_id);
+					let error = error!("No variant `{}` found on enum {found}", variant_name.item);
+					scope.messages.message(error.span(variant_name.span));
+					continue;
+				}
+			};
+
+			let info = VariantInfo { type_id: variant_type_id, variant_index };
+			variant_infos.push(info);
+
+			if let Some(existing) = encountered_variants[variant_index] {
+				let found = scope.type_name(variant_type_id);
+				let error = error!("Duplicate match arm for enum variant {found}");
+				let noted = error.note(note!(existing, "Existing arm here"));
+				scope.messages.message(noted.span(variant_name.span));
+			}
+			encountered_variants[variant_index] = Some(variant_name.span);
 		}
-		encountered_variants[variant_index] = Some(arm.variant_name.span);
 
 		let binding_name = if let Some(binding_name) = arm.binding_name {
 			Some(binding_name)
 		} else if let ExpressionKind::Read(read) = &expression.kind {
-			Some(Node::new(read.name, expression.span))
+			if arm.variant_names.len() == 1 {
+				Some(Node::new(read.name, expression.span))
+			} else {
+				None
+			}
 		} else {
 			None
 		};
 
 		let binding = if let Some(binding_name) = binding_name {
+			assert_eq!(arm.variant_names.len(), 1);
+			let variant_type_id = variant_infos.last().unwrap().type_id;
+
 			let kind = match is_mutable {
 				true => ReadableKind::Mut,
 				false => ReadableKind::Let,
 			};
 
-			let type_id = scope.type_store.pointer_to(variant, is_mutable);
+			let type_id = scope.type_store.pointer_to(variant_type_id, is_mutable);
 			let readable_index = scope.push_readable(binding_name, type_id, kind);
 
-			let layout = scope.type_store.type_layout(variant);
+			let layout = scope.type_store.type_layout(variant_type_id);
 			let is_zero_sized = layout.size <= 0;
 
 			Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
@@ -2359,9 +2373,9 @@ fn validate_match_expression<'a>(
 		};
 
 		let block = validate_block(scope.child_scope(), &arm.block.item, false);
-		returns &= block.returns;
+		arms_returns &= block.returns;
 
-		let arm = MatchArm { binding, block, variant_type_id: variant };
+		let arm = MatchArm { binding, block, variant_infos };
 		arms.push(arm);
 	}
 
@@ -2385,6 +2399,7 @@ fn validate_match_expression<'a>(
 
 	// TODO: When adding `give` make sure to infer match type from arms
 	let type_id = context.type_store.void_type_id();
+	let returns = expression.returns | arms_returns;
 	let match_expression = Box::new(Match { expression, arms });
 	let kind = ExpressionKind::Match(match_expression);
 	Expression { span, type_id, is_mutable, returns, kind }
@@ -3822,15 +3837,56 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		None => (left.type_id, left.is_mutable),
 	};
 
-	let Some(variant) = context.type_store.get_enum_variant(
-		context.messages,
-		context.function_store,
-		context.module_path,
-		left_type_id,
-		check.variant_name,
-	) else {
+	let enum_entry = context.type_store.type_entries[left_type_id.index()];
+	let enum_specialization = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
+			UserTypeKind::Struct { .. } => None,
+			UserTypeKind::Enum { shape } => Some(&shape.specializations[specialization_index]),
+		},
+
+		_ => None,
+	};
+
+	let Some(enum_specialization) = enum_specialization else {
+		let found = context.type_name(left_type_id);
+		let error = error!("Cannot check is on type {found} as it is not an enum");
+		context.message(error.span(left.span));
 		return Expression::any_collapse(context.type_store, span);
 	};
+
+	let mut encountered_variants = Vec::<Option<Span>>::with_capacity(enum_specialization.variants_by_name.len());
+	for _ in 0..enum_specialization.variants_by_name.len() {
+		encountered_variants.push(None);
+	}
+
+	let mut variant_infos = Vec::with_capacity(check.variant_names.len());
+
+	for variant_name in &check.variant_names {
+		let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
+			Some(&variant_index) => {
+				let variant = &enum_specialization.variants[variant_index];
+				(variant.type_id, variant_index)
+			}
+
+			None => {
+				let found = context.type_name(left_type_id);
+				let error = error!("No variant `{}` found on enum {found}", variant_name.item);
+				context.messages.message(error.span(variant_name.span));
+				continue;
+			}
+		};
+
+		let info = VariantInfo { type_id: variant_type_id, variant_index };
+		variant_infos.push(info);
+
+		if let Some(existing) = encountered_variants[variant_index] {
+			let found = context.type_name(variant_type_id);
+			let warning = warning!("Duplicate enum variant {found} in list to check is");
+			let noted = warning.note(note!(existing, "Existing variant entry here"));
+			context.messages.message(noted.span(variant_name.span));
+		}
+		encountered_variants[variant_index] = Some(variant_name.span);
+	}
 
 	let binding_name = if !context.can_is_bind {
 		if let Some(binding_name) = check.binding_name {
@@ -3842,21 +3898,28 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	} else if let Some(binding_name) = check.binding_name {
 		Some(binding_name)
 	} else if let ExpressionKind::Read(read) = &left.kind {
-		Some(Node::new(read.name, left.span))
+		if check.variant_names.len() == 1 {
+			Some(Node::new(read.name, left.span))
+		} else {
+			None
+		}
 	} else {
 		None
 	};
 
 	let binding = if let Some(binding_name) = binding_name {
+		assert_eq!(check.variant_names.len(), 1);
+		let variant_type_id = variant_infos.last().unwrap().type_id;
+
 		let kind = match is_mutable {
 			true => ReadableKind::Mut,
 			false => ReadableKind::Let,
 		};
 
-		let type_id = context.type_store.pointer_to(variant, is_mutable);
+		let type_id = context.type_store.pointer_to(variant_type_id, is_mutable);
 		let readable_index = context.push_readable(binding_name, type_id, kind);
 
-		let layout = context.type_store.type_layout(variant);
+		let layout = context.type_store.type_layout(variant_type_id);
 		let is_zero_sized = layout.size <= 0;
 
 		Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
@@ -3866,7 +3929,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 
 	let type_id = context.type_store.bool_type_id();
 	let returns = left.returns;
-	let check_is = CheckIs { left, binding, variant_type_id: variant };
+	let check_is = CheckIs { left, binding, variant_infos };
 	let kind = ExpressionKind::CheckIs(Box::new(check_is));
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }

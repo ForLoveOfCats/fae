@@ -8,18 +8,12 @@ fn main() {
 }
 
 fn func(arg: Enum) {
-	match arg {
-		A, C => print_string("A or C\n")
-
-		B {
-			print_f64(arg.field)
-			print_string(" is B\n")
-		}
-
-		d: D {
-			print_u8(d.other)
-			print_string(" is D\n")
-		}
+	if arg is A, D, A {
+		print_u8(arg.other)
+		print_newline()
+		print_string("Is either A or D\n")
+	} else {
+		print_string("Is something other than A or D\n")
 	}
 }
 

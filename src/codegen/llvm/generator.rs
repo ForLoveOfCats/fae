@@ -1,17 +1,17 @@
 use std::ffi::CString;
 
 use llvm_sys::core::{
-	LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBuildAShr,
-	LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv,
-	LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp,
-	LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul, LLVMBuildNeg,
-	LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem,
-	LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildTrunc, LLVMBuildUDiv,
-	LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor, LLVMClearInsertionPosition, LLVMConstInt,
-	LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstStringInContext, LLVMCreateBuilderInContext,
-	LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
-	LLVMGetEnumAttributeKindForName, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind, LLVMInt16TypeInContext,
-	LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
+	LLVMAddCase, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue,
+	LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp,
+	LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2,
+	LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul,
+	LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP,
+	LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch,
+	LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor,
+	LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstStringInContext,
+	LLVMCreateBuilderInContext, LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetBasicBlockParent,
+	LLVMGetBasicBlockTerminator, LLVMGetEnumAttributeKindForName, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
+	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
 	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetGlobalConstant,
 	LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility, LLVMStructGetTypeAtIndex,
 	LLVMStructTypeInContext, LLVMTypeOf,
@@ -23,7 +23,7 @@ use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIsResultBinding, Expression, Function, FunctionId, IfElseChain, MatchArm};
+use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
@@ -567,43 +567,38 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 	}
 
-	fn generate_match(
+	fn generate_match<'a>(
 		&mut self,
 		context: &mut codegen::Context,
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
 		match_expression: &crate::frontend::ir::Match,
-		mut variant_index_callback: impl FnMut(&mut codegen::Context, &mut Self, &MatchArm) -> usize,
 		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
 	) {
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
-		let tag = unsafe {
-			let i8_type = LLVMInt8TypeInContext(self.context);
-			LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr())
-		};
+		let i8_type = unsafe { LLVMInt8TypeInContext(self.context) };
+		let tag = unsafe { LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr()) };
 
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
 		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match_following".as_ptr()) };
 
-		let mut next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
-		unsafe { LLVMBuildBr(self.builder, next_condition_block) };
+		let switch = unsafe { LLVMBuildSwitch(self.builder, tag, following_block, match_expression.arms.len() as u32) };
 
 		for arm in &match_expression.arms {
-			let condition_block = next_condition_block;
-			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_block) };
-			next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
 			let case_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"case".as_ptr()) };
 
-			let variant_index = variant_index_callback(context, self, arm);
+			for info in &arm.variant_infos {
+				unsafe {
+					let expected = LLVMConstInt(i8_type, info.variant_index as _, false as _);
+					LLVMAddCase(switch, expected, case_block);
+				}
+			}
+
+			self.start_block();
 
 			unsafe {
-				let i8_type = LLVMInt8TypeInContext(self.context);
-				let expected = LLVMConstInt(i8_type, variant_index as _, false as _);
-				let flag = LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr());
-				LLVMBuildCondBr(self.builder, flag, case_block, next_condition_block);
-
 				LLVMPositionBuilderAtEnd(self.builder, case_block);
 
 				if let Some(new_binding) = &arm.binding {
@@ -628,16 +623,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					LLVMBuildBr(self.builder, following_block);
 				}
 			}
+
+			self.end_block();
 		}
 
-		let block = next_condition_block;
-		let case_name = "non_existant_case";
-		unsafe {
-			LLVMSetValueName2(LLVMBasicBlockAsValue(block), case_name.as_ptr() as _, case_name.len());
-			LLVMPositionBuilderAtEnd(self.builder, block);
-			LLVMBuildBr(self.builder, following_block);
-			LLVMPositionBuilderAtEnd(self.builder, following_block);
-		}
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 	}
 
 	fn generate_while(
@@ -1553,19 +1543,27 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
-		new_binding: &Option<CheckIsResultBinding>,
-		variant_index: usize,
+		check_expression: &CheckIs,
 	) -> Self::Binding {
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(type_store, value);
 
 		let result = unsafe {
+			let i1_type = LLVMInt1TypeInContext(self.context);
 			let i8_type = LLVMInt8TypeInContext(self.context);
 			let tag = LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr());
-			let expected = LLVMConstInt(i8_type, variant_index as _, false as _);
-			LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr())
+
+			let mut result = LLVMConstInt(i1_type, 0, false as _);
+
+			for info in &check_expression.variant_infos {
+				let expected = LLVMConstInt(i8_type, info.variant_index as _, false as _);
+				let flag = LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr());
+				result = LLVMBuildOr(self.builder, result, flag, c"".as_ptr());
+			}
+
+			result
 		};
 
-		if let Some(new_binding) = new_binding {
+		if let Some(new_binding) = &check_expression.binding {
 			assert_eq!(self.readables.len(), new_binding.readable_index);
 			if new_binding.is_zero_sized {
 				self.readables.push(None);

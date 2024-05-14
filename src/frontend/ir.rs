@@ -375,7 +375,13 @@ pub struct Match<'a> {
 pub struct MatchArm<'a> {
 	pub binding: Option<CheckIsResultBinding>,
 	pub block: Block<'a>,
-	pub variant_type_id: TypeId,
+	pub variant_infos: Vec<VariantInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariantInfo {
+	pub type_id: TypeId,
+	pub variant_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -901,7 +907,7 @@ pub struct BinaryOperation<'a> {
 pub struct CheckIs<'a> {
 	pub left: Expression<'a>,
 	pub binding: Option<CheckIsResultBinding>,
-	pub variant_type_id: TypeId,
+	pub variant_infos: Vec<VariantInfo>,
 }
 
 #[derive(Debug, Clone)]

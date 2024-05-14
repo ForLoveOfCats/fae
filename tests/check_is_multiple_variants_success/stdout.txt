@@ -1,0 +1,4 @@
+Is either A or D
+Is something other than A or D
+Is something other than A or D
+Is either A or D
