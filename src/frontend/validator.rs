@@ -40,7 +40,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub readables: &'b mut Readables<'a>,
 
 	pub initial_local_function_shape_indicies_len: usize,
-	pub local_function_shape_indicies: &'b mut Vec<Option<usize>>,
+	pub local_function_shape_indicies: &'b mut Vec<usize>,
 
 	pub initial_symbols_len: usize,
 	pub function_initial_symbols_len: usize,
@@ -219,7 +219,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			.get_enum_variant(self.messages, self.function_store, self.module_path, base, name)
 	}
 
-	pub fn local_function_shape_index(&self, index: usize) -> Option<usize> {
+	pub fn local_function_shape_index(&self, index: usize) -> usize {
 		self.local_function_shape_indicies[self.initial_local_function_shape_indicies_len + index]
 	}
 
@@ -434,7 +434,7 @@ fn create_root_functions<'a>(
 	externs: &mut Externs,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
-	local_function_shape_indicies: &mut Vec<Vec<Option<usize>>>,
+	local_function_shape_indicies: &mut Vec<Vec<usize>>,
 ) {
 	for (index, parsed_file) in parsed_files.iter().enumerate() {
 		let block = &parsed_file.block;
@@ -1300,7 +1300,7 @@ fn create_block_functions<'a>(
 	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &'a tree::Block<'a>,
-	local_function_shape_indicies: &mut Vec<Option<usize>>,
+	local_function_shape_indicies: &mut Vec<usize>,
 	scope_id: ScopeId,
 ) {
 	let original_generic_usages_len = generic_usages.len();
@@ -1383,11 +1383,7 @@ fn create_block_functions<'a>(
 
 				let return_type = match type_id {
 					Some(type_id) => type_id,
-
-					None => {
-						local_function_shape_indicies.push(None);
-						continue;
-					}
+					None => type_store.any_collapse_type_id(),
 				};
 
 				if return_type.is_void(type_store) {
@@ -1516,7 +1512,7 @@ fn create_block_functions<'a>(
 			};
 			function_store.shapes.push(shape);
 
-			local_function_shape_indicies.push(Some(function_shape_index));
+			local_function_shape_indicies.push(function_shape_index);
 
 			if let Some(method_attribute) = &statement.method_attribute {
 				if let Some(shape_index) = method_base_shape_index {
@@ -1793,10 +1789,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		return;
 	}
 
-	let Some(function_shape_index) = context.local_function_shape_index(statement.index_in_block) else {
-		return;
-	};
-
+	let function_shape_index = context.local_function_shape_index(statement.index_in_block);
 	let return_type = context.function_store.shapes[function_shape_index].return_type;
 	let generics = context.function_store.shapes[function_shape_index].generic_parameters.clone();
 	let mut scope = context.child_scope_for_function(return_type, &generics);
