@@ -21,6 +21,8 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
 }
 
+// TODO: This is temperary intermediate tool until there is "blessed" optional semantics
+// baked into the language itself
 generic T
 enum Option {
 	None

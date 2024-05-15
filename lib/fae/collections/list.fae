@@ -60,33 +60,23 @@ fn has_items(): bool {
 
 method List
 fn last(): Option<T> {
-	if self.is_empty() {
-		return .None
-		print_string("Cannot take last of empty List\n")
-		exit(-1)
-	}
-
-	return .Some { value: self.get(self.length - 1) }
+	if self.is_empty() => return .None
+	let value = self.get(self.length - 1)
+	return .Some { value }
 }
 
 method List
-fn last_ref(): &T {
-	if self.is_empty() {
-		print_string("Cannot take last_ref of empty List\n")
-		exit(-1)
-	}
-
-	return self.get_ref(self.length - 1)
+fn last_ref(): Option<&T> {
+	if self.is_empty() => return .None
+	let value = self.get_ref(self.length - 1)
+	return .Some { value }
 }
 
 method mut List
-fn last_mut(): &mut T {
-	if self.is_empty() {
-		print_string("Cannot take last_mut of empty List\n")
-		exit(-1)
-	}
-
-	return self.get_mut(self.length - 1)
+fn last_mut(): Option<&mut T> {
+	if self.is_empty() => return .None
+	let value = self.get_mut(self.length - 1)
+	return .Some { value }
 }
 
 method List
