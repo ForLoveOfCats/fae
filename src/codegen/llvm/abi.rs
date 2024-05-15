@@ -264,7 +264,7 @@ impl SysvAbi {
 			Some(ParameterInformation::BareValue { type_id: parameter_type_id })
 		} else if is_by_pointer {
 			assert_eq!(self.parameter_basic_type_buffer.len(), 1);
-			let pointed_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter_type_id);
+			let pointed_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
 			Some(ParameterInformation::ByPointer { pointed_type, pointed_type_id: parameter_type_id, layout })
 		} else {
 			let composition_struct = unsafe {
@@ -275,7 +275,7 @@ impl SysvAbi {
 					false as _,
 				)
 			};
-			let actual_type = llvm_types.type_to_basic_type_enum(context, type_store, parameter_type_id);
+			let actual_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
 			let actual_type_id = parameter_type_id;
 			let composition = ParameterComposition { composition_struct, actual_type, actual_type_id, layout };
 			Some(ParameterInformation::Composition(composition))
@@ -373,7 +373,7 @@ impl LLVMAbi for SysvAbi {
 
 		let return_type_id = function.return_type;
 		let return_type = if type_store.type_layout(function.return_type).size > 0 {
-			let return_type = llvm_types.type_to_basic_type_enum(context, type_store, function.return_type);
+			let return_type = llvm_types.type_to_llvm_type(context, type_store, function.return_type);
 
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, function.return_type);

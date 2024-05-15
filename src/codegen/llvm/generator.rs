@@ -120,7 +120,7 @@ impl LLVMTypes {
 	}
 
 	// Cannot accept `void` type and assumes that any struct asked for has been registered; does not follow pointers
-	pub fn type_to_basic_type_enum(&self, context: LLVMContextRef, type_store: &TypeStore, type_id: TypeId) -> LLVMTypeRef {
+	pub fn type_to_llvm_type(&self, context: LLVMContextRef, type_store: &TypeStore, type_id: TypeId) -> LLVMTypeRef {
 		let entry = &type_store.type_entries[type_id.index()];
 
 		match entry.kind {
@@ -287,9 +287,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 
 				if type_kind == LLVMPointerTypeKind {
 					let pointed_type_id = binding.type_id.as_pointed(type_store).unwrap().type_id;
-					let pointed_type = self
-						.llvm_types
-						.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
+					let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, pointed_type_id);
 					ValuePointer { pointer: value, pointed_type, type_id: pointed_type_id }
 				} else {
 					let pointer = self.build_alloca(llvm_type);
@@ -302,9 +300,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 				if LLVMGetTypeKind(pointed_type) == LLVMPointerTypeKind {
 					let pointer = LLVMBuildLoad2(self.builder, self.llvm_types.opaque_pointer, pointer, c"".as_ptr());
 					let pointed_type_id = binding.type_id.as_pointed(type_store).unwrap().type_id;
-					let pointed_type = self
-						.llvm_types
-						.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
+					let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, pointed_type_id);
 					ValuePointer { pointer, pointed_type, type_id: pointed_type_id }
 				} else {
 					ValuePointer { pointer, pointed_type, type_id: binding.type_id }
@@ -342,9 +338,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				UserTypeKind::Struct { shape } => {
 					let specialization = &shape.specializations[description.specialization_index];
 					for field in &specialization.fields {
-						let llvm_type = self
-							.llvm_types
-							.type_to_basic_type_enum(self.context, type_store, field.type_id);
+						let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
 						field_types_buffer.push(llvm_type);
 					}
 				}
@@ -375,9 +369,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 							continue;
 						}
 
-						let llvm_type = self
-							.llvm_types
-							.type_to_basic_type_enum(self.context, type_store, field.type_id);
+						let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
 						shared_field_types_buffer.push(llvm_type);
 					}
 				}
@@ -415,7 +407,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for static_instance in &statics.statics {
 			let llvm_type = self
 				.llvm_types
-				.type_to_basic_type_enum(self.context, type_store, static_instance.type_id);
+				.type_to_llvm_type(self.context, type_store, static_instance.type_id);
 
 			let extern_attribute = static_instance.extern_attribute.unwrap();
 			let name = CString::new(extern_attribute.name).unwrap();
@@ -612,7 +604,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 						let variant_pointer = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr());
 
 						let type_id = context.specialize_type_id(new_binding.type_id);
-						let kind = BindingKind::Value(variant_pointer);
+						let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
+						let kind = BindingKind::Pointer { pointer: variant_pointer, pointed_type };
 						let binding = Binding { type_id, kind };
 						self.readables.push(Some(binding));
 					}
@@ -768,9 +761,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	) -> Self::Binding {
 		assert!(!elements.is_empty());
 
-		let element_type = self
-			.llvm_types
-			.type_to_basic_type_enum(self.context, type_store, element_type_id);
+		let element_type = self.llvm_types.type_to_llvm_type(self.context, type_store, element_type_id);
 		let array_type = unsafe { LLVMArrayType2(element_type, elements.len() as u64) };
 		let alloca = self.build_alloca(array_type);
 
@@ -806,9 +797,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			LLVMBuildStore(self.builder, len, len_pointer);
 		}
 
-		let pointed_type = self
-			.llvm_types
-			.type_to_basic_type_enum(self.context, type_store, slice_type_id);
+		let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, slice_type_id);
 
 		let kind = BindingKind::Pointer { pointer: slice_alloca, pointed_type };
 		Binding { type_id: slice_type_id, kind }
@@ -1009,9 +998,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			},
 		};
 
-		let pointed_type = self
-			.llvm_types
-			.type_to_basic_type_enum(self.context, type_store, pointed_type_id);
+		let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, pointed_type_id);
 		let kind = BindingKind::Pointer { pointer, pointed_type };
 		Binding { type_id: pointed_type_id, kind }
 	}
@@ -1169,7 +1156,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 
 			let indicies = &mut [index];
-			let pointed_type = self.llvm_types.type_to_basic_type_enum(self.context, type_store, item_type);
+			let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, item_type);
 			let adjusted = LLVMBuildGEP2(
 				self.builder,
 				pointed_type,
@@ -1593,7 +1580,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
 
 				let type_id = context.specialize_type_id(new_binding.type_id);
-				let kind = BindingKind::Value(variant_pointer);
+				let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
+				let kind = BindingKind::Pointer { pointer: variant_pointer, pointed_type };
 				let binding = Binding { type_id, kind };
 				self.readables.push(Some(binding));
 			}

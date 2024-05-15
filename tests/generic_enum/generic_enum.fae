@@ -15,7 +15,7 @@ fn main() {
 			print_newline()
 		}
 
-		error: Error => print_error<i32>(error.*)
+		error: Error => print_error<i32>(error)
 	}
 
 	match divide(4, 2) {
@@ -24,7 +24,7 @@ fn main() {
 			print_newline()
 		}
 
-		error: Error => print_error<i32>(error.*)
+		error: Error => print_error<i32>(error)
 	}
 }
 

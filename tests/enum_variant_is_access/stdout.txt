@@ -1,2 +1,3 @@
 Number is 42.000000
 It had offset 2
+Copy number is 42.000000

@@ -19,7 +19,10 @@ fn print_number(value: JsonValue) {
 		print_newline()
 
 		// Check that the type is what we expect
-		let _: &JsonValue.Number = number
+		let copy: JsonValue.Number = number
+		print_string("Copy number is ")
+		print_f64(copy.value)
+		print_newline()
 	}
 }
 

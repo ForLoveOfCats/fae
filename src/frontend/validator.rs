@@ -2407,7 +2407,7 @@ fn validate_match_expression<'a>(
 
 		let binding = if let Some(binding_name) = binding_name {
 			assert_eq!(arm.variant_names.len(), 1);
-			let variant_type_id = variant_infos
+			let type_id = variant_infos
 				.last()
 				.map(|info| info.type_id)
 				.unwrap_or(scope.type_store.any_collapse_type_id());
@@ -2417,12 +2417,9 @@ fn validate_match_expression<'a>(
 				false => ReadableKind::Let,
 			};
 
-			let type_id = scope.type_store.pointer_to(variant_type_id, is_mutable);
 			let readable_index = scope.push_readable(binding_name, type_id, kind);
-
-			let layout = scope.type_store.type_layout(variant_type_id);
+			let layout = scope.type_store.type_layout(type_id);
 			let is_zero_sized = layout.size <= 0;
-
 			Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
 		} else {
 			None
@@ -4100,7 +4097,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 
 	let binding = if let Some(binding_name) = binding_name {
 		assert_eq!(check.variant_names.len(), 1);
-		let variant_type_id = variant_infos
+		let type_id = variant_infos
 			.last()
 			.map(|info| info.type_id)
 			.unwrap_or(context.type_store.any_collapse_type_id());
@@ -4110,12 +4107,9 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 			false => ReadableKind::Let,
 		};
 
-		let type_id = context.type_store.pointer_to(variant_type_id, is_mutable);
 		let readable_index = context.push_readable(binding_name, type_id, kind);
-
-		let layout = context.type_store.type_layout(variant_type_id);
+		let layout = context.type_store.type_layout(type_id);
 		let is_zero_sized = layout.size <= 0;
-
 		Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
 	} else {
 		None
