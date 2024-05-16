@@ -28,3 +28,17 @@ enum Option {
 	None
 	Some(T)
 }
+
+method Option
+fn unwrap(): T {
+	match self {
+		some: Some => return some
+
+		None {
+			let stderr = fae::libc::StdErrFile.*
+			fae::libc::fprintf(stderr, "Panic: Attempted to unwrap an empty Option\n".pointer)
+			fae::libc::fflush(stderr)
+			fae::libc::exit(-1)
+		}
+	}
+}

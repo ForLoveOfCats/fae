@@ -1,0 +1,12 @@
+fn main() {
+	let a: Option<u8> = .Some(b'A')
+	let b: Option<u8> = .None
+
+	print_case(a.unwrap())
+	print_case(b.unwrap())
+}
+
+fn print_case(arg: u8) {
+	fae::stdout::print_u8(arg)
+	fae::stdout::print_newline()
+}

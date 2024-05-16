@@ -10,7 +10,7 @@ fn slice_bound_check_failure(length: isize, index: isize) {
 
 	fae::libc::fprintf(
 		stderr
-		"Index %ld is out of range of slice with length %ld\n".pointer
+		"Panic: Index %ld is out of range of slice with length %ld\n".pointer
 		index
 		length
 	)

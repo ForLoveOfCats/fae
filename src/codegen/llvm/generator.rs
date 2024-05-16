@@ -142,6 +142,7 @@ impl LLVMTypes {
 				}
 
 				PrimativeKind::AnyCollapse
+				| PrimativeKind::NoReturn
 				| PrimativeKind::Void
 				| PrimativeKind::UntypedInteger
 				| PrimativeKind::UntypedDecimal => unreachable!("{kind:?}"),
@@ -596,14 +597,16 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 				if let Some(new_binding) = &arm.binding {
 					assert_eq!(self.readables.len(), new_binding.readable_index);
-					if new_binding.is_zero_sized {
+					let type_id = context.specialize_type_id(new_binding.type_id);
+					let layout = context.type_store.type_layout(type_id);
+
+					if layout.size <= 0 {
 						self.readables.push(None);
 					} else {
 						let shape = &self.llvm_types.user_type_structs[enum_shape_index];
 						let llvm_struct = shape[enum_specialization_index].unwrap().actual;
 						let variant_pointer = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr());
 
-						let type_id = context.specialize_type_id(new_binding.type_id);
 						let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
 						let kind = BindingKind::Pointer { pointer: variant_pointer, pointed_type };
 						let binding = Binding { type_id, kind };
@@ -1572,14 +1575,16 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		if let Some(new_binding) = &check_expression.binding {
 			assert_eq!(self.readables.len(), new_binding.readable_index);
-			if new_binding.is_zero_sized {
+			let type_id = context.specialize_type_id(new_binding.type_id);
+			let layout = context.type_store.type_layout(type_id);
+
+			if layout.size <= 0 {
 				self.readables.push(None);
 			} else {
 				let shape = &self.llvm_types.user_type_structs[enum_shape_index];
 				let llvm_struct = shape[enum_specialization_index].unwrap().actual;
 				let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
 
-				let type_id = context.specialize_type_id(new_binding.type_id);
 				let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
 				let kind = BindingKind::Pointer { pointer: variant_pointer, pointed_type };
 				let binding = Binding { type_id, kind };

@@ -70,7 +70,11 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				return &mut buffer[..1];
 			}
 
-			PrimativeKind::AnyCollapse | PrimativeKind::Void | PrimativeKind::UntypedInteger | PrimativeKind::UntypedDecimal => {
+			PrimativeKind::AnyCollapse
+			| PrimativeKind::NoReturn
+			| PrimativeKind::Void
+			| PrimativeKind::UntypedInteger
+			| PrimativeKind::UntypedDecimal => {
 				unreachable!("{:?}", entry.kind);
 			}
 		},

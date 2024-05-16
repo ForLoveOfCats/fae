@@ -1820,6 +1820,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			tree::Statement::Block(statement) => {
 				let scope = context.child_scope();
 				let block = validate_block(scope, &statement.item, false);
+				returns |= block.returns;
 				let kind = StatementKind::Block(block);
 				statements.push(Statement { kind })
 			}
@@ -2554,9 +2555,7 @@ fn validate_match_expression<'a>(
 			};
 
 			let readable_index = scope.push_readable(binding_name, type_id, kind);
-			let layout = scope.type_store.type_layout(type_id);
-			let is_zero_sized = layout.size <= 0;
-			Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
+			Some(CheckIsResultBinding { type_id, readable_index, is_mutable })
 		} else {
 			None
 		};
@@ -2978,6 +2977,10 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		return Expression::any_collapse(context.type_store, span);
 	}
 
+	if return_type.is_noreturn(context.type_store) {
+		returns = true;
+	}
+
 	let function_id = FunctionId { function_shape_index, specialization_index };
 	let kind = ExpressionKind::Call(Call { span, name, function_id, arguments });
 	Expression { span, type_id: return_type, is_mutable: true, returns, kind }
@@ -3193,7 +3196,7 @@ fn validate_method_call<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let Some(MethodArgumentsResult { returns, arguments }) =
+	let Some(MethodArgumentsResult { mut returns, arguments }) =
 		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, false)
 	else {
 		return Expression::any_collapse(context.type_store, span);
@@ -3208,6 +3211,10 @@ fn validate_method_call<'a>(
 		function_id,
 		arguments,
 	};
+
+	if return_type.is_noreturn(context.type_store) {
+		returns = true;
+	}
 
 	let kind = ExpressionKind::MethodCall(Box::new(method_call));
 	Expression { span, type_id: return_type, is_mutable: true, returns, kind }
@@ -3322,7 +3329,7 @@ fn validate_static_method_call<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let Some(MethodArgumentsResult { returns, arguments }) =
+	let Some(MethodArgumentsResult { mut returns, arguments }) =
 		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, true)
 	else {
 		return Expression::any_collapse(context.type_store, span);
@@ -3330,6 +3337,10 @@ fn validate_static_method_call<'a>(
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
 	let call = Call { span, name: method_call.name.item, function_id, arguments };
+
+	if return_type.is_noreturn(context.type_store) {
+		returns = true;
+	}
 
 	let kind = ExpressionKind::Call(call);
 	Expression { span, type_id: return_type, is_mutable: true, returns, kind }
@@ -4358,9 +4369,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		};
 
 		let readable_index = context.push_readable(binding_name, type_id, kind);
-		let layout = context.type_store.type_layout(type_id);
-		let is_zero_sized = layout.size <= 0;
-		Some(CheckIsResultBinding { type_id, readable_index, is_mutable, is_zero_sized })
+		Some(CheckIsResultBinding { type_id, readable_index, is_mutable })
 	} else {
 		None
 	};

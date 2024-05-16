@@ -1,1 +1,1 @@
-Index 8 is out of range of slice with length 3
+Panic: Index 8 is out of range of slice with length 3

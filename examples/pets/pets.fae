@@ -74,6 +74,11 @@ fn take_on_walk() {
 	}
 }
 
+fn adopt(human_age: i32): Option<Pet> {
+	if human_age < 18 => return .None
+	return .Some(.Cat { name: "Mordecai" })
+}
+
 fn main() {
 	mut cat: Pet = .Cat { name: "Lola" }
 	mut dog: Pet = .Dog { name: "Odie", hours_since_last_walk: 3 }
@@ -124,4 +129,16 @@ fn main() {
 		Dog => print_string("This is a dog\n")
 		else => print_string("This is something other than a dog\n")
 	}
+
+	print_newline()
+
+	let morty = adopt(25)
+	print_string(morty.unwrap().name)
+	print_newline()
+
+/*
+	let morty = adopt(17)
+	print_string(morty.unwrap().name)
+	print_newline()
+*/
 }

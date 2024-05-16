@@ -24,7 +24,7 @@ extern "atol"
 fn atol(string: &u8): i64
 
 extern "exit"
-fn exit(code: i32)
+fn exit(code: i32): noreturn
 
 extern "fflush"
 fn fflush(stream: &FileHandle)

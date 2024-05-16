@@ -22,6 +22,10 @@ impl TypeId {
 		type_store.direct_match(self, type_store.any_collapse_type_id)
 	}
 
+	pub fn is_noreturn(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.noreturn_type_id)
+	}
+
 	pub fn is_void(self, type_store: &TypeStore) -> bool {
 		type_store.direct_match(self, type_store.void_type_id)
 	}
@@ -366,6 +370,7 @@ impl NumericKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimativeKind {
 	AnyCollapse,
+	NoReturn,
 	Void,
 
 	UntypedInteger,
@@ -380,6 +385,7 @@ impl PrimativeKind {
 	pub fn name(self) -> &'static str {
 		match self {
 			PrimativeKind::AnyCollapse => "any collapse",
+			PrimativeKind::NoReturn => "noreturn",
 			PrimativeKind::Void => "void",
 			PrimativeKind::UntypedInteger => "untyped integer",
 			PrimativeKind::UntypedDecimal => "untyped decimal",
@@ -391,6 +397,7 @@ impl PrimativeKind {
 	pub fn layout(self) -> Layout {
 		match self {
 			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0 },
+			PrimativeKind::NoReturn => Layout { size: 0, alignment: 0 },
 			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
@@ -483,6 +490,7 @@ pub struct TypeStore<'a> {
 	pub user_type_generate_order: Vec<UserTypeSpecializationDescription>,
 
 	any_collapse_type_id: TypeId,
+	noreturn_type_id: TypeId,
 	void_type_id: TypeId,
 
 	bool_type_id: TypeId,
@@ -529,6 +537,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		let any_collapse_type_id = push_primative(None, PrimativeKind::AnyCollapse);
+		let noreturn_type_id = push_primative(Some("noreturn"), PrimativeKind::NoReturn);
 		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
 
 		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
@@ -560,6 +569,7 @@ impl<'a> TypeStore<'a> {
 			user_types: Vec::new(),
 			user_type_generate_order: Vec::new(),
 			any_collapse_type_id,
+			noreturn_type_id,
 			void_type_id,
 			integer_type_id,
 			decimal_type_id,

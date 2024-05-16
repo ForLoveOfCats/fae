@@ -920,7 +920,6 @@ pub struct CheckIsResultBinding {
 	pub type_id: TypeId,
 	pub readable_index: usize,
 	pub is_mutable: bool,
-	pub is_zero_sized: bool,
 }
 
 #[derive(Debug, Clone)]
