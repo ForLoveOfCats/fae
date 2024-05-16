@@ -9,7 +9,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols};
-use crate::frontend::tree::{self, BinaryOperator, FieldAttribute, MethodKind, PathSegments, StructInitializer};
+use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribute, MethodKind, PathSegments};
 use crate::frontend::tree::{MethodAttribute, Node};
 use crate::frontend::type_store::*;
 
@@ -250,7 +250,7 @@ pub fn validate<'a>(
 	let mut externs = Externs::new();
 	let mut constants = Vec::new();
 
-	create_root_types(messages, root_layers, type_store, parsed_files);
+	create_root_types(messages, type_store, root_layers, parsed_files);
 	resolve_root_type_imports(cli_arguments, messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
@@ -347,8 +347,8 @@ pub fn validate<'a>(
 
 fn create_root_types<'a>(
 	messages: &mut Messages,
-	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
 	for parsed_file in parsed_files {
@@ -781,7 +781,7 @@ fn create_block_struct<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = StructShape::new(None, None);
+	let shape = StructShape::new(None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
@@ -843,15 +843,52 @@ fn create_block_enum<'a>(
 			variant_generic_parameters.push_implicit(parameter);
 		}
 
-		let name = variant.name.item;
-		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index));
+		let (name, is_transparent) = match variant {
+			tree::EnumVariant::StructLike(struct_like) => (struct_like.name, false),
+			tree::EnumVariant::Transparent(transparent) => (transparent.name, true),
+		};
+
+		let span = name.span;
+		let name = name.item;
+
+		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
-		let span = variant.name.span;
 		type_store.register_type(name, variant_generic_parameters, kind, module_path, scope_id, span);
 
-		let variant_shape = EnumVariantShape { name, span, variant_index, struct_shape_index };
+		let variant_shape = EnumVariantShape {
+			name,
+			span,
+			variant_index,
+			struct_shape_index,
+			is_transparent,
+		};
 		variants.push(variant_shape);
 		variants_by_name.insert(name, variant_index);
+
+		// match variant {
+		// 	tree::EnumVariant::StructLike(struct_like) => {
+		// 		let name = struct_like.name.item;
+		// 		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index));
+		// 		let kind = UserTypeKind::Struct { shape };
+		// 		let span = struct_like.name.span;
+		// 		type_store.register_type(name, variant_generic_parameters, kind, module_path, scope_id, span);
+
+		// 		let kind = EnumVariantShapeKind::StructLike(StructLikeVariantShape { struct_shape_index });
+		// 		let variant_shape = EnumVariantShape { name, span, variant_index, kind };
+		// 		variants.push(variant_shape);
+		// 		variants_by_name.insert(name, variant_index);
+		// 	}
+
+		// 	tree::EnumVariant::Transparent(transparent) => {
+		// 		let type_id = TypeId::unusable();
+		// 		let name = transparent.name.item;
+		// 		let span = transparent.name.span;
+		// 		let kind = EnumVariantShapeKind::Transparent(TransparentVariantShape { type_id });
+		// 		let variant_shape = EnumVariantShape { name, span, variant_index, kind };
+		// 		variants.push(variant_shape);
+		// 		variants_by_name.insert(name, variant_index);
+		// 	}
+		// }
 	}
 
 	let name = statement.name.item;
@@ -954,7 +991,7 @@ fn fill_block_types<'a>(
 
 		if let tree::Statement::Enum(statement) = statement {
 			// TODO: Rip this out similar to how it was for functions
-			let shape_index = symbols
+			let enum_shape_index = symbols
 				.symbols
 				.iter()
 				.rev()
@@ -968,11 +1005,11 @@ fn fill_block_types<'a>(
 				})
 				.unwrap();
 
-			let user_type = &type_store.user_types[shape_index];
+			let user_type = &type_store.user_types[enum_shape_index];
 			let scope = symbols.child_scope();
 
 			for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
-				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
+				let kind = SymbolKind::UserTypeGeneric { shape_index: enum_shape_index, generic_index };
 				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
@@ -1007,87 +1044,76 @@ fn fill_block_types<'a>(
 				shared_fields.push(node);
 			}
 
-			drop(scope);
-
-			let user_type = &type_store.user_types[shape_index];
+			let user_type = &type_store.user_types[enum_shape_index];
 			let shape = match &user_type.kind {
 				UserTypeKind::Enum { shape } => shape,
 				UserTypeKind::Struct { .. } => unreachable!(),
 			};
 
 			// Yuck
-			let variant_shapes = shape.variant_shapes.clone();
+			let mut variant_shapes = shape.variant_shapes.clone();
 
-			for variant_shape in variant_shapes {
-				let tree_variant = &statement.variants[variant_shape.variant_index];
+			for variant_shape in &mut variant_shapes {
+				fill_struct_like_enum_variant(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					root_layers,
+					scope.symbols,
+					module_path,
+					function_initial_symbols_len,
+					&shared_fields,
+					&variant_shape,
+					statement,
+				);
 
-				let scope = symbols.child_scope();
+				// let tree_variant = &statement.variants[variant_shape.variant_index];
+				// match tree_variant {
+				// 	tree::EnumVariant::StructLike(struct_like) => fill_struct_like_enum_variant(
+				// 		messages,
+				// 		type_store,
+				// 		function_store,
+				// 		generic_usages,
+				// 		root_layers,
+				// 		scope.symbols,
+				// 		module_path,
+				// 		function_initial_symbols_len,
+				// 		&shared_fields,
+				// 		&variant_shape,
+				// 		statement,
+				// 	),
 
-				let struct_shape = &type_store.user_types[variant_shape.struct_shape_index];
-				for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
-					let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
-					let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-					scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
-				}
+				// 	tree::EnumVariant::Transparent(tree_transparent) => {
+				// 		let transparent = match &mut variant_shape.kind {
+				// 			EnumVariantShapeKind::Transparent(transparent) => transparent,
+				// 			EnumVariantShapeKind::StructLike(_) => unreachable!(),
+				// 		};
 
-				let mut fields = Vec::with_capacity(shared_fields.len() + tree_variant.fields.len());
-				fields.extend(shared_fields.iter().copied());
-
-				for field in &tree_variant.fields {
-					let field_type = match type_store.lookup_type(
-						messages,
-						function_store,
-						module_path,
-						generic_usages,
-						root_layers,
-						scope.symbols,
-						function_initial_symbols_len,
-						&blank_generic_parameters,
-						&field.parsed_type,
-					) {
-						Some(type_id) => type_id,
-						None => type_store.any_collapse_type_id(),
-					};
-
-					let field_shape = FieldShape {
-						name: field.name.item,
-						field_type,
-						attribute: field.attribute,
-						read_only: field.read_only,
-					};
-					let span = field.name.span + field.parsed_type.span;
-					let node = Node::new(field_shape, span);
-					fields.push(node);
-				}
-
-				match &mut type_store.user_types[variant_shape.struct_shape_index].kind {
-					UserTypeKind::Struct { shape } => {
-						shape.fields = fields;
-						assert!(!shape.been_filled);
-						shape.been_filled = true;
-
-						if !shape.specializations.is_empty() {
-							fill_pre_existing_enum_specializations(
-								messages,
-								type_store,
-								function_store,
-								generic_usages,
-								module_path,
-								shape_index,
-							);
-						}
-					}
-
-					UserTypeKind::Enum { .. } => unreachable!(),
-				}
+				// 		transparent.type_id = type_store
+				// 			.lookup_type(
+				// 				messages,
+				// 				function_store,
+				// 				module_path,
+				// 				generic_usages,
+				// 				root_layers,
+				// 				scope.symbols,
+				// 				function_initial_symbols_len,
+				// 				enclosing_generic_parameters,
+				// 				&tree_transparent.parsed_type,
+				// 			)
+				// 			.unwrap_or(type_store.any_collapse_type_id());
+				// 	}
+				// }
 			}
 
-			match &mut type_store.user_types[shape_index].kind {
+			match &mut type_store.user_types[enum_shape_index].kind {
 				UserTypeKind::Struct { .. } => unreachable!(),
 
 				UserTypeKind::Enum { shape } => {
 					assert!(shape.shared_fields.is_empty());
 					shape.shared_fields = shared_fields;
+					shape.variant_shapes = variant_shapes;
 					assert!(!shape.been_filled);
 					shape.been_filled = true;
 
@@ -1098,12 +1124,114 @@ fn fill_block_types<'a>(
 							function_store,
 							generic_usages,
 							module_path,
-							shape_index,
+							enum_shape_index,
 						);
 					}
 				}
 			}
 		}
+	}
+}
+
+fn fill_struct_like_enum_variant<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_len: usize,
+	shared_fields: &[Node<FieldShape<'a>>],
+	variant_shape: &EnumVariantShape<'a>,
+	statement: &tree::Enum<'a>,
+) {
+	let scope = symbols.child_scope();
+	let tree_variant = &statement.variants[variant_shape.variant_index];
+
+	// let struct_like = match &variant_shape.kind {
+	// 	EnumVariantShapeKind::StructLike(struct_like) => struct_like,
+	// 	EnumVariantShapeKind::Transparent(_) => unreachable!(),
+	// };
+
+	let struct_shape = &type_store.user_types[variant_shape.struct_shape_index];
+	for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
+		let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
+		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+	}
+
+	// shared_fields.len() + tree_variant.fields.len()
+	let mut fields = Vec::new();
+	fields.extend(shared_fields.iter().copied());
+
+	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	match tree_variant {
+		tree::EnumVariant::StructLike(struct_like) => {
+			for field in &struct_like.fields {
+				let field_type = match type_store.lookup_type(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					root_layers,
+					scope.symbols,
+					function_initial_symbols_len,
+					&blank_generic_parameters,
+					&field.parsed_type,
+				) {
+					Some(type_id) => type_id,
+					None => type_store.any_collapse_type_id(),
+				};
+
+				let field_shape = FieldShape {
+					name: field.name.item,
+					field_type,
+					attribute: field.attribute,
+					read_only: field.read_only,
+				};
+				let span = field.name.span + field.parsed_type.span;
+				let node = Node::new(field_shape, span);
+				fields.push(node);
+			}
+		}
+
+		tree::EnumVariant::Transparent(transparent) => {
+			let field_type = match type_store.lookup_type(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				root_layers,
+				scope.symbols,
+				function_initial_symbols_len,
+				&blank_generic_parameters,
+				&transparent.parsed_type,
+			) {
+				Some(type_id) => type_id,
+				None => type_store.any_collapse_type_id(),
+			};
+
+			let field_shape = FieldShape {
+				name: transparent.name.item,
+				field_type,
+				attribute: None,
+				read_only: false, // TODO: Let the user control this
+			};
+			let span = transparent.parsed_type.span;
+			let node = Node::new(field_shape, span);
+			fields.push(node);
+		}
+	}
+
+	match &mut type_store.user_types[variant_shape.struct_shape_index].kind {
+		UserTypeKind::Struct { shape } => {
+			shape.fields = fields;
+			assert!(!shape.been_filled);
+			shape.been_filled = true;
+		}
+
+		UserTypeKind::Enum { .. } => unreachable!(),
 	}
 }
 
@@ -2407,10 +2535,18 @@ fn validate_match_expression<'a>(
 
 		let binding = if let Some(binding_name) = binding_name {
 			assert_eq!(arm.variant_names.len(), 1);
-			let type_id = variant_infos
-				.last()
-				.map(|info| info.type_id)
-				.unwrap_or(scope.type_store.any_collapse_type_id());
+
+			let type_id = if let Some(info) = variant_infos.last() {
+				let (shape, specialization) = info.type_id.as_struct(scope.type_store).unwrap();
+				if shape.is_transparent_variant {
+					assert_eq!(specialization.fields.len(), 1);
+					specialization.fields.first().unwrap().type_id
+				} else {
+					info.type_id
+				}
+			} else {
+				scope.type_store.any_collapse_type_id()
+			};
 
 			let kind = match is_mutable {
 				true => ReadableKind::Mut,
@@ -2683,11 +2819,9 @@ fn validate_struct_initializer<'a>(
 			// Avoids a silly error message when something happend in the field definition, causing it to
 			// have `AnyCollapse` as its type, leading to an "Expected `AnyCollapse` got `_`" error
 			if !field.type_id.is_any_collapse(context.type_store) {
-				let error = error!(
-					"Field intializer type mismatch, expected {} but got {} instead",
-					context.type_name(field.type_id),
-					context.type_name(expression.type_id),
-				);
+				let expected = context.type_name(field.type_id);
+				let found = context.type_name(expression.type_id);
+				let error = error!("Field intializer type mismatch, expected {expected} but got {found} instead");
 				context.message(error.span(intializer.name.span + expression.span));
 			}
 		}
@@ -3101,7 +3235,56 @@ fn validate_static_method_call<'a>(
 		}
 	};
 
+	// Holy mother of indentation
 	let user_type = &context.type_store.user_types[base_shape_index];
+	match &user_type.kind {
+		UserTypeKind::Enum { shape } => {
+			let specialization = &shape.specializations[base_specialization_index];
+			if let Some(&variant_index) = specialization.variants_by_name.get(method_call.name.item) {
+				let variant = specialization.variants[variant_index];
+				if variant.is_transparent {
+					if !method_call.type_arguments.is_empty() {
+						let span = method_call
+							.type_arguments
+							.iter()
+							.fold(method_call.type_arguments.first().unwrap().span, |a, b| a + b.span);
+
+						let name = method_call.name.item;
+						let error = error!("Cannot construct transparent variant enum `{name}` with type arguments");
+						context.messages.message(error.span(span));
+					}
+
+					if method_call.arguments.len() != 1 {
+						let name = method_call.name.item;
+						let count = method_call.arguments.len();
+						let error = error!("Transparent variant enum `{name}` must be constructed with one value, found {count}");
+						context.messages.message(error.span(span));
+						return Expression::any_collapse(context.type_store, span);
+					}
+
+					let expression = method_call.arguments.first().unwrap();
+
+					let (_, as_struct) = variant.type_id.as_struct(context.type_store).unwrap();
+					let expected_type_id = as_struct.fields.first().unwrap().type_id;
+
+					let mut returns = false;
+					let Some(field_initializers) =
+						validate_transparent_variant_initializer(context, &mut returns, expression, expected_type_id)
+					else {
+						return Expression::any_collapse(context.type_store, span);
+					};
+
+					let type_id = variant.type_id;
+					let literal = StructLiteral { type_id, field_initializers };
+					let kind = ExpressionKind::StructLiteral(literal);
+					return Expression { span, type_id, is_mutable: true, returns, kind };
+				}
+			}
+		}
+
+		_ => {}
+	};
+
 	let method_info = match user_type.methods.get(method_call.name.item) {
 		Some(method_info) => method_info,
 
@@ -3273,7 +3456,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 	}
 
 	if let ExpressionKind::Type(base) = base.kind {
-		return validate_enum_literal(context, base, dot_access, span);
+		return validate_dot_access_enum_literal(context, base, dot_access, span);
 	}
 
 	let (type_id, mutable) = match base.type_id.as_pointed(context.type_store) {
@@ -3284,7 +3467,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 	// Dumb hack to store fields array in outer scope so a slice can be taken
 	let slice_fields;
 	let mut external_access = true;
-	let fields: &[Field] = if let Some(as_struct) = type_id.as_struct(context.type_store) {
+	let fields: &[Field] = if let Some((_, as_struct)) = type_id.as_struct(context.type_store) {
 		if let Some(method_base_index) = context.method_base_index {
 			external_access = method_base_index != as_struct.shape_index;
 		}
@@ -3387,23 +3570,10 @@ fn validate_inferred_enum<'a>(
 	let variant = as_enum.variants[variant_index];
 	let type_id = variant.type_id;
 
-	let entry = context.type_store.type_entries[type_id.index()];
-	let (variant_shape_index, variant_specialization_index) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
-		kind => unreachable!("{kind:?}"),
-	};
-
 	let mut returns = false;
-	let Some(field_initializers) = validate_enum_field_initializers(
-		context,
-		inferred_enum.name.item,
-		variant_shape_index,
-		variant_specialization_index,
-		type_id,
-		&mut returns,
-		&inferred_enum.struct_initializer,
-		span,
-	) else {
+	let Some(field_initializers) =
+		validate_enum_initializer(context, inferred_enum.name.item, type_id, &mut returns, &inferred_enum.initializer, span)
+	else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
@@ -3412,7 +3582,7 @@ fn validate_inferred_enum<'a>(
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }
 
-fn validate_enum_literal<'a>(
+fn validate_dot_access_enum_literal<'a>(
 	context: &mut Context<'a, '_, '_>,
 	base: TypeId,
 	dot_access: &'a tree::DotAccess<'a>,
@@ -3422,21 +3592,13 @@ fn validate_enum_literal<'a>(
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let entry = context.type_store.type_entries[variant_type_id.index()];
-	let (variant_shape_index, variant_specialization_index) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
-		kind => unreachable!("{kind:?}"),
-	};
-
 	let mut returns = false;
-	let Some(field_initializers) = validate_enum_field_initializers(
+	let Some(field_initializers) = validate_enum_initializer(
 		context,
 		dot_access.name.item,
-		variant_shape_index,
-		variant_specialization_index,
 		variant_type_id,
 		&mut returns,
-		&dot_access.struct_initializer,
+		&dot_access.enum_initializer,
 		span,
 	) else {
 		return Expression::any_collapse(context.type_store, span);
@@ -3453,48 +3615,128 @@ fn validate_enum_literal<'a>(
 	}
 }
 
-fn validate_enum_field_initializers<'a>(
+fn validate_enum_initializer<'a>(
 	context: &mut Context<'a, '_, '_>,
 	variant_name: &str,
-	variant_shape_index: usize,
-	variant_specialization_index: usize,
 	variant_type_id: TypeId,
 	returns: &mut bool,
-	struct_initializer: &'a Option<Node<StructInitializer<'a>>>,
+	initializer: &'a Option<tree::EnumInitializer<'a>>,
 	span: Span,
 ) -> Option<Vec<FieldInitializer<'a>>> {
+	let entry = context.type_store.type_entries[variant_type_id.index()];
+	let (variant_shape_index, variant_specialization_index) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		_ => unreachable!(),
+	};
+
 	let user_type = &context.type_store.user_types[variant_shape_index];
 	let fields = match &user_type.kind {
-		UserTypeKind::Struct { shape } => shape.specializations[variant_specialization_index].fields.clone(),
+		UserTypeKind::Struct { shape } => {
+			if shape.is_transparent_variant {
+				let Some(initializer) = initializer else {
+					let error = error!("Cannot construct transparent enum variant `{variant_name}` without an initializer");
+					context.message(error.span(span));
+					return None;
+				};
+
+				let expression = match initializer {
+					EnumInitializer::Transparent { expression } => expression,
+
+					EnumInitializer::StructLike { .. } => {
+						let error =
+							error!("Cannot construct transparent enum variant `{variant_name}` like a struck-like enum variant");
+						context.message(error.span(span));
+						return None;
+					}
+				};
+
+				let expected_type_id = shape.specializations[variant_specialization_index]
+					.fields
+					.first()
+					.unwrap()
+					.type_id;
+
+				return validate_transparent_variant_initializer(context, returns, expression, expected_type_id);
+			}
+
+			// Uggg
+			shape.specializations[variant_specialization_index].fields.clone()
+		}
+
 		UserTypeKind::Enum { .. } => unreachable!(),
 	};
 
-	if let Some(initializer) = struct_initializer {
+	if let Some(initializer) = initializer {
 		if fields.is_empty() {
-			let error = error!("Cannot construct enum variant `{}` with field initializers", variant_name);
+			let error = match initializer {
+				EnumInitializer::StructLike { .. } => {
+					error!("Cannot construct enum variant `{variant_name}` with field initializers")
+				}
+				EnumInitializer::Transparent { .. } => {
+					error!("Cannot construct enum variant `{variant_name}` with a transparent initializer")
+				}
+			};
 			context.message(error.span(span));
-			// return Expression::any_collapse(context.type_store, span);
 			return None;
 		}
+
+		let struct_initializer = match initializer {
+			EnumInitializer::StructLike { struct_initializer } => struct_initializer,
+
+			EnumInitializer::Transparent { .. } => {
+				let error = error!("Cannot construct struck-like enum variant `{variant_name}` like a transparent enum variant",);
+				context.message(error.span(span));
+				return None;
+			}
+		};
 
 		Some(validate_struct_initializer(
 			context,
 			variant_shape_index,
 			variant_specialization_index,
 			variant_type_id,
-			initializer,
+			struct_initializer,
 			&fields,
 			returns,
 		))
 	} else if !fields.is_empty() {
 		let name = variant_name;
-		let error = error!("Cannot construct enum variant `{}` without providing fields initializers", name);
+		let error = error!(
+			"Cannot construct struck-like enum variant `{}` without providing fields initializers",
+			name
+		);
 		context.message(error.span(span));
-		// return Expression::any_collapse(context.type_store, span);
 		return None;
 	} else {
 		Some(Vec::new())
 	}
+}
+
+fn validate_transparent_variant_initializer<'a>(
+	context: &mut Context<'a, '_, '_>,
+	returns: &mut bool,
+	expression: &'a Node<tree::Expression<'a>>,
+	expected_type_id: TypeId,
+) -> Option<Vec<FieldInitializer<'a>>> {
+	let mut scope = context.child_scope();
+	scope.expected_type = Some(expected_type_id);
+	let mut expression = validate_expression(&mut scope, expression);
+	drop(scope);
+
+	*returns |= expression.returns;
+
+	if !context.collapse_to(expected_type_id, &mut expression).unwrap_or(true) {
+		if !expected_type_id.is_any_collapse(context.type_store) {
+			let expected = context.type_name(expected_type_id);
+			let found = context.type_name(expression.type_id);
+			let error = error!("Transparent enum variant initializer type mismatch, expected {expected} but got {found} instead");
+			context.message(error.span(expression.span));
+			return None;
+		}
+	}
+
+	let initializer = FieldInitializer { expression };
+	Some(vec![initializer])
 }
 
 fn validate_unary_operation<'a>(
@@ -4097,10 +4339,18 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 
 	let binding = if let Some(binding_name) = binding_name {
 		assert_eq!(check.variant_names.len(), 1);
-		let type_id = variant_infos
-			.last()
-			.map(|info| info.type_id)
-			.unwrap_or(context.type_store.any_collapse_type_id());
+
+		let type_id = if let Some(info) = variant_infos.last() {
+			let (shape, specialization) = info.type_id.as_struct(context.type_store).unwrap();
+			if shape.is_transparent_variant {
+				assert_eq!(specialization.fields.len(), 1);
+				specialization.fields.first().unwrap().type_id
+			} else {
+				info.type_id
+			}
+		} else {
+			context.type_store.any_collapse_type_id()
+		};
 
 		let kind = match is_mutable {
 			true => ReadableKind::Mut,

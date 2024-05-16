@@ -1,0 +1,24 @@
+fn main() {
+	let _: Enum = .A // Correct
+	let _: Enum = .A {}
+	let _: Enum = .A(1)
+
+	let _: Enum = .B
+	let _: Enum = .B {}
+	let _: Enum = .B(1) // Correct
+	let _: Enum = .B(0.1)
+
+	let _: Enum = .C
+	let _: Enum = .C {}
+	let _: Enum = .C { field: 1} // Correct
+	let _: Enum = .C { field: 0.1 }
+	let _: Enum = .C { wrong: 1}
+	let _: Enum = .C { field: 1, extra: 2 }
+	let _: Enum = .C(1)
+}
+
+enum Enum {
+	A
+	B(i32)
+	C { field: i32 }
+}

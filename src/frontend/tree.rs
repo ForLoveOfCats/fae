@@ -148,12 +148,25 @@ pub struct Enum<'a> {
 	pub name: Node<&'a str>,
 	pub shared_fields: Vec<Field<'a>>,
 	pub variants: Vec<EnumVariant<'a>>,
+	pub transparent_variant_count: usize,
 }
 
 #[derive(Debug)]
-pub struct EnumVariant<'a> {
+pub enum EnumVariant<'a> {
+	StructLike(StructLikeVariant<'a>),
+	Transparent(TransparentVariant<'a>),
+}
+
+#[derive(Debug)]
+pub struct StructLikeVariant<'a> {
 	pub name: Node<&'a str>,
 	pub fields: Vec<Field<'a>>,
+}
+
+#[derive(Debug)]
+pub struct TransparentVariant<'a> {
+	pub name: Node<&'a str>,
+	pub parsed_type: Node<Type<'a>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -450,13 +463,19 @@ pub struct Read<'a> {
 pub struct DotAccess<'a> {
 	pub base: Node<Expression<'a>>,
 	pub name: Node<&'a str>,
-	pub struct_initializer: Option<Node<StructInitializer<'a>>>,
+	pub enum_initializer: Option<EnumInitializer<'a>>,
 }
 
 #[derive(Debug)]
 pub struct InferredEnum<'a> {
 	pub name: Node<&'a str>,
-	pub struct_initializer: Option<Node<StructInitializer<'a>>>,
+	pub initializer: Option<EnumInitializer<'a>>,
+}
+
+#[derive(Debug)]
+pub enum EnumInitializer<'a> {
+	StructLike { struct_initializer: Node<StructInitializer<'a>> },
+	Transparent { expression: Node<Expression<'a>> },
 }
 
 #[derive(Debug)]
@@ -600,7 +619,7 @@ pub enum Expression<'a> {
 	Read(Read<'a>),
 	DotAcccess(Box<DotAccess<'a>>),
 
-	InferredEnum(InferredEnum<'a>),
+	InferredEnum(Box<InferredEnum<'a>>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),

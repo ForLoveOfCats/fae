@@ -4,14 +4,14 @@
 import fae::stdout::print_i32, print_newline
 
 fn divide(value: i32, by: i32): Enum<i32, []u8> {
-	if by == 0 => return .Error { value: "Divide by zero" }
-	return .Ok { value: value / by }
+	if by == 0 => return .Error("Divide by zero")
+	return Enum<i32, []u8>.Ok(value / by)
 }
 
 fn main() {
 	match divide(4, 0) {
 		result: Ok {
-			print_i32(result.value)
+			print_i32(result)
 			print_newline()
 		}
 
@@ -20,7 +20,7 @@ fn main() {
 
 	let result = divide(4, 0)
 	if result is Ok {
-		print_i32(result.value)
+		print_i32(result)
 		print_newline()
 	} else if result is error: Error {
 		print_error<i32>(error)
@@ -28,7 +28,7 @@ fn main() {
 
 	match divide(4, 2) {
 		result: Ok {
-			print_i32(result.value)
+			print_i32(result)
 			print_newline()
 		}
 
@@ -37,7 +37,7 @@ fn main() {
 
 	let result = divide(4, 2)
 	if result is Ok {
-		print_i32(result.value)
+		print_i32(result)
 		print_newline()
 	} else if result is error: Error {
 		print_error<i32>(error)
@@ -46,15 +46,15 @@ fn main() {
 
 generic T, E
 enum Enum {
-	Ok { value: T }
-	Error { value: E }
+	Ok(T)
+	Error(E)
 }
 
 generic T
-fn print_error(arg: Enum<T, []u8>.Error) {
+fn print_error(arg: []u8) {
 	import fae::stdout::print_string
 
 	print_string("Error: ")
-	print_string(arg.value)
+	print_string(arg)
 	print_newline()
 }

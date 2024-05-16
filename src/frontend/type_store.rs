@@ -94,12 +94,12 @@ impl TypeId {
 		}
 	}
 
-	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<&'s Struct<'a>> {
+	pub fn as_struct<'a, 's>(self, type_store: &'s TypeStore<'a>) -> Option<(&'s StructShape<'a>, &'s Struct<'a>)> {
 		let entry = type_store.type_entries[self.index()];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
 			let shape = &type_store.user_types[shape_index];
 			if let UserTypeKind::Struct { shape } = &shape.kind {
-				return Some(&shape.specializations[specialization_index]);
+				return Some((shape, &shape.specializations[specialization_index]));
 			}
 		}
 
@@ -147,19 +147,22 @@ pub struct Layout {
 pub struct StructShape<'a> {
 	pub been_filled: bool,
 	pub fields: Vec<Node<FieldShape<'a>>>,
+
 	pub parent_enum_shape_index: Option<usize>,
 	pub variant_index: Option<usize>,
+	pub is_transparent_variant: bool,
 
 	pub specializations: Vec<Struct<'a>>,
 }
 
 impl<'a> StructShape<'a> {
-	pub fn new(parent_enum_shape_index: Option<usize>, variant_index: Option<usize>) -> Self {
+	pub fn new(parent_enum_shape_index: Option<usize>, variant_index: Option<usize>, is_transparent_variant: bool) -> Self {
 		StructShape {
 			been_filled: false,
 			fields: Vec::new(),
 			parent_enum_shape_index,
 			variant_index,
+			is_transparent_variant,
 			specializations: Vec::new(),
 		}
 	}
@@ -221,7 +224,24 @@ pub struct EnumVariantShape<'a> {
 	pub span: Span,
 	pub variant_index: usize,
 	pub struct_shape_index: usize,
+	pub is_transparent: bool,
 }
+
+// #[derive(Debug, Clone, Copy)]
+// pub enum EnumVariantShapeKind {
+// 	StructLike(StructLikeVariantShape),
+// 	Transparent(TransparentVariantShape),
+// }
+
+// #[derive(Debug, Clone, Copy)]
+// pub struct StructLikeVariantShape {
+// 	pub struct_shape_index: usize,
+// }
+
+// #[derive(Debug, Clone, Copy)]
+// pub struct TransparentVariantShape {
+// 	pub type_id: TypeId,
+// }
 
 #[derive(Debug, Clone)]
 pub struct Enum<'a> {
@@ -240,6 +260,7 @@ pub struct Enum<'a> {
 pub struct EnumVariant {
 	pub span: Span,
 	pub type_id: TypeId,
+	pub is_transparent: bool,
 }
 
 #[derive(Debug)]
@@ -1661,10 +1682,36 @@ impl<'a> TypeStore<'a> {
 				)
 				.unwrap();
 
+			// let type_id = match variant_shape.kind {
+			// 	EnumVariantShapeKind::StructLike(struct_like) => self
+			// 		.get_or_add_struct_shape_specialization(
+			// 			messages,
+			// 			function_store,
+			// 			module_path,
+			// 			generic_usages,
+			// 			struct_like.struct_shape_index,
+			// 			Some(variant_shape.span),
+			// 			type_arguments,
+			// 			explicit_type_argument_len,
+			// 		)
+			// 		.unwrap(),
+
+			// 	EnumVariantShapeKind::Transparent(transparent) => self.specialize_with_user_type_generics(
+			// 		messages,
+			// 		function_store,
+			// 		module_path,
+			// 		generic_usages,
+			// 		shape_index,
+			// 		type_arguments,
+			// 		transparent.type_id,
+			// 	),
+			// };
+
 			let span = variant_shape.span;
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
-			variants.push(EnumVariant { span, type_id });
+			let is_transparent = variant_shape.is_transparent;
+			variants.push(EnumVariant { span, type_id, is_transparent });
 			variants_by_name.insert(variant_shape.name, variant_index);
 		}
 

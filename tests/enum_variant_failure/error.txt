@@ -1,0 +1,43 @@
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 3: Cannot construct enum variant `A` with field initializers
+  3|     let _: Enum = .A {}
+                       ^^^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 4: Cannot construct enum variant `A` with a transparent initializer
+  4|     let _: Enum = .A(1)
+                       ^^^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 6: Cannot construct transparent enum variant `B` without an initializer
+  6|     let _: Enum = .B
+                       ^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 7: Cannot construct transparent enum variant `B` like a struck-like enum variant
+  7|     let _: Enum = .B {}
+                       ^^^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 9: Transparent enum variant initializer type mismatch, expected `i32` but got `untyped decimal` instead
+  9|     let _: Enum = .B(0.1)
+                          ^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 11: Cannot construct struck-like enum variant `C` without providing fields initializers
+  11|     let _: Enum = .C
+                        ^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 12: Too few field initializers, expected 1, but only found 0
+  12|     let _: Enum = .C {}
+                           ^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 14: Field intializer type mismatch, expected `i32` but got `untyped decimal` instead
+  14|     let _: Enum = .C { field: 0.1 }
+                             ^^^^^^^^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 15: Expected initalizer for field `field`, got `wrong` instead
+  15|     let _: Enum = .C { wrong: 1}
+                             ^^^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 16: Unexpected extra field initalizer
+  16|     let _: Enum = .C { field: 1, extra: 2 }
+                                       ^^^^^
+
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 17: Cannot construct struck-like enum variant `C` like a transparent enum variant
+  17|     let _: Enum = .C(1)
+                        ^^^^^

@@ -586,14 +586,23 @@ fn parse_expression_atom<'a>(
 			let name_token = tokenizer.expect(messages, TokenKind::Word)?;
 			let name = Node::from_token(name_token.text, name_token);
 
-			let struct_initializer = if allow_struct_literal && tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
-				Some(parse_struct_initializer(messages, tokenizer)?)
+			let mut span = period.span + name.span;
+
+			let initializer = if allow_struct_literal && tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
+				let struct_initializer = parse_struct_initializer(messages, tokenizer)?;
+				span += struct_initializer.span;
+				Some(EnumInitializer::StructLike { struct_initializer })
+			} else if tokenizer.peek_kind() == Ok(TokenKind::OpenParen) {
+				tokenizer.expect(messages, TokenKind::OpenParen)?;
+				let expression = parse_expression(messages, tokenizer, true)?;
+				let close_paren = tokenizer.expect(messages, TokenKind::CloseParen)?;
+				span += close_paren.span;
+				Some(EnumInitializer::Transparent { expression })
 			} else {
 				None
 			};
 
-			let inferred_enum = InferredEnum { name, struct_initializer };
-			let span = period.span + name.span;
+			let inferred_enum = Box::new(InferredEnum { name, initializer });
 			Ok(Node::new(Expression::InferredEnum(inferred_enum), span))
 		}
 
@@ -671,9 +680,10 @@ fn parse_following_period<'a>(
 	let name = Node::from_token(name_token.text, name_token);
 
 	if allow_struct_literal && tokenizer.peek_kind() == Ok(TokenKind::OpenBrace) {
-		let struct_initializer = Some(parse_struct_initializer(messages, tokenizer)?);
+		let struct_initializer = parse_struct_initializer(messages, tokenizer)?;
 		let span = atom.span + name.span;
-		let field_read = Box::new(DotAccess { base: atom, name, struct_initializer });
+		let enum_initializer = Some(EnumInitializer::StructLike { struct_initializer });
+		let field_read = Box::new(DotAccess { base: atom, name, enum_initializer });
 		return Ok(Node::new(Expression::DotAcccess(field_read), span));
 	}
 
@@ -687,7 +697,7 @@ fn parse_following_period<'a>(
 	}
 
 	let span = atom.span + name.span;
-	let field_read = Box::new(DotAccess { base: atom, name, struct_initializer: None });
+	let field_read = Box::new(DotAccess { base: atom, name, enum_initializer: None });
 	return Ok(Node::new(Expression::DotAcccess(field_read), span));
 }
 
@@ -1525,6 +1535,7 @@ fn parse_enum_declaration<'a>(
 
 	let mut shared_fields = Vec::new();
 	let mut variants = Vec::new();
+	let mut transparent_variant_count = 0;
 
 	if tokenizer.peek_kind() != Ok(TokenKind::CloseBrace) {
 		while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
@@ -1571,17 +1582,30 @@ fn parse_enum_declaration<'a>(
 					}
 
 					tokenizer.expect(messages, TokenKind::CloseBrace)?;
+				} else if tokenizer.peek_kind() == Ok(TokenKind::OpenParen) {
+					tokenizer.expect(messages, TokenKind::OpenParen)?;
+					let parsed_type = parse_type(messages, tokenizer)?;
+					tokenizer.expect(messages, TokenKind::CloseParen)?;
+
+					let name = Node::from_token(field_name_token.text, field_name_token);
+					let transparent = TransparentVariant { name, parsed_type };
+					let variant = EnumVariant::Transparent(transparent);
+					variants.push(variant);
+					transparent_variant_count += 1;
+
+					tokenizer.expect(messages, TokenKind::Newline)?;
+					tokenizer.consume_newlines(messages);
+					continue;
 				}
 
 				let name = Node::from_token(field_name_token.text, field_name_token);
-				let variant = EnumVariant { name, fields: variant_fields };
+				let struct_like = StructLikeVariant { name, fields: variant_fields };
+				let variant = EnumVariant::StructLike(struct_like);
 				variants.push(variant);
 			}
 
 			tokenizer.expect(messages, TokenKind::Newline)?;
-			while tokenizer.peek_kind() == Ok(TokenKind::Newline) {
-				tokenizer.expect(messages, TokenKind::Newline)?;
-			}
+			tokenizer.consume_newlines(messages);
 		}
 	}
 
@@ -1591,7 +1615,13 @@ fn parse_enum_declaration<'a>(
 		tokenizer.expect(messages, TokenKind::Newline)?;
 	}
 
-	Ok(Enum { generics, name, shared_fields, variants })
+	Ok(Enum {
+		generics,
+		name,
+		shared_fields,
+		variants,
+		transparent_variant_count,
+	})
 }
 
 fn parse_field<'a>(
