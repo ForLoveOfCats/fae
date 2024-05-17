@@ -1,3 +1,5 @@
+use llvm_sys::prelude::LLVMBasicBlockRef;
+
 use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
@@ -60,6 +62,9 @@ pub struct Context<'a, 'b> {
 	pub module_path: &'a [String],
 	pub function_type_arguments: &'b TypeArguments,
 	pub function_id: FunctionId,
+
+	// TODO: Merge codegen and llvm/generator ASAP, way too many details have leaked
+	pub if_condition_binding_block: Option<LLVMBasicBlockRef>,
 }
 
 impl<'a, 'b> Context<'a, 'b> {
@@ -113,6 +118,7 @@ pub fn generate_function<'a, G: Generator>(
 		module_path,
 		function_type_arguments: &type_arguments,
 		function_id,
+		if_condition_binding_block: None,
 	};
 
 	generate_block(&mut context, generator, block.as_ref());

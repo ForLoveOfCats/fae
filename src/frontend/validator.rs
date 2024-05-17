@@ -864,31 +864,6 @@ fn create_block_enum<'a>(
 		};
 		variants.push(variant_shape);
 		variants_by_name.insert(name, variant_index);
-
-		// match variant {
-		// 	tree::EnumVariant::StructLike(struct_like) => {
-		// 		let name = struct_like.name.item;
-		// 		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index));
-		// 		let kind = UserTypeKind::Struct { shape };
-		// 		let span = struct_like.name.span;
-		// 		type_store.register_type(name, variant_generic_parameters, kind, module_path, scope_id, span);
-
-		// 		let kind = EnumVariantShapeKind::StructLike(StructLikeVariantShape { struct_shape_index });
-		// 		let variant_shape = EnumVariantShape { name, span, variant_index, kind };
-		// 		variants.push(variant_shape);
-		// 		variants_by_name.insert(name, variant_index);
-		// 	}
-
-		// 	tree::EnumVariant::Transparent(transparent) => {
-		// 		let type_id = TypeId::unusable();
-		// 		let name = transparent.name.item;
-		// 		let span = transparent.name.span;
-		// 		let kind = EnumVariantShapeKind::Transparent(TransparentVariantShape { type_id });
-		// 		let variant_shape = EnumVariantShape { name, span, variant_index, kind };
-		// 		variants.push(variant_shape);
-		// 		variants_by_name.insert(name, variant_index);
-		// 	}
-		// }
 	}
 
 	let name = statement.name.item;
@@ -1067,44 +1042,6 @@ fn fill_block_types<'a>(
 					&variant_shape,
 					statement,
 				);
-
-				// let tree_variant = &statement.variants[variant_shape.variant_index];
-				// match tree_variant {
-				// 	tree::EnumVariant::StructLike(struct_like) => fill_struct_like_enum_variant(
-				// 		messages,
-				// 		type_store,
-				// 		function_store,
-				// 		generic_usages,
-				// 		root_layers,
-				// 		scope.symbols,
-				// 		module_path,
-				// 		function_initial_symbols_len,
-				// 		&shared_fields,
-				// 		&variant_shape,
-				// 		statement,
-				// 	),
-
-				// 	tree::EnumVariant::Transparent(tree_transparent) => {
-				// 		let transparent = match &mut variant_shape.kind {
-				// 			EnumVariantShapeKind::Transparent(transparent) => transparent,
-				// 			EnumVariantShapeKind::StructLike(_) => unreachable!(),
-				// 		};
-
-				// 		transparent.type_id = type_store
-				// 			.lookup_type(
-				// 				messages,
-				// 				function_store,
-				// 				module_path,
-				// 				generic_usages,
-				// 				root_layers,
-				// 				scope.symbols,
-				// 				function_initial_symbols_len,
-				// 				enclosing_generic_parameters,
-				// 				&tree_transparent.parsed_type,
-				// 			)
-				// 			.unwrap_or(type_store.any_collapse_type_id());
-				// 	}
-				// }
 			}
 
 			match &mut type_store.user_types[enum_shape_index].kind {

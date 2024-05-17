@@ -38,7 +38,7 @@ fn main() {
 	print_isize(alignment_of<f32>()) // 4
 	print_newline()
 
-	print_isize(alignment_of<Empty>()) // 0
+	print_isize(alignment_of<Empty>()) // 1
 	print_newline()
 
 	print_isize(alignment_of<ContainsEmpty>()) // 4

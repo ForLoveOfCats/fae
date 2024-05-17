@@ -12,9 +12,9 @@ use llvm_sys::core::{
 	LLVMCreateBuilderInContext, LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetBasicBlockParent,
 	LLVMGetBasicBlockTerminator, LLVMGetEnumAttributeKindForName, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
 	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
-	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetGlobalConstant,
-	LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility, LLVMStructGetTypeAtIndex,
-	LLVMStructTypeInContext, LLVMTypeOf,
+	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMRemoveBasicBlockFromParent,
+	LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility,
+	LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf,
 };
 use llvm_sys::prelude::{LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef};
 use llvm_sys::{LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr, LLVMVisibility};
@@ -501,25 +501,42 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	) {
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
-		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else_following".as_ptr()) };
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.following".as_ptr()) };
 
-		let mut next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
-		unsafe { LLVMBuildBr(self.builder, next_condition_block) };
+		let mut next_condition_block =
+			unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition".as_ptr()) };
+		let mut next_condition_binding_block =
+			unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition_binding_block".as_ptr()) };
+
+		unsafe { LLVMBuildBr(self.builder, next_condition_binding_block) };
 
 		for entry in &chain_expression.entries {
 			let condition_block = next_condition_block;
-			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_block) };
-			next_condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"condition".as_ptr()) };
+			let condition_binding_block = next_condition_binding_block;
+			let previous_condition_binding_block = context.if_condition_binding_block;
+			context.if_condition_binding_block = Some(condition_binding_block);
 
+			next_condition_block =
+				unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition".as_ptr()) };
+			next_condition_binding_block =
+				unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition_binding_block".as_ptr()) };
+
+			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_block) };
 			let condition = condition_callback(context, self, &entry.condition);
+			let final_condition_block = unsafe { LLVMGetInsertBlock(self.builder) };
 			let condition = condition.to_value(self.builder);
 
-			let if_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if".as_ptr()) };
+			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_binding_block) };
+			unsafe { LLVMBuildBr(self.builder, condition_block) };
+			context.if_condition_binding_block = previous_condition_binding_block;
+
+			let if_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.if".as_ptr()) };
 
 			unsafe {
+				LLVMPositionBuilderAtEnd(self.builder, final_condition_block);
 				let zero = LLVMConstNull(LLVMTypeOf(condition));
-				let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"".as_ptr());
-				LLVMBuildCondBr(self.builder, flag, if_block, next_condition_block);
+				let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"if_else.flag".as_ptr());
+				LLVMBuildCondBr(self.builder, flag, if_block, next_condition_binding_block);
 			};
 
 			unsafe { LLVMPositionBuilderAtEnd(self.builder, if_block) };
@@ -534,8 +551,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		if let Some(body) = &chain_expression.else_body {
-			let block = next_condition_block;
-			let else_name = "else";
+			unsafe { LLVMRemoveBasicBlockFromParent(next_condition_block) };
+			let block = next_condition_binding_block;
+			let else_name = "if_else.else";
 			unsafe { LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len()) };
 
 			unsafe { LLVMPositionBuilderAtEnd(self.builder, block) };
@@ -548,8 +566,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 		} else {
-			let block = next_condition_block;
-			let else_name = "non_existant_else";
+			unsafe { LLVMRemoveBasicBlockFromParent(next_condition_block) };
+			let block = next_condition_binding_block;
+			let else_name = "if_else.non_existant_else";
 			unsafe {
 				LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len());
 				LLVMPositionBuilderAtEnd(self.builder, block);
@@ -575,8 +594,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
-		let else_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match_else".as_ptr()) };
-		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match_following".as_ptr()) };
+		let else_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match.else".as_ptr()) };
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"match.following".as_ptr()) };
 
 		let switch = unsafe { LLVMBuildSwitch(self.builder, tag, else_block, match_expression.arms.len() as u32) };
 
@@ -654,11 +673,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	) {
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
-		let condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while_condition".as_ptr()) };
+		let condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while.condition".as_ptr()) };
 		self.loop_condition_blocks.push(condition_block);
-		let while_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while_body".as_ptr()) };
+		let while_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while.body".as_ptr()) };
 
-		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while_following".as_ptr()) };
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while.following".as_ptr()) };
 		self.loop_follow_blocks.push(following_block);
 
 		unsafe {
@@ -670,7 +689,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let condition = condition_binding.to_value(self.builder);
 		unsafe {
 			let zero = LLVMConstNull(LLVMTypeOf(condition));
-			let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"".as_ptr());
+			let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"while.flag".as_ptr());
 			LLVMBuildCondBr(self.builder, flag, while_block, following_block);
 		}
 
@@ -738,7 +757,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
 		unsafe {
 			let array = LLVMConstStringInContext(self.context, text.as_ptr() as _, text.len() as u32, false as _);
-			let global = LLVMAddGlobal(self.module, LLVMTypeOf(array), c"".as_ptr());
+			let global = LLVMAddGlobal(self.module, LLVMTypeOf(array), c"string_literal.global".as_ptr());
 			LLVMSetInitializer(global, array);
 			LLVMSetGlobalConstant(global, true as _);
 			LLVMSetVisibility(global, LLVMVisibility::LLVMHiddenVisibility);
@@ -772,7 +791,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for (index, element) in elements.iter().enumerate() {
 			unsafe {
 				let index = LLVMConstInt(LLVMInt64TypeInContext(self.context), index as u64, false as _);
-				let pointer = LLVMBuildGEP2(self.builder, array_type, alloca, [zero, index].as_mut_ptr(), 2, c"".as_ptr());
+				let pointer = LLVMBuildGEP2(
+					self.builder,
+					array_type,
+					alloca,
+					[zero, index].as_mut_ptr(),
+					2,
+					c"array_literal.pointer".as_ptr(),
+				);
 				match element.kind {
 					BindingKind::Value(value) => {
 						LLVMBuildStore(self.builder, value, pointer);
@@ -792,10 +818,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let slice_alloca = self.build_alloca(slice_type);
 
 		unsafe {
-			let pointer_pointer = LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 0, c"".as_ptr());
+			let pointer_pointer =
+				LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 0, c"array_literal.pointer_pointer".as_ptr());
 			LLVMBuildStore(self.builder, alloca, pointer_pointer);
 
-			let len_pointer = LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 1, c"".as_ptr());
+			let len_pointer =
+				LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 1, c"array_literal.len_pointer".as_ptr());
 			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), elements.len() as u64, false as _);
 			LLVMBuildStore(self.builder, len, len_pointer);
 		}
@@ -821,7 +849,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for (index, field) in fields.iter().enumerate() {
 			let value = field.to_value(self.builder);
 			unsafe {
-				let field_pointer = LLVMBuildStructGEP2(self.builder, struct_type, alloca, index as u32, c"".as_ptr());
+				let field_pointer = LLVMBuildStructGEP2(
+					self.builder,
+					struct_type,
+					alloca,
+					index as u32,
+					c"struct_literal.field_pointer".as_ptr(),
+				);
 				LLVMBuildStore(self.builder, value, field_pointer);
 			}
 		}
@@ -916,7 +950,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				match &shape.kind {
 					UserTypeKind::Struct { shape } => {
 						field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
-						field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"".as_ptr()) };
+						field_pointer = unsafe {
+							LLVMBuildStructGEP2(
+								self.builder,
+								pointed_type,
+								pointer,
+								index,
+								c"field_read.struct_field_pointer".as_ptr(),
+							)
+						};
 
 						let struct_type = &shape.specializations[specialization_index];
 						struct_type.fields[field_index].type_id
@@ -928,7 +970,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 							.as_enum_shared_fields
 							.unwrap();
 
-						field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"".as_ptr()) };
+						field_pointer = unsafe {
+							LLVMBuildStructGEP2(
+								self.builder,
+								pointed_type,
+								pointer,
+								index,
+								c"field_read.enum_field_pointer".as_ptr(),
+							)
+						};
 
 						// HACK: The first field of any enum is the tag which may be represented with various sized
 						// integers depending on the padding required so we need to override the type that we will
@@ -949,7 +999,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			TypeEntryKind::Slice(_) => {
 				field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
-				field_pointer = unsafe { LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"".as_ptr()) };
+				field_pointer = unsafe {
+					LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"field_read.slice_field_pointer".as_ptr())
+				};
 				type_store.usize_type_id()
 			}
 
@@ -966,9 +1018,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let negated = unsafe {
 			let type_kind = LLVMGetTypeKind(LLVMTypeOf(value));
 			if type_kind == LLVMIntegerTypeKind {
-				LLVMBuildNeg(self.builder, value, c"".as_ptr())
+				LLVMBuildNeg(self.builder, value, c"negate.negated_integer".as_ptr())
 			} else if matches!(type_kind, LLVMFloatTypeKind | LLVMDoubleTypeKind) {
-				LLVMBuildFNeg(self.builder, value, c"".as_ptr())
+				LLVMBuildFNeg(self.builder, value, c"negate.negated_floating_point".as_ptr())
 			} else {
 				unreachable!("{value:?}");
 			}
@@ -981,7 +1033,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn generate_invert(&mut self, value: Self::Binding) -> Self::Binding {
 		let type_id = value.type_id;
 		let value = value.to_value(self.builder);
-		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"".as_ptr()) };
+		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"invert.inverted".as_ptr()) };
 		let kind = BindingKind::Value(inverted);
 		Binding { type_id, kind }
 	}
@@ -997,7 +1049,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			BindingKind::Value(value) => value,
 
 			BindingKind::Pointer { pointer, pointed_type } => unsafe {
-				LLVMBuildLoad2(self.builder, pointed_type, pointer, c"".as_ptr())
+				LLVMBuildLoad2(self.builder, pointed_type, pointer, c"dereference.loaded".as_ptr())
 			},
 		};
 
@@ -1232,9 +1284,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			unsafe {
 				let current_block = LLVMGetInsertBlock(self.builder);
 				let function = LLVMGetBasicBlockParent(current_block);
-				let left_block = LLVMAppendBasicBlockInContext(self.context, function, c"logical_and_left".as_ptr());
-				let right_block = LLVMAppendBasicBlockInContext(self.context, function, c"logical_and_right".as_ptr());
-				let following_block = LLVMAppendBasicBlockInContext(self.context, function, c"logical_and_following".as_ptr());
+				let mut left_block =
+					LLVMAppendBasicBlockInContext(self.context, function, c"binary_operation.logical.left_block".as_ptr());
+				let mut right_block =
+					LLVMAppendBasicBlockInContext(self.context, function, c"binary_operation.logical.right_block".as_ptr());
+				let following_block =
+					LLVMAppendBasicBlockInContext(self.context, function, c"binary_operation.logical.following_block".as_ptr());
 
 				LLVMBuildBr(self.builder, left_block);
 
@@ -1242,8 +1297,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let left_binding = codegen::generate_expression(context, self, left).unwrap();
 				let mut left = left_binding.to_value(self.builder);
 				if LLVMGetIntTypeWidth(LLVMTypeOf(left)) > 1 {
-					left = LLVMBuildTrunc(self.builder, left, LLVMInt1TypeInContext(self.context), c"".as_ptr());
+					left = LLVMBuildTrunc(
+						self.builder,
+						left,
+						LLVMInt1TypeInContext(self.context),
+						c"binary_operation.logical.left_truncated".as_ptr(),
+					);
 				}
+				left_block = LLVMGetInsertBlock(self.builder);
 
 				match op {
 					BinaryOperator::LogicalAnd => LLVMBuildCondBr(self.builder, left, right_block, following_block),
@@ -1255,12 +1316,23 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let right_binding = codegen::generate_expression(context, self, right).unwrap();
 				let mut right = right_binding.to_value(self.builder);
 				if LLVMGetIntTypeWidth(LLVMTypeOf(right)) > 1 {
-					right = LLVMBuildTrunc(self.builder, right, LLVMInt1TypeInContext(self.context), c"".as_ptr());
+					right = LLVMBuildTrunc(
+						self.builder,
+						right,
+						LLVMInt1TypeInContext(self.context),
+						c"binary_operation.logical.right_truncated".as_ptr(),
+					);
 				}
+				right_block = LLVMGetInsertBlock(self.builder);
+
 				LLVMBuildBr(self.builder, following_block);
 
 				LLVMPositionBuilderAtEnd(self.builder, following_block);
-				let phi = LLVMBuildPhi(self.builder, LLVMInt1TypeInContext(self.context), c"".as_ptr());
+				let phi = LLVMBuildPhi(
+					self.builder,
+					LLVMInt1TypeInContext(self.context),
+					c"binary_operation.logical.result_phi".as_ptr(),
+				);
 				LLVMAddIncoming(phi, [left, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
 
 				let kind = BindingKind::Value(phi);
@@ -1560,7 +1632,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let result = unsafe {
 			let i1_type = LLVMInt1TypeInContext(self.context);
 			let i8_type = LLVMInt8TypeInContext(self.context);
-			let tag = LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr());
+			let tag = LLVMBuildLoad2(self.builder, i8_type, pointer, c"check_is.tag".as_ptr());
 
 			let mut result = LLVMConstInt(i1_type, 0, false as _);
 
@@ -1583,7 +1655,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			} else {
 				let shape = &self.llvm_types.user_type_structs[enum_shape_index];
 				let llvm_struct = shape[enum_specialization_index].unwrap().actual;
-				let variant_pointer = unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr()) };
+				let variant_pointer = unsafe {
+					let original_block = LLVMGetInsertBlock(self.builder);
+					LLVMPositionBuilderAtEnd(self.builder, context.if_condition_binding_block.unwrap());
+					let ptr = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"check_is.variant_pointer".as_ptr());
+					LLVMPositionBuilderAtEnd(self.builder, original_block);
+					ptr
+				};
 
 				let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
 				let kind = BindingKind::Pointer { pointer: variant_pointer, pointed_type };
@@ -1613,7 +1691,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe {
 			let i8_type = LLVMInt8TypeInContext(self.context);
 			let tag_value = LLVMConstInt(i8_type, variant_index as _, false as _);
-			let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"".as_ptr());
+			let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"variant_to_enum.tag_pointer".as_ptr());
 			LLVMBuildStore(self.builder, tag_value, tag_pointer);
 
 			if let Some(variant_binding) = variant_binding {
@@ -1683,7 +1761,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe {
 			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
 			let pointer_type = self.llvm_types.opaque_pointer;
-			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"".as_ptr());
+			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"non_null_invalid_pointer.pointer".as_ptr());
 
 			let kind = BindingKind::Value(pointer);
 			Binding { type_id: pointer_type_id, kind }
@@ -1694,7 +1772,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe {
 			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
 			let pointer_type = self.llvm_types.opaque_pointer;
-			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"".as_ptr());
+			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"non_null_invalid_slice.pointer".as_ptr());
 
 			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), len, false as _);
 			let fields = &mut [pointer, len];

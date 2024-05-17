@@ -231,22 +231,6 @@ pub struct EnumVariantShape<'a> {
 	pub is_transparent: bool,
 }
 
-// #[derive(Debug, Clone, Copy)]
-// pub enum EnumVariantShapeKind {
-// 	StructLike(StructLikeVariantShape),
-// 	Transparent(TransparentVariantShape),
-// }
-
-// #[derive(Debug, Clone, Copy)]
-// pub struct StructLikeVariantShape {
-// 	pub struct_shape_index: usize,
-// }
-
-// #[derive(Debug, Clone, Copy)]
-// pub struct TransparentVariantShape {
-// 	pub type_id: TypeId,
-// }
-
 #[derive(Debug, Clone)]
 pub struct Enum<'a> {
 	pub shape_index: usize,
@@ -396,9 +380,9 @@ impl PrimativeKind {
 
 	pub fn layout(self) -> Layout {
 		match self {
-			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 0 },
-			PrimativeKind::NoReturn => Layout { size: 0, alignment: 0 },
-			PrimativeKind::Void => Layout { size: 0, alignment: 0 },
+			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 1 },
+			PrimativeKind::NoReturn => Layout { size: 0, alignment: 1 },
+			PrimativeKind::Void => Layout { size: 0, alignment: 1 },
 			PrimativeKind::UntypedInteger => unreachable!(),
 			PrimativeKind::UntypedDecimal => unreachable!(),
 			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
@@ -1113,7 +1097,7 @@ impl<'a> TypeStore<'a> {
 					let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
 
 					let mut size = 0;
-					let mut alignment = 0;
+					let mut alignment = 1;
 
 					for type_id in field_types {
 						self.calculate_layout(type_id);
@@ -1155,7 +1139,7 @@ impl<'a> TypeStore<'a> {
 					let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
 
 					let mut size = 0;
-					let mut alignment = 0;
+					let mut alignment = 1;
 
 					for variant in variants {
 						self.calculate_layout(variant);
@@ -1213,8 +1197,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8 },
 
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
-			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 0 },
-			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 0 },
+			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 1 },
+			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 1 },
 		}
 	}
 
@@ -1691,31 +1675,6 @@ impl<'a> TypeStore<'a> {
 					explicit_type_argument_len,
 				)
 				.unwrap();
-
-			// let type_id = match variant_shape.kind {
-			// 	EnumVariantShapeKind::StructLike(struct_like) => self
-			// 		.get_or_add_struct_shape_specialization(
-			// 			messages,
-			// 			function_store,
-			// 			module_path,
-			// 			generic_usages,
-			// 			struct_like.struct_shape_index,
-			// 			Some(variant_shape.span),
-			// 			type_arguments,
-			// 			explicit_type_argument_len,
-			// 		)
-			// 		.unwrap(),
-
-			// 	EnumVariantShapeKind::Transparent(transparent) => self.specialize_with_user_type_generics(
-			// 		messages,
-			// 		function_store,
-			// 		module_path,
-			// 		generic_usages,
-			// 		shape_index,
-			// 		type_arguments,
-			// 		transparent.type_id,
-			// 	),
-			// };
 
 			let span = variant_shape.span;
 			let variant_index = variant_shape.variant_index;

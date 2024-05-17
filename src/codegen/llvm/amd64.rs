@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString};
+use std::io::{stderr, Write};
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -85,7 +86,7 @@ pub fn generate_code<'a>(
 		let action = LLVMVerifierFailureAction::LLVMReturnStatusAction;
 		if LLVMVerifyModule(generator.module, action, error_string.as_mut_ptr()) == 1 {
 			let error = CStr::from_ptr(error_string.assume_init());
-			eprintln!("{error:?}");
+			stderr().lock().write_all(error.to_bytes()).unwrap();
 			std::process::exit(-1);
 		}
 	}
