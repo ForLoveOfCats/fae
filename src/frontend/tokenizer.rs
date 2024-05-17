@@ -331,7 +331,7 @@ impl<'a> Tokenizer<'a> {
 				Ok(Token::new(">>=", BitshiftRightAssign, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'>', b'>', ..] => {
+			[b'>', b'>', ..] if pre_whitespace_offset < self.offset => {
 				self.offset += 1;
 				Ok(Token::new(">>", BitshiftRight, self.offset - 1, self.offset + 1, self.file_index))
 			}

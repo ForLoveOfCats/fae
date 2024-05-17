@@ -7,7 +7,7 @@ fn main() {
 	func(.Some(.Some(.B)))
 }
 
-fn func(val: Option<Option<Enum> >) {
+fn func(val: Option<Option<Enum>>) {
 	if val is Some and val is Some and val is B => print_string("It is B!\n")
 	else => print_string("It is not B\n")
 }
