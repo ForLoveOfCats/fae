@@ -18,11 +18,6 @@ pub struct PathSegments<'a> {
 }
 
 #[derive(Debug)]
-pub struct Module<'a> {
-	pub path_segments: Node<PathSegments<'a>>,
-}
-
-#[derive(Debug)]
 pub struct Import<'a> {
 	pub path_segments: PathSegments<'a>,
 	pub symbol_names: Vec<Node<&'a str>>,

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import shutil
 import subprocess
@@ -24,6 +26,7 @@ def linux_main(args):
 	subprocess.run([
 		"cargo",
 		"build",
+		"--features=bundled",
 		"--release",
 		"--target",
 		"x86_64-unknown-linux-musl",
@@ -92,7 +95,10 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--snapshot", action="store_true")
 args = parser.parse_args()
 
-if platform.system().lower() == "linux":
+if os.path.basename(os.getcwd()) != "fae":
+	print("The current directory is not named \"fae\" which implies that we are not in the repo root.")
+	print("This script *MUST* be run from the repo root as it will fail otherwise, exiting.")
+elif platform.system().lower() == "linux":
 	linux_main(args)
 else:
     print(f"Bundle script does not currently support {platform.system()}")

@@ -1226,26 +1226,6 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_assign(&mut self, type_store: &TypeStore, left: Self::Binding, right: Self::Binding) {
-		let left = match left.kind {
-			BindingKind::Pointer { pointer, .. } => pointer,
-			BindingKind::Value(value) => unreachable!("{value:?}"),
-		};
-
-		match right.kind {
-			BindingKind::Value(value) => unsafe {
-				LLVMBuildStore(self.builder, value, left);
-			},
-
-			BindingKind::Pointer { pointer: right_pointer, .. } => unsafe {
-				let layout = type_store.type_layout(right.type_id);
-				let align = layout.alignment as u32;
-				let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
-				LLVMBuildMemCpy(self.builder, left, align, right_pointer, align, size);
-			},
-		}
-	}
-
 	fn generate_binary_operation(
 		&mut self,
 		context: &mut codegen::Context,

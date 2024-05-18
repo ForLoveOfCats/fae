@@ -20,11 +20,6 @@ use crate::frontend::type_store::*;
  * more effort than it is worth.
  */
 
-#[derive(Debug, Clone)]
-pub struct Import<'a> {
-	pub segments: Vec<Node<&'a str>>,
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct GenericParameter<'a> {
 	pub name: Node<&'a str>,

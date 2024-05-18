@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import shutil
 import subprocess
@@ -208,8 +210,10 @@ def user_number(message, default):
 		except:
 			print(f"Unable to parse {answer}")
 
-
-if platform.system().lower() == "linux":
+if os.path.basename(os.getcwd()) != "fae":
+	print("The current directory is not named \"fae\" which implies that we are not in the repo root.")
+	print("This script *MUST* be run from the repo root as it will fail otherwise, exiting.")
+elif platform.system().lower() == "linux":
 	linux_main()
 else:
     print(f"Fetch LLVM script does not currently support {platform.system()}")

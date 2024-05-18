@@ -129,8 +129,6 @@ pub trait Generator {
 		index_span: Span,
 	) -> Option<Self::Binding>;
 
-	fn generate_assign(&mut self, type_store: &TypeStore, left: Self::Binding, right: Self::Binding);
-
 	fn generate_binary_operation(
 		&mut self,
 		context: &mut codegen::Context,
