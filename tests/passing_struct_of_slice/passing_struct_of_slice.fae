@@ -1,0 +1,14 @@
+struct Bytes {
+	bytes: []u8
+}
+
+fn function(arg: Bytes) {
+	let _ = arg.bytes
+	let _ = arg.bytes.pointer
+	let _ = arg.bytes.length
+}
+
+fn main() {
+	let bytes = Bytes { bytes: "Hello" }
+	function(bytes)
+}

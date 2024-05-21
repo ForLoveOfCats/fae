@@ -525,7 +525,7 @@ impl LLVMAbi for SysvAbi {
 				alloca
 			};
 
-			let pointed_type = composition.composition_struct;
+			let pointed_type = composition.actual_type;
 			let type_id = composition.actual_type_id;
 			let kind = generator::BindingKind::Pointer { pointer: alloca, pointed_type };
 			initial_values.push(Some(generator::Binding { type_id, kind }));
