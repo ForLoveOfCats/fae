@@ -100,14 +100,14 @@ pub struct ParameterComposition {
 pub struct SysvAbi {
 	return_type_buffer: Vec<LLVMTypeRef>,
 	parameter_type_buffer: Vec<LLVMTypeRef>,
-	parameter_basic_type_buffer: Vec<LLVMTypeRef>,
+	parameter_composition_field_type_buffer: Vec<LLVMTypeRef>,
 	parameter_information_buffer: Vec<Option<ParameterInformation>>,
 	attribute_buffer: Vec<ParameterAttribute>,
 	argument_value_buffer: Vec<LLVMValueRef>,
 }
 
 impl SysvAbi {
-	fn map_classes_into_basic_type_buffer<'a>(
+	fn map_classes_into_llvm_type_buffer<'a>(
 		context: LLVMContextRef,
 		buffer: &mut Vec<LLVMTypeRef>,
 		iterator: impl Iterator<Item = &'a Class>,
@@ -173,69 +173,6 @@ impl SysvAbi {
 		}
 	}
 
-	// It would be really nice to deduplicate this with `map_classes_into_basic_type_buffer`
-	fn map_classes_into_parameter_type_buffer<'a>(&mut self, context: LLVMContextRef, iterator: impl Iterator<Item = &'a Class>) {
-		for class in iterator {
-			match class.kind {
-				sysv_abi::ClassKind::Integer => {
-					let llvm_type = unsafe {
-						match class.size {
-							1 => LLVMInt8TypeInContext(context),
-							2 => LLVMInt16TypeInContext(context),
-							4 => LLVMInt32TypeInContext(context),
-							8 => LLVMInt64TypeInContext(context),
-							unknown_size => panic!("{unknown_size}"),
-						}
-					};
-					self.parameter_type_buffer.push(llvm_type);
-				}
-
-				sysv_abi::ClassKind::Boolean => {
-					assert_eq!(class.size, 1);
-					let llvm_type = unsafe { LLVMInt1TypeInContext(context) };
-					self.parameter_type_buffer.push(llvm_type);
-				}
-
-				sysv_abi::ClassKind::SSE | sysv_abi::ClassKind::SSEUp => {
-					let llvm_type = unsafe {
-						match class.size {
-							2 => LLVMHalfTypeInContext(context),
-							4 => LLVMFloatTypeInContext(context),
-							8 => LLVMDoubleTypeInContext(context),
-							unknown_size => panic!("{unknown_size}"),
-						}
-					};
-					self.parameter_type_buffer.push(llvm_type);
-				}
-
-				sysv_abi::ClassKind::SSECombine => {
-					// The element type doesn't really matter, it's going to be reinterpreted anyway
-					let llvm_type = unsafe {
-						match class.size {
-							4 => LLVMVectorType(LLVMHalfTypeInContext(context), 2),
-							8 => LLVMVectorType(LLVMHalfTypeInContext(context), 4),
-							unknown_size => panic!("{unknown_size}"),
-						}
-					};
-					self.parameter_type_buffer.push(llvm_type);
-				}
-
-				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
-					assert_eq!(class.size, 8);
-					let ptr_type = unsafe { LLVMPointerTypeInContext(context, 0) };
-					self.parameter_type_buffer.push(ptr_type);
-				}
-
-				sysv_abi::ClassKind::X87
-				| sysv_abi::ClassKind::X87Up
-				| sysv_abi::ClassKind::ComplexX87
-				| sysv_abi::ClassKind::NoClass => {
-					unreachable!("{class:?}");
-				}
-			}
-		}
-	}
-
 	fn construct_parameter_information(
 		&mut self,
 		type_store: &TypeStore,
@@ -250,28 +187,28 @@ impl SysvAbi {
 
 		let mut classes_buffer = sysv_abi::classification_buffer();
 		let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, parameter_type_id);
-		self.map_classes_into_parameter_type_buffer(context, classes.iter());
+		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_type_buffer, classes.iter());
 
-		self.parameter_basic_type_buffer.clear();
-		Self::map_classes_into_basic_type_buffer(context, &mut self.parameter_basic_type_buffer, classes.iter());
+		self.parameter_composition_field_type_buffer.clear();
+		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_composition_field_type_buffer, classes.iter());
 
 		let is_non_memory = classes.len() == 1 && classes[0].kind != ClassKind::Memory;
 		let is_bare_value = is_non_memory && parameter_type_id.is_primative(type_store);
 		let is_by_pointer = classes.len() == 1 && classes[0].kind == ClassKind::Memory;
 
 		if is_bare_value {
-			assert_eq!(self.parameter_basic_type_buffer.len(), 1);
+			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			Some(ParameterInformation::BareValue { type_id: parameter_type_id })
 		} else if is_by_pointer {
-			assert_eq!(self.parameter_basic_type_buffer.len(), 1);
+			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			let pointed_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
 			Some(ParameterInformation::ByPointer { pointed_type, pointed_type_id: parameter_type_id, layout })
 		} else {
 			let composition_struct = unsafe {
 				LLVMStructTypeInContext(
 					context,
-					self.parameter_basic_type_buffer.as_mut_ptr(),
-					self.parameter_basic_type_buffer.len() as u32,
+					self.parameter_composition_field_type_buffer.as_mut_ptr(),
+					self.parameter_composition_field_type_buffer.len() as u32,
 					false as _,
 				)
 			};
@@ -349,7 +286,7 @@ impl LLVMAbi for SysvAbi {
 		SysvAbi {
 			return_type_buffer: Vec::new(),
 			parameter_type_buffer: Vec::new(),
-			parameter_basic_type_buffer: Vec::new(),
+			parameter_composition_field_type_buffer: Vec::new(),
 			parameter_information_buffer: Vec::new(),
 			attribute_buffer: Vec::new(),
 			argument_value_buffer: Vec::new(),
@@ -377,7 +314,7 @@ impl LLVMAbi for SysvAbi {
 
 			let mut classes_buffer = sysv_abi::classification_buffer();
 			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, function.return_type);
-			Self::map_classes_into_basic_type_buffer(context, &mut self.return_type_buffer, classes.iter());
+			Self::map_classes_into_llvm_type_buffer(context, &mut self.return_type_buffer, classes.iter());
 
 			if let Some(Class { kind: ClassKind::Memory, .. }) = classes.first() {
 				assert_eq!(classes.len(), 1);
@@ -413,7 +350,7 @@ impl LLVMAbi for SysvAbi {
 			FunctionReturnType::Void
 		};
 
-		self.parameter_basic_type_buffer.clear();
+		self.parameter_composition_field_type_buffer.clear();
 		self.parameter_information_buffer.clear();
 
 		for parameter in &function.parameters {
