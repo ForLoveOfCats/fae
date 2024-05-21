@@ -670,6 +670,28 @@ fn generate_intrinsic<G: Generator>(
 			generate_integer_value(context, generator, &integer)
 		}
 
+		"create_slice" | "create_slice_mut" => {
+			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			assert_eq!(specialization.parameters.len(), 2);
+			assert_eq!(call.arguments.len(), 2);
+
+			let pointer = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			let length = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+			Some(generator.generate_slice(specialization.return_type, pointer, length))
+		}
+
+		"create_str" => {
+			assert_eq!(specialization.type_arguments.explicit_len(), 0);
+			assert_eq!(specialization.parameters.len(), 2);
+			assert_eq!(call.arguments.len(), 2);
+
+			let pointer = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			let length = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+			Some(generator.generate_slice(specialization.return_type, pointer, length))
+		}
+
 		"user_main_function" => {
 			assert_eq!(specialization.type_arguments.explicit_len(), 0);
 			if let Some(main) = context.function_store.main {

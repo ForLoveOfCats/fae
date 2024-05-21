@@ -1767,6 +1767,26 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.abi = Some(abi);
 	}
 
+	fn generate_slice(&mut self, slice_type_id: TypeId, pointer: Self::Binding, length: Self::Binding) -> Self::Binding {
+		unsafe {
+			let pointer = pointer.to_value(self.builder);
+			let length = length.to_value(self.builder);
+
+			let llvm_type = self.llvm_types.slice_struct;
+			let alloca = self.build_alloca(llvm_type);
+			let pointer_pointer =
+				LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, c"generate_slice.pointer_pointer".as_ptr());
+			let length_pointer =
+				LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, c"generate_slice.length_pointer".as_ptr());
+
+			LLVMBuildStore(self.builder, pointer, pointer_pointer);
+			LLVMBuildStore(self.builder, length, length_pointer);
+
+			let kind = BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type };
+			Binding { type_id: slice_type_id, kind }
+		}
+	}
+
 	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding {
 		unsafe {
 			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
@@ -1778,14 +1798,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, len: u64) -> Self::Binding {
+	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, length: u64) -> Self::Binding {
 		unsafe {
 			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
 			let pointer_type = self.llvm_types.opaque_pointer;
-			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"non_null_invalid_slice.pointer".as_ptr());
 
-			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), len, false as _);
-			let fields = &mut [pointer, len];
+			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"non_null_invalid_slice.pointer".as_ptr());
+			let length = LLVMConstInt(LLVMInt64TypeInContext(self.context), length, false as _);
+
+			let fields = &mut [pointer, length];
 			let slice = LLVMConstNamedStruct(self.llvm_types.slice_struct, fields.as_mut_ptr(), fields.len() as u32);
 
 			let kind = BindingKind::Value(slice);

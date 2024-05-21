@@ -1,0 +1,48 @@
+import fae::stdout::print_u8, print_u16, print_i32, print_string, print_newline
+import fae::libc::malloc, memcpy
+
+fn main() {
+	let source = "Hello world!"
+	let slice = fae::intrinsics::create_slice<u8>(source.pointer, source.length)
+
+	mut index: isize = 0
+	while index < slice.length {
+		print_u8(slice[index])
+		index += 1
+		if index < slice.length =>print_string(", ")
+		else => print_newline()
+	}
+
+	print_newline()
+
+	let pointer = malloc(10)
+	let slice = fae::intrinsics::create_slice_mut<u16>(pointer.(&mut u16), 5)
+	slice[0] = 500
+	slice[1] = 511
+	slice[2] = 522
+	slice[3] = 533
+	slice[4] = 544
+
+	mut index: isize = 0
+	while index < slice.length {
+		print_u16(slice[index])
+		index += 1
+		if index < slice.length =>print_string(", ")
+		else => print_newline()
+	}
+
+	print_newline()
+
+	let pointer = malloc(10 * 4)
+	let slice = fae::intrinsics::create_slice_mut<i32>(pointer.(&mut i32), 10)
+	let source = [-800.(i32), -700, -600, -500, -400, -300, -200, -100, 0, 100]
+	memcpy(slice.pointer.(&mut u8), source.pointer.(&mut u8), 10 * 4)
+
+	mut index: isize = 0
+	while index < slice.length {
+		print_i32(slice[index])
+		index += 1
+		if index < slice.length =>print_string(", ")
+		else => print_newline()
+	}
+}

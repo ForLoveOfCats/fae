@@ -1,0 +1,29 @@
+import fae::stdout::print_u8, print_string, print_newline
+import fae::libc::malloc, memcpy
+
+fn main() {
+	let source = "Hello world!"
+	let string = fae::intrinsics::create_str(source.pointer, source.length)
+
+	mut index: isize = 0
+	while index < string.length {
+		print_u8(string[index])
+		index += 1
+		if index < string.length =>print_string(", ")
+		else => print_newline()
+	}
+
+	print_newline()
+
+	let pointer = malloc(5)
+	let slice = fae::intrinsics::create_slice_mut<u8>(pointer, 5)
+	slice[0] = 65
+	slice[1] = 66
+	slice[2] = 67
+	slice[3] = 68
+	slice[4] = 69
+
+	let string = fae::intrinsics::create_str(slice.pointer, slice.length)
+	print_string(string)
+	print_newline()
+}

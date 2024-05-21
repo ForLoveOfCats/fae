@@ -38,6 +38,12 @@ fn free(ptr: &mut u8)
 extern "fwrite"
 fn fwrite(data: &u8, size: usize, count: usize, stream: &FileHandle): usize
 
+extern "malloc"
+fn malloc(size: usize): &mut u8
+
+extern "memcpy"
+fn memcpy(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
+
 extern "printf"
 fn printf(pointer: &u8, ...)
 
