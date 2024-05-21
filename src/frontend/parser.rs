@@ -1828,6 +1828,7 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 			| "else" | "while"
 			| "or" | "and"
 			| "break" | "continue"
+			| "true" | "false"
 	);
 
 	if is_reserved {

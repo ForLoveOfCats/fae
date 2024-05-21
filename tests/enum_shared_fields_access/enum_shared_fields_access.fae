@@ -103,7 +103,7 @@ fn function(arg: &HasShared) {
 enum HasShared {
 	a: i32
 	b: f64
-	c: []u8
+	c: str
 
 	VariantA {
 		d: u8

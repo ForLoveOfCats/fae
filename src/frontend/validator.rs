@@ -3414,6 +3414,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 
 	// Dumb hack to store fields array in outer scope so a slice can be taken
 	let slice_fields;
+	let str_fields;
 	let mut external_access = true;
 	let fields: &[Field] = if let Some((_, as_struct)) = type_id.as_struct(context.type_store) {
 		if let Some(method_base_index) = context.method_base_index {
@@ -3443,6 +3444,32 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			},
 		];
 		&slice_fields
+	} else if type_id.is_string(context.type_store) {
+		let u8_type_id = context.type_store.u8_type_id();
+		str_fields = [
+			Field {
+				span: None,
+				name: "pointer",
+				type_id: context.type_store.pointer_to(u8_type_id, false),
+				attribute: None,
+				read_only: true,
+			},
+			Field {
+				span: None,
+				name: "length",
+				type_id: context.type_store.isize_type_id(),
+				attribute: None,
+				read_only: true,
+			},
+			Field {
+				span: None,
+				name: "bytes",
+				type_id: context.type_store.u8_slice_type_id(),
+				attribute: None,
+				read_only: true,
+			},
+		];
+		&str_fields
 	} else {
 		let on = base.kind.name_with_article();
 		let found = context.type_name(base.type_id);
@@ -3918,15 +3945,15 @@ fn validate_bracket_index<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut index_expression = validate_expression(context, index_expression);
-	let (type_id, is_mutable) = match context.type_store.sliced_of(expression.type_id) {
-		Some((type_id, mutable)) => (type_id, mutable),
 
-		None => {
-			// TODO: Once arrays have an actual type this needs to account for that
-			let error = error!("Cannot index on a value of type {}", context.type_name(expression.type_id));
-			context.message(error.span(span));
-			(context.type_store.any_collapse_type_id(), true)
-		}
+	let (type_id, is_mutable) = if let Some(sliced) = context.type_store.sliced_of(expression.type_id) {
+		sliced
+	} else if expression.type_id.is_string(context.type_store) {
+		(context.type_store.u8_type_id(), false)
+	} else {
+		let error = error!("Cannot index on a value of type {}", context.type_name(expression.type_id));
+		context.message(error.span(span));
+		(context.type_store.any_collapse_type_id(), true)
 	};
 
 	let isize_type_id = context.type_store.isize_type_id();

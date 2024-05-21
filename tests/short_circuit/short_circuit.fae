@@ -1,12 +1,12 @@
 import fae::stdout::print_string, print_bool, print_newline
 
-fn returns_true(string: []u8): bool {
+fn returns_true(string: str): bool {
 	print_string(string)
 	print_newline()
 	return true
 }
 
-fn returns_false(string: []u8): bool {
+fn returns_false(string: str): bool {
 	print_string(string)
 	print_newline()
 	return false

@@ -3,7 +3,7 @@ import fae::stdout::print_f64, print_isize, print_string, print_newline
 enum JsonValue {
 	offset: isize
 
-	String { value: []u8 }
+	String { value: str }
 	Number { value: f64 }
 	Boolean { value: bool }
 }

@@ -1,6 +1,6 @@
 import fae::libc::printf, fflush, fwrite, StdOutFile
 
-fn print_string(text: []u8) {
+fn print_string(text: str) {
 	fwrite(text.pointer, 1, text.length.(usize), StdOutFile.*)
 	fflush(StdOutFile.*)
 }

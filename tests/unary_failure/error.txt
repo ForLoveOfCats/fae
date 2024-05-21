@@ -2,11 +2,11 @@ Validation error: ./tests/unary_failure/unary_failure.fae, line 2: Cannot invert
   2|     let a = 5.!
                  ^^^
 
-Validation error: ./tests/unary_failure/unary_failure.fae, line 3: Cannot invert `[]u8` as it is not a boolean
+Validation error: ./tests/unary_failure/unary_failure.fae, line 3: Cannot invert `str` as it is not a boolean
   3|     let b = "hi".!
                  ^^^^^^
 
-Validation error: ./tests/unary_failure/unary_failure.fae, line 4: Cannot negate `[]u8` as it is not a numeric type
+Validation error: ./tests/unary_failure/unary_failure.fae, line 4: Cannot negate `str` as it is not a numeric type
   4|     let c = -"hi"
                  ^^^^^
 

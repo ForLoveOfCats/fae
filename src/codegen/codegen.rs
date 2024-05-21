@@ -215,7 +215,7 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::Void => None,
 
-		ExpressionKind::AnyCollapse | ExpressionKind::Type(_) => unreachable!(),
+		ExpressionKind::AnyCollapse | ExpressionKind::Type(_) => unreachable!("{:?}", &expression.kind),
 	}
 }
 

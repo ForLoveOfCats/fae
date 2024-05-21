@@ -1,0 +1,27 @@
+import fae::stdout::print_u8, print_isize, print_string, print_newline
+
+fn main() {
+	case("Hello")
+	print_newline()
+	case("World")
+}
+
+fn case(string: str) {
+	let bytes = string.bytes
+
+	print_string("Length: ")
+	print_isize(string.length)
+	print_string(", ")
+	print_isize(bytes.length)
+	print_newline()
+
+	mut index: isize = 0
+	while index < bytes.length {
+		print_u8(string[index])
+		print_string("  ")
+		print_u8(bytes[index])
+		print_newline()
+
+		index += 1
+	}
+}

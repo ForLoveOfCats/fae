@@ -38,10 +38,6 @@ impl TypeId {
 		type_store.direct_match(self, type_store.decimal_type_id)
 	}
 
-	pub fn is_bool(self, type_store: &TypeStore) -> bool {
-		type_store.direct_match(self, type_store.bool_type_id)
-	}
-
 	pub fn is_numeric(self, type_store: &TypeStore) -> bool {
 		let range = type_store.integer_type_id.entry..=type_store.f64_type_id.entry;
 		range.contains(&self.entry) || self.is_any_collapse(type_store)
@@ -50,6 +46,14 @@ impl TypeId {
 	pub fn is_integer(self, type_store: &TypeStore) -> bool {
 		let range = type_store.i8_type_id.entry..=type_store.usize_type_id.entry;
 		range.contains(&self.entry) || self.entry == type_store.integer_type_id.entry || self.is_any_collapse(type_store)
+	}
+
+	pub fn is_bool(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.bool_type_id)
+	}
+
+	pub fn is_string(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.string_type_id)
 	}
 
 	pub fn numeric_kind(self, type_store: &TypeStore) -> Option<NumericKind> {
@@ -361,8 +365,8 @@ pub enum PrimativeKind {
 	UntypedDecimal,
 
 	Bool,
-
 	Numeric(NumericKind),
+	String,
 }
 
 impl PrimativeKind {
@@ -375,6 +379,7 @@ impl PrimativeKind {
 			PrimativeKind::UntypedDecimal => "untyped decimal",
 			PrimativeKind::Bool => "bool",
 			PrimativeKind::Numeric(numeric) => numeric.name(),
+			PrimativeKind::String => "str",
 		}
 	}
 
@@ -387,6 +392,7 @@ impl PrimativeKind {
 			PrimativeKind::UntypedDecimal => unreachable!(),
 			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
 			PrimativeKind::Numeric(numeric) => numeric.layout(),
+			PrimativeKind::String => Layout { size: 8 * 2, alignment: 8 },
 		}
 	}
 }
@@ -477,8 +483,6 @@ pub struct TypeStore<'a> {
 	noreturn_type_id: TypeId,
 	void_type_id: TypeId,
 
-	bool_type_id: TypeId,
-
 	integer_type_id: TypeId,
 	decimal_type_id: TypeId,
 
@@ -498,7 +502,10 @@ pub struct TypeStore<'a> {
 	f32_type_id: TypeId,
 	f64_type_id: TypeId,
 
+	bool_type_id: TypeId,
 	string_type_id: TypeId,
+
+	u8_slice_type_id: TypeId,
 }
 
 impl<'a> TypeStore<'a> {
@@ -524,8 +531,6 @@ impl<'a> TypeStore<'a> {
 		let noreturn_type_id = push_primative(Some("noreturn"), PrimativeKind::NoReturn);
 		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
 
-		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
-
 		// NOTE: These numeric type ids must all be generated together for the `is_numeric` range check
 		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
 		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
@@ -545,6 +550,9 @@ impl<'a> TypeStore<'a> {
 
 		let f32_type_id = push_primative(Some("f32"), PrimativeKind::Numeric(NumericKind::F32));
 		let f64_type_id = push_primative(Some("f64"), PrimativeKind::Numeric(NumericKind::F64));
+
+		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
+		let string_type_id = push_primative(Some("str"), PrimativeKind::String);
 
 		let mut type_store = TypeStore {
 			primative_type_symbols,
@@ -570,12 +578,13 @@ impl<'a> TypeStore<'a> {
 			usize_type_id,
 			f32_type_id,
 			f64_type_id,
-			string_type_id: TypeId { entry: 0 },
+			string_type_id,
+			u8_slice_type_id: TypeId { entry: u32::MAX },
 		};
 
 		// This is a hack, consider moving the saved type ids into a different struct
-		let string_type_id = type_store.slice_of(u8_type_id, false);
-		type_store.string_type_id = string_type_id;
+		let u8_slice_type_id = type_store.slice_of(u8_type_id, false);
+		type_store.u8_slice_type_id = u8_slice_type_id;
 
 		type_store
 	}
@@ -586,10 +595,6 @@ impl<'a> TypeStore<'a> {
 
 	pub fn void_type_id(&self) -> TypeId {
 		self.void_type_id
-	}
-
-	pub fn bool_type_id(&self) -> TypeId {
-		self.bool_type_id
 	}
 
 	pub fn integer_type_id(&self) -> TypeId {
@@ -624,8 +629,16 @@ impl<'a> TypeStore<'a> {
 		self.usize_type_id
 	}
 
+	pub fn bool_type_id(&self) -> TypeId {
+		self.bool_type_id
+	}
+
 	pub fn string_type_id(&self) -> TypeId {
 		self.string_type_id
+	}
+
+	pub fn u8_slice_type_id(&self) -> TypeId {
+		self.u8_slice_type_id
 	}
 
 	pub fn direct_match(&self, a: TypeId, b: TypeId) -> bool {

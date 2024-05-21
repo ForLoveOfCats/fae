@@ -3,7 +3,7 @@
 
 import fae::stdout::print_i32, print_newline
 
-fn divide(value: i32, by: i32): Enum<i32, []u8> {
+fn divide(value: i32, by: i32): Enum<i32, str> {
 	if by == 0 => return .Error { value: "Divide by zero" }
 	return .Ok { value: value / by }
 }
@@ -51,7 +51,7 @@ enum Enum {
 }
 
 generic T
-fn print_error(arg: Enum<T, []u8>.Error) {
+fn print_error(arg: Enum<T, str>.Error) {
 	import fae::stdout::print_string
 
 	print_string("Error: ")

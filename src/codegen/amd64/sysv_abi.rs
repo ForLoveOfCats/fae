@@ -48,11 +48,6 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 
 	match entry.kind {
 		TypeEntryKind::BuiltinType { kind } => match kind {
-			PrimativeKind::Bool => {
-				buffer[0] = Class { kind: ClassKind::Boolean, size: 1 };
-				return &mut buffer[..1];
-			}
-
 			PrimativeKind::Numeric(kind) => {
 				let class = match kind {
 					NumericKind::I8 | NumericKind::U8 => Class { kind: ClassKind::Integer, size: 1 },
@@ -68,6 +63,17 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 
 				buffer[0] = class;
 				return &mut buffer[..1];
+			}
+
+			PrimativeKind::Bool => {
+				buffer[0] = Class { kind: ClassKind::Boolean, size: 1 };
+				return &mut buffer[..1];
+			}
+
+			PrimativeKind::String => {
+				buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
+				buffer[1] = Class { kind: ClassKind::Integer, size: 8 };
+				return &mut buffer[..2];
 			}
 
 			PrimativeKind::AnyCollapse

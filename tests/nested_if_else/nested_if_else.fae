@@ -1,7 +1,7 @@
 import fae::stdout::print_string, print_newline
 
-fn print(str: []u8) {
-	print_string(str)
+fn print(string: str) {
+	print_string(string)
 	print_newline()
 }
 

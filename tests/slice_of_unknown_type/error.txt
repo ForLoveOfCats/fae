@@ -1,3 +1,3 @@
-Validation error: ./tests/slice_of_unknown_type/slice_of_unknown_type.fae, line 2: No symbol `str` in the current scope
-  2|     name: []str
+Validation error: ./tests/slice_of_unknown_type/slice_of_unknown_type.fae, line 2: No symbol `abc` in the current scope
+  2|     name: []abc
                  ^^^

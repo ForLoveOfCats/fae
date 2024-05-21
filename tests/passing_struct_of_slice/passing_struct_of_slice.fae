@@ -9,6 +9,6 @@ fn function(arg: Bytes) {
 }
 
 fn main() {
-	let bytes = Bytes { bytes: "Hello" }
+	let bytes = Bytes { bytes: "Hello".bytes }
 	function(bytes)
 }

@@ -125,8 +125,6 @@ impl LLVMTypes {
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
-				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
-
 				PrimativeKind::Numeric(numeric_kind) => {
 					use NumericKind::*;
 					unsafe {
@@ -140,6 +138,10 @@ impl LLVMTypes {
 						}
 					}
 				}
+
+				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
+
+				PrimativeKind::String => self.slice_struct,
 
 				PrimativeKind::AnyCollapse
 				| PrimativeKind::NoReturn
@@ -997,11 +999,39 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::String } => {
+				if index == 2 {
+					field_type = self.llvm_types.slice_struct;
+					field_pointer = pointer;
+					type_store.u8_slice_type_id()
+				} else {
+					field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
+					field_pointer = unsafe {
+						LLVMBuildStructGEP2(
+							self.builder,
+							pointed_type,
+							pointer,
+							index,
+							c"str_field_read.slice_field_pointer".as_ptr(),
+						)
+					};
+
+					type_store.usize_type_id()
+				}
+			}
+
 			TypeEntryKind::Slice(_) => {
 				field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
 				field_pointer = unsafe {
-					LLVMBuildStructGEP2(self.builder, pointed_type, pointer, index, c"field_read.slice_field_pointer".as_ptr())
+					LLVMBuildStructGEP2(
+						self.builder,
+						pointed_type,
+						pointer,
+						index,
+						c"slice_field_read.slice_field_pointer".as_ptr(),
+					)
 				};
+
 				type_store.usize_type_id()
 			}
 

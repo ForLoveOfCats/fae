@@ -1,12 +1,12 @@
 import fae::stdout::print_i64, print_i32, print_string, print_newline
 
 struct Pet {
-	name: []u8
+	name: str
 	age: i64
 }
 
 method static Pet
-fn adopt_baby(name: []u8): Pet {
+fn adopt_baby(name: str): Pet {
 	return Pet { name: name, age: 0 }
 }
 

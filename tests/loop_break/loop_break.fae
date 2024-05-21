@@ -32,8 +32,8 @@ fn main() {
 	}
 }
 
-fn print(str: []u8) {
+fn print(string: str) {
 	import fae::stdout::print_string
-	print_string(str)
+	print_string(string)
 	print_newline()
 }

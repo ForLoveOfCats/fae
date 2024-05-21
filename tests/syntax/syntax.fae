@@ -24,7 +24,7 @@ const STRING = "Hi there"
 
 fn main() {
 	let a = "This is a string\n"
-	let b: []u8 = "\"This is a string\""
+	let b: str = "\"This is a string\""
 
 	mut c = MyType { a: 5, b: 6 }
 	c.a = 7
