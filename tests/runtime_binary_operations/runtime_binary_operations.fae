@@ -1,9 +1,10 @@
-import fae::stdout::print_i64, print_u64, print_string, print_newline
-
+import fae::stdout::print_i64, print_u64, print_f32, print_f64, print_string, print_newline
 
 fn main() {
 	signed()
 	unsigned()
+	float()
+	double()
 }
 
 fn print_signed(value: i64) {
@@ -154,3 +155,78 @@ fn unsigned() {
 	print_unsigned(unsigned) // 20
 }
 
+fn print_float(value: f32) {
+	print_f32(value)
+	print_newline()
+}
+
+fn float() {
+	print_string("\nFloat binary operations\n")
+	mut float: f32 = 7.5
+	print_float(float) // 7.5
+
+	float = float + 1.25
+	print_float(float) // 8.75
+
+	float = float - 4.5
+	print_float(float) // 4.25
+
+	float = float * 88
+	print_float(float) // 374
+
+	float = float / 8
+	print_float(float) // 46.75
+
+	float = 7.5
+	print_float(float) // 7.5
+
+	float += 1.25
+	print_float(float) // 8.75
+
+	float -= 4.5
+	print_float(float) // 4.25
+
+	float *= 88
+	print_float(float) // 374
+
+	float /= 8
+	print_float(float) // 46.75
+}
+
+fn print_double(value: f64) {
+	print_f64(value)
+	print_newline()
+}
+
+fn double() {
+	print_string("\nDouble binary operations\n")
+	mut double: f64 = 7.5
+	print_double(double) // 7.5
+
+	double = double + 1.25
+	print_double(double) // 8.75
+
+	double = double - 4.5
+	print_double(double) // 4.25
+
+	double = double * 88
+	print_double(double) // 374
+
+	double = double / 8
+	print_double(double) // 46.75
+
+	double = 7.5
+	print_double(double) // 7.5
+
+	double += 1.25
+	print_double(double) // 8.75
+
+	double -= 4.5
+	print_double(double) // 4.25
+
+	double *= 88
+	print_double(double) // 374
+
+	double /= 8
+	print_double(double) // 46.75
+}

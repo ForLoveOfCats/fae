@@ -1373,34 +1373,51 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let left = left.to_value(self.builder);
 			let right = right.to_value(self.builder);
 			unsafe { assert_eq!(LLVMTypeOf(left), LLVMTypeOf(right)) };
+			let left_is_int = unsafe { LLVMGetTypeKind(LLVMTypeOf(left)) == LLVMIntegerTypeKind };
 
 			match op {
 				BinaryOperator::AddAssign => unsafe {
-					let int = LLVMBuildAdd(self.builder, left, right, c"".as_ptr());
-					LLVMBuildStore(self.builder, int, target);
+					let value = if left_is_int {
+						LLVMBuildAdd(self.builder, left, right, c"binary_operator.add_assign.int".as_ptr())
+					} else {
+						LLVMBuildFAdd(self.builder, left, right, c"binary_operator.add_assign.float".as_ptr())
+					};
+					LLVMBuildStore(self.builder, value, target);
 					return None;
 				},
 
 				BinaryOperator::SubAssign => unsafe {
-					let int = LLVMBuildSub(self.builder, left, right, c"".as_ptr());
-					LLVMBuildStore(self.builder, int, target);
+					let value = if left_is_int {
+						LLVMBuildSub(self.builder, left, right, c"binary_operator.sub_assign.int".as_ptr())
+					} else {
+						LLVMBuildFSub(self.builder, left, right, c"binary_operator.sub_assign.float".as_ptr())
+					};
+					LLVMBuildStore(self.builder, value, target);
 					return None;
 				},
 
 				BinaryOperator::MulAssign => unsafe {
-					let int = LLVMBuildMul(self.builder, left, right, c"".as_ptr());
-					LLVMBuildStore(self.builder, int, target);
+					let value = if left_is_int {
+						LLVMBuildMul(self.builder, left, right, c"binary_operator.mul_assign.int".as_ptr())
+					} else {
+						LLVMBuildFMul(self.builder, left, right, c"binary_operator.mul_assign.float".as_ptr())
+					};
+					LLVMBuildStore(self.builder, value, target);
 					return None;
 				},
 
 				BinaryOperator::DivAssign => unsafe {
-					let int = if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
-						LLVMBuildSDiv(self.builder, left, right, c"".as_ptr())
+					let value = if left_is_int {
+						if source_type_id.numeric_kind(context.type_store).unwrap().is_signed() {
+							LLVMBuildSDiv(self.builder, left, right, c"binary_operator.div_assign.signed_int".as_ptr())
+						} else {
+							LLVMBuildUDiv(self.builder, left, right, c"binary_operator.div_assign.unsigned_int".as_ptr())
+						}
 					} else {
-						LLVMBuildUDiv(self.builder, left, right, c"".as_ptr())
+						LLVMBuildFDiv(self.builder, left, right, c"binary_operator.div_assign.float".as_ptr())
 					};
 
-					LLVMBuildStore(self.builder, int, target);
+					LLVMBuildStore(self.builder, value, target);
 					return None;
 				},
 
