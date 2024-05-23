@@ -1,0 +1,82 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Fae",
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#strings"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.fae",
+					"match": "\\b(if|else|while|match|continue|break|return)\\b"
+				},
+				{
+					"name": "keyword.default.fae",
+					"match": "\\b(const|let|mut|fn|import|and|or|is)\\b"
+				},
+				{
+					"name": "keyword.structure.fae",
+					"match": "\\b(struct|enum)\\b"
+				},
+				{
+					"name": "keyword.tag.fae",
+					"match": "\\b(generic|extern|export|method)\\b"
+				},
+				{
+					"name": "keyword.constant.bool.fae",
+					"match": "\\b(true|false)\\b"
+				}
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.fae",
+					"begin": "//",
+					"end": "$"
+				},
+				{
+					"name": "comment.multi-line.fae",
+					"begin": "/\\*",
+					"end": "\\*/"
+				}
+			]
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric.float.fae",
+					"match": "\\b[0-9][0-9_]*(\\.[0-9][0-9_]*)\\b"
+				},
+				{
+					"name": "constant.numeric.decimal.fae",
+					"match": "\\b[0-9][0-9_]*\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double.fae",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.fae",
+					"match": "\\\\."
+				}
+			]
+		}
+	},
+	"scopeName": "source.fae"
+}

@@ -1,0 +1,25 @@
+{
+  "name": "vscode-fae",
+  "displayName": "Fae Language",
+  "description": "Support extension for the Fae programming language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.89.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "fae",
+      "aliases": ["Fae", "fae"],
+      "extensions": [".fae"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "fae",
+      "scopeName": "source.fae",
+      "path": "./syntaxes/fae.tmLanguage.json"
+    }]
+  }
+}

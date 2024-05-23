@@ -1816,20 +1816,20 @@ fn parse_return_statement<'a>(
 }
 
 fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
-	let is_reserved = matches!(
-		token.text,
-		"const"
-			| "fn" | "let"
-			| "mut" | "return"
-			| "struct" | "enum"
-			| "import" | "generic"
-			| "extern" | "export"
-			| "method" | "if"
-			| "else" | "while"
-			| "or" | "and"
-			| "break" | "continue"
-			| "true" | "false"
-	);
+	let is_reserved =
+		matches!(
+			token.text,
+			"const"
+				| "fn" | "let" | "mut"
+				| "return" | "struct"
+				| "enum" | "import"
+				| "generic" | "extern"
+				| "export" | "method"
+				| "if" | "else" | "while"
+				| "match" | "or" | "and"
+				| "is" | "break" | "continue"
+				| "true" | "false"
+		);
 
 	if is_reserved {
 		let error = error!("Cannot use reserved word {:?} as {use_as}", token.text);
