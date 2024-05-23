@@ -16,7 +16,7 @@ use llvm_sys::target_machine::{
 };
 use llvm_sys::transforms::pass_builder::{LLVMCreatePassBuilderOptions, LLVMRunPasses};
 
-use crate::cli::{CliArguments, OptimizationLevel};
+use crate::cli::CliArguments;
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
@@ -61,9 +61,9 @@ pub fn generate_code<'a>(
 		target
 	};
 
-	let codegen_opt_level = match cli_arguments.optimization_level {
-		OptimizationLevel::None => LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
-		OptimizationLevel::Release => LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
+	let codegen_opt_level = match cli_arguments.optimize_artifacts {
+		false => LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
+		true => LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
 	};
 
 	let machine = unsafe {
@@ -79,7 +79,7 @@ pub fn generate_code<'a>(
 	};
 	assert!(!machine.is_null());
 
-	if cli_arguments.optimization_level == OptimizationLevel::Release {
+	if cli_arguments.optimize_artifacts {
 		unsafe {
 			let options = LLVMCreatePassBuilderOptions();
 			LLVMRunPasses(generator.module, c"default<O2>".as_ptr(), machine, options);

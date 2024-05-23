@@ -8,7 +8,7 @@ pub struct CliArguments {
 	pub std_enabled: bool,
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
-	pub optimization_level: OptimizationLevel,
+	pub optimize_artifacts: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,12 +21,6 @@ pub enum CompileCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodegenBackend {
 	LLVM,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OptimizationLevel {
-	None,
-	Release,
 }
 
 #[macro_export]
@@ -48,7 +42,7 @@ pub fn parse_arguments() -> CliArguments {
 		std_enabled: true,
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LLVM,
-		optimization_level: OptimizationLevel::None,
+		optimize_artifacts: false,
 	};
 
 	while let Some(arg) = iterator.next() {
@@ -121,7 +115,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 		}
 
 		Some("--release") => {
-			cli_arguments.optimization_level = OptimizationLevel::Release;
+			cli_arguments.optimize_artifacts = true;
 		}
 
 		Some("--disable-std") => {

@@ -20,7 +20,7 @@ use frontend::project::build_project;
 fn main() {
 	let cli_arguments = parse_arguments();
 	if cli_arguments.command == CompileCommand::CompilerTest {
-		test::run_tests(&cli_arguments);
+		test::run_tests(cli_arguments);
 		return;
 	}
 
