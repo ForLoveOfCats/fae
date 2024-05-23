@@ -62,5 +62,8 @@ fn realloc(ptr: &mut u8, new_size: usize): &mut u8
 extern "srand"
 fn srand(seed: u32)
 
+extern "sqrt"
+fn sqrt(arg: f64): f64
+
 extern "time"
 fn time(tloc: &mut TimeT): TimeT

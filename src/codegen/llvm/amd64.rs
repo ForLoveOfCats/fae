@@ -14,7 +14,9 @@ use llvm_sys::target_machine::{
 	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode,
 	LLVMTargetMachineEmitToFile,
 };
+use llvm_sys::transforms::pass_builder::{LLVMCreatePassBuilderOptions, LLVMRunPasses};
 
+use crate::cli::{CliArguments, OptimizationLevel};
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
@@ -25,6 +27,7 @@ use crate::frontend::symbols::Statics;
 use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
+	cli_arguments: &CliArguments,
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
@@ -58,18 +61,30 @@ pub fn generate_code<'a>(
 		target
 	};
 
+	let codegen_opt_level = match cli_arguments.optimization_level {
+		OptimizationLevel::None => LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
+		OptimizationLevel::Release => LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
+	};
+
 	let machine = unsafe {
 		LLVMCreateTargetMachine(
 			target,
 			triple.as_ptr(),
 			c"".as_ptr(),
 			c"".as_ptr(),
-			LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
+			codegen_opt_level,
 			LLVMRelocMode::LLVMRelocDefault,
 			LLVMCodeModel::LLVMCodeModelDefault,
 		)
 	};
 	assert!(!machine.is_null());
+
+	if cli_arguments.optimization_level == OptimizationLevel::Release {
+		unsafe {
+			let options = LLVMCreatePassBuilderOptions();
+			LLVMRunPasses(generator.module, c"default<O2>".as_ptr(), machine, options);
+		}
+	}
 
 	_ = std::fs::create_dir("./fae_target");
 	unsafe {
@@ -111,6 +126,7 @@ pub fn generate_code<'a>(
 		.arg("/usr/lib/crti.o")
 		.arg("/usr/lib/crtn.o")
 		.arg("/usr/lib/libc.so")
+		.arg("/usr/lib/libm.so")
 		.arg("-dynamic-linker")
 		.arg("/lib64/ld-linux-x86-64.so.2")
 		.arg("-o")

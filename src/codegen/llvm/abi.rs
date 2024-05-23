@@ -5,8 +5,9 @@ use llvm_sys::core::{
 	LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSExt, LLVMBuildStore, LLVMBuildStructGEP2,
 	LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateTypeAttribute, LLVMDoubleTypeInContext,
 	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetParam, LLVMHalfTypeInContext, LLVMInt16TypeInContext, LLVMInt1TypeInContext,
-	LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
-	LLVMSetLinkage, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType, LLVMVoidTypeInContext,
+	LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMIntTypeInContext, LLVMPointerTypeInContext,
+	LLVMPositionBuilderAtEnd, LLVMSetLinkage, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType,
+	LLVMVoidTypeInContext,
 };
 use llvm_sys::prelude::*;
 use llvm_sys::{self, LLVMLinkage};
@@ -121,6 +122,7 @@ impl SysvAbi {
 							2 => LLVMInt16TypeInContext(context),
 							4 => LLVMInt32TypeInContext(context),
 							8 => LLVMInt64TypeInContext(context),
+							size if size < 8 => LLVMIntTypeInContext(context, size as u32 * 8),
 							unknown_size => panic!("{unknown_size}"),
 						}
 					};
@@ -219,7 +221,7 @@ impl SysvAbi {
 		}
 	}
 
-	fn generate_parameter(
+	fn generate_argument(
 		&mut self,
 		generator: &LLVMGenerator<Self>,
 		value: generator::Binding,
@@ -231,14 +233,14 @@ impl SysvAbi {
 			&ParameterInformation::ByPointer { pointed_type, layout, .. } => {
 				match value.kind {
 					generator::BindingKind::Value(value) => {
-						let alloca = generator.build_alloca(pointed_type);
+						let alloca = generator.build_alloca(pointed_type, c"generate_argument.by_pointer.from_value");
 						unsafe { LLVMBuildStore(generator.builder, value, alloca) };
 						self.argument_value_buffer.push(alloca);
 					}
 
 					generator::BindingKind::Pointer { pointer, pointed_type: ty } => {
 						assert_eq!(pointed_type, ty);
-						let alloca = generator.build_alloca(pointed_type);
+						let alloca = generator.build_alloca(pointed_type, c"generate_argument.by_pointer.from_implicit_pointer");
 						unsafe {
 							let size = LLVMConstInt(LLVMInt64TypeInContext(generator.context), layout.size as u64, false as _);
 							let align = layout.alignment as u32;
@@ -260,7 +262,7 @@ impl SysvAbi {
 
 		let pointer = match value.kind {
 			generator::BindingKind::Value(value) => unsafe {
-				let alloca = generator.build_alloca(LLVMTypeOf(value));
+				let alloca = generator.build_alloca(LLVMTypeOf(value), c"generate_argument.composition.from_value");
 				LLVMBuildStore(generator.builder, value, alloca);
 				alloca
 			},
@@ -273,8 +275,19 @@ impl SysvAbi {
 		for field_index in 0..composition_field_count {
 			unsafe {
 				let field_type = LLVMStructGetTypeAtIndex(composition, field_index);
-				let field_pointer = LLVMBuildStructGEP2(generator.builder, composition, pointer, field_index, c"".as_ptr());
-				let value = LLVMBuildLoad2(generator.builder, field_type, field_pointer, c"".as_ptr());
+				let field_pointer = LLVMBuildStructGEP2(
+					generator.builder,
+					composition,
+					pointer,
+					field_index,
+					c"generate_argument.composition.field_pointer".as_ptr(),
+				);
+				let value = LLVMBuildLoad2(
+					generator.builder,
+					field_type,
+					field_pointer,
+					c"generate_argument.composition.field_value".as_ptr(),
+				);
 				self.argument_value_buffer.push(value);
 			}
 		}
@@ -504,7 +517,7 @@ impl LLVMAbi for SysvAbi {
 		let context = generator.context;
 
 		let sret_alloca = if let FunctionReturnType::ByPointer { pointed_type, .. } = function.return_type {
-			let alloca = generator.build_alloca(pointed_type);
+			let alloca = generator.build_alloca(pointed_type, c"call_function.sret_argument");
 			self.argument_value_buffer.push(alloca);
 			Some(alloca)
 		} else {
@@ -523,7 +536,7 @@ impl LLVMAbi for SysvAbi {
 				continue;
 			};
 
-			self.generate_parameter(generator, value, information);
+			self.generate_argument(generator, value, information);
 		}
 
 		if function.c_varargs {
@@ -586,7 +599,7 @@ impl LLVMAbi for SysvAbi {
 					}
 				}
 
-				self.generate_parameter(generator, argument, &information);
+				self.generate_argument(generator, argument, &information);
 			}
 		}
 
@@ -606,7 +619,8 @@ impl LLVMAbi for SysvAbi {
 			FunctionReturnType::Void => None,
 
 			FunctionReturnType::ByValue { value_type, .. } => {
-				let alloca = generator.build_alloca(value_type);
+				// TODO: Why does this alloca?
+				let alloca = generator.build_alloca(value_type, c"call_function.return_value.by_value");
 				unsafe { LLVMBuildStore(generator.builder, callsite_value, alloca) };
 
 				let kind = generator::BindingKind::Pointer { pointer: alloca, pointed_type: value_type };

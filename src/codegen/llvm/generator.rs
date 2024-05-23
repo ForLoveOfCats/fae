@@ -246,7 +246,8 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		self.state = State::InModule;
 	}
 
-	pub fn build_alloca(&self, llvm_type: LLVMTypeRef) -> LLVMValueRef {
+	pub fn build_alloca(&self, llvm_type: LLVMTypeRef, name: impl Into<CString>) -> LLVMValueRef {
+		let name: CString = name.into();
 		let function_id = match self.state {
 			State::InFunction { function_id, .. } => function_id,
 			State::InModule => unreachable!(),
@@ -262,7 +263,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 
 		let pointer = unsafe {
 			LLVMPositionBuilderAtEnd(self.builder, alloca_block);
-			LLVMBuildAlloca(self.builder, llvm_type, c"".as_ptr())
+			LLVMBuildAlloca(self.builder, llvm_type, name.as_ptr())
 		};
 
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, original_block) };
@@ -273,7 +274,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		match binding.kind {
 			BindingKind::Value(value) => {
 				let pointed_type = unsafe { LLVMTypeOf(value) };
-				let pointer = self.build_alloca(pointed_type);
+				let pointer = self.build_alloca(pointed_type, c"value_pointer");
 				unsafe { LLVMBuildStore(self.builder, value, pointer) };
 				pointer
 			}
@@ -293,7 +294,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 					let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, pointed_type_id);
 					ValuePointer { pointer: value, pointed_type, type_id: pointed_type_id }
 				} else {
-					let pointer = self.build_alloca(llvm_type);
+					let pointer = self.build_alloca(llvm_type, c"value_auto_deref_pointer");
 					LLVMBuildStore(self.builder, value, pointer);
 					ValuePointer { pointer, pointed_type: llvm_type, type_id: binding.type_id }
 				}
@@ -787,7 +788,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let element_type = self.llvm_types.type_to_llvm_type(self.context, type_store, element_type_id);
 		let array_type = unsafe { LLVMArrayType2(element_type, elements.len() as u64) };
-		let alloca = self.build_alloca(array_type);
+		let alloca = self.build_alloca(array_type, c"generate_array_literal.array_alloca");
 
 		let zero = unsafe { LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, false as _) };
 		for (index, element) in elements.iter().enumerate() {
@@ -817,7 +818,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		let slice_type = self.llvm_types.slice_struct;
-		let slice_alloca = self.build_alloca(slice_type);
+		let slice_alloca = self.build_alloca(slice_type, c"generate_array_literal.slice_alloca");
 
 		unsafe {
 			let pointer_pointer =
@@ -847,7 +848,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			.unwrap()
 			.actual;
 
-		let alloca = self.build_alloca(struct_type);
+		let alloca = self.build_alloca(struct_type, c"generate_struct_literal.alloca");
 		for (index, field) in fields.iter().enumerate() {
 			let value = field.to_value(self.builder);
 			unsafe {
@@ -901,7 +902,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					Binding { type_id: base_pointer_type_id, kind }
 				} else {
 					let pointed_type = LLVMTypeOf(value);
-					let pointer = self.build_alloca(pointed_type);
+					let pointer = self.build_alloca(pointed_type, c"generate_method_call.self_pointer");
 					LLVMBuildStore(self.builder, value, pointer);
 
 					let kind = BindingKind::Value(pointer);
@@ -1713,7 +1714,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let shape = &self.llvm_types.user_type_structs[enum_shape_index];
 		let enum_type = shape[enum_specialization_index].unwrap().actual;
 
-		let alloca = self.build_alloca(enum_type);
+		let alloca = self.build_alloca(enum_type, c"generate_enum_variant_to_enum.enum_alloca");
 
 		unsafe {
 			let i8_type = LLVMInt8TypeInContext(self.context);
@@ -1742,7 +1743,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id: enum_type_id, kind }
 	}
 
-	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId) {
+	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId, name: &str) {
 		assert_eq!(self.readables.len(), readable_index);
 		let Some(value) = value else {
 			self.readables.push(None);
@@ -1752,7 +1753,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let (pointer, pointed_type) = match value.kind {
 			BindingKind::Value(value) => unsafe {
 				let llvm_type = LLVMTypeOf(value);
-				let alloca = self.build_alloca(llvm_type);
+				// This format hurts my soul
+				let alloca = self.build_alloca(llvm_type, CString::new(format!("generate_binding.{}", name)).unwrap());
 				LLVMBuildStore(self.builder, value, alloca);
 				(alloca, llvm_type)
 			},
@@ -1790,7 +1792,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let length = length.to_value(self.builder);
 
 			let llvm_type = self.llvm_types.slice_struct;
-			let alloca = self.build_alloca(llvm_type);
+			let alloca = self.build_alloca(llvm_type, c"generate_slice.slice_alloca");
 			let pointer_pointer =
 				LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, c"generate_slice.pointer_pointer".as_ptr());
 			let length_pointer =

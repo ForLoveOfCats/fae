@@ -621,7 +621,7 @@ fn generate_enum_variant_to_enum<G: Generator>(
 fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
 	let value = generate_expression(context, generator, &binding.expression);
 	let type_id = context.specialize_type_id(binding.type_id);
-	generator.generate_binding(binding.readable_index, value, type_id);
+	generator.generate_binding(binding.readable_index, value, type_id, binding.name);
 }
 
 fn generate_break<G: Generator>(generator: &mut G, statement: &Break) {

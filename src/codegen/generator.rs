@@ -158,7 +158,7 @@ pub trait Generator {
 		variant_binding: Option<Self::Binding>,
 	) -> Self::Binding;
 
-	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId);
+	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId, name: &str);
 
 	fn generate_break(&mut self, loop_index: usize);
 

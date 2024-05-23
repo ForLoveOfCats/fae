@@ -100,17 +100,14 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				UserTypeKind::Struct { shape } => shape,
 
 				UserTypeKind::Enum { .. } => {
-					// This seems to be how Rust handles this
 					if aggregate_layout.size > 8 {
 						buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
 						return &mut buffer[..1];
 					} else {
-						let size = match aggregate_layout.size {
-							1 => 1,
-							2 => 2,
-							3..=4 => 4,
-							5..=8 => 8,
-							size => unreachable!("{size}"),
+						let size = if 0 <= aggregate_layout.size && aggregate_layout.size <= 8 {
+							aggregate_layout.size as u8
+						} else {
+							unreachable!("{:?}", aggregate_layout);
 						};
 						buffer[0] = Class { kind: ClassKind::Integer, size };
 						return &mut buffer[..1];

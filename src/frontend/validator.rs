@@ -2189,7 +2189,8 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	};
 	let readable_index = context.push_readable(statement.item.name, type_id, kind);
 
-	Some(Binding { type_id, expression, readable_index, is_mutable })
+	let name = statement.item.name.item;
+	Some(Binding { name, type_id, expression, readable_index, is_mutable })
 }
 
 pub fn validate_expression<'a>(

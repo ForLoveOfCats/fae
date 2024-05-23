@@ -133,7 +133,7 @@ pub fn build_project(
 	//Not parallelizable
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => {
-			llvm::amd64::generate_code(&mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
+			llvm::amd64::generate_code(cli_arguments, &mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
 		}
 	};
 

@@ -411,6 +411,7 @@ pub enum StatementKind<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Binding<'a> {
+	pub name: &'a str,
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 	pub readable_index: usize,
