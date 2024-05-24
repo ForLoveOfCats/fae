@@ -303,7 +303,7 @@ pub fn validate<'a>(
 
 		let mut next_scope_index = 1;
 		let local_function_shape_indicies = &mut local_function_shape_indicies[file_index];
-		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let blank_generic_parameters = GenericParameters::blank();
 		let context = Context {
 			cli_arguments,
 			file_index,
@@ -356,7 +356,7 @@ fn create_root_types<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		assert_eq!(layer.symbols.len(), 0);
 
-		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let blank_generic_parameters = GenericParameters::blank();
 		let block = &parsed_file.block;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
@@ -457,7 +457,7 @@ fn create_root_functions<'a>(
 			readables,
 			&mut symbols,
 			parsed_file.module_path,
-			&GenericParameters::new_from_explicit(Vec::new()),
+			&GenericParameters::blank(),
 			block,
 			&mut local_function_shape_indicies[file_index],
 			scope_id,
@@ -495,7 +495,7 @@ fn validate_root_consts<'a>(
 		readables.readables.clear();
 
 		let mut next_scope_index = 1;
-		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let blank_generic_parameters = GenericParameters::blank();
 		let mut context = Context {
 			cli_arguments,
 			file_index,
@@ -763,21 +763,23 @@ fn create_block_struct<'a>(
 	//so that all types exist in order to populate field types
 
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
-	let mut explicit_generics = Vec::with_capacity(capacity);
+	let mut implicit_generics = Vec::with_capacity(capacity);
 
 	let shape_index = type_store.user_types.len();
-	for (generic_index, &generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
-		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
-	}
 
-	let explicit_generics_len = explicit_generics.len();
-	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
-	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
-		let generic_index = explicit_generics_len + index;
+	for (generic_index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
 		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
-		generic_parameters.push_implicit(parameter);
+		implicit_generics.push(parameter);
+	}
+
+	let implicit_generics_len = implicit_generics.len();
+	let mut generic_parameters = GenericParameters::new_from_implicit(implicit_generics);
+
+	for (index, &generic) in statement.generics.iter().enumerate() {
+		let generic_index = implicit_generics_len + index;
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
+		generic_parameters.push_explicit(GenericParameter { name: generic, generic_type_id });
 	}
 
 	let name = statement.name.item;
@@ -799,21 +801,23 @@ fn create_block_enum<'a>(
 	statement: &tree::Enum<'a>,
 ) {
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
-	let mut explicit_generics = Vec::with_capacity(capacity);
+	let mut implicit_generics = Vec::with_capacity(capacity);
 
 	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
-	for (generic_index, &generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
-		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
-	}
 
-	let explicit_generics_len = explicit_generics.len();
-	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
-	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
-		let generic_index = explicit_generics_len + index;
+	for (generic_index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
-		generic_parameters.push_implicit(parameter);
+		implicit_generics.push(parameter);
+	}
+
+	let implicit_generics_len = implicit_generics.len();
+	let mut generic_parameters = GenericParameters::new_from_implicit(implicit_generics);
+
+	for (index, &generic) in statement.generics.iter().enumerate() {
+		let generic_index = implicit_generics_len + index;
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
+		generic_parameters.push_explicit(GenericParameter { name: generic, generic_type_id });
 	}
 
 	if statement.variants.len() > 256 {
@@ -828,19 +832,20 @@ fn create_block_enum<'a>(
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = type_store.user_types.len();
 
-		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
-		for (generic_index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
-			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
-			variant_explicit_generics.push(GenericParameter { name: enum_explicit_generic.name, generic_type_id });
-		}
-
-		let explicit_generics_len = variant_explicit_generics.len();
-		let mut variant_generic_parameters = GenericParameters::new_from_explicit(variant_explicit_generics);
-		for (index, enum_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
-			let generic_index = explicit_generics_len + index;
+		let mut variant_implicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
+		for (generic_index, enum_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
 			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
 			let parameter = GenericParameter { name: enum_parameter.name, generic_type_id };
-			variant_generic_parameters.push_implicit(parameter);
+			variant_implicit_generics.push(parameter);
+		}
+
+		let implicit_generics_len = variant_implicit_generics.len();
+		let mut variant_generic_parameters = GenericParameters::new_from_implicit(variant_implicit_generics);
+
+		for (index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
+			let generic_index = implicit_generics_len + index;
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
+			variant_generic_parameters.push_explicit(GenericParameter { name: enum_explicit_generic.name, generic_type_id });
 		}
 
 		let (name, is_transparent) = match variant {
@@ -912,7 +917,7 @@ fn fill_block_types<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+			let blank_generic_parameters = GenericParameters::blank();
 			let mut fields = Vec::with_capacity(statement.fields.len());
 
 			for field in &statement.fields {
@@ -989,7 +994,7 @@ fn fill_block_types<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+			let blank_generic_parameters = GenericParameters::blank();
 			let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
 
 			for shared_field in &statement.shared_fields {
@@ -1102,7 +1107,7 @@ fn fill_struct_like_enum_variant<'a>(
 	let mut fields = Vec::new();
 	fields.extend(shared_fields.iter().copied());
 
-	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	let blank_generic_parameters = GenericParameters::blank();
 	match tree_variant {
 		tree::EnumVariant::StructLike(struct_like) => {
 			for field in &struct_like.fields {
@@ -1391,24 +1396,14 @@ fn create_block_functions<'a>(
 			let capacity = statement.generics.len()
 				+ enclosing_generic_parameters.parameters().len()
 				+ base_shape_generics.as_ref().map(|p| p.parameters().len()).unwrap_or(0);
-			let mut explicit_generics = Vec::with_capacity(capacity);
 
-			for (generic_index, &generic) in statement.generics.iter().enumerate() {
-				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-				explicit_generics.push(GenericParameter { name: generic, generic_type_id });
+			let mut implicit_generics = Vec::with_capacity(capacity);
 
-				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
-				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
-			}
-
-			let explicit_generics_len = explicit_generics.len();
-			let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
-			for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
-				let generic_index = explicit_generics_len + index;
+			// Implicit
+			for (generic_index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
 				let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
-				generic_parameters.push_implicit(parameter);
+				implicit_generics.push(parameter);
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let span = Some(parent_parameter.name.span);
@@ -1416,10 +1411,13 @@ fn create_block_functions<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			let implicit_generics_len = generic_parameters.implicit_len();
+			let implicit_generics_len = implicit_generics.len();
+			let mut generic_parameters = GenericParameters::new_from_implicit(implicit_generics);
+
+			// Method base
 			if let Some(base_shape_generics) = &base_shape_generics {
 				for (index, base_type_parameter) in base_shape_generics.parameters().iter().enumerate() {
-					let generic_index = explicit_generics_len + implicit_generics_len + index;
+					let generic_index = implicit_generics_len + index;
 					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
 					let parameter = GenericParameter { name: base_type_parameter.name, generic_type_id };
 					generic_parameters.push_method_base(parameter);
@@ -1429,6 +1427,19 @@ fn create_block_functions<'a>(
 					let symbol = Symbol { name: base_type_parameter.name.item, kind, span };
 					scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 				}
+			}
+
+			let method_base_len = generic_parameters.method_base_len();
+
+			// Explicit
+			for (index, &generic) in statement.generics.iter().enumerate() {
+				let generic_index = implicit_generics_len + method_base_len + index;
+				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
+				generic_parameters.push_explicit(GenericParameter { name: generic, generic_type_id });
+
+				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
+				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
+				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
 			function_store.generics.push(generic_parameters.clone());

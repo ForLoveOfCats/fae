@@ -29,52 +29,58 @@ pub struct GenericParameter<'a> {
 #[derive(Debug, Clone)]
 pub struct GenericParameters<'a> {
 	parameters: Vec<GenericParameter<'a>>,
-	explicit_len: usize,
 	implicit_len: usize,
 	method_base_len: usize,
+	explicit_len: usize,
 }
 
 impl<'a> GenericParameters<'a> {
-	pub fn new_from_explicit(explicit: Vec<GenericParameter<'a>>) -> Self {
-		let explicit_len = explicit.len();
+	pub fn blank() -> Self {
 		GenericParameters {
-			parameters: explicit,
-			explicit_len,
+			parameters: Vec::new(),
 			implicit_len: 0,
 			method_base_len: 0,
+			explicit_len: 0,
 		}
 	}
 
-	pub fn push_implicit(&mut self, implict: GenericParameter<'a>) {
-		assert_eq!(self.method_base_len, 0);
-		self.parameters.push(implict);
-		self.implicit_len += 1;
+	pub fn new_from_implicit(implicit: Vec<GenericParameter<'a>>) -> Self {
+		let implicit_len = implicit.len();
+		GenericParameters {
+			parameters: implicit,
+			implicit_len,
+			method_base_len: 0,
+			explicit_len: 0,
+		}
 	}
 
 	pub fn push_method_base(&mut self, parameter: GenericParameter<'a>) {
+		assert_eq!(self.explicit_len, 0);
 		self.parameters.push(parameter);
 		self.method_base_len += 1;
+	}
+
+	pub fn push_explicit(&mut self, parameter: GenericParameter<'a>) {
+		self.parameters.push(parameter);
+		self.explicit_len += 1;
 	}
 
 	pub fn parameters(&self) -> &[GenericParameter<'a>] {
 		&self.parameters
 	}
 
-	pub fn explicit_parameters(&self) -> &[GenericParameter<'a>] {
-		&self.parameters[0..self.explicit_len]
-	}
-
 	pub fn implicit_parameters(&self) -> &[GenericParameter<'a>] {
-		&self.parameters[self.explicit_len..self.explicit_len + self.implicit_len]
+		&self.parameters[0..self.implicit_len]
 	}
 
 	pub fn method_base_parameters(&self) -> &[GenericParameter<'a>] {
-		let start = self.explicit_len + self.implicit_len;
-		&self.parameters[start..]
+		let end = self.implicit_len + self.method_base_len;
+		&self.parameters[self.implicit_len..end]
 	}
 
-	pub fn explicit_len(&self) -> usize {
-		self.explicit_len
+	pub fn explicit_parameters(&self) -> &[GenericParameter<'a>] {
+		let start = self.implicit_len + self.method_base_len;
+		&self.parameters[start..]
 	}
 
 	pub fn implicit_len(&self) -> usize {
@@ -83,6 +89,10 @@ impl<'a> GenericParameters<'a> {
 
 	pub fn method_base_len(&self) -> usize {
 		self.method_base_len
+	}
+
+	pub fn explicit_len(&self) -> usize {
+		self.explicit_len
 	}
 }
 

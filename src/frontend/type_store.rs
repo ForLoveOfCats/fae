@@ -2107,7 +2107,8 @@ impl<'a> TypeStore<'a> {
 				if let Some(function_store) = function_store {
 					let shape = &function_store.shapes[function_shape_index];
 					let generic = &shape.generic_parameters.parameters()[generic_index];
-					generic.name.item.to_owned()
+					// generic.name.item.to_owned()
+					format!("FunctionGeneric {function_shape_index} {generic_index} {}", generic.name.item)
 				} else {
 					String::from("FunctionGeneric")
 				}
@@ -2116,7 +2117,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
 				let user_type = &self.user_types[shape_index];
 				let generic = user_type.generic_parameters.parameters()[generic_index];
-				generic.name.item.to_owned()
+				// generic.name.item.to_owned()
+				format!("UserTypeGeneric {shape_index} {generic_index} {}", generic.name.item)
 			}
 		}
 	}
