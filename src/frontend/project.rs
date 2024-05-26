@@ -88,8 +88,10 @@ pub fn build_project(
 		usage_error!("Input path is neither directory nor file");
 	};
 
-	if cli_arguments.command != CompileCommand::CompilerTest {
-		eprintln!("    {BOLD_GREEN}Building project{RESET} {root_name}",);
+	match cli_arguments.command {
+		CompileCommand::Check => eprintln!("    {BOLD_GREEN}Checking project{RESET} {root_name}"),
+		CompileCommand::Build | CompileCommand::Run => eprintln!("    {BOLD_GREEN}Building project{RESET} {root_name}"),
+		CompileCommand::CompilerTest => {}
 	}
 
 	let mut any_errors = false;
@@ -147,6 +149,13 @@ pub fn build_project(
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
 		eprintln!("   {BOLD_GREEN}Validated project{RESET} took {} ms", validate_start.elapsed().as_millis());
+	}
+
+	if cli_arguments.command == CompileCommand::Check {
+		std::mem::forget(function_store);
+		std::mem::forget(type_store);
+		std::mem::forget(parsed_files);
+		return BuiltProject { binary_path: None, any_messages, any_errors };
 	}
 
 	//Not parallelizable
