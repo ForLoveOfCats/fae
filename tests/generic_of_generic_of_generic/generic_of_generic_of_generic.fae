@@ -1,0 +1,90 @@
+import fae::collections::list::List
+import fae::stdout::print_i16, print_i32, print_f64, print_newline
+
+generic T
+struct EntityStore {
+	previous_time: f64
+	elapsed: f64
+	entities: List<Entity<T>>
+}
+
+method static EntityStore
+fn new(): EntityStore<T> {
+	return EntityStore<T> {
+		previous_time: 0
+		elapsed: 0
+		entities: List<Entity<T>>.new()
+	}
+}
+
+generic T
+enum EnumEntityStore {
+	shared_entities: List<Entity<T>>
+
+	Variant { variant_entities: List<Entity<T>> }
+}
+
+method static EnumEntityStore
+fn new(): EnumEntityStore<T> {
+	return .Variant {
+		shared_entities: List<Entity<T>>.new()
+		variant_entities: List<Entity<T>>.new()
+	}
+}
+
+method static EnumEntityStore
+fn new_variant(): EnumEntityStore<T>.Variant {
+	return EnumEntityStore<T>.Variant {
+		shared_entities: List<Entity<T>>.new()
+		variant_entities: List<Entity<T>>.new()
+	}
+}
+
+generic T
+struct Entity {
+	health: f64
+	payload: T
+}
+
+generic T
+fn function(arg: &List<Entity<T>>) {}
+
+fn main() {
+	mut store = EntityStore<i16>.new()
+	store.entities.push(Entity<i16> { health: 100, payload: -500 })
+	function<i16>(store.entities.&)
+	print_i16(store.entities.get(0).payload)
+	print_newline()
+
+	print_newline()
+
+	mut enum_store: EnumEntityStore<f64> = EnumEntityStore<f64>.new_variant()
+	enum_store.shared_entities.push(Entity<f64> { health: 100, payload: 42.9 })
+	function<f64>(enum_store.shared_entities.&)
+	print_f64(enum_store.shared_entities.get(0).payload)
+	print_newline()
+
+	if enum_store is Variant {
+		enum_store.shared_entities.push(Entity<f64> { health: 100, payload: 43.8 })
+		function<f64>(enum_store.shared_entities.&)
+		print_f64(enum_store.shared_entities.get(1).payload)
+		print_newline()
+
+		enum_store.variant_entities.push(Entity<f64> { health: 100, payload: 44.7 })
+		function<f64>(enum_store.variant_entities.&)
+		print_f64(enum_store.variant_entities.get(0).payload)
+		print_newline()
+	}
+
+	print_newline()
+
+	mut variant_store: EnumEntityStore<i32>.Variant = EnumEntityStore<i32>.new_variant()
+	variant_store.shared_entities.push(Entity<i32> { health: 100, payload: -600 })
+	variant_store.variant_entities.push(Entity<i32> { health: 100, payload: -700 })
+	function<i32>(variant_store.shared_entities.&)
+	function<i32>(variant_store.variant_entities.&)
+	print_i32(variant_store.shared_entities.get(0).payload)
+	print_newline()
+	print_i32(variant_store.variant_entities.get(0).payload)
+	print_newline()
+}

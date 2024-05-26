@@ -108,7 +108,7 @@ pub fn build_project(
 	//Partially parallelizable
 	let mut lang_items = LangItems::new();
 	let mut root_layers = RootLayers::new(root_name);
-	let mut type_store = TypeStore::new();
+	let mut type_store = TypeStore::new(cli_arguments.debug_generics);
 	let mut function_store = FunctionStore::new();
 	let mut statics = Statics::new();
 	validate(

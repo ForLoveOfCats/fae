@@ -781,7 +781,7 @@ fn create_block_struct<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = StructShape::new(None, None, false);
+	let shape = StructShape::new(statement.name.item, None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
@@ -851,7 +851,7 @@ fn create_block_enum<'a>(
 		let span = name.span;
 		let name = name.item;
 
-		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index), is_transparent);
+		let shape = StructShape::new(name, Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
 		type_store.register_type(name, variant_generic_parameters, kind, module_path, scope_id, span);
 
@@ -1038,7 +1038,6 @@ fn fill_block_types<'a>(
 					scope.symbols,
 					module_path,
 					function_initial_symbols_len,
-					&shared_fields,
 					&variant_shape,
 					statement,
 				);
@@ -1079,17 +1078,11 @@ fn fill_struct_like_enum_variant<'a>(
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
 	function_initial_symbols_len: usize,
-	shared_fields: &[Node<FieldShape<'a>>],
 	variant_shape: &EnumVariantShape<'a>,
 	statement: &tree::Enum<'a>,
 ) {
 	let scope = symbols.child_scope();
 	let tree_variant = &statement.variants[variant_shape.variant_index];
-
-	// let struct_like = match &variant_shape.kind {
-	// 	EnumVariantShapeKind::StructLike(struct_like) => struct_like,
-	// 	EnumVariantShapeKind::Transparent(_) => unreachable!(),
-	// };
 
 	let struct_shape = &type_store.user_types[variant_shape.struct_shape_index];
 	for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
@@ -1098,9 +1091,35 @@ fn fill_struct_like_enum_variant<'a>(
 		scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 	}
 
-	// shared_fields.len() + tree_variant.fields.len()
 	let mut fields = Vec::new();
-	fields.extend(shared_fields.iter().copied());
+
+	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	for shared_field in &statement.shared_fields {
+		let field_type = match type_store.lookup_type(
+			messages,
+			function_store,
+			module_path,
+			generic_usages,
+			root_layers,
+			scope.symbols,
+			function_initial_symbols_len,
+			&blank_generic_parameters,
+			&shared_field.parsed_type,
+		) {
+			Some(type_id) => type_id,
+			None => type_store.any_collapse_type_id(),
+		};
+
+		let field_shape = FieldShape {
+			name: shared_field.name.item,
+			field_type,
+			attribute: shared_field.attribute,
+			read_only: shared_field.read_only,
+		};
+		let span = shared_field.name.span + shared_field.parsed_type.span;
+		let node = Node::new(field_shape, span);
+		fields.push(node);
+	}
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	match tree_variant {
@@ -3619,9 +3638,10 @@ fn validate_enum_initializer<'a>(
 					EnumInitializer::Transparent { expression } => expression,
 
 					EnumInitializer::StructLike { .. } => {
-						let error =
-							error!("Cannot construct transparent enum variant `{variant_name}` like a struck-like enum variant");
-						context.message(error.span(span));
+						context.message(
+							error!("Cannot construct transparent enum variant `{variant_name}` like a struck-like enum variant")
+								.span(span),
+						);
 						return None;
 					}
 				};
@@ -3660,7 +3680,7 @@ fn validate_enum_initializer<'a>(
 			EnumInitializer::StructLike { struct_initializer } => struct_initializer,
 
 			EnumInitializer::Transparent { .. } => {
-				let error = error!("Cannot construct struck-like enum variant `{variant_name}` like a transparent enum variant",);
+				let error = error!("Cannot construct struck-like enum variant `{variant_name}` like a transparent enum variant");
 				context.message(error.span(span));
 				return None;
 			}

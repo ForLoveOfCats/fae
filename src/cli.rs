@@ -9,6 +9,7 @@ pub struct CliArguments {
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
 	pub optimize_artifacts: bool,
+	pub debug_generics: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,7 @@ pub fn parse_arguments() -> CliArguments {
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LLVM,
 		optimize_artifacts: false,
+		debug_generics: false,
 	};
 
 	while let Some(arg) = iterator.next() {
@@ -111,11 +113,17 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			eprintln!("Options:");
 			eprintln!("  --help: Print this help message");
 			eprintln!("  --release: Build artifacts with optimizations enabled");
+			eprintln!("  --debug-generics: Include useful debug information when printing types");
+			eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
 			std::process::exit(0);
 		}
 
 		Some("--release") => {
 			cli_arguments.optimize_artifacts = true;
+		}
+
+		Some("--debug-generics") => {
+			cli_arguments.debug_generics = true;
 		}
 
 		Some("--disable-std") => {
