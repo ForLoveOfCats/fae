@@ -1,0 +1,11 @@
+import fae::stdout::print_i32, print_string, print_newline
+
+fn main() {
+	let result = file_0::logic_0(3)
+
+	print_newline()
+
+	print_string("Resulting i32: ")
+	print_i32(result)
+	print_newline()
+}

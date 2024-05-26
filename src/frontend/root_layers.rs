@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::frontend::error::Messages;
@@ -6,14 +7,18 @@ use crate::frontend::tree::{Node, PathSegments};
 
 #[derive(Debug)]
 pub struct RootLayers<'a> {
-	pub layers: Vec<RootLayer<'a>>,
+	pub layers: HashMap<&'a str, RootLayer<'a>>,
 	pub root_name: String,
 	pub root_layer_index: usize,
 }
 
 impl<'a> RootLayers<'a> {
 	pub fn new(root_name: String) -> Self {
-		RootLayers { layers: Vec::new(), root_name, root_layer_index: usize::MAX }
+		RootLayers {
+			layers: HashMap::new(),
+			root_name,
+			root_layer_index: usize::MAX,
+		}
 	}
 
 	pub fn layer_for_path(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<&RootLayer<'a>> {
@@ -25,8 +30,8 @@ impl<'a> RootLayers<'a> {
 		let mut layers = &self.layers;
 
 		for (piece_index, piece) in segments.iter().enumerate() {
-			let layer = match layers.iter().position(|x| x.name == piece.item) {
-				Some(index) => &layers[index],
+			let layer = match layers.get(piece.item) {
+				Some(layer) => layer,
 
 				None => {
 					messages.message(error!("Cannot find module layer for path segment").span(piece.span));
@@ -47,29 +52,13 @@ impl<'a> RootLayers<'a> {
 		assert!(!path.is_empty());
 		if let [piece] = &path {
 			if *piece == self.root_name {
-				// Dumb indexing to satisfy borrow checker
-				for index in 0..self.layers.len() {
-					if self.layers[index].name == self.root_name {
-						return &mut self.layers[index];
-					}
-				}
-
-				self.root_layer_index = self.layers.len();
-				self.layers.push(RootLayer::new(piece));
-				return self.layers.last_mut().unwrap();
+				return self.layers.entry(piece.as_str()).or_insert(RootLayer::new(piece));
 			}
 		}
 
 		let mut layers = &mut self.layers;
 		for (piece_index, piece) in path.iter().enumerate() {
-			let layer = match layers.iter().position(|x| x.name == *piece) {
-				Some(index) => &mut layers[index],
-
-				None => {
-					layers.push(RootLayer::new(piece));
-					layers.last_mut().unwrap()
-				}
-			};
+			let layer = layers.entry(piece.as_str()).or_insert(RootLayer::new(piece));
 
 			if piece_index + 1 == path.len() {
 				return layer;
@@ -91,7 +80,7 @@ impl<'a> RootLayers<'a> {
 #[derive(Debug)]
 pub struct RootLayer<'a> {
 	pub name: &'a str,
-	pub children: Vec<RootLayer<'a>>,
+	pub children: HashMap<&'a str, RootLayer<'a>>,
 	pub symbols: Symbols<'a>,
 	pub importable_types_range: Range<usize>,
 	pub importable_functions_range: Range<usize>,
@@ -103,7 +92,7 @@ impl<'a> RootLayer<'a> {
 	fn new(name: &'a str) -> Self {
 		RootLayer {
 			name,
-			children: Vec::new(),
+			children: HashMap::new(),
 			symbols: Symbols::new(),
 			importable_types_range: 0..0,
 			importable_functions_range: 0..0,

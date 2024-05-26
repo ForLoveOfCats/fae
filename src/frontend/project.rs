@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use serde::Deserialize;
 
@@ -95,9 +96,14 @@ pub fn build_project(
 	let mut messages = Messages::new(&files);
 
 	//Parallelizable
+	let parse_start = Instant::now();
 	let mut parsed_files = Vec::new();
 	for file in &files {
 		parsed_files.push(parse_file(&mut messages, file));
+	}
+
+	if cli_arguments.command != CompileCommand::CompilerTest {
+		eprintln!("    {BOLD_GREEN}Parsed all files{RESET} took {} ms", parse_start.elapsed().as_millis());
 	}
 
 	any_errors |= messages.any_errors();
@@ -106,6 +112,7 @@ pub fn build_project(
 	messages.reset();
 
 	//Partially parallelizable
+	let validate_start = Instant::now();
 	let mut lang_items = LangItems::new();
 	let mut root_layers = RootLayers::new(root_name);
 	let mut type_store = TypeStore::new(cli_arguments.debug_generics);
@@ -127,15 +134,26 @@ pub fn build_project(
 	messages.print_messages(err_output, "Validation");
 	messages.reset();
 	if any_errors {
+		std::mem::forget(function_store);
+		std::mem::forget(type_store);
+		std::mem::forget(parsed_files);
 		return BuiltProject { binary_path: None, any_messages, any_errors };
 	}
 
+	if cli_arguments.command != CompileCommand::CompilerTest {
+		eprintln!("   {BOLD_GREEN}Validated project{RESET} took {} ms", validate_start.elapsed().as_millis());
+	}
+
 	//Not parallelizable
+	let codegen_start = Instant::now();
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => {
 			llvm::amd64::generate_code(cli_arguments, &mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
 		}
 	};
+	if cli_arguments.command != CompileCommand::CompilerTest {
+		eprintln!("    {BOLD_GREEN}Finished codegen{RESET} took {} ms", codegen_start.elapsed().as_millis());
+	}
 
 	assert!(!messages.any_errors());
 	any_errors |= messages.any_errors();
@@ -145,6 +163,9 @@ pub fn build_project(
 		eprintln!("        {BOLD_GREEN}Built binary{RESET} {}", binary_path.display());
 	}
 
+	std::mem::forget(function_store);
+	std::mem::forget(type_store);
+	std::mem::forget(parsed_files);
 	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 }
 
