@@ -156,10 +156,7 @@ impl<'a> Tokens<'a> {
 		self.tokens
 	}
 
-	pub fn next(&mut self) -> ParseResult<Token<'a>> {
-		self.next_actual()
-	}
-
+	#[inline]
 	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
 		if self.index >= self.tokens.len() {
 			return Err(());
@@ -169,10 +166,12 @@ impl<'a> Tokens<'a> {
 		Ok(self.tokens[index])
 	}
 
+	#[inline]
 	pub fn peek_kind(&mut self) -> ParseResult<TokenKind> {
 		self.peek().map(|token| token.kind)
 	}
 
+	#[inline]
 	pub fn previous_kind(&mut self) -> Option<TokenKind> {
 		if self.index == 0 || self.index - 1 >= self.tokens.len() {
 			return None;
@@ -181,7 +180,8 @@ impl<'a> Tokens<'a> {
 		Some(self.tokens[self.index - 1].kind)
 	}
 
-	pub fn next_actual(&mut self) -> ParseResult<Token<'a>> {
+	#[inline]
+	pub fn next(&mut self) -> ParseResult<Token<'a>> {
 		if self.index >= self.tokens.len() {
 			return Err(());
 		}
@@ -191,14 +191,16 @@ impl<'a> Tokens<'a> {
 		Ok(self.tokens[index])
 	}
 
+	#[inline]
 	pub fn consume_newlines(&mut self) {
 		while self.peek_kind() == Ok(TokenKind::Newline) {
 			self.index += 1;
 		}
 	}
 
+	#[inline]
 	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
-		let token = self.next_actual()?;
+		let token = self.next()?;
 		if token.kind == expected {
 			return Ok(token);
 		}
@@ -208,6 +210,7 @@ impl<'a> Tokens<'a> {
 		Err(())
 	}
 
+	#[inline]
 	pub fn expect_word(&mut self, messages: &mut Messages, expected: &str) -> ParseResult<Token<'a>> {
 		let token = self.expect(messages, TokenKind::Word)?;
 		if token.text == expected {
