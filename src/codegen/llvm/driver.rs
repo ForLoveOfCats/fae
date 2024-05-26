@@ -6,10 +6,6 @@ use std::process::Command;
 
 use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
 use llvm_sys::core::{LLVMContextCreate, LLVMPrintModuleToFile};
-use llvm_sys::target::{
-	LLVMInitializeX86AsmParser, LLVMInitializeX86AsmPrinter, LLVMInitializeX86Disassembler, LLVMInitializeX86Target,
-	LLVMInitializeX86TargetInfo, LLVMInitializeX86TargetMC,
-};
 use llvm_sys::target_machine::{
 	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode,
 	LLVMTargetMachineEmitToFile,
@@ -34,13 +30,24 @@ pub fn generate_code<'a>(
 	function_store: &mut FunctionStore<'a>,
 	statics: &Statics,
 ) -> PathBuf {
+	#[cfg(target_os = "linux")]
 	unsafe {
-		LLVMInitializeX86Target();
-		LLVMInitializeX86TargetInfo();
-		LLVMInitializeX86AsmPrinter();
-		LLVMInitializeX86AsmParser();
-		LLVMInitializeX86Disassembler();
-		LLVMInitializeX86TargetMC();
+		llvm_sys::target::LLVMInitializeX86Target();
+		llvm_sys::target::LLVMInitializeX86TargetInfo();
+		llvm_sys::target::LLVMInitializeX86AsmPrinter();
+		llvm_sys::target::LLVMInitializeX86AsmParser();
+		llvm_sys::target::LLVMInitializeX86Disassembler();
+		llvm_sys::target::LLVMInitializeX86TargetMC();
+	}
+
+	#[cfg(target_os = "macos")]
+	unsafe {
+		llvm_sys::target::LLVMInitializeAArch64Target();
+		llvm_sys::target::LLVMInitializeAArch64TargetInfo();
+		llvm_sys::target::LLVMInitializeAArch64AsmPrinter();
+		llvm_sys::target::LLVMInitializeAArch64AsmParser();
+		llvm_sys::target::LLVMInitializeAArch64Disassembler();
+		llvm_sys::target::LLVMInitializeAArch64TargetMC();
 	}
 
 	let context = unsafe { LLVMContextCreate() };
@@ -48,7 +55,11 @@ pub fn generate_code<'a>(
 
 	generate(messages, lang_items, type_store, function_store, statics, &mut generator);
 
+	#[cfg(target_os = "linux")]
 	let triple = c"x86_64-pc-linux-gnu";
+	#[cfg(target_os = "macos")]
+	let triple = c"aarch64-apple-darwin";
+
 	let target = unsafe {
 		let mut target = std::ptr::null_mut();
 
@@ -113,29 +124,52 @@ pub fn generate_code<'a>(
 		LLVMTargetMachineEmitToFile(
 			machine,
 			generator.module,
-			object_path.into_raw(), // Why
+			object_path.into_raw(), // Why does this need mutable access???
 			LLVMCodeGenFileType::LLVMObjectFile,
 			error_string.as_mut_ptr(),
 		);
 	}
 
-	let path = PathBuf::from("./fae_target/fae_executable.x64");
-	let mut lld = Command::new("ld.lld")
-		.arg(object_path)
-		.arg("/usr/lib/crt1.o")
-		.arg("/usr/lib/crti.o")
-		.arg("/usr/lib/crtn.o")
-		.arg("/usr/lib/libc.so")
-		.arg("/usr/lib/libm.so")
-		.arg("-dynamic-linker")
-		.arg("/lib64/ld-linux-x86-64.so.2")
-		.arg("-o")
-		.arg(&path)
-		.spawn()
-		.unwrap();
+	#[cfg(target_os = "linux")]
+	{
+		let path = PathBuf::from("./fae_target/fae_executable.x64");
+		let mut lld = Command::new("ld.lld")
+			.arg(object_path)
+			.arg("/usr/lib/crt1.o")
+			.arg("/usr/lib/crti.o")
+			.arg("/usr/lib/crtn.o")
+			.arg("/usr/lib/libc.so")
+			.arg("/usr/lib/libm.so")
+			.arg("-dynamic-linker")
+			.arg("/lib64/ld-linux-x86-64.so.2")
+			.arg("-o")
+			.arg(&path)
+			.spawn()
+			.unwrap();
 
-	let status = lld.wait().unwrap();
-	assert!(status.success());
+		let status = lld.wait().unwrap();
+		assert!(status.success());
 
-	path
+		return path;
+	}
+
+	#[cfg(target_os = "macos")]
+	{
+		let path = PathBuf::from("./fae_target/fae_executable.aarch64");
+		let mut lld = Command::new("ld64.lld")
+			.arg(object_path)
+			.arg("-dynamic")
+			.args(["-platform_version", "macos", "14.5.0", "14.5.0"])
+			.args(["-arch", "arm64"])
+			.arg("/Library/Developer/CommandLineTools/SDKs/MacOSX13.sdk/usr/lib/libSystem.tbd")
+			.arg("-o")
+			.arg(&path)
+			.spawn()
+			.unwrap();
+
+		let status = lld.wait().unwrap();
+		assert!(status.success());
+
+		return path;
+	}
 }

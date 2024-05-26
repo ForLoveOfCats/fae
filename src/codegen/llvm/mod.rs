@@ -1,4 +1,4 @@
-pub mod amd64;
+pub mod driver;
 pub mod generator;
 
 mod abi;

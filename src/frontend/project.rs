@@ -148,7 +148,7 @@ pub fn build_project(
 	let codegen_start = Instant::now();
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => {
-			llvm::amd64::generate_code(cli_arguments, &mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
+			llvm::driver::generate_code(cli_arguments, &mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
 		}
 	};
 	if cli_arguments.command != CompileCommand::CompilerTest {

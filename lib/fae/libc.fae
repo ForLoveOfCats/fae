@@ -2,12 +2,15 @@ const StdInDescription: i32 = 0
 const StdOutDescription: i32 = 1
 const StdErrDescription: i32 = 2
 
+// extern "__stdinp"
 extern "stdin"
 static StdInFile: &&FileHandle
 
+// extern "__stdoutp"
 extern "stdout"
 static StdOutFile: &&FileHandle
 
+// extern "__stderrp"
 extern "stderr"
 static StdErrFile: &&FileHandle
 

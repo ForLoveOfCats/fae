@@ -416,6 +416,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let extern_attribute = static_instance.extern_attribute.unwrap();
 			let name = CString::new(extern_attribute.name).unwrap();
 			let global = unsafe { LLVMAddGlobal(self.module, llvm_type, name.as_ptr()) };
+			unsafe { LLVMSetLinkage(global, LLVMLinkage::LLVMExternalLinkage) };
 
 			let kind = BindingKind::Value(global);
 			let binding = Binding { type_id: static_instance.type_id, kind };
