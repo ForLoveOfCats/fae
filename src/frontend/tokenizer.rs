@@ -146,10 +146,78 @@ impl<'a> Token<'a> {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
-struct PeekedInfo<'a> {
-	token: Token<'a>,
-	byte_index: usize,
+pub struct Tokens<'a> {
+	index: usize,
+	tokens: Vec<Token<'a>>,
+}
+
+impl<'a> Tokens<'a> {
+	pub fn tear_down(self) -> Vec<Token<'a>> {
+		self.tokens
+	}
+
+	pub fn next(&mut self) -> ParseResult<Token<'a>> {
+		self.next_actual()
+	}
+
+	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
+		if self.index >= self.tokens.len() {
+			return Err(());
+		}
+
+		let index = self.index;
+		Ok(self.tokens[index])
+	}
+
+	pub fn peek_kind(&mut self) -> ParseResult<TokenKind> {
+		self.peek().map(|token| token.kind)
+	}
+
+	pub fn previous_kind(&mut self) -> Option<TokenKind> {
+		if self.index == 0 || self.index - 1 >= self.tokens.len() {
+			return None;
+		}
+
+		Some(self.tokens[self.index - 1].kind)
+	}
+
+	pub fn next_actual(&mut self) -> ParseResult<Token<'a>> {
+		if self.index >= self.tokens.len() {
+			return Err(());
+		}
+
+		let index = self.index;
+		self.index += 1;
+		Ok(self.tokens[index])
+	}
+
+	pub fn consume_newlines(&mut self) {
+		while self.peek_kind() == Ok(TokenKind::Newline) {
+			self.index += 1;
+		}
+	}
+
+	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
+		let token = self.next_actual()?;
+		if token.kind == expected {
+			return Ok(token);
+		}
+
+		let message = error!("Expected {expected} but found {:?}", token.text);
+		messages.message(message.span(token.span));
+		Err(())
+	}
+
+	pub fn expect_word(&mut self, messages: &mut Messages, expected: &str) -> ParseResult<Token<'a>> {
+		let token = self.expect(messages, TokenKind::Word)?;
+		if token.text == expected {
+			return Ok(token);
+		}
+
+		let message = error!("Expected word {expected:?} but found word {:?}", token.text);
+		messages.message(message.span(token.span));
+		Err(())
+	}
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -158,88 +226,36 @@ pub struct Tokenizer<'a> {
 	source: &'a str,
 	bytes: &'a [u8],
 	offset: usize,
-	peeked: Option<PeekedInfo<'a>>,
-	previous: Option<Token<'a>>,
-	token_count: usize,
 }
 
 impl<'a> Tokenizer<'a> {
 	pub fn new(file_index: usize, source: &'a str) -> Tokenizer<'a> {
-		Tokenizer {
-			file_index,
-			source,
-			bytes: source.as_bytes(),
-			offset: 0,
-			peeked: None,
-			previous: None,
-			token_count: 0,
-		}
+		Tokenizer { file_index, source, bytes: source.as_bytes(), offset: 0 }
 	}
 
-	// TODO: Add `peek_word`
-	pub fn peek(&mut self) -> ParseResult<Token<'a>> {
-		if let Some(peeked) = self.peeked {
-			return Ok(peeked.token);
+	pub fn tokenize(&mut self, mut tokens: Vec<Token<'a>>, messages: &mut Messages) -> Tokens<'a> {
+		tokens.clear();
+
+		while let Ok(token) = self.next(messages) {
+			tokens.push(token);
 		}
 
-		let mut local = *self;
-		let peeked = local.next_with_optional_messages(&mut None, false);
-
-		if let Ok(peeked) = peeked {
-			self.peeked = Some(PeekedInfo { token: peeked, byte_index: local.offset });
-		}
-
-		peeked
-	}
-
-	pub fn peek_kind(&mut self) -> ParseResult<TokenKind> {
-		self.peek().map(|token| token.kind)
-	}
-
-	pub fn previous_kind(&mut self) -> Option<TokenKind> {
-		self.previous.map(|t| t.kind)
-	}
-
-	pub fn consume_newlines(&mut self, messages: &mut Messages) {
-		while self.peek_kind() == Ok(TokenKind::Newline) {
-			self.next(messages).unwrap();
-		}
-	}
-
-	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
-		self.next_with_optional_messages(&mut Some(messages), false)
-	}
-
-	pub fn next_with_optional_messages(
-		&mut self,
-		messages: &mut Option<&mut Messages>,
-		expects_newline: bool,
-	) -> ParseResult<Token<'a>> {
-		let token = self.impl_next_with_optional_messages(messages, expects_newline)?;
-		self.previous = Some(token);
-		Ok(token)
+		Tokens { index: 0, tokens }
 	}
 
 	// Do not call directly, will not update previous token
-	fn impl_next_with_optional_messages(
-		&mut self,
-		messages: &mut Option<&mut Messages>,
-		expects_newline: bool,
-	) -> ParseResult<Token<'a>> {
+	#[inline]
+	fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
 		use TokenKind::*;
-
-		if let Some(peeked) = self.peeked.take() {
-			self.offset = peeked.byte_index;
-			self.token_count += 1;
-			return Ok(peeked.token);
-		}
 
 		let pre_whitespace_offset = self.offset;
 		if let Some(newline_token) = self.consume_leading_whitespace()? {
 			return Ok(newline_token);
 		}
 
-		self.verify_not_eof(messages, expects_newline)?;
+		if self.offset >= self.source.len() {
+			return Err(());
+		}
 
 		let token = match self.bytes[self.offset..] {
 			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1, self.file_index)),
@@ -285,13 +301,13 @@ impl<'a> Tokenizer<'a> {
 					self.offset += 1;
 				}
 
-				return self.next_with_optional_messages(messages, false);
+				return self.next(messages);
 			}
 
 			[b'/', b'*', ..] => {
 				loop {
 					self.offset += 1;
-					self.verify_not_eof(messages, false)?;
+					self.verify_not_eof(messages)?;
 
 					if matches!(self.bytes[self.offset..], [b'*', b'/', ..]) {
 						self.offset += 2;
@@ -299,7 +315,7 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				return self.next_with_optional_messages(messages, false);
+				return self.next(messages);
 			}
 
 			[b'/', b'=', ..] => {
@@ -413,7 +429,7 @@ impl<'a> Tokenizer<'a> {
 			[b'b', b'\'', ..] => {
 				let start_index = self.offset;
 				self.offset += 2;
-				self.verify_not_eof(messages, false)?;
+				self.verify_not_eof(messages)?;
 
 				if self.bytes[self.offset] == b'\\' {
 					self.offset += 2;
@@ -421,15 +437,13 @@ impl<'a> Tokenizer<'a> {
 					let before_advance = self.offset;
 					self.advance_by_codepoint(messages)?;
 					if self.offset - before_advance > 1 {
-						if let Some(messages) = messages {
-							let error = error!("Byte codepoint literal may not contain a multi-byte codepoint");
-							let span = Span {
-								start: before_advance,
-								end: before_advance + 1, // Only produce a single underscore
-								file_index: self.file_index,
-							};
-							messages.message(error.span(span));
-						}
+						let error = error!("Byte codepoint literal may not contain a multi-byte codepoint");
+						let span = Span {
+							start: before_advance,
+							end: before_advance + 1, // Only produce a single underscore
+							file_index: self.file_index,
+						};
+						messages.message(error.span(span));
 						return Err(());
 					}
 				}
@@ -447,7 +461,7 @@ impl<'a> Tokenizer<'a> {
 			[b'\'', ..] => {
 				let start_index = self.offset;
 				self.offset += 1;
-				self.verify_not_eof(messages, false)?;
+				self.verify_not_eof(messages)?;
 
 				if self.bytes[self.offset] == b'\\' {
 					self.offset += 2;
@@ -469,7 +483,7 @@ impl<'a> Tokenizer<'a> {
 				let start_index = self.offset;
 				loop {
 					self.offset += 1;
-					self.verify_not_eof(messages, false)?;
+					self.verify_not_eof(messages)?;
 
 					if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
 						self.offset += 1;
@@ -557,8 +571,8 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	// This is such a hack
-	fn advance_by_codepoint(&mut self, messages: &mut Option<&mut Messages>) -> ParseResult<()> {
-		self.verify_not_eof(messages, false)?;
+	fn advance_by_codepoint(&mut self, messages: &mut Messages) -> ParseResult<()> {
+		self.verify_not_eof(messages)?;
 
 		let mut chars = self.source[self.offset..].char_indices();
 		chars.next().ok_or(())?;
@@ -568,19 +582,17 @@ impl<'a> Tokenizer<'a> {
 	}
 
 	//TODO: Remove this
-	fn expect_byte(&mut self, messages: &mut Option<&mut Messages>, expected: u8) -> ParseResult<()> {
-		self.verify_not_eof(messages, false)?;
+	fn expect_byte(&mut self, messages: &mut Messages, expected: u8) -> ParseResult<()> {
+		self.verify_not_eof(messages)?;
 
 		let found = self.bytes[self.offset];
 		if found != expected {
-			if let Some(messages) = messages {
-				let err = error!("Expected {:?} but found {:?}", expected as char, found as char);
-				messages.message(err.span(Span {
-					start: self.offset,
-					end: self.offset + 1,
-					file_index: self.file_index,
-				}));
-			}
+			let err = error!("Expected {:?} but found {:?}", expected as char, found as char);
+			messages.message(err.span(Span {
+				start: self.offset,
+				end: self.offset + 1,
+				file_index: self.file_index,
+			}));
 
 			return Err(());
 		}
@@ -607,47 +619,19 @@ impl<'a> Tokenizer<'a> {
 		Ok(None)
 	}
 
-	fn verify_not_eof(&self, messages: &mut Option<&mut Messages>, expects_newline: bool) -> ParseResult<()> {
+	fn verify_not_eof(&self, messages: &mut Messages) -> ParseResult<()> {
 		if self.offset >= self.source.len() {
-			if let Some(messages) = messages {
-				let error = if expects_newline {
-					error!("Unexpected end of file, expected newline")
-				} else {
-					error!("Unexpected end of file")
-				};
+			let error = error!("Unexpected end of file");
+			let span = Span {
+				start: self.source.len().saturating_sub(1),
+				end: self.source.len().saturating_sub(1),
+				file_index: self.file_index,
+			};
+			messages.message(error.span(span));
 
-				let span = Span {
-					start: self.source.len().saturating_sub(1),
-					end: self.source.len().saturating_sub(1),
-					file_index: self.file_index,
-				};
-				messages.message(error.span(span));
-			}
 			Err(())
 		} else {
 			Ok(())
 		}
-	}
-
-	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
-		let token = self.next_with_optional_messages(&mut Some(messages), expected == TokenKind::Newline)?;
-		if token.kind == expected {
-			return Ok(token);
-		}
-
-		let message = error!("Expected {expected} but found {:?}", token.text);
-		messages.message(message.span(token.span));
-		Err(())
-	}
-
-	pub fn expect_word(&mut self, messages: &mut Messages, expected: &str) -> ParseResult<Token<'a>> {
-		let token = self.expect(messages, TokenKind::Word)?;
-		if token.text == expected {
-			return Ok(token);
-		}
-
-		let message = error!("Expected word {expected:?} but found word {:?}", token.text);
-		messages.message(message.span(token.span));
-		Err(())
 	}
 }

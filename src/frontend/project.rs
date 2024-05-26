@@ -13,6 +13,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::parser::parse_file;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::symbols::Statics;
+use crate::frontend::tokenizer::Tokenizer;
 use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
 
@@ -98,8 +99,12 @@ pub fn build_project(
 	//Parallelizable
 	let parse_start = Instant::now();
 	let mut parsed_files = Vec::new();
+	let mut tokens_vec = Vec::new();
 	for file in &files {
-		parsed_files.push(parse_file(&mut messages, file));
+		let mut tokenizer = Tokenizer::new(file.index, &file.source);
+		let mut tokens = tokenizer.tokenize(std::mem::take(&mut tokens_vec), &mut messages);
+		parsed_files.push(parse_file(&mut messages, &mut tokens, file));
+		tokens_vec = tokens.tear_down();
 	}
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
