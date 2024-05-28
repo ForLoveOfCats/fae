@@ -1,6 +1,7 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::rc::Rc;
+
+use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
@@ -190,7 +191,7 @@ pub struct FunctionShape<'a> {
 	pub block: Option<Rc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
 
-	pub specializations_by_type_arguments: HashMap<TypeArguments, usize>,
+	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
 	pub specializations: Vec<Function>,
 }
 

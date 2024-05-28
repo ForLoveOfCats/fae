@@ -1,4 +1,6 @@
-use std::collections::{hash_map, HashMap};
+use std::collections::hash_map;
+
+use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::root_layers::RootLayers;
@@ -179,12 +181,12 @@ impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 
 #[derive(Debug)]
 pub struct Externs {
-	pub externs: HashMap<String, Span>,
+	pub externs: FxHashMap<String, Span>,
 }
 
 impl Externs {
 	pub fn new() -> Externs {
-		Externs { externs: HashMap::new() }
+		Externs { externs: FxHashMap::default() }
 	}
 
 	pub fn push(&mut self, messages: &mut Messages, name: &str, span: Span) {

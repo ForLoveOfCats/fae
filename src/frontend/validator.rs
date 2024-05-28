@@ -1,5 +1,6 @@
-use std::collections::HashMap;
 use std::rc::Rc;
+
+use rustc_hash::FxHashMap;
 
 use crate::cli::CliArguments;
 use crate::frontend::error::*;
@@ -823,7 +824,7 @@ fn create_block_enum<'a>(
 	}
 
 	let mut variants = Vec::new();
-	let mut variants_by_name = HashMap::new();
+	let mut variants_by_name = FxHashMap::default();
 
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = type_store.user_types.len();
@@ -1593,7 +1594,7 @@ fn create_block_functions<'a>(
 				return_type,
 				block: None,
 				generic_usages: Vec::new(),
-				specializations_by_type_arguments: HashMap::new(),
+				specializations_by_type_arguments: FxHashMap::default(),
 				specializations: Vec::new(),
 			};
 			function_store.shapes.push(shape);

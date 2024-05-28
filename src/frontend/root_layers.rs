@@ -1,5 +1,6 @@
-use std::collections::HashMap;
 use std::ops::Range;
+
+use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::symbols::{Symbol, Symbols};
@@ -7,7 +8,7 @@ use crate::frontend::tree::{Node, PathSegments};
 
 #[derive(Debug)]
 pub struct RootLayers<'a> {
-	pub layers: HashMap<&'a str, RootLayer<'a>>,
+	pub layers: FxHashMap<&'a str, RootLayer<'a>>,
 	pub root_name: String,
 	pub root_layer_index: usize,
 }
@@ -15,7 +16,7 @@ pub struct RootLayers<'a> {
 impl<'a> RootLayers<'a> {
 	pub fn new(root_name: String) -> Self {
 		RootLayers {
-			layers: HashMap::new(),
+			layers: FxHashMap::default(),
 			root_name,
 			root_layer_index: usize::MAX,
 		}
@@ -80,7 +81,7 @@ impl<'a> RootLayers<'a> {
 #[derive(Debug)]
 pub struct RootLayer<'a> {
 	pub name: &'a str,
-	pub children: HashMap<&'a str, RootLayer<'a>>,
+	pub children: FxHashMap<&'a str, RootLayer<'a>>,
 	pub symbols: Symbols<'a>,
 	pub importable_types_range: Range<usize>,
 	pub importable_functions_range: Range<usize>,
@@ -92,7 +93,7 @@ impl<'a> RootLayer<'a> {
 	fn new(name: &'a str) -> Self {
 		RootLayer {
 			name,
-			children: HashMap::new(),
+			children: FxHashMap::default(),
 			symbols: Symbols::new(),
 			importable_types_range: 0..0,
 			importable_functions_range: 0..0,

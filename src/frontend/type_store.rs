@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
@@ -162,7 +162,7 @@ pub struct StructShape<'a> {
 	pub variant_index: Option<usize>,
 	pub is_transparent_variant: bool,
 
-	pub specializations_by_type_arguments: HashMap<TypeArguments, usize>,
+	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
 	pub specializations: Vec<Struct<'a>>,
 }
 
@@ -180,7 +180,7 @@ impl<'a> StructShape<'a> {
 			parent_enum_shape_index,
 			variant_index,
 			is_transparent_variant,
-			specializations_by_type_arguments: HashMap::new(),
+			specializations_by_type_arguments: FxHashMap::default(),
 			specializations: Vec::new(),
 		}
 	}
@@ -219,20 +219,20 @@ pub struct EnumShape<'a> {
 	pub shared_fields: Vec<Node<FieldShape<'a>>>,
 
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
-	pub variant_shapes_by_name: HashMap<&'a str, usize>, // Index into variant shapes vec
+	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
 
-	pub specializations_by_type_arguments: HashMap<TypeArguments, usize>,
+	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
 	pub specializations: Vec<Enum<'a>>,
 }
 
 impl<'a> EnumShape<'a> {
-	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: HashMap<&'a str, usize>) -> Self {
+	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: FxHashMap<&'a str, usize>) -> Self {
 		EnumShape {
 			been_filled: false,
 			shared_fields: Vec::new(),
 			variant_shapes,
 			variant_shapes_by_name,
-			specializations_by_type_arguments: HashMap::new(),
+			specializations_by_type_arguments: FxHashMap::default(),
 			specializations: Vec::new(),
 		}
 	}
@@ -255,7 +255,7 @@ pub struct Enum<'a> {
 	pub been_filled: bool,
 	pub shared_fields: Vec<Field<'a>>,
 	pub variants: Vec<EnumVariant>,
-	pub variants_by_name: HashMap<&'a str, usize>, // Index into variants vec
+	pub variants_by_name: FxHashMap<&'a str, usize>, // Index into variants vec
 	pub layout: Option<Layout>,
 	pub tag_memory_size: Option<i64>,
 }
@@ -274,7 +274,7 @@ pub struct UserType<'a> {
 	pub module_path: &'a [String],
 	pub scope_id: ScopeId,
 	pub generic_parameters: GenericParameters<'a>,
-	pub methods: HashMap<&'a str, MethodInfo>,
+	pub methods: FxHashMap<&'a str, MethodInfo>,
 	pub kind: UserTypeKind<'a>,
 }
 
@@ -1076,7 +1076,7 @@ impl<'a> TypeStore<'a> {
 			module_path,
 			scope_id,
 			generic_parameters,
-			methods: HashMap::new(),
+			methods: FxHashMap::default(),
 			kind,
 		};
 		self.user_types.push(user_type);
@@ -1687,7 +1687,7 @@ impl<'a> TypeStore<'a> {
 		};
 		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
 
-		let mut variants_by_name = HashMap::new();
+		let mut variants_by_name = FxHashMap::default();
 		let mut variants = Vec::new();
 
 		for variant_shape in variant_shapes {
