@@ -17,6 +17,10 @@ use cli::{parse_arguments, CompileCommand};
 use color::{BOLD_GREEN, RESET};
 use frontend::project::build_project;
 
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn main() {
 	let cli_arguments = parse_arguments();
 	if cli_arguments.command == CompileCommand::CompilerTest {
