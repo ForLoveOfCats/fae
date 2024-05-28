@@ -29,7 +29,7 @@ amet aliquam id diam maecenas ultricies. Nulla at volutpat diam ut venenatis tel
 mattis molestie a iaculis at erat. Ultricies lacus sed turpis tincidunt id aliquet risus feugiat.
 */
 
-enum Enum{index} {{
+enum Enum {{
 	first_shared: f64
 	second_shared: i16
 
@@ -43,7 +43,7 @@ enum Enum{index} {{
 	E {{ first_e: file_{index + 1}::Struct{index + 1} }}
 }}
 
-enum TransparentEnum{index} {{
+enum TransparentEnum {{
 	A(i32)
 	B(f64) // That's a float
 	C(u8)
@@ -51,7 +51,7 @@ enum TransparentEnum{index} {{
 }}
 
 generic T, E
-enum Result{index} {{
+enum Result {{
 	Okay(T)
 	Error(E) // Oh no an error
 }}
@@ -59,22 +59,22 @@ enum Result{index} {{
 import file_{index + 1}::Entity{index + 1}
 
 generic T
-struct EntityStore{index} {{
+struct EntityStore {{
 	previous_time: f64
 	elapsed: f64
 	entities: List<Entity{index + 1}<T>>
 }}
 
-method static EntityStore{index}
-fn new(): EntityStore{index}<T> {{
-	return EntityStore{index}<T> {{
+method static EntityStore
+fn new(): EntityStore<T> {{
+	return EntityStore<T> {{
 		previous_time: 0
 		elapsed: 0
 		entities: List<Entity{index + 1}<T>>.new()
 	}}
 }}
 
-method mut EntityStore{index}
+method mut EntityStore
 fn tick(current_time: f64) {{
 	// Increment our time state
 	let delta = current_time - self.previous_time
@@ -85,6 +85,29 @@ fn tick(current_time: f64) {{
 	while index < self.entities.length {{
 		self.entities.get_mut(index).tick(delta)
 		index += 1
+	}}
+}}
+
+generic T
+enum EnumEntityStore {{
+	shared_entities: List<Entity{index + 1}<T>>
+
+	Variant {{ variant_entities: List<Entity{index + 1}<T>> }}
+}}
+
+method static EnumEntityStore
+fn new(): EnumEntityStore<T> {{
+	return .Variant {{
+		shared_entities: List<Entity{index + 1}<T>>.new()
+		variant_entities: List<Entity{index + 1}<T>>.new()
+	}}
+}}
+
+method static EnumEntityStore
+fn new_variant(): EnumEntityStore<T>.Variant {{
+	return EnumEntityStore<T>.Variant {{
+		shared_entities: List<Entity{index + 1}<T>>.new()
+		variant_entities: List<Entity{index + 1}<T>>.new()
 	}}
 }}
 
@@ -108,6 +131,9 @@ fn tick(delta: f64) {{
 
 def generate_normal_logic(index):
 	return f"""
+generic T
+fn function(arg: &List<Entity{index + 1}<T>>) {{}}
+
 fn logic_{index}(addend: i32): i32 {{
 	mut the_struct: Struct{index} = Struct{index} {{
 		first: addend
@@ -161,6 +187,46 @@ fn logic_{index}(addend: i32): i32 {{
 		print_newline()
 	}} else => print_string("Error 2\\n")
 
+	print_newline()
+
+	mut store = EntityStore<i16>.new()
+	store.entities.push(Entity{index + 1}<i16> {{ health: 100, payload: -500 }})
+	function<i16>(store.entities.&)
+	print_i16(store.entities.get(0).payload)
+	print_newline()
+
+	print_newline()
+
+	mut enum_store: EnumEntityStore<f64> = EnumEntityStore<f64>.new_variant()
+	enum_store.shared_entities.push(Entity{index + 1}<f64> {{ health: 100, payload: 42.9 }})
+	function<f64>(enum_store.shared_entities.&)
+	print_f64(enum_store.shared_entities.get(0).payload)
+	print_newline()
+
+	if enum_store is Variant {{
+		enum_store.shared_entities.push(Entity{index + 1}<f64> {{ health: 100, payload: 43.8 }})
+		function<f64>(enum_store.shared_entities.&)
+		print_f64(enum_store.shared_entities.get(1).payload)
+		print_newline()
+
+		enum_store.variant_entities.push(Entity{index + 1}<f64> {{ health: 100, payload: 44.7 }})
+		function<f64>(enum_store.variant_entities.&)
+		print_f64(enum_store.variant_entities.get(0).payload)
+		print_newline()
+	}}
+
+	print_newline()
+
+	mut variant_store: EnumEntityStore<i32>.Variant = EnumEntityStore<i32>.new_variant()
+	variant_store.shared_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -600 }})
+	variant_store.variant_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -700 }})
+	function<i32>(variant_store.shared_entities.&)
+	function<i32>(variant_store.variant_entities.&)
+	print_i32(variant_store.shared_entities.get(0).payload)
+	print_newline()
+	print_i32(variant_store.variant_entities.get(0).payload)
+	print_newline()
+
 	return file_{index + 1}::logic_{index + 1}(addend) + addend
 }}
 
@@ -169,7 +235,7 @@ struct ErrorStruct {{
 }}
 
 generic T
-fn do_failable_thing(arg: T, index: i32): Result{index}<T, ErrorStruct> {{
+fn do_failable_thing(arg: T, index: i32): Result<T, ErrorStruct> {{
 	if index > 10 => return .Error(ErrorStruct {{ index }})
 	else => return .Okay(arg)
 }}
@@ -177,7 +243,7 @@ fn do_failable_thing(arg: T, index: i32): Result{index}<T, ErrorStruct> {{
 
 def generate_normal_file(index):
 	return f"""
-import fae::stdout::print_i32, print_f64, print_u8, print_u16, print_i64, print_bool, print_newline, print_string
+import fae::stdout::print_i16, print_i32, print_f64, print_u8, print_u16, print_i64, print_bool, print_newline, print_string
 import fae::collections::list::List
 
 {generate_normal_types(index)}
