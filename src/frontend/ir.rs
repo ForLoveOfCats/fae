@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::frontend::error::Messages;
@@ -68,11 +69,6 @@ impl<'a> GenericParameters<'a> {
 		&self.parameters[self.explicit_len..self.explicit_len + self.implicit_len]
 	}
 
-	pub fn method_base_parameters(&self) -> &[GenericParameter<'a>] {
-		let start = self.explicit_len + self.implicit_len;
-		&self.parameters[start..]
-	}
-
 	pub fn explicit_len(&self) -> usize {
 		self.explicit_len
 	}
@@ -88,16 +84,8 @@ impl<'a> GenericParameters<'a> {
 
 #[derive(Debug, Clone)]
 pub enum GenericUsage {
-	UserType {
-		type_arguments: Vec<TypeId>,
-		explicit_type_argument_len: usize,
-		shape_index: usize,
-	},
-
-	Function {
-		type_arguments: TypeArguments,
-		function_shape_index: usize,
-	},
+	UserType { type_arguments: TypeArguments, shape_index: usize },
+	Function { type_arguments: TypeArguments, function_shape_index: usize },
 }
 
 impl GenericUsage {
@@ -113,19 +101,18 @@ impl GenericUsage {
 		invoke_span: Option<Span>,
 	) {
 		match self {
-			GenericUsage::UserType { type_arguments, explicit_type_argument_len, shape_index } => {
-				let mut specialized_type_arguments = Vec::with_capacity(type_arguments.len());
-				for &type_argument in type_arguments {
-					let type_id = type_store.specialize_with_function_generics(
+			GenericUsage::UserType { type_arguments, shape_index } => {
+				let mut specialized_type_arguments = type_arguments.clone();
+				for type_argument in &mut specialized_type_arguments.ids {
+					*type_argument = type_store.specialize_with_function_generics(
 						messages,
 						function_store,
 						module_path,
 						generic_usages,
 						function_shape_index,
 						function_type_arguments,
-						type_argument,
+						*type_argument,
 					);
-					specialized_type_arguments.push(type_id);
 				}
 
 				type_store.get_or_add_shape_specialization(
@@ -135,8 +122,7 @@ impl GenericUsage {
 					generic_usages,
 					*shape_index,
 					None,
-					&specialized_type_arguments,
-					*explicit_type_argument_len,
+					specialized_type_arguments,
 				);
 			}
 
@@ -150,7 +136,7 @@ impl GenericUsage {
 				// function. This is extremely difficult to fix but simply omitting these
 				// specializations seems harmless as these specializations will not end up in the
 				// resulting binary anyway. The validity of this remains to be seen.
-				for argument in function_type_arguments.ids() {
+				for argument in &function_type_arguments.ids {
 					let kind = type_store.type_entries[argument.index()].kind;
 					if let TypeEntryKind::FunctionGeneric { function_shape_index: index, .. } = kind {
 						if function_shape_index != index {
@@ -204,6 +190,7 @@ pub struct FunctionShape<'a> {
 	pub block: Option<Rc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
 
+	pub specializations_by_type_arguments: HashMap<TypeArguments, usize>,
 	pub specializations: Vec<Function>,
 }
 
@@ -220,12 +207,38 @@ pub struct ParameterShape {
 	pub readable_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct TypeArguments {
-	ids: Vec<TypeId>,
-	explicit_len: usize,
-	implicit_len: usize,
-	method_base_len: usize,
+	pub explicit_len: usize,
+	pub implicit_len: usize,
+	pub method_base_len: usize,
+	pub ids: Vec<TypeId>,
+}
+
+impl std::cmp::Eq for TypeArguments {}
+
+impl std::cmp::PartialEq for TypeArguments {
+	fn eq(&self, other: &Self) -> bool {
+		!self.ne(other)
+	}
+
+	fn ne(&self, other: &Self) -> bool {
+		let len_mismatch = self.explicit_len != other.explicit_len
+			|| self.implicit_len != other.implicit_len
+			|| self.method_base_len != other.method_base_len;
+
+		if len_mismatch {
+			return true;
+		}
+
+		for (a, b) in self.ids.iter().copied().zip(other.ids.iter().copied()) {
+			if a.index() != b.index() {
+				return true;
+			}
+		}
+
+		false
+	}
 }
 
 impl TypeArguments {
@@ -254,41 +267,8 @@ impl TypeArguments {
 		self.ids.is_empty()
 	}
 
-	pub fn explicit_len(&self) -> usize {
-		self.explicit_len
-	}
-
-	pub fn implicit_len(&self) -> usize {
-		self.implicit_len
-	}
-
-	pub fn method_base_len(&self) -> usize {
-		self.method_base_len
-	}
-
-	pub fn ids(&self) -> &[TypeId] {
-		&self.ids
-	}
-
 	pub fn explicit_ids(&self) -> &[TypeId] {
 		&self.ids[0..self.explicit_len]
-	}
-
-	pub fn direct_matches(&self, other: &TypeArguments, type_store: &TypeStore) -> bool {
-		let implicit_mismatch = self.implicit_len != other.implicit_len;
-		let explicit_mismatch = self.explicit_len != other.explicit_len;
-		let method_base_mismatch = self.method_base_len != other.method_base_len;
-		if implicit_mismatch || explicit_mismatch || method_base_mismatch {
-			return false;
-		}
-
-		for (index, argument) in self.ids.iter().enumerate() {
-			if !type_store.direct_match(*argument, other.ids[index]) {
-				return false;
-			}
-		}
-
-		true
 	}
 
 	pub fn specialize_with_function_generics<'a>(

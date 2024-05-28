@@ -1227,7 +1227,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 				module_path,
 				generic_usages,
 				shape_index,
-				&specialization.type_arguments,
+				specialization.type_arguments.clone(),
 				field.type_id,
 			);
 		}
@@ -1298,7 +1298,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 				module_path,
 				generic_usages,
 				shape_index,
-				&specialization.type_arguments,
+				specialization.type_arguments.clone(),
 				field.type_id,
 			);
 		}
@@ -1310,7 +1310,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 				module_path,
 				generic_usages,
 				shape_index,
-				&specialization.type_arguments,
+				specialization.type_arguments.clone(),
 				variant.type_id,
 			);
 		}
@@ -1435,19 +1435,29 @@ fn create_block_functions<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
+			let mut base_type_arguments;
 			let implicit_generics_len = generic_parameters.implicit_len();
 			if let Some(base_shape_generics) = &base_shape_generics {
+				base_type_arguments = TypeArguments::new_from_explicit(Vec::new());
+
 				for (index, base_type_parameter) in base_shape_generics.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + implicit_generics_len + index;
 					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
 					let parameter = GenericParameter { name: base_type_parameter.name, generic_type_id };
 					generic_parameters.push_method_base(parameter);
+					base_type_arguments.ids.push(parameter.generic_type_id);
 
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(base_type_parameter.name.span);
 					let symbol = Symbol { name: base_type_parameter.name.item, kind, span };
 					scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 				}
+
+				base_type_arguments.explicit_len = base_shape_generics.explicit_len();
+				base_type_arguments.implicit_len = base_shape_generics.implicit_len();
+				base_type_arguments.method_base_len = base_shape_generics.method_base_len();
+			} else {
+				base_type_arguments = TypeArguments::new_from_explicit(Vec::new());
 			}
 
 			function_store.generics.push(generic_parameters.clone());
@@ -1489,14 +1499,6 @@ fn create_block_functions<'a>(
 				};
 
 				if let (Some(shape_index), Some(mutable)) = (method_base_shape_index, mutable) {
-					let base_shape_generics = base_shape_generics.unwrap();
-
-					let type_arguments: Vec<_> = generic_parameters
-						.method_base_parameters()
-						.iter()
-						.map(|parameter| parameter.generic_type_id)
-						.collect();
-
 					let base_type = type_store.get_or_add_shape_specialization(
 						messages,
 						function_store,
@@ -1504,8 +1506,7 @@ fn create_block_functions<'a>(
 						generic_usages,
 						shape_index,
 						Some(method_attribute.span),
-						&type_arguments,
-						base_shape_generics.explicit_len(),
+						base_type_arguments,
 					);
 					let type_id = match base_type {
 						Some(base_type) => type_store.pointer_to(base_type, mutable),
@@ -1592,6 +1593,7 @@ fn create_block_functions<'a>(
 				return_type,
 				block: None,
 				generic_usages: Vec::new(),
+				specializations_by_type_arguments: HashMap::new(),
 				specializations: Vec::new(),
 			};
 			function_store.shapes.push(shape);
@@ -2978,8 +2980,8 @@ fn get_method_function_specialization<'a>(
 
 	let user_type = &context.type_store.user_types[base_shape_index];
 	let method_base_arguments = match &user_type.kind {
-		UserTypeKind::Struct { shape } => shape.specializations[base_specialization_index].type_arguments.as_slice(),
-		UserTypeKind::Enum { shape } => shape.specializations[base_specialization_index].type_arguments.as_slice(),
+		UserTypeKind::Struct { shape } => shape.specializations[base_specialization_index].type_arguments.ids.as_slice(),
+		UserTypeKind::Enum { shape } => shape.specializations[base_specialization_index].type_arguments.ids.as_slice(),
 	};
 
 	for &base_argument in method_base_arguments {

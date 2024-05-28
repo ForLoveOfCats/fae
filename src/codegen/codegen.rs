@@ -38,7 +38,7 @@ pub fn generate<'a, G: Generator>(
 				continue;
 			}
 
-			for type_argument in specialization.type_arguments.ids() {
+			for type_argument in &specialization.type_arguments.ids {
 				let entry = &type_store.type_entries[type_argument.index()];
 				if entry.generic_poisoned {
 					panic!("The legacy C backend had this, does it ever get hit?")
@@ -95,7 +95,7 @@ pub fn generate_function<'a, G: Generator>(
 ) {
 	let specialization = &shape.specializations[function_id.specialization_index];
 
-	for type_argument in specialization.type_arguments.ids() {
+	for type_argument in &specialization.type_arguments.ids {
 		let entry = &type_store.type_entries[type_argument.index()];
 		if entry.generic_poisoned {
 			return;
@@ -655,7 +655,7 @@ fn generate_intrinsic<G: Generator>(
 
 	match call.name {
 		"size_of" => {
-			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			assert_eq!(specialization.type_arguments.explicit_len, 1);
 			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
 			let size = context.type_store.type_layout(type_id).size as i128;
 			let integer = IntegerValue::new_collapsed(size, span, context.type_store.isize_type_id());
@@ -663,7 +663,7 @@ fn generate_intrinsic<G: Generator>(
 		}
 
 		"alignment_of" => {
-			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			assert_eq!(specialization.type_arguments.explicit_len, 1);
 			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
 			let alignment = context.type_store.type_layout(type_id).alignment as i128;
 			let integer = IntegerValue::new_collapsed(alignment, span, context.type_store.isize_type_id());
@@ -671,7 +671,7 @@ fn generate_intrinsic<G: Generator>(
 		}
 
 		"create_slice" | "create_slice_mut" => {
-			assert_eq!(specialization.type_arguments.explicit_len(), 1);
+			assert_eq!(specialization.type_arguments.explicit_len, 1);
 			assert_eq!(specialization.parameters.len(), 2);
 			assert_eq!(call.arguments.len(), 2);
 
@@ -682,7 +682,7 @@ fn generate_intrinsic<G: Generator>(
 		}
 
 		"create_str" => {
-			assert_eq!(specialization.type_arguments.explicit_len(), 0);
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
 			assert_eq!(specialization.parameters.len(), 2);
 			assert_eq!(call.arguments.len(), 2);
 
@@ -693,7 +693,7 @@ fn generate_intrinsic<G: Generator>(
 		}
 
 		"user_main_function" => {
-			assert_eq!(specialization.type_arguments.explicit_len(), 0);
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
 			if let Some(main) = context.function_store.main {
 				generator.generate_call(context.type_store, main, &[]);
 			}

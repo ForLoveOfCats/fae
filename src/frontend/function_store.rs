@@ -23,15 +23,14 @@ impl<'a> FunctionStore<'a> {
 
 	fn get_specialization(
 		&self,
-		type_store: &TypeStore<'a>,
 		function_shape_index: usize,
 		type_arguments: &TypeArguments,
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
-		for (specialization_index, existing) in shape.specializations.iter().enumerate() {
-			if existing.type_arguments.direct_matches(type_arguments, type_store) {
-				return Some(FunctionSpecializationResult { specialization_index, return_type: existing.return_type });
-			}
+
+		if let Some(&specialization_index) = shape.specializations_by_type_arguments.get(type_arguments) {
+			let return_type = shape.specializations[specialization_index].return_type;
+			return Some(FunctionSpecializationResult { specialization_index, return_type });
 		}
 
 		None
@@ -49,24 +48,24 @@ impl<'a> FunctionStore<'a> {
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
 
-		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len() {
+		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
 			let expected = shape.generic_parameters.explicit_len();
-			let got = type_arguments.explicit_len();
+			let got = type_arguments.explicit_len;
 			let error = error!("Expected {expected} type arguments, got {got}");
 			messages.message(error.span_if_some(invoke_span));
 			return None;
 		}
 
-		assert_eq!(shape.generic_parameters.implicit_len(), type_arguments.implicit_len());
-		assert_eq!(shape.generic_parameters.method_base_len(), type_arguments.method_base_len());
+		assert_eq!(shape.generic_parameters.implicit_len(), type_arguments.implicit_len);
+		assert_eq!(shape.generic_parameters.method_base_len(), type_arguments.method_base_len);
 
-		if let Some(result) = self.get_specialization(type_store, function_shape_index, &type_arguments) {
+		if let Some(result) = self.get_specialization(function_shape_index, &type_arguments) {
 			return Some(result);
 		}
 
 		let shape = &self.shapes[function_shape_index];
 		let generic_poisoned = type_arguments
-			.ids()
+			.ids
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
 
@@ -111,6 +110,9 @@ impl<'a> FunctionStore<'a> {
 		};
 		let shape = &mut self.shapes[function_shape_index];
 		shape.specializations.push(concrete);
+		shape
+			.specializations_by_type_arguments
+			.insert(type_arguments.clone(), specialization_index);
 
 		if generic_poisoned {
 			let usage = GenericUsage::Function { type_arguments, function_shape_index };
@@ -149,7 +151,7 @@ impl<'a> FunctionStore<'a> {
 
 		let generic_poisoned = specialization
 			.type_arguments
-			.ids()
+			.ids
 			.iter()
 			.any(|id| type_store.type_entries[id.index()].generic_poisoned);
 		if !generic_poisoned {
@@ -169,7 +171,7 @@ impl<'a> FunctionStore<'a> {
 		);
 
 		let result = self
-			.get_specialization(type_store, function_id.function_shape_index, &type_arguments)
+			.get_specialization(function_id.function_shape_index, &type_arguments)
 			.unwrap();
 		assert!(generic_usages.is_empty());
 
