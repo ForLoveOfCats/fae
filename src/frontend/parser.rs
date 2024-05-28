@@ -1,24 +1,29 @@
 use std::borrow::Cow;
 
+use bumpalo::collections::Vec as BumpVec;
+use bumpalo::vec as bump_vec;
+use bumpalo::Bump;
+
 use crate::frontend::error::{Messages, ParseResult};
 use crate::frontend::file::SourceFile;
 use crate::frontend::span::Span;
 use crate::frontend::tokenizer::{Token, TokenKind, Tokens};
 use crate::frontend::tree::*;
 
-pub fn parse_file<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>, file: &'a SourceFile) -> File<'a> {
-	let block = parse_root_block(messages, tokens);
+pub fn parse_file<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>, file: &'a SourceFile) -> File<'a> {
+	let block = parse_root_block(bump, messages, tokens);
 
 	let module_path = &file.module_path;
 	File { source_file: file, module_path, block }
 }
 
-pub fn parse_root_block<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Block<'a> {
-	let statements = parse_statements(messages, tokens);
+pub fn parse_root_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> Block<'a> {
+	let statements = parse_statements(bump, messages, tokens);
 	Block { statements }
 }
 
 pub fn parse_block<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	allow_braceless: bool,
@@ -28,7 +33,7 @@ pub fn parse_block<'a>(
 		let fat_arrow = tokens.next()?;
 
 		let token = tokens.peek()?;
-		let statement = parse_statement(messages, tokens, &mut 0, Attributes::blank(), token, false);
+		let statement = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank(), token, false);
 
 		if let Some(statement) = &statement {
 			if let Statement::Block(_) = statement {
@@ -39,7 +44,11 @@ pub fn parse_block<'a>(
 			}
 		}
 
-		let statements: Vec<_> = statement.into_iter().collect();
+		let statements = if let Some(statement) = statement {
+			bump_vec![in bump; statement]
+		} else {
+			BumpVec::new_in(bump)
+		};
 
 		let newline = tokens.expect(messages, TokenKind::Newline)?;
 
@@ -49,7 +58,7 @@ pub fn parse_block<'a>(
 	}
 
 	let open = tokens.expect(messages, TokenKind::OpenBrace)?;
-	let statements = parse_statements(messages, tokens);
+	let statements = parse_statements(bump, messages, tokens);
 	let close = tokens.expect(messages, TokenKind::CloseBrace)?;
 
 	if consume_newline {
@@ -61,8 +70,8 @@ pub fn parse_block<'a>(
 	Ok(Node::new(block, span))
 }
 
-pub fn parse_statements<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Vec<Statement<'a>> {
-	let mut items = Vec::new();
+pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> BumpVec<'a, Statement<'a>> {
+	let mut items = BumpVec::new_in(bump);
 	let mut next_function_index = 0;
 
 	loop {
@@ -76,7 +85,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) ->
 			}
 		}
 
-		let attributes = match parse_attributes(messages, tokens) {
+		let attributes = match parse_attributes(bump, messages, tokens) {
 			Ok(attributes) => attributes,
 
 			Err(_) => {
@@ -94,7 +103,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) ->
 			break;
 		}
 
-		if let Some(statement) = parse_statement(messages, tokens, &mut next_function_index, attributes, token, true) {
+		if let Some(statement) = parse_statement(bump, messages, tokens, &mut next_function_index, attributes, token, true) {
 			items.push(statement);
 		}
 	}
@@ -103,6 +112,7 @@ pub fn parse_statements<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) ->
 }
 
 fn parse_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	next_function_index: &mut usize,
@@ -113,7 +123,7 @@ fn parse_statement<'a>(
 	match token {
 		Token { kind: TokenKind::Word, text: "import", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "An import statement");
-			if let Ok(statement) = parse_import_statement(messages, tokens, consume_newline) {
+			if let Ok(statement) = parse_import_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::Import(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -122,8 +132,8 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::Word, text: "const", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A const definition");
-			if let Ok(statement) = parse_const_statement(messages, tokens, consume_newline) {
-				return Some(Statement::Const(Box::new(statement)));
+			if let Ok(statement) = parse_const_statement(bump, messages, tokens, consume_newline) {
+				return Some(Statement::Const(bump.alloc(statement)));
 			} else {
 				consume_error_syntax(messages, tokens);
 			}
@@ -139,8 +149,8 @@ fn parse_statement<'a>(
 				lang_attribute: false,
 			};
 			disallow_attributes(messages, &attributes, ALLOWED, "A static definition");
-			if let Ok(statement) = parse_static_statement(messages, tokens, attributes, consume_newline) {
-				return Some(Statement::Static(Box::new(statement)));
+			if let Ok(statement) = parse_static_statement(bump, messages, tokens, attributes, consume_newline) {
+				return Some(Statement::Static(bump.alloc(statement)));
 			} else {
 				consume_error_syntax(messages, tokens);
 			}
@@ -148,8 +158,8 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A let statement");
-			if let Ok(statement) = parse_binding_statement(messages, tokens, consume_newline) {
-				return Some(Statement::Binding(Box::new(statement)));
+			if let Ok(statement) = parse_binding_statement(bump, messages, tokens, consume_newline) {
+				return Some(Statement::Binding(bump.alloc(statement)));
 			} else {
 				consume_error_syntax(messages, tokens);
 			}
@@ -158,8 +168,8 @@ fn parse_statement<'a>(
 		Token { kind: TokenKind::Word, text: "fn", .. } => {
 			let index = *next_function_index;
 			*next_function_index += 1;
-			if let Ok(statement) = parse_function_declaration(messages, tokens, attributes, index, consume_newline) {
-				return Some(Statement::Function(Box::new(statement)));
+			if let Ok(statement) = parse_function_declaration(bump, messages, tokens, attributes, index, consume_newline) {
+				return Some(Statement::Function(bump.alloc(statement)));
 			} else {
 				*next_function_index -= 1;
 				consume_error_syntax(messages, tokens);
@@ -167,7 +177,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "struct", .. } => {
-			if let Ok(statement) = parse_struct_declaration(messages, tokens, attributes, consume_newline) {
+			if let Ok(statement) = parse_struct_declaration(bump, messages, tokens, attributes, consume_newline) {
 				return Some(Statement::Struct(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -175,7 +185,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "enum", .. } => {
-			if let Ok(statement) = parse_enum_declaration(messages, tokens, attributes, consume_newline) {
+			if let Ok(statement) = parse_enum_declaration(bump, messages, tokens, attributes, consume_newline) {
 				return Some(Statement::Enum(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -184,7 +194,7 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::Word, text: "while", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A while loop");
-			if let Ok(statement) = parse_while_statement(messages, tokens, consume_newline) {
+			if let Ok(statement) = parse_while_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::While(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -211,8 +221,8 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::Word, text: "return", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A return statement");
-			if let Ok(statement) = parse_return_statement(messages, tokens, consume_newline) {
-				return Some(Statement::Return(Box::new(statement)));
+			if let Ok(statement) = parse_return_statement(bump, messages, tokens, consume_newline) {
+				return Some(Statement::Return(bump.alloc(statement)));
 			} else {
 				consume_error_syntax(messages, tokens);
 			}
@@ -220,7 +230,7 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::OpenBrace, .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A block");
-			if let Ok(statement) = parse_block(messages, tokens, false, consume_newline) {
+			if let Ok(statement) = parse_block(bump, messages, tokens, false, consume_newline) {
 				return Some(Statement::Block(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -229,7 +239,7 @@ fn parse_statement<'a>(
 
 		_ => {
 			disallow_all_attributes(messages, attributes, token.span, "An expression");
-			if let Ok(expression) = parse_expression(messages, tokens, true) {
+			if let Ok(expression) = parse_expression(bump, messages, tokens, true) {
 				let expression = Statement::Expression(expression);
 
 				let expect_newline = consume_newline && tokens.previous_kind() != Some(TokenKind::Newline);
@@ -280,26 +290,28 @@ fn disallow_attributes(messages: &mut Messages, attributes: &Attributes, allowed
 }
 
 fn parse_expression<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	allow_struct_literal: bool,
 ) -> ParseResult<Node<Expression<'a>>> {
-	parse_expression_climb(messages, tokens, allow_struct_literal, 0)
+	parse_expression_climb(bump, messages, tokens, allow_struct_literal, 0)
 }
 
 fn parse_expression_climb<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	allow_struct_literal: bool,
 	min_precedence: u32,
 ) -> ParseResult<Node<Expression<'a>>> {
-	let mut atom = parse_expression_atom(messages, tokens, allow_struct_literal)?;
+	let mut atom = parse_expression_atom(bump, messages, tokens, allow_struct_literal)?;
 
 	loop {
 		if tokens.peek_kind() == Ok(TokenKind::Period) {
-			atom = parse_following_period(messages, tokens, atom, allow_struct_literal)?;
+			atom = parse_following_period(bump, messages, tokens, atom, allow_struct_literal)?;
 		} else if tokens.peek_kind() == Ok(TokenKind::OpenBracket) {
-			atom = parse_bracket_index(messages, tokens, atom)?;
+			atom = parse_bracket_index(bump, messages, tokens, atom)?;
 		} else {
 			break;
 		}
@@ -320,12 +332,12 @@ fn parse_expression_climb<'a>(
 				Associativity::Right => precedence,
 			};
 
-			let right = parse_expression_climb(messages, tokens, allow_struct_literal, next_min_precedence)?;
+			let right = parse_expression_climb(bump, messages, tokens, allow_struct_literal, next_min_precedence)?;
 			let left_span = atom.span;
 			let right_span = right.span;
 
 			let binary_operation = BinaryOperation { op: operator, left: atom, right };
-			let expression = Expression::BinaryOperation(Box::new(binary_operation));
+			let expression = Expression::BinaryOperation(bump.alloc(binary_operation));
 
 			atom = Node::new(expression, left_span + right_span);
 		} else if let Ok(Token { text: "is", .. }) = tokens.peek() {
@@ -339,9 +351,9 @@ fn parse_expression_climb<'a>(
 					let variant_name = tokens.expect(messages, TokenKind::Word)?;
 					let binding_name = Some(Node::from_token(first.text, first));
 					let variant_name = Node::from_token(variant_name.text, variant_name);
-					(binding_name, vec![variant_name])
+					(binding_name, bump_vec![in bump; variant_name])
 				} else {
-					let mut variant_names = vec![Node::from_token(first.text, first)];
+					let mut variant_names = bump_vec![in bump; Node::from_token(first.text, first)];
 
 					while tokens.peek_kind() == Ok(TokenKind::Comma) {
 						tokens.next()?;
@@ -357,7 +369,7 @@ fn parse_expression_climb<'a>(
 			let right_span = variant_names.last().unwrap().span;
 
 			let check_is = CheckIs { left: atom, binding_name, variant_names };
-			let expression = Expression::CheckIs(Box::new(check_is));
+			let expression = Expression::CheckIs(bump.alloc(check_is));
 
 			atom = Node::new(expression, left_span + right_span);
 		} else {
@@ -414,6 +426,7 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 }
 
 fn parse_expression_atom<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	allow_struct_literal: bool,
@@ -425,10 +438,10 @@ fn parse_expression_atom<'a>(
 			let token = tokens.next()?;
 			let op = Node::new(UnaryOperator::Negate, token.span);
 
-			let expression = parse_expression(messages, tokens, allow_struct_literal)?;
+			let expression = parse_expression(bump, messages, tokens, allow_struct_literal)?;
 
 			let span = token.span + expression.span;
-			let negate = Box::new(UnaryOperation { op, expression });
+			let negate = bump.alloc(UnaryOperation { op, expression });
 
 			Ok(Node::new(Expression::UnaryOperation(negate), span))
 		}
@@ -470,9 +483,9 @@ fn parse_expression_atom<'a>(
 
 		TokenKind::Word | TokenKind::DoubleColon => {
 			match peeked.text {
-				"if" => return parse_if_else_chain(messages, tokens),
+				"if" => return parse_if_else_chain(bump, messages, tokens),
 
-				"match" => return parse_match(messages, tokens),
+				"match" => return parse_match(bump, messages, tokens),
 
 				"true" => {
 					tokens.next()?;
@@ -487,8 +500,8 @@ fn parse_expression_atom<'a>(
 				_ => {}
 			}
 
-			let path_segments = parse_path_segments(messages, tokens)?;
-			let type_arguments = parse_type_arguments(messages, tokens)?;
+			let path_segments = parse_path_segments(bump, messages, tokens)?;
+			let type_arguments = parse_type_arguments(bump, messages, tokens)?;
 
 			let (is_call, is_struct_literal) = match tokens.peek() {
 				Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
@@ -497,8 +510,8 @@ fn parse_expression_atom<'a>(
 			};
 
 			if is_call {
-				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-				let arguments_node = parse_arguments(messages, tokens)?;
+				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_else(|| BumpVec::new_in(bump));
+				let arguments_node = parse_arguments(bump, messages, tokens)?;
 				let arguments = arguments_node.item;
 				let span = path_segments.span + arguments_node.span;
 				let call = Call { path_segments, type_arguments, arguments };
@@ -511,11 +524,11 @@ fn parse_expression_atom<'a>(
 					Some(type_arguments) => path_segments.span + type_arguments.span,
 					None => path_segments.span,
 				};
-				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_else(|| BumpVec::new_in(bump));
 				let type_object = Type::Path { path_segments, type_arguments, dot_access: None };
 				let parsed_type = Node::new(type_object, type_span);
 
-				let initializer = parse_struct_initializer(messages, tokens)?;
+				let initializer = parse_struct_initializer(bump, messages, tokens)?;
 
 				let span = type_span + initializer.span;
 				let struct_literal = StructLiteral { parsed_type, initializer };
@@ -527,7 +540,7 @@ fn parse_expression_atom<'a>(
 				Some(type_arguments) => path_segments.span + type_arguments.span,
 				None => path_segments.span,
 			};
-			let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+			let type_arguments = type_arguments.map(|node| node.item).unwrap_or_else(|| BumpVec::new_in(bump));
 			let read = Read { path_segments, type_arguments };
 
 			Ok(Node::new(Expression::Read(read), span))
@@ -536,7 +549,7 @@ fn parse_expression_atom<'a>(
 		TokenKind::OpenParen => {
 			tokens.next()?;
 			// Regardless of if parent parsing context disallowed struct literals, we override that within parenthesis
-			let expression = parse_expression(messages, tokens, true)?;
+			let expression = parse_expression(bump, messages, tokens, true)?;
 			tokens.expect(messages, TokenKind::CloseParen)?;
 			Ok(expression)
 		}
@@ -549,9 +562,9 @@ fn parse_expression_atom<'a>(
 				tokens.expect(messages, TokenKind::Newline)?;
 			}
 
-			let mut expressions = Vec::new();
+			let mut expressions = BumpVec::new_in(bump);
 			while tokens.peek_kind() != Ok(TokenKind::CloseBracket) {
-				expressions.push(parse_expression(messages, tokens, true)?);
+				expressions.push(parse_expression(bump, messages, tokens, true)?);
 
 				if multi_line {
 					if tokens.peek_kind() == Ok(TokenKind::Comma) {
@@ -572,7 +585,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::OpenBrace => {
-			let parsed_block = parse_block(messages, tokens, false, false)?;
+			let parsed_block = parse_block(bump, messages, tokens, false, false)?;
 
 			let span = parsed_block.span;
 			let block = parsed_block.item;
@@ -588,12 +601,12 @@ fn parse_expression_atom<'a>(
 			let mut span = period.span + name.span;
 
 			let initializer = if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-				let struct_initializer = parse_struct_initializer(messages, tokens)?;
+				let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
 				span += struct_initializer.span;
 				Some(EnumInitializer::StructLike { struct_initializer })
 			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
 				tokens.next()?;
-				let expression = parse_expression(messages, tokens, true)?;
+				let expression = parse_expression(bump, messages, tokens, true)?;
 				let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
 				span += close_paren.span;
 				Some(EnumInitializer::Transparent { expression })
@@ -601,7 +614,7 @@ fn parse_expression_atom<'a>(
 				None
 			};
 
-			let inferred_enum = Box::new(InferredEnum { name, initializer });
+			let inferred_enum = bump.alloc(InferredEnum { name, initializer });
 			Ok(Node::new(Expression::InferredEnum(inferred_enum), span))
 		}
 
@@ -615,6 +628,7 @@ fn parse_expression_atom<'a>(
 }
 
 fn parse_following_period<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	atom: Node<Expression<'a>>,
@@ -628,7 +642,7 @@ fn parse_following_period<'a>(
 
 		let op = Node::new(UnaryOperator::Invert, exclamation.span);
 		let operation = UnaryOperation { op, expression: atom };
-		let expression = Expression::UnaryOperation(Box::new(operation));
+		let expression = Expression::UnaryOperation(bump.alloc(operation));
 		return Ok(Node::new(expression, span));
 	}
 
@@ -647,7 +661,7 @@ fn parse_following_period<'a>(
 		let span = atom.span + op_span;
 		let op = Node::new(op, op_span);
 		let operation = UnaryOperation { op, expression: atom };
-		let expression = Expression::UnaryOperation(Box::new(operation));
+		let expression = Expression::UnaryOperation(bump.alloc(operation));
 		return Ok(Node::new(expression, span));
 	}
 
@@ -657,13 +671,13 @@ fn parse_following_period<'a>(
 
 		let op = Node::new(UnaryOperator::Dereference, asterisk.span);
 		let operation = UnaryOperation { op, expression: atom };
-		let expression = Expression::UnaryOperation(Box::new(operation));
+		let expression = Expression::UnaryOperation(bump.alloc(operation));
 		return Ok(Node::new(expression, span));
 	}
 
 	if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
 		let open_paren = tokens.next()?;
-		let parsed_type = parse_type(messages, tokens)?;
+		let parsed_type = parse_type(bump, messages, tokens)?;
 		let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
 
 		let op_span = open_paren.span + close_paren.span;
@@ -671,7 +685,7 @@ fn parse_following_period<'a>(
 
 		let op = Node::new(UnaryOperator::Cast { parsed_type }, op_span);
 		let operation = UnaryOperation { op, expression: atom };
-		let expression = Expression::UnaryOperation(Box::new(operation));
+		let expression = Expression::UnaryOperation(bump.alloc(operation));
 		return Ok(Node::new(expression, span));
 	}
 
@@ -679,41 +693,44 @@ fn parse_following_period<'a>(
 	let name = Node::from_token(name_token.text, name_token);
 
 	if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-		let struct_initializer = parse_struct_initializer(messages, tokens)?;
+		let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
 		let span = atom.span + name.span;
 		let enum_initializer = Some(EnumInitializer::StructLike { struct_initializer });
-		let field_read = Box::new(DotAccess { base: atom, name, enum_initializer });
+		let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer });
 		return Ok(Node::new(Expression::DotAcccess(field_read), span));
 	}
 
 	if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokens.peek_kind() {
-		let type_arguments = parse_type_arguments(messages, tokens)?.map(|a| a.item).unwrap_or_default();
-		let arguments_node = parse_arguments(messages, tokens)?;
+		let type_arguments = parse_type_arguments(bump, messages, tokens)?
+			.map(|a| a.item)
+			.unwrap_or_else(|| BumpVec::new_in(bump));
+		let arguments_node = parse_arguments(bump, messages, tokens)?;
 		let span = atom.span + arguments_node.span;
 		let arguments = arguments_node.item;
 		let method_call = MethodCall { base: atom, name, type_arguments, arguments };
-		return Ok(Node::new(Expression::MethodCall(Box::new(method_call)), span));
+		return Ok(Node::new(Expression::MethodCall(bump.alloc(method_call)), span));
 	}
 
 	let span = atom.span + name.span;
-	let field_read = Box::new(DotAccess { base: atom, name, enum_initializer: None });
+	let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer: None });
 	return Ok(Node::new(Expression::DotAcccess(field_read), span));
 }
 
 fn parse_bracket_index<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	atom: Node<Expression<'a>>,
 ) -> ParseResult<Node<Expression<'a>>> {
 	tokens.expect(messages, TokenKind::OpenBracket)?;
-	let index_expression = parse_expression(messages, tokens, true)?;
+	let index_expression = parse_expression(bump, messages, tokens, true)?;
 	let close_token = tokens.expect(messages, TokenKind::CloseBracket)?;
 
 	let span = atom.span + close_token.span;
 	let index = UnaryOperator::Index { index_expression };
 	let op = Node::new(index, span);
 	let operation = UnaryOperation { op, expression: atom };
-	let expression = Expression::UnaryOperation(Box::new(operation));
+	let expression = Expression::UnaryOperation(bump.alloc(operation));
 	Ok(Node::new(expression, span))
 }
 
@@ -779,15 +796,19 @@ fn parse_string_contents(string: &str) -> Cow<str> {
 	Cow::Borrowed(string)
 }
 
-fn parse_if_else_chain<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Expression<'a>>> {
-	let mut entries = Vec::new();
+fn parse_if_else_chain<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<Expression<'a>>> {
+	let mut entries = BumpVec::new_in(bump);
 	let mut else_body = None;
 
 	let if_token = tokens.expect_word(messages, "if")?;
 	let mut span = if_token.span;
 
-	let condition = parse_expression(messages, tokens, false)?;
-	let body = parse_block(messages, tokens, true, false)?;
+	let condition = parse_expression(bump, messages, tokens, false)?;
+	let body = parse_block(bump, messages, tokens, true, false)?;
 	span += body.span;
 	entries.push(IfElseChainEntry { condition, body });
 
@@ -796,12 +817,12 @@ fn parse_if_else_chain<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> 
 
 		if let Ok(Token { text: "if", .. }) = tokens.peek() {
 			tokens.next()?;
-			let condition = parse_expression(messages, tokens, false)?;
-			let body = parse_block(messages, tokens, true, false)?;
+			let condition = parse_expression(bump, messages, tokens, false)?;
+			let body = parse_block(bump, messages, tokens, true, false)?;
 			span += body.span;
 			entries.push(IfElseChainEntry { condition, body });
 		} else {
-			let body = parse_block(messages, tokens, true, false)?;
+			let body = parse_block(bump, messages, tokens, true, false)?;
 			span += body.span;
 			else_body = Some(body);
 			break;
@@ -809,18 +830,18 @@ fn parse_if_else_chain<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> 
 	}
 
 	let value = IfElseChain { entries, else_body };
-	let expression = Expression::IfElseChain(Box::new(value));
+	let expression = Expression::IfElseChain(bump.alloc(value));
 	Ok(Node::new(expression, span))
 }
 
-fn parse_match<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Expression<'a>>> {
+fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let match_token = tokens.expect_word(messages, "match")?;
 
-	let expression = parse_expression(messages, tokens, false)?;
+	let expression = parse_expression(bump, messages, tokens, false)?;
 
 	tokens.expect(messages, TokenKind::OpenBrace)?;
 
-	let mut arms = Vec::new();
+	let mut arms = BumpVec::new_in(bump);
 	let mut else_arm: Option<ElseArm> = None;
 	let mut warned_after_else = false;
 
@@ -831,7 +852,7 @@ fn parse_match<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRes
 			let first = tokens.expect(messages, TokenKind::Word)?;
 
 			if first.text == "else" {
-				let block = parse_block(messages, tokens, true, true)?;
+				let block = parse_block(bump, messages, tokens, true, true)?;
 
 				if let Some(else_arm) = &else_arm {
 					let error = error!("Match expression may not have multiple else arms");
@@ -858,9 +879,9 @@ fn parse_match<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRes
 				let variant_name = tokens.expect(messages, TokenKind::Word)?;
 				let binding_name = Some(Node::from_token(first.text, first));
 				let variant_name = Node::from_token(variant_name.text, variant_name);
-				(binding_name, vec![variant_name])
+				(binding_name, bump_vec![in bump; variant_name])
 			} else {
-				let mut variant_names = vec![Node::from_token(first.text, first)];
+				let mut variant_names = bump_vec![in bump; Node::from_token(first.text, first)];
 
 				while tokens.peek_kind() == Ok(TokenKind::Comma) {
 					tokens.next()?;
@@ -872,7 +893,7 @@ fn parse_match<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRes
 			}
 		};
 
-		let block = parse_block(messages, tokens, true, true)?;
+		let block = parse_block(bump, messages, tokens, true, true)?;
 
 		let arm = MatchArm { binding_name, variant_names, block };
 		arms.push(arm);
@@ -881,20 +902,21 @@ fn parse_match<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRes
 	let close_brace = tokens.expect(messages, TokenKind::CloseBrace)?;
 	let span = match_token.span + close_brace.span;
 
-	let boxed_match = Box::new(Match { expression, arms, else_arm });
+	let boxed_match = bump.alloc(Match { expression, arms, else_arm });
 	let expression = Expression::Match(boxed_match);
 	Ok(Node::new(expression, span))
 }
 
 fn parse_while_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	consume_newline: bool,
 ) -> ParseResult<Node<While<'a>>> {
 	let while_token = tokens.expect_word(messages, "while")?;
 
-	let condition = parse_expression(messages, tokens, false)?;
-	let body = parse_block(messages, tokens, true, consume_newline)?;
+	let condition = parse_expression(bump, messages, tokens, false)?;
+	let body = parse_block(bump, messages, tokens, true, consume_newline)?;
 
 	let span = while_token.span + body.span;
 	let value = While { condition, body };
@@ -903,16 +925,20 @@ fn parse_while_statement<'a>(
 
 // Holy return type batman
 // TODO: Do something about this
-fn parse_type_arguments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Option<Node<Vec<Node<Type<'a>>>>>> {
+fn parse_type_arguments<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Option<Node<BumpVec<'a, Node<Type<'a>>>>>> {
 	if tokens.peek_kind() != Ok(TokenKind::OpenGeneric) {
 		return Ok(None);
 	}
 
 	let open_token = tokens.expect(messages, TokenKind::OpenGeneric)?;
 
-	let mut types = Vec::new();
+	let mut types = BumpVec::new_in(bump);
 	while tokens.peek_kind() != Ok(TokenKind::CompGreater) {
-		types.push(parse_type(messages, tokens)?);
+		types.push(parse_type(bump, messages, tokens)?);
 
 		if tokens.peek_kind() == Ok(TokenKind::CompGreater) {
 			break;
@@ -932,7 +958,11 @@ fn parse_type_arguments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) ->
 	Ok(Some(Node::new(types, span)))
 }
 
-fn parse_arguments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Vec<Node<Expression<'a>>>>> {
+fn parse_arguments<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<BumpVec<'a, Node<Expression<'a>>>>> {
 	let open_paren_token = tokens.expect(messages, TokenKind::OpenParen)?;
 
 	let multi_line = tokens.peek_kind() == Ok(TokenKind::Newline);
@@ -940,9 +970,9 @@ fn parse_arguments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Pars
 		tokens.expect(messages, TokenKind::Newline)?;
 	}
 
-	let mut expressions = Vec::new();
+	let mut expressions = BumpVec::new_in(bump);
 	while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
-		expressions.push(parse_expression(messages, tokens, true)?);
+		expressions.push(parse_expression(bump, messages, tokens, true)?);
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
@@ -966,12 +996,16 @@ fn parse_arguments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Pars
 	Ok(Node::new(expressions, span))
 }
 
-fn parse_struct_initializer<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<StructInitializer<'a>>> {
+fn parse_struct_initializer<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<StructInitializer<'a>>> {
 	let open_brace_token = tokens.expect(messages, TokenKind::OpenBrace)?;
 
 	tokens.consume_newlines();
 
-	let mut field_initializers = Vec::new();
+	let mut field_initializers = BumpVec::new_in(bump);
 
 	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
 		let name_token = tokens.expect(messages, TokenKind::Word)?;
@@ -980,10 +1014,10 @@ fn parse_struct_initializer<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>
 
 		let expression = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 			tokens.next()?;
-			parse_expression(messages, tokens, true)?
+			parse_expression(bump, messages, tokens, true)?
 		} else {
-			let path = PathSegments { segments: vec![name] };
-			let type_arguments = Vec::new();
+			let path = PathSegments { segments: bump_vec![in bump; name] };
+			let type_arguments = BumpVec::new_in(bump);
 			let read = Read { path_segments: Node::new(path, name.span), type_arguments };
 			Node::new(Expression::Read(read), name.span)
 		};
@@ -1042,7 +1076,7 @@ fn parse_number<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRe
 	Ok(Node::new(expression, span))
 }
 
-fn parse_attributes<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Attributes<'a>> {
+fn parse_attributes<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Attributes<'a>> {
 	fn check_duplicate_attribute<T>(
 		messages: &mut Messages,
 		attribute: &Option<Node<T>>,
@@ -1068,7 +1102,7 @@ fn parse_attributes<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Par
 			match peeked.text {
 				"generic" => {
 					check_duplicate_attribute(messages, &attributes.generic_attribute, "generic", peeked.span)?;
-					attributes.generic_attribute = Some(parse_generic_attribute(messages, tokens)?);
+					attributes.generic_attribute = Some(parse_generic_attribute(bump, messages, tokens)?);
 				}
 
 				"extern" => {
@@ -1083,7 +1117,7 @@ fn parse_attributes<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Par
 
 				"method" => {
 					check_duplicate_attribute(messages, &attributes.method_attribute, "method", peeked.span)?;
-					attributes.method_attribute = Some(parse_method_attribute(messages, tokens)?);
+					attributes.method_attribute = Some(parse_method_attribute(bump, messages, tokens)?);
 				}
 
 				_ => break,
@@ -1111,10 +1145,14 @@ fn parse_attributes<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Par
 	Ok(attributes)
 }
 
-fn parse_generic_attribute<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<GenericAttribute<'a>>> {
+fn parse_generic_attribute<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<GenericAttribute<'a>>> {
 	let generic_token = tokens.expect_word(messages, "generic")?;
 
-	let mut names = Vec::new();
+	let mut names = BumpVec::new_in(bump);
 	loop {
 		let name_token = tokens.expect(messages, TokenKind::Word)?;
 		names.push(Node::new(name_token.text, name_token.span));
@@ -1151,7 +1189,11 @@ fn parse_export_attribute<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) 
 	Ok(Node::new(attribute, span))
 }
 
-fn parse_method_attribute<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<MethodAttribute<'a>>> {
+fn parse_method_attribute<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<MethodAttribute<'a>>> {
 	let method_token = tokens.expect_word(messages, "method")?;
 
 	let kind = match tokens.peek() {
@@ -1168,7 +1210,7 @@ fn parse_method_attribute<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) 
 		_ => MethodKind::ImmutableSelf,
 	};
 
-	let base_type = parse_path_segments(messages, tokens)?;
+	let base_type = parse_path_segments(bump, messages, tokens)?;
 	tokens.expect(messages, TokenKind::Newline)?;
 
 	let span = method_token.span + base_type.span;
@@ -1202,14 +1244,15 @@ fn parse_lang_attribute<'a>(
 }
 
 fn parse_import_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	consume_newline: bool,
 ) -> ParseResult<Node<Import<'a>>> {
 	let import_token = tokens.expect_word(messages, "import")?;
 
-	let mut segments = Vec::new();
-	let mut symbol_names = Vec::new();
+	let mut segments = BumpVec::new_in(bump);
+	let mut symbol_names = BumpVec::new_in(bump);
 	let mut end;
 
 	loop {
@@ -1253,8 +1296,12 @@ fn parse_import_statement<'a>(
 	Ok(Node { item, span })
 }
 
-fn parse_path_segments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<PathSegments<'a>>> {
-	let mut segments = Vec::new();
+fn parse_path_segments<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<PathSegments<'a>>> {
+	let mut segments = BumpVec::new_in(bump);
 	loop {
 		let segment_token = tokens.expect(messages, TokenKind::Word)?;
 		check_not_reserved(messages, segment_token, "path segment")?;
@@ -1272,7 +1319,7 @@ fn parse_path_segments<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> 
 	Ok(Node::new(PathSegments { segments }, span))
 }
 
-fn parse_type<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Type<'a>>> {
+fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Type<'a>>> {
 	let parsed_type = match tokens.peek()? {
 		Token { text: "Void", .. } => {
 			let token = tokens.next()?;
@@ -1289,7 +1336,7 @@ fn parse_type<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResu
 				false
 			};
 
-			let pointee = Box::new(parse_type(messages, tokens)?);
+			let pointee = bump.alloc(parse_type(bump, messages, tokens)?);
 			let span = ampersand.span + pointee.span;
 			Node::new(Type::Pointer { pointee, mutable }, span)
 		}
@@ -1304,23 +1351,23 @@ fn parse_type<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResu
 				mutable = true;
 			}
 
-			let pointee = Box::new(parse_type(messages, tokens)?);
+			let pointee = bump.alloc(parse_type(bump, messages, tokens)?);
 
 			let span = opening.span + pointee.span;
 			Node::new(Type::Slice { pointee, mutable }, span)
 		}
 
 		_ => {
-			let path_segments = parse_path_segments(messages, tokens)?;
+			let path_segments = parse_path_segments(bump, messages, tokens)?;
 
-			let mut type_arguments = Vec::new();
+			let mut type_arguments = BumpVec::new_in(bump);
 			let span = match tokens.peek() {
 				Ok(Token { kind: TokenKind::OpenGeneric, .. }) => {
 					tokens.next()?;
 
 					if tokens.peek_kind() != Ok(TokenKind::CompGreater) {
 						loop {
-							type_arguments.push(parse_type(messages, tokens)?);
+							type_arguments.push(parse_type(bump, messages, tokens)?);
 							if tokens.peek_kind() != Ok(TokenKind::Comma) {
 								break;
 							}
@@ -1353,6 +1400,7 @@ fn parse_type<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResu
 }
 
 fn parse_function_declaration<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	attributes: Attributes<'a>,
@@ -1361,7 +1409,7 @@ fn parse_function_declaration<'a>(
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
-		None => Vec::new(),
+		None => BumpVec::new_in(bump),
 	};
 	let extern_attribute = attributes.extern_attribute;
 	let export_attribute = attributes.export_attribute;
@@ -1375,11 +1423,11 @@ fn parse_function_declaration<'a>(
 	check_not_reserved(messages, name_token, "function name")?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let parameters = parse_parameters(messages, tokens)?;
+	let parameters = parse_parameters(bump, messages, tokens)?;
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 		tokens.next()?;
-		Some(parse_type(messages, tokens)?)
+		Some(parse_type(bump, messages, tokens)?)
 	} else {
 		None
 	};
@@ -1387,7 +1435,7 @@ fn parse_function_declaration<'a>(
 	let block = if extern_attribute.is_some() || intrinsic_attribute.is_some() {
 		None
 	} else {
-		Some(parse_block(messages, tokens, false, false)?)
+		Some(parse_block(bump, messages, tokens, false, false)?)
 	};
 
 	if consume_newline {
@@ -1409,10 +1457,10 @@ fn parse_function_declaration<'a>(
 	})
 }
 
-fn parse_parameters<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Parameters<'a>> {
+fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Parameters<'a>> {
 	tokens.expect(messages, TokenKind::OpenParen)?;
 
-	let mut parameters = Vec::new();
+	let mut parameters = BumpVec::new_in(bump);
 	let mut c_vararg = None;
 
 	while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
@@ -1439,7 +1487,7 @@ fn parse_parameters<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Par
 
 		tokens.expect(messages, TokenKind::Colon)?;
 
-		let parsed_type = parse_type(messages, tokens)?;
+		let parsed_type = parse_type(bump, messages, tokens)?;
 
 		let span = name_token.span + parsed_type.span;
 		let parameter = Parameter { name, parsed_type, is_mutable };
@@ -1458,6 +1506,7 @@ fn parse_parameters<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> Par
 }
 
 fn parse_struct_declaration<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	attributes: Attributes<'a>,
@@ -1465,7 +1514,7 @@ fn parse_struct_declaration<'a>(
 ) -> ParseResult<Struct<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
-		None => Vec::new(),
+		None => BumpVec::new_in(bump),
 	};
 
 	tokens.expect_word(messages, "struct")?;
@@ -1476,14 +1525,14 @@ fn parse_struct_declaration<'a>(
 
 	tokens.expect(messages, TokenKind::OpenBrace)?;
 
-	let mut fields = Vec::new();
+	let mut fields = BumpVec::new_in(bump);
 
 	if tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
 		tokens.consume_newlines();
 
 		while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
 			let field_name_token = tokens.expect(messages, TokenKind::Word)?;
-			let field = parse_field(messages, tokens, field_name_token, "struct field")?;
+			let field = parse_field(bump, messages, tokens, field_name_token, "struct field")?;
 			fields.push(field);
 
 			tokens.expect(messages, TokenKind::Newline)?;
@@ -1501,6 +1550,7 @@ fn parse_struct_declaration<'a>(
 }
 
 fn parse_enum_declaration<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	attributes: Attributes<'a>,
@@ -1508,7 +1558,7 @@ fn parse_enum_declaration<'a>(
 ) -> ParseResult<Enum<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
-		None => Vec::new(),
+		None => BumpVec::new_in(bump),
 	};
 
 	tokens.expect_word(messages, "enum")?;
@@ -1519,8 +1569,8 @@ fn parse_enum_declaration<'a>(
 
 	tokens.expect(messages, TokenKind::OpenBrace)?;
 
-	let mut shared_fields = Vec::new();
-	let mut variants = Vec::new();
+	let mut shared_fields = BumpVec::new_in(bump);
+	let mut variants = BumpVec::new_in(bump);
 	let mut transparent_variant_count = 0;
 
 	if tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
@@ -1534,11 +1584,11 @@ fn parse_enum_declaration<'a>(
 					messages.message(warning.span(field_name_token.span));
 				}
 
-				let field = parse_field(messages, tokens, field_name_token, "enum shared field")?;
+				let field = parse_field(bump, messages, tokens, field_name_token, "enum shared field")?;
 				shared_fields.push(field);
 			} else {
 				check_not_reserved(messages, field_name_token, "enum variant")?;
-				let mut variant_fields = Vec::new();
+				let mut variant_fields = BumpVec::new_in(bump);
 
 				if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
 					tokens.next()?;
@@ -1555,7 +1605,7 @@ fn parse_enum_declaration<'a>(
 						}
 
 						let field_name_token = tokens.expect(messages, TokenKind::Word)?;
-						let field = parse_field(messages, tokens, field_name_token, "enum variant field")?;
+						let field = parse_field(bump, messages, tokens, field_name_token, "enum variant field")?;
 						variant_fields.push(field);
 
 						if !multi_line {
@@ -1568,7 +1618,7 @@ fn parse_enum_declaration<'a>(
 					tokens.expect(messages, TokenKind::CloseBrace)?;
 				} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
 					tokens.next()?;
-					let parsed_type = parse_type(messages, tokens)?;
+					let parsed_type = parse_type(bump, messages, tokens)?;
 					tokens.expect(messages, TokenKind::CloseParen)?;
 
 					let name = Node::from_token(field_name_token.text, field_name_token);
@@ -1609,6 +1659,7 @@ fn parse_enum_declaration<'a>(
 }
 
 fn parse_field<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	field_name_token: Token<'a>,
@@ -1618,7 +1669,7 @@ fn parse_field<'a>(
 	let name = Node::from_token(field_name_token.text, field_name_token);
 
 	tokens.expect(messages, TokenKind::Colon)?;
-	let parsed_type = parse_type(messages, tokens)?;
+	let parsed_type = parse_type(bump, messages, tokens)?;
 
 	let mut read_only = false;
 	let attribute = match tokens.peek() {
@@ -1649,6 +1700,7 @@ fn parse_field<'a>(
 }
 
 fn parse_const_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	consume_newline: bool,
@@ -1661,14 +1713,14 @@ fn parse_const_statement<'a>(
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 		tokens.next()?;
-		Some(parse_type(messages, tokens)?)
+		Some(parse_type(bump, messages, tokens)?)
 	} else {
 		None
 	};
 
 	tokens.expect(messages, TokenKind::Equal)?;
 
-	let expression = parse_expression(messages, tokens, true)?;
+	let expression = parse_expression(bump, messages, tokens, true)?;
 
 	if consume_newline {
 		tokens.expect(messages, TokenKind::Newline)?;
@@ -1680,6 +1732,7 @@ fn parse_const_statement<'a>(
 }
 
 fn parse_static_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	attributes: Attributes<'a>,
@@ -1692,7 +1745,7 @@ fn parse_static_statement<'a>(
 	let name = Node::from_token(name_token.text, name_token);
 
 	tokens.expect(messages, TokenKind::Colon)?;
-	let parsed_type = parse_type(messages, tokens)?;
+	let parsed_type = parse_type(bump, messages, tokens)?;
 
 	if consume_newline {
 		tokens.expect(messages, TokenKind::Newline)?;
@@ -1709,6 +1762,7 @@ fn parse_static_statement<'a>(
 }
 
 fn parse_binding_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	consume_newline: bool,
@@ -1728,14 +1782,14 @@ fn parse_binding_statement<'a>(
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 		tokens.next()?;
-		Some(parse_type(messages, tokens)?)
+		Some(parse_type(bump, messages, tokens)?)
 	} else {
 		None
 	};
 
 	tokens.expect(messages, TokenKind::Equal)?;
 
-	let expression = parse_expression(messages, tokens, true)?;
+	let expression = parse_expression(bump, messages, tokens, true)?;
 
 	if consume_newline {
 		tokens.expect(messages, TokenKind::Newline)?;
@@ -1775,6 +1829,7 @@ fn parse_continue_statement<'a>(
 }
 
 fn parse_return_statement<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	consume_newline: bool,
@@ -1783,7 +1838,7 @@ fn parse_return_statement<'a>(
 
 	let expression = match tokens.peek_kind() {
 		Ok(TokenKind::Newline) => None,
-		_ => Some(parse_expression(messages, tokens, true)?),
+		_ => Some(parse_expression(bump, messages, tokens, true)?),
 	};
 
 	if consume_newline {

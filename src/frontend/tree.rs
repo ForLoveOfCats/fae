@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use bumpalo::collections::Vec as BumpVec;
+
 use crate::frontend::file::SourceFile;
 use crate::frontend::span::Span;
 use crate::frontend::tokenizer::Token;
@@ -14,18 +16,18 @@ pub struct File<'a> {
 //TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
 #[derive(Debug)]
 pub struct PathSegments<'a> {
-	pub segments: Vec<Node<&'a str>>,
+	pub segments: BumpVec<'a, Node<&'a str>>,
 }
 
 #[derive(Debug)]
 pub struct Import<'a> {
 	pub path_segments: PathSegments<'a>,
-	pub symbol_names: Vec<Node<&'a str>>,
+	pub symbol_names: BumpVec<'a, Node<&'a str>>,
 }
 
 #[derive(Debug)]
 pub struct GenericAttribute<'a> {
-	pub names: Vec<Node<&'a str>>,
+	pub names: BumpVec<'a, Node<&'a str>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -114,35 +116,35 @@ pub enum Type<'a> {
 	Void,
 
 	Pointer {
-		pointee: Box<Node<Type<'a>>>,
+		pointee: &'a Node<Type<'a>>,
 		mutable: bool,
 	},
 
 	Slice {
-		pointee: Box<Node<Type<'a>>>,
+		pointee: &'a Node<Type<'a>>,
 		mutable: bool,
 	},
 
 	Path {
 		path_segments: Node<PathSegments<'a>>,
-		type_arguments: Vec<Node<Type<'a>>>,
+		type_arguments: BumpVec<'a, Node<Type<'a>>>,
 		dot_access: Option<Node<&'a str>>,
 	},
 }
 
 #[derive(Debug)]
 pub struct Struct<'a> {
-	pub generics: Vec<Node<&'a str>>,
+	pub generics: BumpVec<'a, Node<&'a str>>,
 	pub name: Node<&'a str>,
-	pub fields: Vec<Field<'a>>,
+	pub fields: BumpVec<'a, Field<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Enum<'a> {
-	pub generics: Vec<Node<&'a str>>,
+	pub generics: BumpVec<'a, Node<&'a str>>,
 	pub name: Node<&'a str>,
-	pub shared_fields: Vec<Field<'a>>,
-	pub variants: Vec<EnumVariant<'a>>,
+	pub shared_fields: BumpVec<'a, Field<'a>>,
+	pub variants: BumpVec<'a, EnumVariant<'a>>,
 	pub transparent_variant_count: usize,
 }
 
@@ -155,7 +157,7 @@ pub enum EnumVariant<'a> {
 #[derive(Debug)]
 pub struct StructLikeVariant<'a> {
 	pub name: Node<&'a str>,
-	pub fields: Vec<Field<'a>>,
+	pub fields: BumpVec<'a, Field<'a>>,
 }
 
 #[derive(Debug)]
@@ -180,7 +182,7 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct Function<'a> {
-	pub generics: Vec<Node<&'a str>>,
+	pub generics: BumpVec<'a, Node<&'a str>>,
 	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
 	pub method_attribute: Option<Node<MethodAttribute<'a>>>,
@@ -195,7 +197,7 @@ pub struct Function<'a> {
 
 #[derive(Debug)]
 pub struct Parameters<'a> {
-	pub parameters: Vec<Node<Parameter<'a>>>,
+	pub parameters: BumpVec<'a, Node<Parameter<'a>>>,
 	pub c_varargs: Option<Span>,
 }
 
@@ -255,7 +257,7 @@ pub struct StringLiteral<'a> {
 
 #[derive(Debug)]
 pub struct ArrayLiteral<'a> {
-	pub expressions: Vec<Node<Expression<'a>>>,
+	pub expressions: BumpVec<'a, Node<Expression<'a>>>,
 }
 
 #[derive(Debug)]
@@ -266,7 +268,7 @@ pub struct StructLiteral<'a> {
 
 #[derive(Debug)]
 pub struct StructInitializer<'a> {
-	pub field_initializers: Vec<FieldInitializer<'a>>,
+	pub field_initializers: BumpVec<'a, FieldInitializer<'a>>,
 }
 
 #[derive(Debug)]
@@ -430,28 +432,28 @@ pub struct BinaryOperation<'a> {
 pub struct CheckIs<'a> {
 	pub left: Node<Expression<'a>>,
 	pub binding_name: Option<Node<&'a str>>,
-	pub variant_names: Vec<Node<&'a str>>,
+	pub variant_names: BumpVec<'a, Node<&'a str>>,
 }
 
 #[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: Vec<Node<Type<'a>>>,
-	pub arguments: Vec<Node<Expression<'a>>>,
+	pub type_arguments: BumpVec<'a, Node<Type<'a>>>,
+	pub arguments: BumpVec<'a, Node<Expression<'a>>>,
 }
 
 #[derive(Debug)]
 pub struct MethodCall<'a> {
 	pub base: Node<Expression<'a>>,
 	pub name: Node<&'a str>,
-	pub type_arguments: Vec<Node<Type<'a>>>,
-	pub arguments: Vec<Node<Expression<'a>>>,
+	pub type_arguments: BumpVec<'a, Node<Type<'a>>>,
+	pub arguments: BumpVec<'a, Node<Expression<'a>>>,
 }
 
 #[derive(Debug)]
 pub struct Read<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: Vec<Node<Type<'a>>>,
+	pub type_arguments: BumpVec<'a, Node<Type<'a>>>,
 }
 
 #[derive(Debug)]
@@ -495,15 +497,15 @@ pub enum Statement<'a> {
 
 	Struct(Struct<'a>),
 	Enum(Enum<'a>),
-	Function(Box<Function<'a>>),
+	Function(&'a Function<'a>),
 
-	Const(Box<Node<Const<'a>>>),
-	Static(Box<Node<Static<'a>>>),
-	Binding(Box<Node<Binding<'a>>>),
+	Const(&'a Node<Const<'a>>),
+	Static(&'a Node<Static<'a>>),
+	Binding(&'a Node<Binding<'a>>),
 
 	Break(Node<Break>),
 	Continue(Node<Continue>),
-	Return(Box<Node<Return<'a>>>),
+	Return(&'a Node<Return<'a>>),
 }
 
 impl<'a> Statement<'a> {
@@ -551,7 +553,7 @@ impl<'a> Statement<'a> {
 
 #[derive(Debug)]
 pub struct Block<'a> {
-	pub statements: Vec<Statement<'a>>,
+	pub statements: BumpVec<'a, Statement<'a>>,
 }
 
 #[derive(Debug)]
@@ -562,21 +564,21 @@ pub struct IfElseChainEntry<'a> {
 
 #[derive(Debug)]
 pub struct IfElseChain<'a> {
-	pub entries: Vec<IfElseChainEntry<'a>>,
+	pub entries: BumpVec<'a, IfElseChainEntry<'a>>,
 	pub else_body: Option<Node<Block<'a>>>,
 }
 
 #[derive(Debug)]
 pub struct Match<'a> {
 	pub expression: Node<Expression<'a>>,
-	pub arms: Vec<MatchArm<'a>>,
+	pub arms: BumpVec<'a, MatchArm<'a>>,
 	pub else_arm: Option<ElseArm<'a>>,
 }
 
 #[derive(Debug)]
 pub struct MatchArm<'a> {
 	pub binding_name: Option<Node<&'a str>>,
-	pub variant_names: Vec<Node<&'a str>>,
+	pub variant_names: BumpVec<'a, Node<&'a str>>,
 	pub block: Node<Block<'a>>,
 }
 
@@ -595,8 +597,8 @@ pub struct While<'a> {
 #[derive(Debug)]
 pub enum Expression<'a> {
 	Block(Block<'a>),
-	IfElseChain(Box<IfElseChain<'a>>),
-	Match(Box<Match<'a>>),
+	IfElseChain(&'a IfElseChain<'a>),
+	Match(&'a Match<'a>),
 
 	IntegerLiteral(IntegerLiteral),
 	FloatLiteral(FloatLiteral),
@@ -610,15 +612,15 @@ pub enum Expression<'a> {
 	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),
-	MethodCall(Box<MethodCall<'a>>),
+	MethodCall(&'a MethodCall<'a>),
 	Read(Read<'a>),
-	DotAcccess(Box<DotAccess<'a>>),
+	DotAcccess(&'a DotAccess<'a>),
 
-	InferredEnum(Box<InferredEnum<'a>>),
+	InferredEnum(&'a InferredEnum<'a>),
 
-	UnaryOperation(Box<UnaryOperation<'a>>),
-	BinaryOperation(Box<BinaryOperation<'a>>),
-	CheckIs(Box<CheckIs<'a>>),
+	UnaryOperation(&'a UnaryOperation<'a>),
+	BinaryOperation(&'a BinaryOperation<'a>),
+	CheckIs(&'a CheckIs<'a>),
 }
 
 #[derive(Debug)]

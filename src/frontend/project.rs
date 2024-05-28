@@ -99,13 +99,14 @@ pub fn build_project(
 	let mut messages = Messages::new(&files);
 
 	//Parallelizable
+	let bump = bumpalo::Bump::new();
 	let parse_start = Instant::now();
 	let mut parsed_files = Vec::new();
 	let mut tokens_vec = Vec::new();
 	for file in &files {
 		let mut tokenizer = Tokenizer::new(file.index, &file.source);
 		let mut tokens = tokenizer.tokenize(std::mem::take(&mut tokens_vec), &mut messages);
-		parsed_files.push(parse_file(&mut messages, &mut tokens, file));
+		parsed_files.push(parse_file(&bump, &mut messages, &mut tokens, file));
 		tokens_vec = tokens.tear_down();
 	}
 
@@ -127,6 +128,7 @@ pub fn build_project(
 	let mut statics = Statics::new();
 	validate(
 		cli_arguments,
+		&bump,
 		&mut messages,
 		&mut lang_items,
 		&mut root_layers,

@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use bumpalo::vec as bump_vec;
+use bumpalo::Bump;
 use rustc_hash::FxHashMap;
 
 use crate::cli::CliArguments;
@@ -17,6 +19,7 @@ use crate::frontend::type_store::*;
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
 	pub cli_arguments: &'a CliArguments,
+	pub bump: &'a Bump,
 
 	pub file_index: usize,
 	pub module_path: &'a [String],
@@ -73,6 +76,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 		Context {
 			cli_arguments: self.cli_arguments,
+			bump: self.bump,
 
 			file_index: self.file_index,
 			module_path: self.module_path,
@@ -128,6 +132,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 		Context {
 			cli_arguments: self.cli_arguments,
+			bump: self.bump,
 
 			file_index: self.file_index,
 			module_path: self.module_path,
@@ -239,6 +244,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 pub fn validate<'a>(
 	cli_arguments: &'a CliArguments,
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
@@ -252,7 +258,7 @@ pub fn validate<'a>(
 	let mut constants = Vec::new();
 
 	create_root_types(messages, type_store, root_layers, parsed_files);
-	resolve_root_type_imports(cli_arguments, messages, root_layers, parsed_files);
+	resolve_root_type_imports(cli_arguments, bump, messages, root_layers, parsed_files);
 	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
 
 	let mut local_function_shape_indicies = Vec::new();
@@ -277,6 +283,7 @@ pub fn validate<'a>(
 	let mut symbols = Symbols::new();
 	validate_root_consts(
 		cli_arguments,
+		bump,
 		messages,
 		lang_items,
 		root_layers,
@@ -307,6 +314,7 @@ pub fn validate<'a>(
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let context = Context {
 			cli_arguments,
+			bump,
 			file_index,
 			module_path,
 			next_scope_index: &mut next_scope_index,
@@ -379,6 +387,7 @@ fn create_root_types<'a>(
 
 fn resolve_root_type_imports<'a>(
 	cli_arguments: &CliArguments,
+	bump: &'a Bump,
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
@@ -389,7 +398,7 @@ fn resolve_root_type_imports<'a>(
 
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
-		resolve_block_type_imports(cli_arguments, messages, root_layers, &mut symbols, module_path, 0, block, true);
+		resolve_block_type_imports(cli_arguments, bump, messages, root_layers, &mut symbols, module_path, 0, block, true);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
@@ -472,6 +481,7 @@ fn create_root_functions<'a>(
 
 fn validate_root_consts<'a>(
 	cli_arguments: &'a CliArguments,
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
@@ -499,6 +509,7 @@ fn validate_root_consts<'a>(
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut context = Context {
 			cli_arguments,
+			bump,
 			file_index,
 			module_path,
 			next_scope_index: &mut next_scope_index,
@@ -553,6 +564,7 @@ fn validate_root_consts<'a>(
 
 fn resolve_block_type_imports<'a>(
 	cli_arguments: &CliArguments,
+	bump: &'a Bump,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -562,7 +574,7 @@ fn resolve_block_type_imports<'a>(
 	is_root: bool,
 ) {
 	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
-		let segments = vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
+		let segments = bump_vec![in bump; Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
 		let path = PathSegments { segments };
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
 	}
@@ -608,6 +620,7 @@ fn resolve_import_for_block_types<'a>(
 
 fn resolve_block_non_type_imports<'a>(
 	cli_arguments: &CliArguments,
+	bump: &'a Bump,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -617,7 +630,7 @@ fn resolve_block_non_type_imports<'a>(
 	is_root: bool,
 ) {
 	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
-		let segments = vec![Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
+		let segments = bump_vec![in bump; Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
 		let path = PathSegments { segments };
 		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
 	}
@@ -1697,6 +1710,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 		resolve_block_type_imports(
 			context.cli_arguments,
+			context.bump,
 			context.messages,
 			context.root_layers,
 			context.symbols,
@@ -1721,6 +1735,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 	resolve_block_non_type_imports(
 		context.cli_arguments,
+		context.bump,
 		context.messages,
 		context.root_layers,
 		context.symbols,

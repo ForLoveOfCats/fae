@@ -8,6 +8,7 @@ bundled = []
 
 [dependencies]
 rustc-hash = "1.1.0"
+bumpalo = { version = "3.16.0", features = ["collections"] }
 llvm-sys = { version = "181.0.0", features = ["no-llvm-linking"] }
 unicode-width = "0.1.12"
 toml = "0.8.12"
