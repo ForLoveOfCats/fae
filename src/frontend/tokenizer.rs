@@ -1,7 +1,6 @@
 use crate::frontend::error::{Messages, ParseResult};
 use crate::frontend::span::Span;
 
-#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TokenKind {
 	Newline,
@@ -223,7 +222,7 @@ impl<'a> Tokens<'a> {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct Tokenizer<'a> {
 	pub file_index: usize,
 	source: &'a str,
@@ -246,7 +245,6 @@ impl<'a> Tokenizer<'a> {
 		Tokens { index: 0, tokens }
 	}
 
-	// Do not call directly, will not update previous token
 	#[inline]
 	fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
 		use TokenKind::*;
@@ -261,13 +259,36 @@ impl<'a> Tokenizer<'a> {
 		}
 
 		let token = match self.bytes[self.offset..] {
+			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1, self.file_index)),
+
 			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1, self.file_index)),
 
 			[b')', ..] => Ok(Token::new(")", CloseParen, self.offset, self.offset + 1, self.file_index)),
 
+			[b':', b':', ..] => {
+				self.offset += 1;
+				Ok(Token::new("::", DoubleColon, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b':', ..] => Ok(Token::new(":", Colon, self.offset, self.offset + 1, self.file_index)),
+
 			[b'{', ..] => Ok(Token::new("{", OpenBrace, self.offset, self.offset + 1, self.file_index)),
 
 			[b'}', ..] => Ok(Token::new("}", CloseBrace, self.offset, self.offset + 1, self.file_index)),
+
+			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1, self.file_index)),
+
+			[b'=', b'=', ..] => {
+				self.offset += 1;
+				Ok(Token::new("==", CompEqual, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'=', b'>', ..] => {
+				self.offset += 1;
+				Ok(Token::new("=>", FatArrow, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
+			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1, self.file_index)),
 
 			[b'[', ..] => Ok(Token::new("[", OpenBracket, self.offset, self.offset + 1, self.file_index)),
 
@@ -355,18 +376,6 @@ impl<'a> Tokenizer<'a> {
 				Ok(Token::new(">>", BitshiftRight, self.offset - 1, self.offset + 1, self.file_index))
 			}
 
-			[b'=', b'=', ..] => {
-				self.offset += 1;
-				Ok(Token::new("==", CompEqual, self.offset - 1, self.offset + 1, self.file_index))
-			}
-
-			[b'=', b'>', ..] => {
-				self.offset += 1;
-				Ok(Token::new("=>", FatArrow, self.offset - 1, self.offset + 1, self.file_index))
-			}
-
-			[b'=', ..] => Ok(Token::new("=", Equal, self.offset, self.offset + 1, self.file_index)),
-
 			[b'!', b'=', ..] => {
 				self.offset += 1;
 				Ok(Token::new("!=", CompNotEqual, self.offset - 1, self.offset + 1, self.file_index))
@@ -415,17 +424,6 @@ impl<'a> Tokenizer<'a> {
 			}
 
 			[b'^', ..] => Ok(Token::new("^", Caret, self.offset, self.offset + 1, self.file_index)),
-
-			[b':', b':', ..] => {
-				self.offset += 1;
-				Ok(Token::new("::", DoubleColon, self.offset - 1, self.offset + 1, self.file_index))
-			}
-
-			[b':', ..] => Ok(Token::new(":", Colon, self.offset, self.offset + 1, self.file_index)),
-
-			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1, self.file_index)),
-
-			[b',', ..] => Ok(Token::new(",", Comma, self.offset, self.offset + 1, self.file_index)),
 
 			[b'#', ..] => Ok(Token::new("#", PoundSign, self.offset, self.offset + 1, self.file_index)),
 
