@@ -35,6 +35,7 @@ pub fn build_project(
 	project_path: &Path,
 	test_config: Option<ProjectConfig>,
 ) -> BuiltProject {
+	let is_test = test_config.is_some();
 	let mut files = Vec::new();
 
 	if cli_arguments.std_enabled {
@@ -89,6 +90,7 @@ pub fn build_project(
 	};
 
 	match cli_arguments.command {
+		CompileCommand::Parse => eprintln!("    {BOLD_GREEN}Parsing project{RESET} {root_name}"),
 		CompileCommand::Check => eprintln!("    {BOLD_GREEN}Checking project{RESET} {root_name}"),
 		CompileCommand::Build | CompileCommand::Run => eprintln!("    {BOLD_GREEN}Building project{RESET} {root_name}"),
 		CompileCommand::CompilerTest => {}
@@ -112,6 +114,15 @@ pub fn build_project(
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
 		eprintln!("    {BOLD_GREEN}Parsed all files{RESET} took {} ms", parse_start.elapsed().as_millis());
+	}
+
+	if cli_arguments.command == CompileCommand::Parse {
+		if !is_test {
+			std::mem::forget(parsed_files);
+			std::mem::forget(tokens_vec);
+			std::mem::forget(bump);
+		}
+		return BuiltProject { binary_path: None, any_messages, any_errors };
 	}
 
 	any_errors |= messages.any_errors();
@@ -143,9 +154,13 @@ pub fn build_project(
 	messages.print_messages(err_output, "Validation");
 	messages.reset();
 	if any_errors {
-		std::mem::forget(function_store);
-		std::mem::forget(type_store);
-		std::mem::forget(parsed_files);
+		if !is_test {
+			std::mem::forget(function_store);
+			std::mem::forget(type_store);
+			std::mem::forget(parsed_files);
+			std::mem::forget(tokens_vec);
+			std::mem::forget(bump);
+		}
 		return BuiltProject { binary_path: None, any_messages, any_errors };
 	}
 
@@ -154,9 +169,13 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command == CompileCommand::Check {
-		std::mem::forget(function_store);
-		std::mem::forget(type_store);
-		std::mem::forget(parsed_files);
+		if !is_test {
+			std::mem::forget(function_store);
+			std::mem::forget(type_store);
+			std::mem::forget(parsed_files);
+			std::mem::forget(tokens_vec);
+			std::mem::forget(bump);
+		}
 		return BuiltProject { binary_path: None, any_messages, any_errors };
 	}
 
@@ -179,9 +198,13 @@ pub fn build_project(
 		eprintln!("        {BOLD_GREEN}Built binary{RESET} {}", binary_path.display());
 	}
 
-	std::mem::forget(function_store);
-	std::mem::forget(type_store);
-	std::mem::forget(parsed_files);
+	if !is_test {
+		std::mem::forget(function_store);
+		std::mem::forget(type_store);
+		std::mem::forget(parsed_files);
+		std::mem::forget(tokens_vec);
+		std::mem::forget(bump);
+	}
 	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
 }
 

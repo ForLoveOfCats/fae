@@ -33,7 +33,11 @@ fn main() {
 	let built_project = build_project(&cli_arguments, &mut stderr, project_path, None);
 
 	let Some(binary_path) = built_project.binary_path else {
-		std::process::exit(-1);
+		if let CompileCommand::Build | CompileCommand::Run = cli_arguments.command {
+			std::process::exit(-1);
+		} else {
+			return;
+		}
 	};
 
 	if cli_arguments.command == CompileCommand::Run {

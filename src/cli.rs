@@ -14,6 +14,7 @@ pub struct CliArguments {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompileCommand {
+	Parse,
 	Check,
 	Build,
 	Run,
@@ -78,6 +79,11 @@ fn parse_command(
 	};
 
 	match arg {
+		"parse" | "p" => {
+			cli_arguments.command = CompileCommand::Parse;
+			true
+		}
+
 		"check" | "c" => {
 			cli_arguments.command = CompileCommand::Check;
 			true
@@ -111,6 +117,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			eprintln!("Usage: fae [optional command] [zero or more options] [optional path]");
 			eprintln!();
 			eprintln!("Commands:");
+			eprintln!("  parse, p: Parse targeted project");
 			eprintln!("  check, b: Check targeted project");
 			eprintln!("  build, b: Build targeted project (default)");
 			eprintln!("  run, r: Build and run targeted project");
