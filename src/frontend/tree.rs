@@ -214,7 +214,7 @@ pub struct Parameter<'a> {
 #[derive(Debug)]
 pub struct Const<'a> {
 	pub name: Node<&'a str>,
-	pub parsed_type: Option<Node<Type<'a>>>,
+	pub parsed_type: Option<&'a Node<Type<'a>>>,
 	pub expression: Node<Expression<'a>>,
 }
 
@@ -228,7 +228,7 @@ pub struct Static<'a> {
 #[derive(Debug)]
 pub struct Binding<'a> {
 	pub name: Node<&'a str>,
-	pub parsed_type: Option<Node<Type<'a>>>,
+	pub parsed_type: Option<&'a Node<Type<'a>>>,
 	pub expression: Node<Expression<'a>>,
 	pub is_mutable: bool,
 }

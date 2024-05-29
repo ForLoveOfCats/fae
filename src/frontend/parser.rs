@@ -1719,7 +1719,7 @@ fn parse_const_statement<'a>(
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 		tokens.next()?;
-		Some(parse_type(bump, messages, tokens)?)
+		Some(bump.alloc(parse_type(bump, messages, tokens)?) as &_)
 	} else {
 		None
 	};
@@ -1788,7 +1788,7 @@ fn parse_binding_statement<'a>(
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 		tokens.next()?;
-		Some(parse_type(bump, messages, tokens)?)
+		Some(bump.alloc(parse_type(bump, messages, tokens)?) as &_)
 	} else {
 		None
 	};
