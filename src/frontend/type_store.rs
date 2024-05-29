@@ -1396,7 +1396,7 @@ impl<'a> TypeStore<'a> {
 			type_arguments,
 		)?;
 
-		if let &Some(dot_access) = dot_access {
+		if let &Some(&dot_access) = dot_access {
 			self.get_enum_variant(messages, function_store, module_path, type_id, dot_access)
 		} else {
 			Some(type_id)

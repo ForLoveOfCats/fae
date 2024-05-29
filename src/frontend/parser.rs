@@ -1392,7 +1392,7 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 				let dot_token = tokens.next()?;
 				let name_token = tokens.expect(messages, TokenKind::Word)?;
 				let span = dot_token.span + name_token.span;
-				Some(Node::new(name_token.text, span))
+				Some(bump.alloc(Node::new(name_token.text, span)) as &_)
 			} else {
 				None
 			};
