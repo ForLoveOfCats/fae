@@ -1,3 +1,7 @@
+use bumpalo::collections::CollectIn;
+use bumpalo::collections::Vec as BumpVec;
+use bumpalo::Bump;
+
 use crate::frontend::error::Messages;
 use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
@@ -7,18 +11,25 @@ use crate::frontend::type_store::TypeStore;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
-	pub shapes: Vec<FunctionShape<'a>>,
+	bump: &'a Bump,
+
+	pub shapes: BumpVec<'a, FunctionShape<'a>>,
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
-	pub generics: Vec<GenericParameters<'a>>,
+	pub generics: BumpVec<'a, GenericParameters<'a>>,
 
 	pub main: Option<FunctionId>,
 }
 
 impl<'a> FunctionStore<'a> {
-	pub fn new() -> Self {
-		FunctionStore { shapes: Vec::new(), generics: Vec::new(), main: None }
+	pub fn new(bump: &'a Bump) -> Self {
+		FunctionStore {
+			bump,
+			shapes: BumpVec::new_in(bump),
+			generics: BumpVec::new_in(bump),
+			main: None,
+		}
 	}
 
 	fn get_specialization(
@@ -41,9 +52,9 @@ impl<'a> FunctionStore<'a> {
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		function_shape_index: usize,
-		type_arguments: TypeArguments,
+		type_arguments: TypeArguments<'a>,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
 		let shape = &self.shapes[function_shape_index];
@@ -87,7 +98,7 @@ impl<'a> FunctionStore<'a> {
 				let readable_index = parameter.readable_index;
 				Parameter { type_id, readable_index, is_mutable }
 			})
-			.collect::<Vec<_>>();
+			.collect_in::<BumpVec<'a, _>>(self.bump);
 
 		let return_type = type_store.specialize_with_function_generics(
 			messages,
@@ -137,11 +148,12 @@ impl<'a> FunctionStore<'a> {
 
 	pub fn specialize_function_with_function_generics(
 		&self,
+		bump: &'a Bump,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_id: FunctionId,
 		caller_shape_index: usize,
-		caller_type_arguments: &TypeArguments,
+		caller_type_arguments: &TypeArguments<'a>,
 	) -> FunctionId {
 		let shape = &self.shapes[function_id.function_shape_index];
 		let specialization = &shape.specializations[function_id.specialization_index];
@@ -158,7 +170,7 @@ impl<'a> FunctionStore<'a> {
 			return function_id;
 		}
 
-		let mut generic_usages = Vec::new();
+		let mut generic_usages = BumpVec::new_in(bump);
 		let mut type_arguments = specialization.type_arguments.clone();
 		type_arguments.specialize_with_function_generics(
 			messages,

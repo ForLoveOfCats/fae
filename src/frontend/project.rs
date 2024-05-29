@@ -123,12 +123,12 @@ pub fn build_project(
 	let validate_start = Instant::now();
 	let mut lang_items = LangItems::new();
 	let mut root_layers = RootLayers::new(root_name);
-	let mut type_store = TypeStore::new(cli_arguments.debug_generics);
-	let mut function_store = FunctionStore::new();
+	let mut type_store = TypeStore::new(&bump, cli_arguments.debug_generics);
+	let mut function_store = FunctionStore::new(&bump);
 	let mut statics = Statics::new();
 	validate(
-		cli_arguments,
 		&bump,
+		cli_arguments,
 		&mut messages,
 		&mut lang_items,
 		&mut root_layers,
@@ -163,9 +163,15 @@ pub fn build_project(
 	//Not parallelizable
 	let codegen_start = Instant::now();
 	let binary_path = match cli_arguments.codegen_backend {
-		CodegenBackend::LLVM => {
-			llvm::driver::generate_code(cli_arguments, &mut messages, &lang_items, &mut type_store, &mut function_store, &statics)
-		}
+		CodegenBackend::LLVM => llvm::driver::generate_code(
+			&bump,
+			cli_arguments,
+			&mut messages,
+			&lang_items,
+			&mut type_store,
+			&mut function_store,
+			&statics,
+		),
 	};
 	if cli_arguments.command != CompileCommand::CompilerTest {
 		eprintln!("    {BOLD_GREEN}Finished codegen{RESET} took {} ms", codegen_start.elapsed().as_millis());

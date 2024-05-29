@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use bumpalo::collections::Vec as BumpVec;
 use bumpalo::vec as bump_vec;
 use bumpalo::Bump;
 use rustc_hash::FxHashMap;
@@ -18,8 +19,8 @@ use crate::frontend::type_store::*;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
-	pub cli_arguments: &'a CliArguments,
 	pub bump: &'a Bump,
+	pub cli_arguments: &'a CliArguments,
 
 	pub file_index: usize,
 	pub module_path: &'a [String],
@@ -31,20 +32,20 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b mut FunctionStore<'a>,
-	pub function_generic_usages: &'b mut Vec<GenericUsage>,
+	pub function_generic_usages: &'b mut BumpVec<'a, GenericUsage<'a>>,
 
 	pub root_layers: &'b RootLayers<'a>,
 
 	pub lang_items: &'b mut LangItems,
 	pub externs: &'b mut Externs,
-	pub constants: &'b mut Vec<ConstantValue<'a>>,
+	pub constants: &'b mut BumpVec<'a, ConstantValue<'a>>,
 	pub statics: &'b mut Statics<'a>,
 	pub initial_readables_starting_index: usize,
 	pub initial_readables_overall_len: usize,
 	pub readables: &'b mut Readables<'a>,
 
 	pub initial_local_function_shape_indicies_len: usize,
-	pub local_function_shape_indicies: &'b mut Vec<usize>,
+	pub local_function_shape_indicies: &'b mut BumpVec<'a, usize>,
 
 	pub initial_symbols_len: usize,
 	pub function_initial_symbols_len: usize,
@@ -75,8 +76,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		*self.next_scope_index += 1;
 
 		Context {
-			cli_arguments: self.cli_arguments,
 			bump: self.bump,
+			cli_arguments: self.cli_arguments,
 
 			file_index: self.file_index,
 			module_path: self.module_path,
@@ -131,8 +132,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		self.readables.starting_index = self.readables.overall_len();
 
 		Context {
-			cli_arguments: self.cli_arguments,
 			bump: self.bump,
+			cli_arguments: self.cli_arguments,
 
 			file_index: self.file_index,
 			module_path: self.module_path,
@@ -243,8 +244,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 }
 
 pub fn validate<'a>(
-	cli_arguments: &'a CliArguments,
 	bump: &'a Bump,
+	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
 	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
@@ -253,21 +254,22 @@ pub fn validate<'a>(
 	statics: &mut Statics<'a>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
-	let mut function_generic_usages = Vec::new();
+	let mut function_generic_usages = BumpVec::new_in(bump);
 	let mut externs = Externs::new();
-	let mut constants = Vec::new();
+	let mut constants = BumpVec::new_in(bump);
 
-	create_root_types(messages, type_store, root_layers, parsed_files);
-	resolve_root_type_imports(cli_arguments, bump, messages, root_layers, parsed_files);
-	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
+	create_root_types(bump, messages, type_store, root_layers, parsed_files);
+	resolve_root_type_imports(bump, cli_arguments, messages, root_layers, parsed_files);
+	fill_root_types(bump, messages, type_store, function_store, root_layers, parsed_files);
 
-	let mut local_function_shape_indicies = Vec::new();
+	let mut local_function_shape_indicies = BumpVec::new_in(bump);
 	for _ in 0..parsed_files.len() {
-		local_function_shape_indicies.push(Vec::new());
+		local_function_shape_indicies.push(BumpVec::new_in(bump));
 	}
 
 	let mut readables = Readables::new();
 	create_root_functions(
+		bump,
 		messages,
 		root_layers,
 		type_store,
@@ -282,8 +284,8 @@ pub fn validate<'a>(
 
 	let mut symbols = Symbols::new();
 	validate_root_consts(
-		cli_arguments,
 		bump,
+		cli_arguments,
 		messages,
 		lang_items,
 		root_layers,
@@ -311,7 +313,7 @@ pub fn validate<'a>(
 
 		let mut next_scope_index = 1;
 		let local_function_shape_indicies = &mut local_function_shape_indicies[file_index];
-		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
 		let context = Context {
 			cli_arguments,
 			bump,
@@ -355,6 +357,7 @@ pub fn validate<'a>(
 }
 
 fn create_root_types<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	root_layers: &mut RootLayers<'a>,
@@ -365,11 +368,12 @@ fn create_root_types<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		assert_eq!(layer.symbols.len(), 0);
 
-		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
 		let block = &parsed_file.block;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
 		create_block_types(
+			bump,
 			messages,
 			type_store,
 			&mut layer.symbols,
@@ -386,8 +390,8 @@ fn create_root_types<'a>(
 }
 
 fn resolve_root_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	bump: &'a Bump,
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
@@ -398,13 +402,14 @@ fn resolve_root_type_imports<'a>(
 
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
-		resolve_block_type_imports(cli_arguments, bump, messages, root_layers, &mut symbols, module_path, 0, block, true);
+		resolve_block_type_imports(bump, cli_arguments, messages, root_layers, &mut symbols, module_path, 0, block, true);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
 	}
 }
 
 fn fill_root_types<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -416,9 +421,10 @@ fn fill_root_types<'a>(
 		let mut symbols = layer.symbols.clone(); // Belch
 
 		// TODO: This is definitely wrong
-		let mut generic_usages = Vec::new();
+		let mut generic_usages = BumpVec::new_in(bump);
 
 		fill_block_types(
+			bump,
 			messages,
 			type_store,
 			function_store,
@@ -436,15 +442,16 @@ fn fill_root_types<'a>(
 }
 
 fn create_root_functions<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
+	generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	externs: &mut Externs,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
-	local_function_shape_indicies: &mut Vec<Vec<usize>>,
+	local_function_shape_indicies: &mut BumpVec<'a, BumpVec<'a, usize>>,
 ) {
 	for (index, parsed_file) in parsed_files.iter().enumerate() {
 		let block = &parsed_file.block;
@@ -458,6 +465,7 @@ fn create_root_functions<'a>(
 		let old_symbols_len = symbols.len();
 
 		create_block_functions(
+			bump,
 			messages,
 			root_layers,
 			type_store,
@@ -467,7 +475,7 @@ fn create_root_functions<'a>(
 			readables,
 			&mut symbols,
 			parsed_file.module_path,
-			&GenericParameters::new_from_explicit(Vec::new()),
+			&GenericParameters::new_from_explicit(BumpVec::new_in(bump)),
 			block,
 			&mut local_function_shape_indicies[file_index],
 			scope_id,
@@ -480,16 +488,16 @@ fn create_root_functions<'a>(
 }
 
 fn validate_root_consts<'a>(
-	cli_arguments: &'a CliArguments,
 	bump: &'a Bump,
+	cli_arguments: &'a CliArguments,
 	messages: &mut Messages<'a>,
 	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	function_generic_usages: &mut Vec<GenericUsage>,
+	function_generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	externs: &mut Externs,
-	constants: &mut Vec<ConstantValue<'a>>,
+	constants: &mut BumpVec<'a, ConstantValue<'a>>,
 	statics: &mut Statics<'a>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
@@ -506,10 +514,10 @@ fn validate_root_consts<'a>(
 		readables.readables.clear();
 
 		let mut next_scope_index = 1;
-		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
 		let mut context = Context {
-			cli_arguments,
 			bump,
+			cli_arguments,
 			file_index,
 			module_path,
 			next_scope_index: &mut next_scope_index,
@@ -524,7 +532,7 @@ fn validate_root_consts<'a>(
 			constants,
 			statics,
 			initial_local_function_shape_indicies_len: 0,
-			local_function_shape_indicies: &mut Vec::new(),
+			local_function_shape_indicies: &mut BumpVec::new_in(bump),
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
@@ -563,8 +571,8 @@ fn validate_root_consts<'a>(
 }
 
 fn resolve_block_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	bump: &'a Bump,
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -619,8 +627,8 @@ fn resolve_import_for_block_types<'a>(
 }
 
 fn resolve_block_non_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	bump: &'a Bump,
+	cli_arguments: &CliArguments,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -697,6 +705,7 @@ fn resolve_import_for_block_non_types<'a>(
 }
 
 fn create_block_types<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
@@ -739,6 +748,7 @@ fn create_block_types<'a>(
 
 		if let tree::Statement::Struct(statement) = statement {
 			create_block_struct(
+				bump,
 				messages,
 				type_store,
 				symbols,
@@ -750,6 +760,7 @@ fn create_block_types<'a>(
 			);
 		} else if let tree::Statement::Enum(statement) = statement {
 			create_block_enum(
+				bump,
 				messages,
 				type_store,
 				symbols,
@@ -764,6 +775,7 @@ fn create_block_types<'a>(
 }
 
 fn create_block_struct<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
@@ -777,7 +789,7 @@ fn create_block_struct<'a>(
 	//so that all types exist in order to populate field types
 
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
-	let mut explicit_generics = Vec::with_capacity(capacity);
+	let mut explicit_generics = BumpVec::with_capacity_in(capacity, bump);
 
 	let shape_index = type_store.user_types.len();
 	for (generic_index, &generic) in statement.generics.iter().enumerate() {
@@ -795,7 +807,7 @@ fn create_block_struct<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = StructShape::new(statement.name.item, None, None, false);
+	let shape = StructShape::new(bump, statement.name.item, None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
@@ -803,6 +815,7 @@ fn create_block_struct<'a>(
 }
 
 fn create_block_enum<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
@@ -813,7 +826,7 @@ fn create_block_enum<'a>(
 	statement: &tree::Enum<'a>,
 ) {
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
-	let mut explicit_generics = Vec::with_capacity(capacity);
+	let mut explicit_generics = BumpVec::with_capacity_in(capacity, bump);
 
 	let enum_shape_index = type_store.user_types.len() + statement.variants.len();
 	for (generic_index, &generic) in statement.generics.iter().enumerate() {
@@ -836,13 +849,13 @@ fn create_block_enum<'a>(
 		messages.message(error.span(statement.name.span));
 	}
 
-	let mut variants = Vec::new();
+	let mut variants = BumpVec::new_in(bump);
 	let mut variants_by_name = FxHashMap::default();
 
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = type_store.user_types.len();
 
-		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
+		let mut variant_explicit_generics = BumpVec::with_capacity_in(generic_parameters.explicit_len(), bump);
 		for (generic_index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
 			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
 			variant_explicit_generics.push(GenericParameter { name: enum_explicit_generic.name, generic_type_id });
@@ -865,7 +878,7 @@ fn create_block_enum<'a>(
 		let span = name.span;
 		let name = name.item;
 
-		let shape = StructShape::new(name, Some(enum_shape_index), Some(variant_index), is_transparent);
+		let shape = StructShape::new(bump, name, Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
 		type_store.register_type(name, variant_generic_parameters, kind, module_path, scope_id, span);
 
@@ -881,7 +894,7 @@ fn create_block_enum<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = EnumShape::new(variants, variants_by_name);
+	let shape = EnumShape::new(bump, variants, variants_by_name);
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	assert_eq!(type_store.user_types.len(), enum_shape_index);
@@ -890,10 +903,11 @@ fn create_block_enum<'a>(
 }
 
 fn fill_block_types<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
+	generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -926,8 +940,8 @@ fn fill_block_types<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-			let mut fields = Vec::with_capacity(statement.fields.len());
+			let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
+			let mut fields = BumpVec::with_capacity_in(statement.fields.len(), bump);
 
 			for field in &statement.fields {
 				let field_type = match type_store.lookup_type(
@@ -964,6 +978,7 @@ fn fill_block_types<'a>(
 
 					if !shape.specializations.is_empty() {
 						fill_pre_existing_struct_specializations(
+							bump,
 							messages,
 							type_store,
 							function_store,
@@ -1003,8 +1018,8 @@ fn fill_block_types<'a>(
 				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 			}
 
-			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-			let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
+			let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
+			let mut shared_fields = BumpVec::with_capacity_in(statement.shared_fields.len(), bump);
 
 			for shared_field in &statement.shared_fields {
 				let field_type = match type_store.lookup_type(
@@ -1044,6 +1059,7 @@ fn fill_block_types<'a>(
 
 			for variant_shape in &mut variant_shapes {
 				fill_struct_like_enum_variant(
+					bump,
 					messages,
 					type_store,
 					function_store,
@@ -1069,6 +1085,7 @@ fn fill_block_types<'a>(
 
 					if !shape.specializations.is_empty() {
 						fill_pre_existing_enum_specializations(
+							bump,
 							messages,
 							type_store,
 							function_store,
@@ -1084,10 +1101,11 @@ fn fill_block_types<'a>(
 }
 
 fn fill_struct_like_enum_variant<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
+	generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -1105,9 +1123,9 @@ fn fill_struct_like_enum_variant<'a>(
 		scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
 	}
 
-	let mut fields = Vec::new();
+	let mut fields = BumpVec::new_in(bump);
 
-	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
 	for shared_field in &statement.shared_fields {
 		let field_type = match type_store.lookup_type(
 			messages,
@@ -1135,7 +1153,7 @@ fn fill_struct_like_enum_variant<'a>(
 		fields.push(node);
 	}
 
-	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	let blank_generic_parameters = GenericParameters::new_from_explicit(BumpVec::new_in(bump));
 	match tree_variant {
 		tree::EnumVariant::StructLike(struct_like) => {
 			for field in &struct_like.fields {
@@ -1206,10 +1224,11 @@ fn fill_struct_like_enum_variant<'a>(
 }
 
 fn fill_pre_existing_struct_specializations<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
+	generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	module_path: &'a [String],
 	shape_index: usize,
 ) {
@@ -1220,7 +1239,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	};
 
-	let mut fields = Vec::with_capacity(shape.fields.len());
+	let mut fields = BumpVec::with_capacity_in(shape.fields.len(), bump);
 	for field in &shape.fields {
 		fields.push(Field {
 			span: Some(field.span),
@@ -1260,7 +1279,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	}
 
-	let mut type_ids = Vec::new();
+	let mut type_ids = BumpVec::new_in(bump);
 	match &type_store.user_types[shape_index].kind {
 		UserTypeKind::Struct { shape } => {
 			type_ids.reserve(shape.specializations.len());
@@ -1285,10 +1304,11 @@ fn fill_pre_existing_struct_specializations<'a>(
 }
 
 fn fill_pre_existing_enum_specializations<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
+	generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	module_path: &'a [String],
 	shape_index: usize,
 ) {
@@ -1338,7 +1358,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	}
 
-	let mut type_ids = Vec::new();
+	let mut type_ids = BumpVec::new_in(bump);
 	match &type_store.user_types[shape_index].kind {
 		UserTypeKind::Enum { shape } => {
 			type_ids.reserve(shape.specializations.len());
@@ -1368,7 +1388,7 @@ fn report_cyclic_user_type<'a>(
 	function_store: &FunctionStore<'a>,
 	module_path: &'a [String],
 	type_id: TypeId,
-	chain: Vec<UserTypeChainLink<'a>>,
+	chain: BumpVec<'a, UserTypeChainLink<'a>>,
 	invoke_span: Span,
 ) {
 	let name = type_store.type_name(function_store, module_path, type_id);
@@ -1387,18 +1407,19 @@ fn report_cyclic_user_type<'a>(
 }
 
 fn create_block_functions<'a>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
+	generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 	externs: &mut Externs,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &'a tree::Block<'a>,
-	local_function_shape_indicies: &mut Vec<usize>,
+	local_function_shape_indicies: &mut BumpVec<'a, usize>,
 	scope_id: ScopeId,
 ) {
 	let original_generic_usages_len = generic_usages.len();
@@ -1424,7 +1445,7 @@ fn create_block_functions<'a>(
 			let capacity = statement.generics.len()
 				+ enclosing_generic_parameters.parameters().len()
 				+ base_shape_generics.as_ref().map(|p| p.parameters().len()).unwrap_or(0);
-			let mut explicit_generics = Vec::with_capacity(capacity);
+			let mut explicit_generics = BumpVec::with_capacity_in(capacity, bump);
 
 			for (generic_index, &generic) in statement.generics.iter().enumerate() {
 				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
@@ -1452,7 +1473,7 @@ fn create_block_functions<'a>(
 			let mut base_type_arguments;
 			let implicit_generics_len = generic_parameters.implicit_len();
 			if let Some(base_shape_generics) = &base_shape_generics {
-				base_type_arguments = TypeArguments::new_from_explicit(Vec::new());
+				base_type_arguments = TypeArguments::new_from_explicit(BumpVec::new_in(bump));
 
 				for (index, base_type_parameter) in base_shape_generics.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + implicit_generics_len + index;
@@ -1471,7 +1492,7 @@ fn create_block_functions<'a>(
 				base_type_arguments.implicit_len = base_shape_generics.implicit_len();
 				base_type_arguments.method_base_len = base_shape_generics.method_base_len();
 			} else {
-				base_type_arguments = TypeArguments::new_from_explicit(Vec::new());
+				base_type_arguments = TypeArguments::new_from_explicit(BumpVec::new_in(bump));
 			}
 
 			function_store.generics.push(generic_parameters.clone());
@@ -1504,7 +1525,7 @@ fn create_block_functions<'a>(
 				type_store.void_type_id()
 			};
 
-			let mut parameters = Vec::new();
+			let mut parameters = BumpVec::new_in(bump);
 			if let Some(method_attribute) = &statement.method_attribute {
 				let mutable = match method_attribute.item.kind {
 					MethodKind::ImmutableSelf => Some(false),
@@ -1606,9 +1627,9 @@ fn create_block_functions<'a>(
 				c_varargs,
 				return_type,
 				block: None,
-				generic_usages: Vec::new(),
+				generic_usages: BumpVec::new_in(bump),
 				specializations_by_type_arguments: FxHashMap::default(),
-				specializations: Vec::new(),
+				specializations: BumpVec::new_in(bump),
 			};
 			function_store.shapes.push(shape);
 
@@ -1697,6 +1718,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 	if !is_root {
 		create_block_types(
+			context.bump,
 			context.messages,
 			context.type_store,
 			context.symbols,
@@ -1709,8 +1731,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 
 		resolve_block_type_imports(
-			context.cli_arguments,
 			context.bump,
+			context.cli_arguments,
 			context.messages,
 			context.root_layers,
 			context.symbols,
@@ -1721,6 +1743,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 
 		fill_block_types(
+			context.bump,
 			context.messages,
 			context.type_store,
 			context.function_store,
@@ -1734,8 +1757,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	}
 
 	resolve_block_non_type_imports(
-		context.cli_arguments,
 		context.bump,
+		context.cli_arguments,
 		context.messages,
 		context.root_layers,
 		context.symbols,
@@ -1747,6 +1770,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 	if !is_root {
 		create_block_functions(
+			context.bump,
 			context.messages,
 			context.root_layers,
 			context.type_store,
@@ -1768,7 +1792,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	}
 
 	let mut returns = false;
-	let mut statements = Vec::with_capacity(block.statements.len());
+	let mut statements = BumpVec::with_capacity_in(block.statements.len(), context.bump);
 
 	for statement in &block.statements {
 		context.expected_type = None;
@@ -1823,7 +1847,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 					None => continue,
 				};
 
-				let kind = StatementKind::Binding(Box::new(validated));
+				let kind = StatementKind::Binding(context.bump.alloc(validated));
 				statements.push(Statement { kind });
 			}
 
@@ -1873,7 +1897,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 					}
 				}
 
-				let boxed_return = Box::new(Return { expression });
+				let boxed_return = context.bump.alloc(Return { expression });
 				let kind = StatementKind::Return(boxed_return);
 				statements.push(Statement { kind });
 			}
@@ -1962,7 +1986,9 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	assert!(shape.block.is_none());
 	shape.block = Some(Rc::new(block));
 
-	let mut generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
+	// TODO: Does this really need to be a vec? This is terrible
+	let generic_usages = context.function_generic_usages[initial_generic_usages_len..].iter().cloned();
+	let mut generic_usages = BumpVec::from_iter_in(generic_usages, context.bump);
 	context.function_generic_usages.truncate(initial_generic_usages_len);
 
 	if !generic_usages.is_empty() && !shape.specializations.is_empty() {
@@ -2037,7 +2063,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			TypeArguments::new_from_explicit(Vec::new()),
+			TypeArguments::new_from_explicit(BumpVec::new_in(context.bump)),
 			None,
 		);
 
@@ -2077,7 +2103,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			TypeArguments::new_from_explicit(Vec::new()),
+			TypeArguments::new_from_explicit(BumpVec::new_in(context.bump)),
 			None,
 		);
 	} else if let Some(lang_attribute) = &shape.lang_attribute {
@@ -2095,7 +2121,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			TypeArguments::new_from_explicit(Vec::new()),
+			TypeArguments::new_from_explicit(BumpVec::new_in(context.bump)),
 			None,
 		);
 
@@ -2375,7 +2401,7 @@ fn validate_if_else_chain_expression<'a>(
 		}
 	};
 
-	let mut entries = Vec::with_capacity(chain_expression.entries.len());
+	let mut entries = BumpVec::with_capacity_in(chain_expression.entries.len(), context.bump);
 	let mut first_condition_returns = false;
 	let mut all_if_bodies_return = true;
 
@@ -2409,7 +2435,7 @@ fn validate_if_else_chain_expression<'a>(
 	let type_id = type_id.unwrap();
 	let returns = (all_if_bodies_return && else_returns) || first_condition_returns;
 	let chain = IfElseChain { type_id, entries, else_body };
-	let kind = ExpressionKind::IfElseChain(Box::new(chain));
+	let kind = ExpressionKind::IfElseChain(context.bump.alloc(chain));
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }
 
@@ -2451,7 +2477,7 @@ fn validate_match_expression<'a>(
 	}
 
 	let mut arms_returns = true;
-	let mut arms = Vec::new();
+	let mut arms = BumpVec::new_in(context.bump);
 
 	for arm in &match_expression.arms {
 		let mut scope = context.child_scope();
@@ -2468,7 +2494,7 @@ fn validate_match_expression<'a>(
 			kind => unreachable!("{kind:?}"),
 		};
 
-		let mut variant_infos = Vec::with_capacity(arm.variant_names.len());
+		let mut variant_infos = BumpVec::with_capacity_in(arm.variant_names.len(), scope.bump);
 
 		for variant_name in &arm.variant_names {
 			let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
@@ -2583,7 +2609,7 @@ fn validate_match_expression<'a>(
 	// TODO: When adding `give` make sure to infer match type from arms
 	let type_id = context.type_store.void_type_id();
 	let returns = expression.returns | arms_returns;
-	let match_expression = Box::new(Match { expression, arms, else_arm });
+	let match_expression = context.bump.alloc(Match { expression, arms, else_arm });
 	let kind = ExpressionKind::Match(match_expression);
 	Expression { span, type_id, is_mutable, returns, kind }
 }
@@ -2653,7 +2679,7 @@ fn validate_array_literal<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut returns = false;
-	let mut expressions = Vec::with_capacity(literal.expressions.len());
+	let mut expressions = BumpVec::with_capacity_in(literal.expressions.len(), context.bump);
 	for expression in &literal.expressions {
 		let expression = validate_expression(context, expression);
 		returns |= expression.returns;
@@ -2740,9 +2766,9 @@ fn validate_struct_initializer<'a>(
 	initializer: &'a Node<tree::StructInitializer<'a>>,
 	fields: &[Field<'a>],
 	returns: &mut bool,
-) -> Vec<FieldInitializer<'a>> {
+) -> BumpVec<'a, FieldInitializer<'a>> {
 	let mut fields = fields.iter();
-	let mut field_initializers = Vec::new();
+	let mut field_initializers = BumpVec::new_in(context.bump);
 
 	for intializer in &initializer.item.field_initializers {
 		let field = fields.next();
@@ -2838,7 +2864,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	};
 
 	let mut type_argument_lookup_errored = false;
-	let mut explicit_arguments = Vec::new();
+	let mut explicit_arguments = BumpVec::new_in(context.bump);
 	for type_argument in &call.type_arguments {
 		if let Some(type_id) = context.lookup_type(type_argument) {
 			explicit_arguments.push(type_id);
@@ -2877,7 +2903,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	};
 
 	let mut returns = false;
-	let mut arguments = Vec::with_capacity(call.arguments.len());
+	let mut arguments = BumpVec::with_capacity_in(call.arguments.len(), context.bump);
 	for (index, argument) in call.arguments.iter().enumerate() {
 		let mut scope = context.child_scope();
 
@@ -2970,7 +2996,7 @@ fn get_method_function_specialization<'a>(
 	span: Span,
 ) -> Option<FunctionSpecializationResult> {
 	let mut type_argument_lookup_errored = false;
-	let mut explicit_arguments = Vec::new();
+	let mut explicit_arguments = BumpVec::new_in(context.bump);
 	for type_argument in call_type_arguments {
 		if let Some(type_id) = context.lookup_type(type_argument) {
 			explicit_arguments.push(type_id);
@@ -3017,7 +3043,7 @@ fn get_method_function_specialization<'a>(
 
 struct MethodArgumentsResult<'a> {
 	returns: bool,
-	arguments: Vec<Expression<'a>>,
+	arguments: BumpVec<'a, Expression<'a>>,
 }
 
 fn validate_method_arguments<'a>(
@@ -3031,7 +3057,7 @@ fn validate_method_arguments<'a>(
 	let maybe_self = if is_static { 0 } else { 1 };
 
 	let mut returns = false;
-	let mut arguments = Vec::with_capacity(call_arguments.len());
+	let mut arguments = BumpVec::with_capacity_in(call_arguments.len(), context.bump);
 	for (index, argument) in call_arguments.iter().enumerate() {
 		let mut scope = context.child_scope();
 
@@ -3191,7 +3217,7 @@ fn validate_method_call<'a>(
 		returns = true;
 	}
 
-	let kind = ExpressionKind::MethodCall(Box::new(method_call));
+	let kind = ExpressionKind::MethodCall(context.bump.alloc(method_call));
 	Expression { span, type_id: return_type, is_mutable: true, returns, kind }
 }
 
@@ -3552,7 +3578,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		field_index,
 		immutable_reason: reason,
 	};
-	let kind = ExpressionKind::FieldRead(Box::new(field_read));
+	let kind = ExpressionKind::FieldRead(context.bump.alloc(field_read));
 	Expression { span, type_id, is_mutable, returns: false, kind }
 }
 
@@ -3635,7 +3661,7 @@ fn validate_enum_initializer<'a>(
 	returns: &mut bool,
 	initializer: &'a Option<tree::EnumInitializer<'a>>,
 	span: Span,
-) -> Option<Vec<FieldInitializer<'a>>> {
+) -> Option<BumpVec<'a, FieldInitializer<'a>>> {
 	let entry = context.type_store.type_entries[variant_type_id.index()];
 	let (variant_shape_index, variant_specialization_index) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
@@ -3722,7 +3748,7 @@ fn validate_enum_initializer<'a>(
 		context.message(error.span(span));
 		return None;
 	} else {
-		Some(Vec::new())
+		Some(BumpVec::new_in(context.bump))
 	}
 }
 
@@ -3731,7 +3757,7 @@ fn validate_transparent_variant_initializer<'a>(
 	returns: &mut bool,
 	expression: &'a Node<tree::Expression<'a>>,
 	expected_type_id: TypeId,
-) -> Option<Vec<FieldInitializer<'a>>> {
+) -> Option<BumpVec<'a, FieldInitializer<'a>>> {
 	let mut scope = context.child_scope();
 	scope.expected_type = Some(expected_type_id);
 	let mut expression = validate_expression(&mut scope, expression);
@@ -3750,7 +3776,7 @@ fn validate_transparent_variant_initializer<'a>(
 	}
 
 	let initializer = FieldInitializer { expression };
-	Some(vec![initializer])
+	Some(bump_vec![in context.bump; initializer])
 }
 
 fn validate_unary_operation<'a>(
@@ -3816,7 +3842,7 @@ fn validate_unary_operation<'a>(
 				return Expression::any_collapse(context.type_store, span);
 			}
 
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 			return Expression { span, type_id, is_mutable: true, returns, kind };
 		}
 
@@ -3829,13 +3855,13 @@ fn validate_unary_operation<'a>(
 				return Expression::any_collapse(context.type_store, span);
 			}
 
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 			return Expression { span, type_id, is_mutable: true, returns, kind };
 		}
 
 		UnaryOperator::AddressOf => {
 			let type_id = context.type_store.pointer_to(type_id, false);
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 			return Expression { span, type_id, is_mutable: true, returns, kind };
 		}
 
@@ -3847,7 +3873,7 @@ fn validate_unary_operation<'a>(
 			}
 
 			let type_id = context.type_store.pointer_to(type_id, true);
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 			return Expression { span, type_id, is_mutable: true, returns, kind };
 		}
 
@@ -3858,7 +3884,7 @@ fn validate_unary_operation<'a>(
 				return Expression::any_collapse(context.type_store, span);
 			};
 
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 			return Expression { span, type_id, is_mutable, returns, kind };
 		}
 
@@ -3973,7 +3999,7 @@ fn validate_cast<'a>(
 	let type_id = to_type_id;
 	let returns = expression.returns;
 	let op = UnaryOperator::Cast { type_id };
-	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+	let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }
 
@@ -4004,7 +4030,7 @@ fn validate_bracket_index<'a>(
 
 	let returns = expression.returns || index_expression.returns;
 	let op = UnaryOperator::Index { index_expression };
-	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+	let kind = ExpressionKind::UnaryOperation(context.bump.alloc(UnaryOperation { op, type_id, expression }));
 	Expression { span, type_id, is_mutable, returns, kind }
 }
 
@@ -4160,12 +4186,12 @@ fn validate_binary_operation<'a>(
 
 					context.message(error.span(span));
 				}
-			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
+			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op, UnaryOperation { op: UnaryOperator::Dereference, .. }))
 			{
 				if !left.is_mutable {
 					context.message(error!("Cannot assign immutable memory location").span(span));
 				}
-			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
+			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op, UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
 			{
 				if !left.is_mutable {
 					context.message(error!("Cannot assign to index of immutable slice").span(span));
@@ -4192,7 +4218,7 @@ fn validate_binary_operation<'a>(
 	};
 
 	let returns = left.returns || right.returns;
-	let operation = Box::new(BinaryOperation { op, left, right, type_id });
+	let operation = context.bump.alloc(BinaryOperation { op, left, right, type_id });
 	let kind = ExpressionKind::BinaryOperation(operation);
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }
@@ -4303,7 +4329,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		encountered_variants.push(None);
 	}
 
-	let mut variant_infos = Vec::with_capacity(check.variant_names.len());
+	let mut variant_infos = BumpVec::with_capacity_in(check.variant_names.len(), context.bump);
 
 	for variant_name in &check.variant_names {
 		let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
@@ -4380,6 +4406,6 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	let type_id = context.type_store.bool_type_id();
 	let returns = left.returns;
 	let check_is = CheckIs { left, binding, variant_infos };
-	let kind = ExpressionKind::CheckIs(Box::new(check_is));
+	let kind = ExpressionKind::CheckIs(context.bump.alloc(check_is));
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }

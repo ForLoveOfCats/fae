@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
+use bumpalo::collections::Vec as BumpVec;
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -30,14 +31,14 @@ pub struct GenericParameter<'a> {
 
 #[derive(Debug, Clone)]
 pub struct GenericParameters<'a> {
-	parameters: Vec<GenericParameter<'a>>,
+	parameters: BumpVec<'a, GenericParameter<'a>>,
 	explicit_len: usize,
 	implicit_len: usize,
 	method_base_len: usize,
 }
 
 impl<'a> GenericParameters<'a> {
-	pub fn new_from_explicit(explicit: Vec<GenericParameter<'a>>) -> Self {
+	pub fn new_from_explicit(explicit: BumpVec<'a, GenericParameter<'a>>) -> Self {
 		let explicit_len = explicit.len();
 		GenericParameters {
 			parameters: explicit,
@@ -84,21 +85,28 @@ impl<'a> GenericParameters<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub enum GenericUsage {
-	UserType { type_arguments: TypeArguments, shape_index: usize },
-	Function { type_arguments: TypeArguments, function_shape_index: usize },
+pub enum GenericUsage<'a> {
+	UserType {
+		type_arguments: TypeArguments<'a>,
+		shape_index: usize,
+	},
+
+	Function {
+		type_arguments: TypeArguments<'a>,
+		function_shape_index: usize,
+	},
 }
 
-impl GenericUsage {
-	pub fn apply_specialization<'a>(
+impl<'a> GenericUsage<'a> {
+	pub fn apply_specialization(
 		&self,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &mut FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		function_shape_index: usize,
-		function_type_arguments: &TypeArguments,
+		function_type_arguments: &TypeArguments<'a>,
 		invoke_span: Option<Span>,
 	) {
 		match self {
@@ -185,14 +193,14 @@ pub struct FunctionShape<'a> {
 
 	pub method_base_index: Option<usize>,
 	pub generic_parameters: GenericParameters<'a>,
-	pub parameters: Vec<ParameterShape>,
+	pub parameters: BumpVec<'a, ParameterShape>,
 	pub c_varargs: bool,
 	pub return_type: TypeId,
 	pub block: Option<Rc<Block<'a>>>,
-	pub generic_usages: Vec<GenericUsage>,
+	pub generic_usages: BumpVec<'a, GenericUsage<'a>>,
 
-	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
-	pub specializations: Vec<Function>,
+	pub specializations_by_type_arguments: FxHashMap<TypeArguments<'a>, usize>,
+	pub specializations: BumpVec<'a, Function<'a>>,
 }
 
 // Anonymous structs pls save me
@@ -209,16 +217,16 @@ pub struct ParameterShape {
 }
 
 #[derive(Debug, Clone, Hash)]
-pub struct TypeArguments {
+pub struct TypeArguments<'a> {
 	pub explicit_len: usize,
 	pub implicit_len: usize,
 	pub method_base_len: usize,
-	pub ids: Vec<TypeId>,
+	pub ids: BumpVec<'a, TypeId>,
 }
 
-impl std::cmp::Eq for TypeArguments {}
+impl<'a> std::cmp::Eq for TypeArguments<'a> {}
 
-impl std::cmp::PartialEq for TypeArguments {
+impl<'a> std::cmp::PartialEq for TypeArguments<'a> {
 	fn eq(&self, other: &Self) -> bool {
 		!self.ne(other)
 	}
@@ -242,8 +250,8 @@ impl std::cmp::PartialEq for TypeArguments {
 	}
 }
 
-impl TypeArguments {
-	pub fn new_from_explicit(explicit: Vec<TypeId>) -> TypeArguments {
+impl<'a> TypeArguments<'a> {
+	pub fn new_from_explicit(explicit: BumpVec<'a, TypeId>) -> TypeArguments {
 		let explicit_len = explicit.len();
 		TypeArguments {
 			ids: explicit,
@@ -272,15 +280,15 @@ impl TypeArguments {
 		&self.ids[0..self.explicit_len]
 	}
 
-	pub fn specialize_with_function_generics<'a>(
+	pub fn specialize_with_function_generics(
 		&mut self,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		function_shape_index: usize,
-		function_type_arguments: &TypeArguments,
+		function_type_arguments: &TypeArguments<'a>,
 	) {
 		for original_id in &mut self.ids {
 			*original_id = type_store.specialize_with_function_generics(
@@ -297,10 +305,10 @@ impl TypeArguments {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
-	pub type_arguments: TypeArguments,
+pub struct Function<'a> {
+	pub type_arguments: TypeArguments<'a>,
 	pub generic_poisoned: bool,
-	pub parameters: Vec<Parameter>,
+	pub parameters: BumpVec<'a, Parameter>,
 	pub return_type: TypeId,
 	pub been_queued: bool,
 	pub been_generated: bool, // TODO: Remove
@@ -329,7 +337,7 @@ pub struct ScopeId {
 pub struct Block<'a> {
 	pub type_id: TypeId,
 	pub returns: bool,
-	pub statements: Vec<Statement<'a>>,
+	pub statements: BumpVec<'a, Statement<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -341,14 +349,14 @@ pub struct IfElseChainEntry<'a> {
 #[derive(Debug, Clone)]
 pub struct IfElseChain<'a> {
 	pub type_id: TypeId,
-	pub entries: Vec<IfElseChainEntry<'a>>,
+	pub entries: BumpVec<'a, IfElseChainEntry<'a>>,
 	pub else_body: Option<Block<'a>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Match<'a> {
 	pub expression: Expression<'a>,
-	pub arms: Vec<MatchArm<'a>>,
+	pub arms: BumpVec<'a, MatchArm<'a>>,
 	pub else_arm: Option<Block<'a>>,
 }
 
@@ -356,7 +364,7 @@ pub struct Match<'a> {
 pub struct MatchArm<'a> {
 	pub binding: Option<CheckIsResultBinding>,
 	pub block: Block<'a>,
-	pub variant_infos: Vec<VariantInfo>,
+	pub variant_infos: BumpVec<'a, VariantInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -383,11 +391,11 @@ pub enum StatementKind<'a> {
 	Block(Block<'a>),
 	While(While<'a>),
 
-	Binding(Box<Binding<'a>>),
+	Binding(&'a Binding<'a>),
 
 	Break(Break),
 	Continue(Continue),
-	Return(Box<Return<'a>>),
+	Return(&'a Return<'a>),
 }
 
 #[derive(Debug, Clone)]
@@ -452,8 +460,8 @@ pub enum ExpressionKind<'a> {
 	Type(TypeId),
 
 	Block(Block<'a>),
-	IfElseChain(Box<IfElseChain<'a>>),
-	Match(Box<Match<'a>>),
+	IfElseChain(&'a IfElseChain<'a>),
+	Match(&'a Match<'a>),
 
 	IntegerValue(IntegerValue),
 	DecimalValue(DecimalValue),
@@ -467,17 +475,17 @@ pub enum ExpressionKind<'a> {
 	StructLiteral(StructLiteral<'a>),
 
 	Call(Call<'a>),
-	MethodCall(Box<MethodCall<'a>>),
+	MethodCall(&'a MethodCall<'a>),
 	Read(Read<'a>),
 	StaticRead(StaticRead<'a>),
-	FieldRead(Box<FieldRead<'a>>),
+	FieldRead(&'a FieldRead<'a>),
 
-	UnaryOperation(Box<UnaryOperation<'a>>),
-	BinaryOperation(Box<BinaryOperation<'a>>),
-	CheckIs(Box<CheckIs<'a>>),
+	UnaryOperation(&'a UnaryOperation<'a>),
+	BinaryOperation(&'a BinaryOperation<'a>),
+	CheckIs(&'a CheckIs<'a>),
 
-	EnumVariantToEnum(Box<EnumVariantToEnum<'a>>),
-	SliceMutableToImmutable(Box<SliceMutableToImmutable<'a>>),
+	EnumVariantToEnum(&'a EnumVariantToEnum<'a>),
+	SliceMutableToImmutable(&'a SliceMutableToImmutable<'a>),
 }
 
 impl<'a> ExpressionKind<'a> {
@@ -798,13 +806,13 @@ pub struct StringLiteral<'a> {
 pub struct ArrayLiteral<'a> {
 	pub type_id: TypeId,
 	pub pointee_type_id: TypeId,
-	pub expressions: Vec<Expression<'a>>,
+	pub expressions: BumpVec<'a, Expression<'a>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructLiteral<'a> {
 	pub type_id: TypeId,
-	pub field_initializers: Vec<FieldInitializer<'a>>,
+	pub field_initializers: BumpVec<'a, FieldInitializer<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -817,7 +825,7 @@ pub struct Call<'a> {
 	pub span: Span,
 	pub name: &'a str,
 	pub function_id: FunctionId,
-	pub arguments: Vec<Expression<'a>>,
+	pub arguments: BumpVec<'a, Expression<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -827,7 +835,7 @@ pub struct MethodCall<'a> {
 	pub span: Span,
 	pub name: &'a str,
 	pub function_id: FunctionId,
-	pub arguments: Vec<Expression<'a>>,
+	pub arguments: BumpVec<'a, Expression<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -889,7 +897,7 @@ pub struct BinaryOperation<'a> {
 pub struct CheckIs<'a> {
 	pub left: Expression<'a>,
 	pub binding: Option<CheckIsResultBinding>,
-	pub variant_infos: Vec<VariantInfo>,
+	pub variant_infos: BumpVec<'a, VariantInfo>,
 }
 
 #[derive(Debug, Clone)]

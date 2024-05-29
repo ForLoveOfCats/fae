@@ -4,6 +4,7 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use bumpalo::Bump;
 use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
 use llvm_sys::core::{LLVMContextCreate, LLVMPrintModuleToFile};
 use llvm_sys::target_machine::{
@@ -23,6 +24,7 @@ use crate::frontend::symbols::Statics;
 use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
+	bump: &'a Bump,
 	cli_arguments: &CliArguments,
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
@@ -53,7 +55,7 @@ pub fn generate_code<'a>(
 	let context = unsafe { LLVMContextCreate() };
 	let mut generator = LLVMGenerator::<SysvAbi>::new(context);
 
-	generate(messages, lang_items, type_store, function_store, statics, &mut generator);
+	generate(bump, messages, lang_items, type_store, function_store, statics, &mut generator);
 
 	#[cfg(target_os = "linux")]
 	let triple = c"x86_64-pc-linux-gnu";

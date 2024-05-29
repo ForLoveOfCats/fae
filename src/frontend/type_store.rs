@@ -1,3 +1,7 @@
+use bumpalo::collections::CollectIn;
+use bumpalo::collections::Vec as BumpVec;
+use bumpalo::vec as bump_vec;
+use bumpalo::Bump;
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -156,18 +160,19 @@ pub struct StructShape<'a> {
 	pub name: &'a str,
 
 	pub been_filled: bool,
-	pub fields: Vec<Node<FieldShape<'a>>>,
+	pub fields: BumpVec<'a, Node<FieldShape<'a>>>,
 
 	pub parent_enum_shape_index: Option<usize>,
 	pub variant_index: Option<usize>,
 	pub is_transparent_variant: bool,
 
-	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
-	pub specializations: Vec<Struct<'a>>,
+	pub specializations_by_type_arguments: FxHashMap<TypeArguments<'a>, usize>,
+	pub specializations: BumpVec<'a, Struct<'a>>,
 }
 
 impl<'a> StructShape<'a> {
 	pub fn new(
+		bump: &'a Bump,
 		name: &'a str,
 		parent_enum_shape_index: Option<usize>,
 		variant_index: Option<usize>,
@@ -176,12 +181,12 @@ impl<'a> StructShape<'a> {
 		StructShape {
 			name,
 			been_filled: false,
-			fields: Vec::new(),
+			fields: BumpVec::new_in(bump),
 			parent_enum_shape_index,
 			variant_index,
 			is_transparent_variant,
 			specializations_by_type_arguments: FxHashMap::default(),
-			specializations: Vec::new(),
+			specializations: BumpVec::new_in(bump),
 		}
 	}
 }
@@ -198,9 +203,9 @@ pub struct FieldShape<'a> {
 pub struct Struct<'a> {
 	pub shape_index: usize,
 	pub type_id: TypeId,
-	pub type_arguments: TypeArguments,
+	pub type_arguments: TypeArguments<'a>,
 	pub been_filled: bool,
-	pub fields: Vec<Field<'a>>,
+	pub fields: BumpVec<'a, Field<'a>>,
 	pub layout: Option<Layout>,
 }
 
@@ -216,24 +221,28 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct EnumShape<'a> {
 	pub been_filled: bool,
-	pub shared_fields: Vec<Node<FieldShape<'a>>>,
+	pub shared_fields: BumpVec<'a, Node<FieldShape<'a>>>,
 
-	pub variant_shapes: Vec<EnumVariantShape<'a>>,
+	pub variant_shapes: BumpVec<'a, EnumVariantShape<'a>>,
 	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
 
-	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
-	pub specializations: Vec<Enum<'a>>,
+	pub specializations_by_type_arguments: FxHashMap<TypeArguments<'a>, usize>,
+	pub specializations: BumpVec<'a, Enum<'a>>,
 }
 
 impl<'a> EnumShape<'a> {
-	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: FxHashMap<&'a str, usize>) -> Self {
+	pub fn new(
+		bump: &'a Bump,
+		variant_shapes: BumpVec<'a, EnumVariantShape<'a>>,
+		variant_shapes_by_name: FxHashMap<&'a str, usize>,
+	) -> Self {
 		EnumShape {
 			been_filled: false,
-			shared_fields: Vec::new(),
+			shared_fields: BumpVec::new_in(bump),
 			variant_shapes,
 			variant_shapes_by_name,
 			specializations_by_type_arguments: FxHashMap::default(),
-			specializations: Vec::new(),
+			specializations: BumpVec::new_in(bump),
 		}
 	}
 }
@@ -251,10 +260,10 @@ pub struct EnumVariantShape<'a> {
 pub struct Enum<'a> {
 	pub shape_index: usize,
 	pub type_id: TypeId,
-	pub type_arguments: TypeArguments,
+	pub type_arguments: TypeArguments<'a>,
 	pub been_filled: bool,
-	pub shared_fields: Vec<Field<'a>>,
-	pub variants: Vec<EnumVariant>,
+	pub shared_fields: BumpVec<'a, Field<'a>>,
+	pub variants: BumpVec<'a, EnumVariant>,
 	pub variants_by_name: FxHashMap<&'a str, usize>, // Index into variants vec
 	pub layout: Option<Layout>,
 	pub tag_memory_size: Option<i64>,
@@ -486,14 +495,15 @@ pub struct UserTypeSpecializationDescription {
 
 #[derive(Debug)]
 pub struct TypeStore<'a> {
+	bump: &'a Bump,
 	pub debug_generics: bool,
 
-	pub primative_type_symbols: Vec<Symbol<'a>>,
+	pub primative_type_symbols: BumpVec<'a, Symbol<'a>>,
 
-	pub type_entries: Vec<TypeEntry>,
-	pub slice_descriptions: Vec<SliceDescription>,
-	pub user_types: Vec<UserType<'a>>,
-	pub user_type_generate_order: Vec<UserTypeSpecializationDescription>,
+	pub type_entries: BumpVec<'a, TypeEntry>,
+	pub slice_descriptions: BumpVec<'a, SliceDescription>,
+	pub user_types: BumpVec<'a, UserType<'a>>,
+	pub user_type_generate_order: BumpVec<'a, UserTypeSpecializationDescription>,
 
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
@@ -525,9 +535,9 @@ pub struct TypeStore<'a> {
 }
 
 impl<'a> TypeStore<'a> {
-	pub fn new(debug_generics: bool) -> Self {
-		let mut primative_type_symbols = Vec::new();
-		let mut type_entries = Vec::new();
+	pub fn new(bump: &'a Bump, debug_generics: bool) -> Self {
+		let mut primative_type_symbols = BumpVec::new_in(bump);
+		let mut type_entries = BumpVec::new_in(bump);
 
 		let mut push_primative = |name: Option<&'a str>, kind| {
 			let type_id = TypeId { entry: type_entries.len() as u32 };
@@ -571,12 +581,13 @@ impl<'a> TypeStore<'a> {
 		let string_type_id = push_primative(Some("str"), PrimativeKind::String);
 
 		let mut type_store = TypeStore {
+			bump,
 			debug_generics,
 			primative_type_symbols,
 			type_entries,
-			slice_descriptions: Vec::new(),
-			user_types: Vec::new(),
-			user_type_generate_order: Vec::new(),
+			slice_descriptions: BumpVec::new_in(bump),
+			user_types: BumpVec::new_in(bump),
+			user_type_generate_order: BumpVec::new_in(bump),
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -943,7 +954,7 @@ impl<'a> TypeStore<'a> {
 					let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
 					let returns = expression.returns;
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
-					let conversion = Box::new(SliceMutableToImmutable { type_id, expression });
+					let conversion = self.bump.alloc(SliceMutableToImmutable { type_id, expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
 					*from = Expression { span: from.span, type_id, is_mutable: false, returns, kind };
 					return Ok(true);
@@ -961,7 +972,7 @@ impl<'a> TypeStore<'a> {
 							// TODO: This replace is a dumb solution
 							let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
 							let returns = expression.returns;
-							let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
+							let conversion = self.bump.alloc(EnumVariantToEnum { type_id: to, expression });
 							let kind = ExpressionKind::EnumVariantToEnum(conversion);
 							*from = Expression {
 								span: from.span,
@@ -1110,7 +1121,7 @@ impl<'a> TypeStore<'a> {
 					}
 
 					// Belch
-					let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
+					let field_types: BumpVec<'a, _> = specialization.fields.iter().map(|f| f.type_id).collect_in(self.bump);
 
 					let mut size = 0;
 					let mut alignment = 1;
@@ -1152,7 +1163,7 @@ impl<'a> TypeStore<'a> {
 						return;
 					}
 
-					let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
+					let variants: BumpVec<'a, _> = specialization.variants.iter().map(|v| v.type_id).collect_in(self.bump);
 
 					let mut size = 0;
 					let mut alignment = 1;
@@ -1218,7 +1229,7 @@ impl<'a> TypeStore<'a> {
 		}
 	}
 
-	pub fn find_user_type_dependency_chain(&self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
+	pub fn find_user_type_dependency_chain(&self, from: TypeId, to: TypeId) -> Option<BumpVec<'a, UserTypeChainLink<'a>>> {
 		let entry = self.type_entries[from.index()];
 		let (shape_index, specialization_index) = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
@@ -1236,7 +1247,7 @@ impl<'a> TypeStore<'a> {
 							field_name: field.name,
 							field_span: field.span.expect("User type fields should always have a span"),
 						};
-						return Some(vec![link]);
+						return Some(bump_vec![in self.bump; link]);
 					}
 
 					if let Some(mut chain) = self.find_user_type_dependency_chain(field.type_id, to) {
@@ -1264,7 +1275,7 @@ impl<'a> TypeStore<'a> {
 							field_name: name,
 							field_span: variant.span,
 						};
-						return Some(vec![link]);
+						return Some(bump_vec![in self.bump; link]);
 					}
 
 					if let Some(mut chain) = self.find_user_type_dependency_chain(variant.type_id, to) {
@@ -1290,7 +1301,7 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &mut FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
 		function_initial_symbols_len: usize,
@@ -1445,7 +1456,7 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &mut FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
 		shape_index: usize,
@@ -1454,7 +1465,8 @@ impl<'a> TypeStore<'a> {
 		enclosing_generic_parameters: &GenericParameters<'a>,
 		type_arguments: &[Node<tree::Type<'a>>],
 	) -> Option<TypeId> {
-		let mut explicit_arguments = Vec::with_capacity(type_arguments.len() + enclosing_generic_parameters.parameters().len());
+		let capacity = type_arguments.len() + enclosing_generic_parameters.parameters().len();
+		let mut explicit_arguments = BumpVec::with_capacity_in(capacity, self.bump);
 		for argument in type_arguments {
 			let type_id = self.lookup_type(
 				messages,
@@ -1497,10 +1509,10 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: TypeArguments,
+		type_arguments: TypeArguments<'a>,
 	) -> Option<TypeId> {
 		match &self.user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => self.get_or_add_struct_shape_specialization(
@@ -1530,10 +1542,10 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: TypeArguments,
+		type_arguments: TypeArguments<'a>,
 	) -> Option<TypeId> {
 		let user_type = &self.user_types[shape_index];
 		let shape = match &user_type.kind {
@@ -1562,7 +1574,7 @@ impl<'a> TypeStore<'a> {
 			.iter()
 			.any(|id| self.type_entries[id.index()].generic_poisoned);
 
-		let mut fields = Vec::with_capacity(shape.fields.len());
+		let mut fields = BumpVec::with_capacity_in(shape.fields.len(), self.bump);
 		for field in &shape.fields {
 			fields.push(Field {
 				span: Some(field.span),
@@ -1627,10 +1639,10 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		enum_shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: TypeArguments,
+		type_arguments: TypeArguments<'a>,
 	) -> Option<TypeId> {
 		let user_type = &self.user_types[enum_shape_index];
 		let shape = match &user_type.kind {
@@ -1659,7 +1671,7 @@ impl<'a> TypeStore<'a> {
 			.iter()
 			.any(|id| self.type_entries[id.index()].generic_poisoned);
 
-		let mut shared_fields = Vec::with_capacity(shape.shared_fields.len() + 1);
+		let mut shared_fields = BumpVec::with_capacity_in(shape.shared_fields.len() + 1, self.bump);
 		for field in shape.shared_fields.clone() {
 			let type_id = self.specialize_with_user_type_generics(
 				messages,
@@ -1685,10 +1697,10 @@ impl<'a> TypeStore<'a> {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
-		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
+		let variant_shapes: BumpVec<'a, _> = shape.variant_shapes.iter().copied().collect_in(self.bump);
 
 		let mut variants_by_name = FxHashMap::default();
-		let mut variants = Vec::new();
+		let mut variants = BumpVec::with_capacity_in(variant_shapes.len(), self.bump);
 
 		for variant_shape in variant_shapes {
 			let mut new_struct_type_arguments = type_arguments.clone();
@@ -1790,9 +1802,9 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		type_shape_index: usize,
-		type_arguments: TypeArguments,
+		type_arguments: TypeArguments<'a>,
 		type_id: TypeId,
 	) -> TypeId {
 		let entry = self.type_entries[type_id.index()];
@@ -1927,9 +1939,9 @@ impl<'a> TypeStore<'a> {
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
-		generic_usages: &mut Vec<GenericUsage>,
+		generic_usages: &mut BumpVec<'a, GenericUsage<'a>>,
 		function_shape_index: usize,
-		function_type_arguments: &TypeArguments,
+		function_type_arguments: &TypeArguments<'a>,
 		type_id: TypeId,
 	) -> TypeId {
 		let entry = self.type_entries[type_id.index()];
@@ -2090,7 +2102,7 @@ impl<'a> TypeStore<'a> {
 						let type_arguments = specialization.type_arguments.ids[0..user_type.generic_parameters.explicit_len()]
 							.iter()
 							.map(|a| self.internal_type_name(function_store, _module_path, *a, debug_generics))
-							.collect::<Vec<_>>()
+							.collect_in::<BumpVec<'a, _>>(self.bump)
 							.join(", ");
 
 						if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
@@ -2118,7 +2130,7 @@ impl<'a> TypeStore<'a> {
 						let type_arguments = specialization.type_arguments.ids[0..user_type.generic_parameters.explicit_len()]
 							.iter()
 							.map(|a| self.internal_type_name(function_store, _module_path, *a, debug_generics))
-							.collect::<Vec<_>>()
+							.collect_in::<BumpVec<'a, _>>(self.bump)
 							.join(", ");
 
 						format!("{}<{}>", user_type.name, type_arguments)

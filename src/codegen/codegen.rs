@@ -1,3 +1,5 @@
+use bumpalo::collections::Vec as BumpVec;
+use bumpalo::Bump;
 use llvm_sys::prelude::LLVMBasicBlockRef;
 
 use crate::codegen::generator::Generator;
@@ -15,6 +17,7 @@ use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub fn generate<'a, G: Generator>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
@@ -47,7 +50,7 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
+			generate_function(bump, messages, lang_items, type_store, function_store, generator, shape, function_id);
 		}
 	}
 
@@ -55,12 +58,14 @@ pub fn generate<'a, G: Generator>(
 }
 
 pub struct Context<'a, 'b> {
+	bump: &'a Bump,
+
 	pub messages: &'b mut Messages<'a>,
 	pub lang_items: &'b LangItems,
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b FunctionStore<'a>,
 	pub module_path: &'a [String],
-	pub function_type_arguments: &'b TypeArguments,
+	pub function_type_arguments: &'b TypeArguments<'a>,
 	pub function_id: FunctionId,
 
 	// TODO: Merge codegen and llvm/generator ASAP, way too many details have leaked
@@ -69,7 +74,7 @@ pub struct Context<'a, 'b> {
 
 impl<'a, 'b> Context<'a, 'b> {
 	pub fn specialize_type_id(&mut self, type_id: TypeId) -> TypeId {
-		let mut generic_usages = Vec::new();
+		let mut generic_usages = BumpVec::new_in(self.bump);
 		let type_id = self.type_store.specialize_with_function_generics(
 			self.messages,
 			self.function_store,
@@ -85,6 +90,7 @@ impl<'a, 'b> Context<'a, 'b> {
 }
 
 pub fn generate_function<'a, G: Generator>(
+	bump: &'a Bump,
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
@@ -111,6 +117,7 @@ pub fn generate_function<'a, G: Generator>(
 	};
 
 	let mut context = Context {
+		bump,
 		messages,
 		lang_items,
 		type_store,
@@ -370,6 +377,7 @@ fn generate_struct_literal<G: Generator>(
 
 fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
 	let function_id = context.function_store.specialize_function_with_function_generics(
+		context.bump,
 		context.messages,
 		context.type_store,
 		call.function_id,
@@ -409,6 +417,7 @@ fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, 
 		.unwrap_or(generator.generate_non_null_invalid_pointer(base_pointer_type_id));
 
 	let function_id = context.function_store.specialize_function_with_function_generics(
+		context.bump,
 		context.messages,
 		context.type_store,
 		method_call.function_id,
