@@ -9,19 +9,6 @@ use crate::frontend::span::Span;
 use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
 
-/*
- * The current structure of the IR utilizes nested `Box`-es and `Vec`-es which is rather inefficient
- * for both speed of construction and also speed of walking. The cases with `Vec` should use some
- * sort of small-vec and the cases with `Box` should probably use some sort of arena bump allocator.
- * The small-vec would be a relatively small change but would require writing a small vec which I'm not
- * going to bother with right now. Utilizing a bump allocator is a lot more work however, but will be
- * far easier to do once self-hosted if I design the language appropriately.
- *
- * It would be possible to emulate the advantages of an arena bump allocator without actually using one
- * by using several big `Vec`s and passing around indicies, but wrapping that up in a nice API is much
- * more effort than it is worth.
- */
-
 #[derive(Debug, Copy, Clone)]
 pub struct GenericParameter<'a> {
 	pub name: Node<&'a str>,
