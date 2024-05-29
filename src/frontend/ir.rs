@@ -178,10 +178,10 @@ pub struct FunctionShape<'a> {
 	pub file_index: usize,
 	pub is_main: bool,
 
-	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
-	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
-	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
-	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
+	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
+	pub export_attribute: Option<&'a Node<ExportAttribute<'a>>>,
+	pub intrinsic_attribute: Option<&'a Node<IntrinsicAttribute>>,
+	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 
 	pub method_base_index: Option<usize>,
 	pub generic_parameters: GenericParameters<'a>,

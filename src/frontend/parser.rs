@@ -272,7 +272,7 @@ fn disallow_all_attributes(messages: &mut Messages, attributes: Attributes, span
 }
 
 fn disallow_attributes(messages: &mut Messages, attributes: &Attributes, allowed: AllowedAttributes, label: &str) {
-	fn disallow<T>(messages: &mut Messages, attribute: &Option<Node<T>>, allowed: bool, label: &str, kind: &str) {
+	fn disallow<T>(messages: &mut Messages, attribute: Option<&Node<T>>, allowed: bool, label: &str, kind: &str) {
 		if let Some(node) = attribute {
 			if !allowed {
 				let message = error!("{label} does not allow {kind} attribute");
@@ -281,12 +281,12 @@ fn disallow_attributes(messages: &mut Messages, attributes: &Attributes, allowed
 		}
 	}
 
-	disallow(messages, &attributes.generic_attribute, allowed.generic_attribute, label, "generic");
-	disallow(messages, &attributes.extern_attribute, allowed.extern_attribute, label, "extern");
-	disallow(messages, &attributes.export_attribute, allowed.export_attribute, label, "export");
-	disallow(messages, &attributes.method_attribute, allowed.method_attribute, label, "method");
-	disallow(messages, &attributes.intrinsic_attribute, allowed.intrinsic_attribute, label, "intrinsic");
-	disallow(messages, &attributes.lang_attribute, allowed.lang_attribute, label, "lang");
+	disallow(messages, attributes.generic_attribute, allowed.generic_attribute, label, "generic");
+	disallow(messages, attributes.extern_attribute, allowed.extern_attribute, label, "extern");
+	disallow(messages, attributes.export_attribute, allowed.export_attribute, label, "export");
+	disallow(messages, attributes.method_attribute, allowed.method_attribute, label, "method");
+	disallow(messages, attributes.intrinsic_attribute, allowed.intrinsic_attribute, label, "intrinsic");
+	disallow(messages, attributes.lang_attribute, allowed.lang_attribute, label, "lang");
 }
 
 fn parse_expression<'a>(
@@ -1079,7 +1079,7 @@ fn parse_number<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRe
 fn parse_attributes<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Attributes<'a>> {
 	fn check_duplicate_attribute<T>(
 		messages: &mut Messages,
-		attribute: &Option<Node<T>>,
+		attribute: Option<&Node<T>>,
 		name: &str,
 		duplicate_span: Span,
 	) -> ParseResult<()> {
@@ -1101,23 +1101,27 @@ fn parse_attributes<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 		if peeked.kind == TokenKind::Word {
 			match peeked.text {
 				"generic" => {
-					check_duplicate_attribute(messages, &attributes.generic_attribute, "generic", peeked.span)?;
-					attributes.generic_attribute = Some(parse_generic_attribute(bump, messages, tokens)?);
+					check_duplicate_attribute(messages, attributes.generic_attribute, "generic", peeked.span)?;
+					let attribute = parse_generic_attribute(bump, messages, tokens)?;
+					attributes.generic_attribute = Some(bump.alloc(attribute));
 				}
 
 				"extern" => {
-					check_duplicate_attribute(messages, &attributes.extern_attribute, "extern", peeked.span)?;
-					attributes.extern_attribute = Some(parse_extern_attribute(messages, tokens)?);
+					check_duplicate_attribute(messages, attributes.extern_attribute, "extern", peeked.span)?;
+					let attribute = parse_extern_attribute(messages, tokens)?;
+					attributes.extern_attribute = Some(bump.alloc(attribute));
 				}
 
 				"export" => {
-					check_duplicate_attribute(messages, &attributes.export_attribute, "export", peeked.span)?;
-					attributes.export_attribute = Some(parse_export_attribute(messages, tokens)?);
+					check_duplicate_attribute(messages, attributes.export_attribute, "export", peeked.span)?;
+					let attribute = parse_export_attribute(messages, tokens)?;
+					attributes.export_attribute = Some(bump.alloc(attribute));
 				}
 
 				"method" => {
-					check_duplicate_attribute(messages, &attributes.method_attribute, "method", peeked.span)?;
-					attributes.method_attribute = Some(parse_method_attribute(bump, messages, tokens)?);
+					check_duplicate_attribute(messages, attributes.method_attribute, "method", peeked.span)?;
+					let attribute = parse_method_attribute(bump, messages, tokens)?;
+					attributes.method_attribute = Some(bump.alloc(attribute));
 				}
 
 				_ => break,
@@ -1126,13 +1130,15 @@ fn parse_attributes<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 			tokens.next()?;
 			match tokens.peek().map(|t| t.text) {
 				Ok("intrinsic") => {
-					check_duplicate_attribute(messages, &attributes.intrinsic_attribute, "intrinsic", peeked.span)?;
-					attributes.intrinsic_attribute = Some(parse_intrinsic_attribute(messages, tokens, peeked.span)?);
+					check_duplicate_attribute(messages, attributes.intrinsic_attribute, "intrinsic", peeked.span)?;
+					let attribute = parse_intrinsic_attribute(messages, tokens, peeked.span)?;
+					attributes.intrinsic_attribute = Some(bump.alloc(attribute));
 				}
 
 				Ok("lang") => {
-					check_duplicate_attribute(messages, &attributes.lang_attribute, "lang", peeked.span)?;
-					attributes.lang_attribute = Some(parse_lang_attribute(messages, tokens, peeked.span)?);
+					check_duplicate_attribute(messages, attributes.lang_attribute, "lang", peeked.span)?;
+					let attribute = parse_lang_attribute(messages, tokens, peeked.span)?;
+					attributes.lang_attribute = Some(bump.alloc(attribute));
 				}
 
 				_ => break,
@@ -1408,8 +1414,8 @@ fn parse_function_declaration<'a>(
 	consume_newline: bool,
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.item.names,
-		None => BumpVec::new_in(bump),
+		Some(attribute) => attribute.item.names.as_slice(),
+		None => &[],
 	};
 	let extern_attribute = attributes.extern_attribute;
 	let export_attribute = attributes.export_attribute;
@@ -1513,8 +1519,8 @@ fn parse_struct_declaration<'a>(
 	consume_newline: bool,
 ) -> ParseResult<Struct<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.item.names,
-		None => BumpVec::new_in(bump),
+		Some(attribute) => attribute.item.names.as_slice(),
+		None => &[],
 	};
 
 	tokens.expect_word(messages, "struct")?;
@@ -1557,8 +1563,8 @@ fn parse_enum_declaration<'a>(
 	consume_newline: bool,
 ) -> ParseResult<Enum<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.item.names,
-		None => BumpVec::new_in(bump),
+		Some(attribute) => attribute.item.names.as_slice(),
+		None => &[],
 	};
 
 	tokens.expect_word(messages, "enum")?;

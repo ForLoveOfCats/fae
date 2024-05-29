@@ -72,12 +72,12 @@ pub struct AllowedAttributes {
 
 #[derive(Debug)]
 pub struct Attributes<'a> {
-	pub generic_attribute: Option<Node<GenericAttribute<'a>>>,
-	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
-	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
-	pub method_attribute: Option<Node<MethodAttribute<'a>>>,
-	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
-	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
+	pub generic_attribute: Option<&'a Node<GenericAttribute<'a>>>,
+	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
+	pub export_attribute: Option<&'a Node<ExportAttribute<'a>>>,
+	pub method_attribute: Option<&'a Node<MethodAttribute<'a>>>,
+	pub intrinsic_attribute: Option<&'a Node<IntrinsicAttribute>>,
+	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 }
 
 impl<'a> Attributes<'a> {
@@ -95,7 +95,7 @@ impl<'a> Attributes<'a> {
 	}
 
 	pub fn attribute_spans<'b>(&self, buffer: &'b mut [Span]) -> &'b [Span] {
-		fn push_potential_span<T>(attribute: &Option<Node<T>>, buffer: &mut [Span], index: &mut usize) {
+		fn push_potential_span<T>(attribute: Option<&Node<T>>, buffer: &mut [Span], index: &mut usize) {
 			if let Some(attribute) = attribute {
 				buffer[*index] = attribute.span;
 				*index += 1;
@@ -103,9 +103,12 @@ impl<'a> Attributes<'a> {
 		}
 
 		let mut index = 0;
-		push_potential_span(&self.generic_attribute, buffer, &mut index);
-		push_potential_span(&self.extern_attribute, buffer, &mut index);
-		push_potential_span(&self.export_attribute, buffer, &mut index);
+		push_potential_span(self.generic_attribute, buffer, &mut index);
+		push_potential_span(self.extern_attribute, buffer, &mut index);
+		push_potential_span(self.export_attribute, buffer, &mut index);
+		push_potential_span(self.method_attribute, buffer, &mut index);
+		push_potential_span(self.intrinsic_attribute, buffer, &mut index);
+		push_potential_span(self.lang_attribute, buffer, &mut index);
 
 		&buffer[0..index]
 	}
@@ -134,14 +137,14 @@ pub enum Type<'a> {
 
 #[derive(Debug)]
 pub struct Struct<'a> {
-	pub generics: BumpVec<'a, Node<&'a str>>,
+	pub generics: &'a [Node<&'a str>],
 	pub name: Node<&'a str>,
 	pub fields: BumpVec<'a, Field<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Enum<'a> {
-	pub generics: BumpVec<'a, Node<&'a str>>,
+	pub generics: &'a [Node<&'a str>],
 	pub name: Node<&'a str>,
 	pub shared_fields: BumpVec<'a, Field<'a>>,
 	pub variants: BumpVec<'a, EnumVariant<'a>>,
@@ -182,12 +185,12 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct Function<'a> {
-	pub generics: BumpVec<'a, Node<&'a str>>,
-	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
-	pub export_attribute: Option<Node<ExportAttribute<'a>>>,
-	pub method_attribute: Option<Node<MethodAttribute<'a>>>,
-	pub intrinsic_attribute: Option<Node<IntrinsicAttribute>>,
-	pub lang_attribute: Option<Node<LangAttribute<'a>>>,
+	pub generics: &'a [Node<&'a str>],
+	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
+	pub export_attribute: Option<&'a Node<ExportAttribute<'a>>>,
+	pub method_attribute: Option<&'a Node<MethodAttribute<'a>>>,
+	pub intrinsic_attribute: Option<&'a Node<IntrinsicAttribute>>,
+	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 	pub name: Node<&'a str>,
 	pub parameters: Parameters<'a>,
 	pub parsed_type: Option<Node<Type<'a>>>,
@@ -219,7 +222,7 @@ pub struct Const<'a> {
 pub struct Static<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
-	pub extern_attribute: Option<Node<ExternAttribute<'a>>>,
+	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
 }
 
 #[derive(Debug)]
