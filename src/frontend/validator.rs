@@ -3585,7 +3585,7 @@ fn validate_inferred_enum<'a>(
 
 	let mut returns = false;
 	let Some(field_initializers) =
-		validate_enum_initializer(context, inferred_enum.name.item, type_id, &mut returns, &inferred_enum.initializer, span)
+		validate_enum_initializer(context, inferred_enum.name.item, type_id, &mut returns, inferred_enum.initializer, span)
 	else {
 		return Expression::any_collapse(context.type_store, span);
 	};
@@ -3611,7 +3611,7 @@ fn validate_dot_access_enum_literal<'a>(
 		dot_access.name.item,
 		variant_type_id,
 		&mut returns,
-		&dot_access.enum_initializer,
+		dot_access.enum_initializer,
 		span,
 	) else {
 		return Expression::any_collapse(context.type_store, span);
@@ -3633,7 +3633,7 @@ fn validate_enum_initializer<'a>(
 	variant_name: &str,
 	variant_type_id: TypeId,
 	returns: &mut bool,
-	initializer: &'a Option<tree::EnumInitializer<'a>>,
+	initializer: Option<&'a tree::EnumInitializer<'a>>,
 	span: Span,
 ) -> Option<Vec<FieldInitializer<'a>>> {
 	let entry = context.type_store.type_entries[variant_type_id.index()];

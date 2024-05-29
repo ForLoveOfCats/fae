@@ -463,13 +463,13 @@ pub struct Read<'a> {
 pub struct DotAccess<'a> {
 	pub base: Node<Expression<'a>>,
 	pub name: Node<&'a str>,
-	pub enum_initializer: Option<EnumInitializer<'a>>,
+	pub enum_initializer: Option<&'a EnumInitializer<'a>>,
 }
 
 #[derive(Debug)]
 pub struct InferredEnum<'a> {
 	pub name: Node<&'a str>,
-	pub initializer: Option<EnumInitializer<'a>>,
+	pub initializer: Option<&'a EnumInitializer<'a>>,
 }
 
 #[derive(Debug)]

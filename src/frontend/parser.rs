@@ -603,13 +603,13 @@ fn parse_expression_atom<'a>(
 			let initializer = if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
 				let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
 				span += struct_initializer.span;
-				Some(EnumInitializer::StructLike { struct_initializer })
+				Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_)
 			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
 				tokens.next()?;
 				let expression = parse_expression(bump, messages, tokens, true)?;
 				let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
 				span += close_paren.span;
-				Some(EnumInitializer::Transparent { expression })
+				Some(bump.alloc(EnumInitializer::Transparent { expression }) as &_)
 			} else {
 				None
 			};
@@ -695,7 +695,7 @@ fn parse_following_period<'a>(
 	if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
 		let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
 		let span = atom.span + name.span;
-		let enum_initializer = Some(EnumInitializer::StructLike { struct_initializer });
+		let enum_initializer = Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_);
 		let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer });
 		return Ok(Node::new(Expression::DotAcccess(field_read), span));
 	}
