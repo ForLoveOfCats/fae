@@ -49,17 +49,15 @@ impl std::fmt::Display for SymbolKind {
 #[derive(Debug, Clone)]
 pub struct Symbols<'a> {
 	pub scopes: Vec<FxHashMap<&'a str, Symbol<'a>>>,
-	unused_scopes: Vec<FxHashMap<&'a str, Symbol<'a>>>,
 }
 
 impl<'a> Symbols<'a> {
 	pub fn new() -> Self {
-		Symbols { scopes: Vec::new(), unused_scopes: Vec::new() }
+		Symbols { scopes: Vec::new() }
 	}
 
 	pub fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
-		let scope = self.unused_scopes.pop().unwrap_or_else(|| FxHashMap::default());
-		self.scopes.push(scope);
+		self.scopes.push(FxHashMap::default());
 		SymbolsScope { symbols: self }
 	}
 
@@ -167,17 +165,14 @@ pub struct SymbolsScope<'a, 'b> {
 
 impl<'a, 'b> SymbolsScope<'a, 'b> {
 	pub fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
-		let scope = self.symbols.unused_scopes.pop().unwrap_or_else(|| FxHashMap::default());
-		self.symbols.scopes.push(scope);
+		self.symbols.scopes.push(FxHashMap::default());
 		SymbolsScope { symbols: self.symbols }
 	}
 }
 
 impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 	fn drop(&mut self) {
-		let mut scope = self.symbols.scopes.pop().unwrap();
-		scope.clear();
-		self.symbols.unused_scopes.push(scope);
+		self.symbols.scopes.pop();
 	}
 }
 
