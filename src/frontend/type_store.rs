@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 use rustc_hash::FxHashMap;
 
@@ -495,7 +495,7 @@ pub struct TypeStore<'a> {
 	pub type_entries: RwLock<Vec<TypeEntry>>,
 	pub slice_descriptions: Vec<SliceDescription>,
 	pub user_types: Vec<UserType<'a>>,
-	pub user_type_generate_order: Vec<UserTypeSpecializationDescription>,
+	pub user_type_generate_order: Mutex<Vec<UserTypeSpecializationDescription>>,
 
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
@@ -578,7 +578,7 @@ impl<'a> TypeStore<'a> {
 			type_entries: RwLock::new(type_entries),
 			slice_descriptions: Vec::new(),
 			user_types: Vec::new(),
-			user_type_generate_order: Vec::new(),
+			user_type_generate_order: Mutex::new(Vec::new()),
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -1140,7 +1140,7 @@ impl<'a> TypeStore<'a> {
 
 					if !entry.generic_poisoned {
 						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.push(description);
+						self.user_type_generate_order.lock().unwrap().push(description);
 					}
 
 					let layout = Layout { size, alignment };
@@ -1174,7 +1174,7 @@ impl<'a> TypeStore<'a> {
 
 					if !entry.generic_poisoned {
 						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.push(description);
+						self.user_type_generate_order.lock().unwrap().push(description);
 					}
 
 					let tag_memory_size = alignment.max(1);
