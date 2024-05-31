@@ -125,7 +125,7 @@ impl GenericUsage {
 				// specializations seems harmless as these specializations will not end up in the
 				// resulting binary anyway. The validity of this remains to be seen.
 				for argument in &function_type_arguments.ids {
-					let kind = type_store.type_entries[argument.index()].kind;
+					let kind = type_store.type_entries.read().unwrap()[argument.index()].kind;
 					if let TypeEntryKind::FunctionGeneric { function_shape_index: index, .. } = kind {
 						if function_shape_index != index {
 							return;
