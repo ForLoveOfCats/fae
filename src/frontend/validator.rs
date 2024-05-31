@@ -2581,7 +2581,7 @@ fn validate_match_expression<'a>(
 		None => (expression.type_id, expression.is_mutable),
 	};
 
-	let enum_entry = context.type_store.type_entries[expression_type_id.index()];
+	let enum_entry = context.type_store.type_entries.read().unwrap()[expression_type_id.index()];
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => None,
@@ -2609,7 +2609,7 @@ fn validate_match_expression<'a>(
 	for arm in &match_expression.arms {
 		let mut scope = context.child_scope();
 
-		let enum_entry = scope.type_store.type_entries[expression_type_id.index()];
+		let enum_entry = scope.type_store.type_entries.read().unwrap()[expression_type_id.index()];
 		let enum_specialization = match enum_entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				match &scope.type_store.user_types[shape_index].kind {
@@ -2702,7 +2702,7 @@ fn validate_match_expression<'a>(
 		None
 	};
 
-	let enum_entry = context.type_store.type_entries[expression_type_id.index()];
+	let enum_entry = context.type_store.type_entries.read().unwrap()[expression_type_id.index()];
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => unreachable!(),
@@ -2842,7 +2842,7 @@ fn validate_struct_literal<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let type_entry = &context.type_store.type_entries[type_id.index()];
+	let type_entry = context.type_store.type_entries.read().unwrap()[type_id.index()];
 	let indices = match &type_entry.kind {
 		&TypeEntryKind::UserType { shape_index, specialization_index } => {
 			let user_type = &mut context.type_store.user_types[shape_index];
@@ -3251,12 +3251,12 @@ fn validate_method_call<'a>(
 		return validate_static_method_call(context, method_call, base_type, span);
 	}
 
-	let entry = &context.type_store.type_entries[base.type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[base.type_id.index()];
 	let (base_shape_index, base_specialization_index, base_mutable) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index, base.is_mutable),
 
 		TypeEntryKind::Pointer { type_id, mutable } => {
-			let entry = context.type_store.type_entries[type_id.index()];
+			let entry = context.type_store.type_entries.read().unwrap()[type_id.index()];
 			let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind else {
 				let found = context.type_name(base.type_id);
 				let error = error!("Cannot call method on type {found}");
@@ -3354,7 +3354,7 @@ fn validate_static_method_call<'a>(
 	base_type_id: TypeId,
 	span: Span,
 ) -> Expression<'a> {
-	let entry = &context.type_store.type_entries[base_type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[base_type_id.index()];
 	let (base_shape_index, base_specialization_index) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 
@@ -3790,7 +3790,7 @@ fn validate_enum_initializer<'a>(
 	initializer: Option<&'a tree::EnumInitializer<'a>>,
 	span: Span,
 ) -> Option<Vec<FieldInitializer<'a>>> {
-	let entry = context.type_store.type_entries[variant_type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[variant_type_id.index()];
 	let (variant_shape_index, variant_specialization_index) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 		_ => unreachable!(),
@@ -4435,7 +4435,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		None => (left.type_id, left.is_mutable),
 	};
 
-	let enum_entry = context.type_store.type_entries[left_type_id.index()];
+	let enum_entry = context.type_store.type_entries.read().unwrap()[left_type_id.index()];
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &context.type_store.user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => None,

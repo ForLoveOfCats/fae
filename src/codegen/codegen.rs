@@ -39,7 +39,7 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			for type_argument in &specialization.type_arguments.ids {
-				let entry = &type_store.type_entries[type_argument.index()];
+				let entry = type_store.type_entries.read().unwrap()[type_argument.index()];
 				if entry.generic_poisoned {
 					panic!("The legacy C backend had this, does it ever get hit?")
 					// continue;
@@ -96,7 +96,7 @@ pub fn generate_function<'a, G: Generator>(
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	for type_argument in &specialization.type_arguments.ids {
-		let entry = &type_store.type_entries[type_argument.index()];
+		let entry = type_store.type_entries.read().unwrap()[type_argument.index()];
 		if entry.generic_poisoned {
 			return;
 		}
@@ -251,7 +251,7 @@ fn generate_match<G: Generator>(context: &mut Context, generator: &mut G, match_
 		None => expression_type_id,
 	};
 
-	let entry = context.type_store.type_entries[value_type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[value_type_id.index()];
 	let TypeEntryKind::UserType {
 		shape_index: enum_shape_index,
 		specialization_index: enum_specialization_index,
@@ -358,7 +358,7 @@ fn generate_struct_literal<G: Generator>(
 	} else {
 		assert!(!fields.is_empty());
 
-		let entry = context.type_store.type_entries[type_id.index()];
+		let entry = context.type_store.type_entries.read().unwrap()[type_id.index()];
 		let (shape_index, specialization_index) = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 			_ => unreachable!("{:?}", entry.kind),
@@ -439,7 +439,7 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 	let base = generate_expression(context, generator, &read.base)?;
 
 	let type_id = context.specialize_type_id(read.base.type_id);
-	let entry = &context.type_store.type_entries[type_id.index()];
+	let entry = &context.type_store.type_entries.read().unwrap()[type_id.index()];
 	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
 		match &context.type_store.user_types[shape_index].kind {
 			UserTypeKind::Struct { shape } => {
@@ -562,7 +562,7 @@ fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, che
 		None => left_type_id,
 	};
 
-	let entry = context.type_store.type_entries[value_type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[value_type_id.index()];
 	let TypeEntryKind::UserType {
 		shape_index: enum_shape_index,
 		specialization_index: enum_specialization_index,
@@ -588,7 +588,7 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	conversion: &EnumVariantToEnum,
 ) -> Option<G::Binding> {
 	let expression_type_id = context.specialize_type_id(conversion.expression.type_id);
-	let entry = context.type_store.type_entries[expression_type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[expression_type_id.index()];
 	let variant_index = match entry.kind {
 		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types[shape_index].kind {
 			UserTypeKind::Struct { shape } => shape.variant_index.unwrap(),
@@ -602,7 +602,7 @@ fn generate_enum_variant_to_enum<G: Generator>(
 
 	let conversion_type_id = context.specialize_type_id(conversion.type_id);
 	let type_id = context.specialize_type_id(conversion_type_id);
-	let entry = context.type_store.type_entries[type_id.index()];
+	let entry = context.type_store.type_entries.read().unwrap()[type_id.index()];
 	let (shape_index, specialization_index) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 		_ => unreachable!("{:?}", entry.kind),

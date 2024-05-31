@@ -121,7 +121,7 @@ impl LLVMTypes {
 
 	// Cannot accept `void` type and assumes that any struct asked for has been registered; does not follow pointers
 	pub fn type_to_llvm_type(&self, context: LLVMContextRef, type_store: &TypeStore, type_id: TypeId) -> LLVMTypeRef {
-		let entry = &type_store.type_entries[type_id.index()];
+		let entry = type_store.type_entries.read().unwrap()[type_id.index()];
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
@@ -947,7 +947,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let field_type;
 		let field_pointer;
 
-		let entry = type_store.type_entries[type_id.index()];
+		let entry = type_store.type_entries.read().unwrap()[type_id.index()];
 		let type_id = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let shape = &type_store.user_types[shape_index];
