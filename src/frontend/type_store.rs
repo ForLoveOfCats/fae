@@ -1066,7 +1066,7 @@ impl<'a> TypeStore<'a> {
 		module_path: &'a [String],
 		scope_id: ScopeId,
 		span: Span,
-	) -> Symbol<'a> {
+	) -> usize {
 		// Type entry gets added during specialization
 
 		let shape_index = self.user_types.len();
@@ -1081,8 +1081,7 @@ impl<'a> TypeStore<'a> {
 		};
 		self.user_types.push(user_type);
 
-		let kind = SymbolKind::Type { shape_index };
-		Symbol { name, kind, span: Some(span) }
+		shape_index
 	}
 
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {

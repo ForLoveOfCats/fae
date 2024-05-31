@@ -30,6 +30,8 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub messages: &'b mut Messages<'a>,
 
+	pub type_shape_indicies: &'b mut Vec<usize>,
+
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b mut FunctionStore<'a>,
 	pub function_generic_usages: &'b mut Vec<GenericUsage>,
@@ -85,6 +87,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			messages: self.messages,
 
+			type_shape_indicies: self.type_shape_indicies,
+
 			type_store: self.type_store,
 			function_store: self.function_store,
 			function_generic_usages: self.function_generic_usages,
@@ -139,6 +143,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			scope_index,
 
 			messages: self.messages,
+
+			type_shape_indicies: self.type_shape_indicies,
 
 			type_store: self.type_store,
 			function_store: self.function_store,
@@ -260,9 +266,21 @@ pub fn validate<'a>(
 	let mut externs = Externs::new();
 	let mut constants = Vec::new();
 
-	create_root_types(messages, type_store, root_layers, parsed_files);
+	let mut type_shape_indicies = Vec::with_capacity(parsed_files.len());
+	for _ in 0..parsed_files.len() {
+		type_shape_indicies.push(Vec::new());
+	}
+
+	create_root_types(messages, type_store, root_layers, parsed_files, type_shape_indicies.as_mut_slice());
 	resolve_root_type_imports(cli_arguments, bump, messages, root_layers, parsed_files);
-	fill_root_types(messages, type_store, function_store, root_layers, parsed_files);
+	fill_root_types(
+		messages,
+		type_store,
+		function_store,
+		root_layers,
+		parsed_files,
+		type_shape_indicies.as_mut_slice(),
+	);
 
 	let mut local_function_shape_indicies = Vec::new();
 	for _ in 0..parsed_files.len() {
@@ -297,6 +315,7 @@ pub fn validate<'a>(
 		statics,
 		&mut readables,
 		parsed_files,
+		type_shape_indicies.as_mut_slice(),
 	);
 
 	validate_root_statics(
@@ -313,11 +332,11 @@ pub fn validate<'a>(
 		statics,
 		&mut readables,
 		parsed_files,
+		type_shape_indicies.as_mut_slice(),
 	);
 
-	for (index, parsed_file) in parsed_files.iter().enumerate() {
+	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
-		assert_eq!(index, file_index);
 		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.create_module_path(module_path);
@@ -337,6 +356,7 @@ pub fn validate<'a>(
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages,
+			type_shape_indicies: &mut type_shape_indicies[file_index],
 			type_store,
 			function_store,
 			function_generic_usages: &mut function_generic_usages,
@@ -375,9 +395,11 @@ fn create_root_types<'a>(
 	type_store: &mut TypeStore<'a>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
+	type_shape_indicies: &mut [Vec<usize>],
 ) {
-	for parsed_file in parsed_files {
+	for parsed_file in parsed_files.iter() {
 		let file_index = parsed_file.source_file.index;
+		let type_shape_indicies = &mut type_shape_indicies[file_index];
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -398,6 +420,7 @@ fn create_root_types<'a>(
 			block,
 			scope_id,
 			true,
+			type_shape_indicies,
 		);
 
 		layer.importable_types_index = importable_types_index;
@@ -429,10 +452,12 @@ fn fill_root_types<'a>(
 	function_store: &mut FunctionStore<'a>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
+	type_shape_indicies: &mut [Vec<usize>],
 ) {
 	for parsed_file in parsed_files {
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
+		let type_shape_indicies = &mut type_shape_indicies[parsed_file.source_file.index];
 
 		// TODO: This is definitely wrong
 		let mut generic_usages = Vec::new();
@@ -447,6 +472,7 @@ fn fill_root_types<'a>(
 			parsed_file.module_path,
 			0,
 			&parsed_file.block,
+			type_shape_indicies,
 		);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
@@ -515,10 +541,12 @@ fn validate_root_consts<'a>(
 	statics: &mut Statics<'a>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
+	type_shape_indicies: &mut [Vec<usize>],
 ) {
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
+		let type_shape_indicies = &mut type_shape_indicies[file_index];
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone();
@@ -539,6 +567,7 @@ fn validate_root_consts<'a>(
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages,
+			type_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -590,10 +619,12 @@ fn validate_root_statics<'a>(
 	statics: &mut Statics<'a>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
+	type_shape_indicies: &mut [Vec<usize>],
 ) {
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
+		let type_shape_indicies = &mut type_shape_indicies[file_index];
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone();
@@ -614,6 +645,7 @@ fn validate_root_statics<'a>(
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages,
+			type_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -788,6 +820,7 @@ fn create_block_types<'a>(
 	block: &tree::Block<'a>,
 	scope_id: ScopeId,
 	is_root: bool,
+	type_shape_indicies: &mut Vec<usize>,
 ) {
 	for statement in &block.statements {
 		if is_root {
@@ -820,7 +853,7 @@ fn create_block_types<'a>(
 		}
 
 		if let tree::Statement::Struct(statement) = statement {
-			create_block_struct(
+			let shape_index = create_block_struct(
 				messages,
 				type_store,
 				symbols,
@@ -830,8 +863,9 @@ fn create_block_types<'a>(
 				scope_id,
 				statement,
 			);
+			type_shape_indicies.push(shape_index);
 		} else if let tree::Statement::Enum(statement) = statement {
-			create_block_enum(
+			let shape_index = create_block_enum(
 				messages,
 				type_store,
 				symbols,
@@ -841,6 +875,7 @@ fn create_block_types<'a>(
 				scope_id,
 				statement,
 			);
+			type_shape_indicies.push(shape_index);
 		}
 	}
 }
@@ -854,7 +889,7 @@ fn create_block_struct<'a>(
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
 	statement: &tree::Struct<'a>,
-) {
+) -> usize {
 	//Start off with no fields, they will be added during the next pre-pass
 	//so that all types exist in order to populate field types
 
@@ -880,8 +915,11 @@ fn create_block_struct<'a>(
 	let shape = StructShape::new(statement.name.item, None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
-	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
+	let shape_index = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
+	let kind = SymbolKind::Type { shape_index };
+	let symbol = Symbol { name, kind, span: Some(span) };
 	symbols.push_symbol(messages, function_initial_scope_count, symbol);
+	shape_index
 }
 
 fn create_block_enum<'a>(
@@ -893,7 +931,7 @@ fn create_block_enum<'a>(
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
 	statement: &tree::Enum<'a>,
-) {
+) -> usize {
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
 	let mut explicit_generics = Vec::with_capacity(capacity);
 
@@ -967,8 +1005,11 @@ fn create_block_enum<'a>(
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	assert_eq!(type_store.user_types.len(), enum_shape_index);
-	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
+	let shape_index = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
+	let kind = SymbolKind::Type { shape_index };
+	let symbol = Symbol { name, kind, span: Some(span) };
 	symbols.push_symbol(messages, function_initial_scope_count, symbol);
+	shape_index
 }
 
 fn fill_block_types<'a>(
@@ -981,185 +1022,212 @@ fn fill_block_types<'a>(
 	module_path: &'a [String],
 	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
+	type_shape_indicies: &mut Vec<usize>,
 ) {
+	let mut shape_index_iter = type_shape_indicies.iter();
+
 	for statement in &block.statements {
 		if let tree::Statement::Struct(statement) = statement {
-			// TODO: Rip this out similar to how it was for functions
-			let shape_index = symbols
-				.scopes
-				.iter()
-				.rev()
-				.find_map(|scope| {
-					if let Some(symbol) = scope.get(statement.name.item) {
-						if let SymbolKind::Type { shape_index } = symbol.kind {
-							return Some(shape_index);
-						}
-					}
-					None
-				})
-				.unwrap();
-
-			let user_type = &type_store.user_types[shape_index];
-			let scope = symbols.child_scope();
-
-			for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
-				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
-				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
-			}
-
-			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-			let mut fields = Vec::with_capacity(statement.fields.len());
-
-			for field in &statement.fields {
-				let field_type = match type_store.lookup_type(
-					messages,
-					function_store,
-					module_path,
-					generic_usages,
-					root_layers,
-					scope.symbols,
-					function_initial_scope_count,
-					&blank_generic_parameters,
-					&field.parsed_type,
-				) {
-					Some(type_id) => type_id,
-					None => type_store.any_collapse_type_id(),
-				};
-
-				let field_shape = FieldShape {
-					name: field.name.item,
-					field_type,
-					attribute: field.attribute,
-					read_only: field.read_only,
-				};
-				let span = field.name.span + field.parsed_type.span;
-				let node = Node::new(field_shape, span);
-				fields.push(node);
-			}
-
-			match &mut type_store.user_types[shape_index].kind {
-				UserTypeKind::Struct { shape } => {
-					shape.fields = fields;
-					assert!(!shape.been_filled);
-					shape.been_filled = true;
-
-					if !shape.specializations.is_empty() {
-						fill_pre_existing_struct_specializations(
-							messages,
-							type_store,
-							function_store,
-							generic_usages,
-							module_path,
-							shape_index,
-						);
-					}
-				}
-
-				UserTypeKind::Enum { .. } => unreachable!(),
-			}
+			fill_block_struct(
+				messages,
+				type_store,
+				function_store,
+				generic_usages,
+				root_layers,
+				symbols,
+				module_path,
+				function_initial_scope_count,
+				statement,
+				*shape_index_iter.next().unwrap(),
+			);
 		}
 
 		if let tree::Statement::Enum(statement) = statement {
-			// TODO: Rip this out similar to how it was for functions
-			let enum_shape_index = symbols
-				.scopes
-				.iter()
-				.rev()
-				.find_map(|scope| {
-					if let Some(symbol) = scope.get(statement.name.item) {
-						if let SymbolKind::Type { shape_index } = symbol.kind {
-							return Some(shape_index);
-						}
-					}
-					None
-				})
-				.unwrap();
+			fill_block_enum(
+				messages,
+				type_store,
+				function_store,
+				generic_usages,
+				root_layers,
+				symbols,
+				module_path,
+				function_initial_scope_count,
+				statement,
+				*shape_index_iter.next().unwrap(),
+			);
+		}
+	}
 
-			let user_type = &type_store.user_types[enum_shape_index];
-			let scope = symbols.child_scope();
+	type_shape_indicies.clear();
+}
 
-			for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
-				let kind = SymbolKind::UserTypeGeneric { shape_index: enum_shape_index, generic_index };
-				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
-			}
+fn fill_block_struct<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_scope_count: usize,
+	statement: &tree::Struct<'a>,
+	shape_index: usize,
+) {
+	let user_type = &type_store.user_types[shape_index];
+	let scope = symbols.child_scope();
 
-			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-			let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
+	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
+		let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
+		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+	}
 
-			for shared_field in &statement.shared_fields {
-				let field_type = match type_store.lookup_type(
-					messages,
-					function_store,
-					module_path,
-					generic_usages,
-					root_layers,
-					scope.symbols,
-					function_initial_scope_count,
-					&blank_generic_parameters,
-					&shared_field.parsed_type,
-				) {
-					Some(type_id) => type_id,
-					None => type_store.any_collapse_type_id(),
-				};
+	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	let mut fields = Vec::with_capacity(statement.fields.len());
 
-				let field_shape = FieldShape {
-					name: shared_field.name.item,
-					field_type,
-					attribute: shared_field.attribute,
-					read_only: shared_field.read_only,
-				};
-				let span = shared_field.name.span + shared_field.parsed_type.span;
-				let node = Node::new(field_shape, span);
-				shared_fields.push(node);
-			}
+	for field in &statement.fields {
+		let field_type = match type_store.lookup_type(
+			messages,
+			function_store,
+			module_path,
+			generic_usages,
+			root_layers,
+			scope.symbols,
+			function_initial_scope_count,
+			&blank_generic_parameters,
+			&field.parsed_type,
+		) {
+			Some(type_id) => type_id,
+			None => type_store.any_collapse_type_id(),
+		};
 
-			let user_type = &type_store.user_types[enum_shape_index];
-			let shape = match &user_type.kind {
-				UserTypeKind::Enum { shape } => shape,
-				UserTypeKind::Struct { .. } => unreachable!(),
-			};
+		let field_shape = FieldShape {
+			name: field.name.item,
+			field_type,
+			attribute: field.attribute,
+			read_only: field.read_only,
+		};
+		let span = field.name.span + field.parsed_type.span;
+		let node = Node::new(field_shape, span);
+		fields.push(node);
+	}
 
-			// Yuck
-			let mut variant_shapes = shape.variant_shapes.clone();
+	match &mut type_store.user_types[shape_index].kind {
+		UserTypeKind::Struct { shape } => {
+			shape.fields = fields;
+			assert!(!shape.been_filled);
+			shape.been_filled = true;
 
-			for variant_shape in &mut variant_shapes {
-				fill_struct_like_enum_variant(
+			if !shape.specializations.is_empty() {
+				fill_pre_existing_struct_specializations(
 					messages,
 					type_store,
 					function_store,
 					generic_usages,
-					root_layers,
-					scope.symbols,
 					module_path,
-					function_initial_scope_count,
-					&variant_shape,
-					statement,
+					shape_index,
 				);
 			}
+		}
 
-			match &mut type_store.user_types[enum_shape_index].kind {
-				UserTypeKind::Struct { .. } => unreachable!(),
+		UserTypeKind::Enum { .. } => unreachable!(),
+	}
+}
 
-				UserTypeKind::Enum { shape } => {
-					assert!(shape.shared_fields.is_empty());
-					shape.shared_fields = shared_fields;
-					shape.variant_shapes = variant_shapes;
-					assert!(!shape.been_filled);
-					shape.been_filled = true;
+fn fill_block_enum<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_scope_count: usize,
+	statement: &tree::Enum<'a>,
+	enum_shape_index: usize,
+) {
+	let user_type = &type_store.user_types[enum_shape_index];
+	let scope = symbols.child_scope();
 
-					if !shape.specializations.is_empty() {
-						fill_pre_existing_enum_specializations(
-							messages,
-							type_store,
-							function_store,
-							generic_usages,
-							module_path,
-							enum_shape_index,
-						);
-					}
-				}
+	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
+		let kind = SymbolKind::UserTypeGeneric { shape_index: enum_shape_index, generic_index };
+		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+	}
+
+	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
+
+	for shared_field in &statement.shared_fields {
+		let field_type = match type_store.lookup_type(
+			messages,
+			function_store,
+			module_path,
+			generic_usages,
+			root_layers,
+			scope.symbols,
+			function_initial_scope_count,
+			&blank_generic_parameters,
+			&shared_field.parsed_type,
+		) {
+			Some(type_id) => type_id,
+			None => type_store.any_collapse_type_id(),
+		};
+
+		let field_shape = FieldShape {
+			name: shared_field.name.item,
+			field_type,
+			attribute: shared_field.attribute,
+			read_only: shared_field.read_only,
+		};
+		let span = shared_field.name.span + shared_field.parsed_type.span;
+		let node = Node::new(field_shape, span);
+		shared_fields.push(node);
+	}
+
+	let user_type = &type_store.user_types[enum_shape_index];
+	let shape = match &user_type.kind {
+		UserTypeKind::Enum { shape } => shape,
+		UserTypeKind::Struct { .. } => unreachable!(),
+	};
+
+	// Yuck
+	let mut variant_shapes = shape.variant_shapes.clone();
+
+	for variant_shape in &mut variant_shapes {
+		fill_struct_like_enum_variant(
+			messages,
+			type_store,
+			function_store,
+			generic_usages,
+			root_layers,
+			scope.symbols,
+			module_path,
+			function_initial_scope_count,
+			&variant_shape,
+			statement,
+		);
+	}
+
+	match &mut type_store.user_types[enum_shape_index].kind {
+		UserTypeKind::Struct { .. } => unreachable!(),
+
+		UserTypeKind::Enum { shape } => {
+			assert!(shape.shared_fields.is_empty());
+			shape.shared_fields = shared_fields;
+			shape.variant_shapes = variant_shapes;
+			assert!(!shape.been_filled);
+			shape.been_filled = true;
+
+			if !shape.specializations.is_empty() {
+				fill_pre_existing_enum_specializations(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					module_path,
+					enum_shape_index,
+				);
 			}
 		}
 	}
@@ -1788,6 +1856,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			block,
 			scope_id,
 			is_root,
+			context.type_shape_indicies,
 		);
 
 		resolve_block_type_imports(
@@ -1812,6 +1881,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.module_path,
 			context.function_initial_scope_count,
 			block,
+			context.type_shape_indicies,
 		);
 	}
 
