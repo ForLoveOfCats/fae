@@ -11,6 +11,7 @@ use crate::frontend::ir::*;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
+use crate::frontend::symbols::SymbolsScope;
 use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribute, MethodKind, PathSegments};
 use crate::frontend::tree::{MethodAttribute, Node};
@@ -46,9 +47,8 @@ pub struct Context<'a, 'b, 'c> {
 	pub initial_local_function_shape_indicies_len: usize,
 	pub local_function_shape_indicies: &'b mut Vec<usize>,
 
-	pub initial_symbols_len: usize,
-	pub function_initial_symbols_len: usize,
-	pub symbols: &'b mut Symbols<'a>,
+	pub function_initial_scope_count: usize,
+	pub symbols_scope: SymbolsScope<'a, 'b>,
 
 	pub next_loop_index: usize,
 	pub current_loop_index: Option<usize>,
@@ -65,7 +65,6 @@ impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
 	fn drop(&mut self) {
 		self.readables.readables.truncate(self.initial_readables_overall_len);
 		self.readables.starting_index = self.initial_readables_starting_index;
-		self.symbols.symbols.truncate(self.initial_symbols_len);
 	}
 }
 
@@ -103,9 +102,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			initial_local_function_shape_indicies_len: self.local_function_shape_indicies.len(),
 			local_function_shape_indicies: self.local_function_shape_indicies,
 
-			initial_symbols_len: self.symbols.len(),
-			function_initial_symbols_len: self.function_initial_symbols_len,
-			symbols: self.symbols,
+			function_initial_scope_count: self.function_initial_scope_count,
+			symbols_scope: self.symbols_scope.child_scope(),
 
 			next_loop_index: self.next_loop_index,
 			current_loop_index: self.current_loop_index,
@@ -159,9 +157,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			initial_local_function_shape_indicies_len: self.local_function_shape_indicies.len(),
 			local_function_shape_indicies: self.local_function_shape_indicies,
 
-			initial_symbols_len: self.symbols.len(),
-			function_initial_symbols_len: self.function_initial_symbols_len,
-			symbols: self.symbols,
+			function_initial_scope_count: self.function_initial_scope_count,
+			symbols_scope: self.symbols_scope.child_scope(),
 
 			next_loop_index: 0,
 			current_loop_index: None,
@@ -180,8 +177,9 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	}
 
 	pub fn push_symbol(&mut self, symbol: Symbol<'a>) {
-		self.symbols
-			.push_symbol(self.messages, self.function_initial_symbols_len, symbol);
+		self.symbols_scope
+			.symbols
+			.push_symbol(self.messages, self.function_initial_scope_count, symbol);
 	}
 
 	pub fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
@@ -202,8 +200,13 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	}
 
 	pub fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		self.symbols
-			.lookup_symbol(self.messages, self.root_layers, self.type_store, self.function_initial_symbols_len, path)
+		self.symbols_scope.symbols.lookup_symbol(
+			self.messages,
+			self.root_layers,
+			self.type_store,
+			self.function_initial_scope_count,
+			path,
+		)
 	}
 
 	pub fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
@@ -213,8 +216,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			self.module_path,
 			self.function_generic_usages,
 			self.root_layers,
-			self.symbols,
-			self.function_initial_symbols_len,
+			self.symbols_scope.symbols,
+			self.function_initial_scope_count,
 			self.generic_parameters,
 			parsed_type,
 		)
@@ -280,7 +283,6 @@ pub fn validate<'a>(
 	);
 	function_generic_usages.clear();
 
-	let mut symbols = Symbols::new();
 	validate_root_consts(
 		cli_arguments,
 		bump,
@@ -295,7 +297,22 @@ pub fn validate<'a>(
 		statics,
 		&mut readables,
 		parsed_files,
-		&mut symbols,
+	);
+
+	validate_root_statics(
+		cli_arguments,
+		bump,
+		messages,
+		lang_items,
+		root_layers,
+		type_store,
+		function_store,
+		&mut function_generic_usages,
+		&mut externs,
+		&mut constants,
+		statics,
+		&mut readables,
+		parsed_files,
 	);
 
 	for (index, parsed_file) in parsed_files.iter().enumerate() {
@@ -304,7 +321,7 @@ pub fn validate<'a>(
 		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.create_module_path(module_path);
-		symbols.duplicate(&layer.symbols);
+		let mut symbols = layer.symbols.clone();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
@@ -333,9 +350,8 @@ pub fn validate<'a>(
 			readables: &mut readables,
 			initial_local_function_shape_indicies_len: 0,
 			local_function_shape_indicies,
-			initial_symbols_len: symbols.len(),
-			function_initial_symbols_len: symbols.len(),
-			symbols: &mut symbols,
+			function_initial_scope_count: symbols.scopes.len(),
+			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -363,11 +379,14 @@ fn create_root_types<'a>(
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		assert_eq!(layer.symbols.len(), 0);
 
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let block = &parsed_file.block;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
+
+		let importable_types_index = layer.symbols.scopes.len();
+		assert_eq!(importable_types_index, 0);
+		layer.symbols.scopes.push(FxHashMap::default());
 
 		create_block_types(
 			messages,
@@ -381,7 +400,7 @@ fn create_root_types<'a>(
 			true,
 		);
 
-		layer.importable_types_range = 0..layer.symbols.len();
+		layer.importable_types_index = importable_types_index;
 	}
 }
 
@@ -455,7 +474,10 @@ fn create_root_functions<'a>(
 
 		//Yuck, I do not like this
 		let mut symbols = root_layers.create_module_path(parsed_file.module_path).symbols.clone();
-		let old_symbols_len = symbols.len();
+
+		let importable_functions_index = symbols.scopes.len();
+		assert_eq!(importable_functions_index, 1);
+		symbols.scopes.push(FxHashMap::default());
 
 		create_block_functions(
 			messages,
@@ -474,7 +496,7 @@ fn create_root_functions<'a>(
 		);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_functions_range = old_symbols_len..symbols.len();
+		layer.importable_functions_index = importable_functions_index;
 		layer.symbols = symbols;
 	}
 }
@@ -493,17 +515,19 @@ fn validate_root_consts<'a>(
 	statics: &mut Statics<'a>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
-	symbols: &mut Symbols<'a>,
 ) {
 	for parsed_file in parsed_files {
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		symbols.duplicate(&layer.symbols);
+		let mut symbols = layer.symbols.clone();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
+
+		let importable_consts_index = symbols.scopes.len();
+		assert_eq!(importable_consts_index, 2);
 
 		let mut next_scope_index = 1;
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -528,9 +552,8 @@ fn validate_root_consts<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
-			initial_symbols_len: symbols.len(),
-			function_initial_symbols_len: symbols.len(),
-			symbols,
+			function_initial_scope_count: symbols.scopes.len(),
+			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -540,25 +563,91 @@ fn validate_root_consts<'a>(
 			method_base_index: None,
 		};
 
-		let old_symbols_len = context.symbols.len();
 		validate_block_consts(&mut context, &parsed_file.block);
 		assert_eq!(context.readables.overall_len(), 0);
 		assert_eq!(context.readables.starting_index, 0);
-		let importable_consts_range = old_symbols_len..context.symbols.len();
-
-		let old_symbols_len = context.symbols.len();
-		validate_block_statics(&mut context, &parsed_file.block);
-		assert_eq!(context.readables.overall_len(), 0);
-		assert_eq!(context.readables.starting_index, 0);
-		let importable_statics_range = old_symbols_len..context.symbols.len();
 
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_consts_range = importable_consts_range;
-		layer.importable_statics_range = importable_statics_range;
-		layer.symbols.duplicate(symbols);
+		layer.importable_consts_index = importable_consts_index;
+		layer.symbols = symbols;
+	}
+}
+
+fn validate_root_statics<'a>(
+	cli_arguments: &'a CliArguments,
+	bump: &'a Bump,
+	messages: &mut Messages<'a>,
+	lang_items: &mut LangItems,
+	root_layers: &mut RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &mut FunctionStore<'a>,
+	function_generic_usages: &mut Vec<GenericUsage>,
+	externs: &mut Externs,
+	constants: &mut Vec<ConstantValue<'a>>,
+	statics: &mut Statics<'a>,
+	readables: &mut Readables<'a>,
+	parsed_files: &'a [tree::File<'a>],
+) {
+	for parsed_file in parsed_files {
+		let file_index = parsed_file.source_file.index;
+		let module_path = parsed_file.module_path;
+
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let mut symbols = layer.symbols.clone();
+
+		readables.starting_index = 0;
+		readables.readables.clear();
+
+		let importable_statics_index = symbols.scopes.len();
+		assert_eq!(importable_statics_index, 3);
+
+		let mut next_scope_index = 1;
+		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let mut context = Context {
+			cli_arguments,
+			bump,
+			file_index,
+			module_path,
+			next_scope_index: &mut next_scope_index,
+			scope_index: 0,
+			messages,
+			type_store,
+			function_store,
+			function_generic_usages,
+			root_layers,
+			lang_items,
+			externs,
+			constants,
+			statics,
+			initial_local_function_shape_indicies_len: 0,
+			local_function_shape_indicies: &mut Vec::new(),
+			initial_readables_starting_index: readables.starting_index,
+			initial_readables_overall_len: readables.overall_len(),
+			readables,
+			function_initial_scope_count: symbols.scopes.len(),
+			symbols_scope: symbols.child_scope(),
+			next_loop_index: 0,
+			current_loop_index: None,
+			can_is_bind: false,
+			expected_type: None,
+			return_type: None,
+			generic_parameters: &blank_generic_parameters,
+			method_base_index: None,
+		};
+
+		validate_block_statics(&mut context, &parsed_file.block);
+		assert_eq!(context.readables.overall_len(), 0);
+		assert_eq!(context.readables.starting_index, 0);
+
+		std::mem::forget(context);
+		assert_eq!(next_scope_index, 1);
+
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		layer.importable_statics_index = importable_statics_index;
+		layer.symbols = symbols;
 	}
 }
 
@@ -569,14 +658,14 @@ fn resolve_block_type_imports<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
 	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = bump_vec![in bump; Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
 		let path = PathSegments { segments };
-		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
 	}
 
 	for statement in &block.statements {
@@ -587,7 +676,7 @@ fn resolve_block_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names.as_slice());
-		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_len, path, names);
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, path, names);
 	}
 }
 
@@ -595,25 +684,24 @@ fn resolve_import_for_block_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
 ) {
-	let layer = match root_layers.layer_for_path(messages, path) {
-		Some(found) if found.symbols.is_empty() => return,
-		Some(found) => found,
-		_ => return,
+	let Some(layer) = root_layers.layer_for_path(messages, path) else {
+		return;
 	};
 
 	if let Some(names) = names {
-		for &importing in layer.importable_types() {
-			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
+		let importable_types = layer.importable_types();
+		for name in names {
+			if let Some(&importing) = importable_types.get(name.item) {
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
 			}
 		}
 	} else {
-		for &importing in layer.importable_types() {
-			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		for &importing in layer.importable_types().values() {
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 	}
 }
@@ -625,14 +713,14 @@ fn resolve_block_non_type_imports<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
 	is_root: bool,
 ) {
 	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = bump_vec![in bump; Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
 		let path = PathSegments { segments };
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, &path, None);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
 	}
 
 	for statement in &block.statements {
@@ -643,7 +731,7 @@ fn resolve_block_non_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names.as_slice());
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_len, path, names);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, path, names);
 	}
 }
 
@@ -651,47 +739,41 @@ fn resolve_import_for_block_non_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
 ) {
-	let layer = match root_layers.layer_for_path(messages, path) {
-		Some(found) if found.symbols.is_empty() => return,
-		Some(found) => found,
-		_ => return,
+	let Some(layer) = root_layers.layer_for_path(messages, path) else {
+		return;
 	};
 
 	if let Some(names) = names {
-		for &importing in layer.importable_functions() {
-			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
-			}
-		}
+		let importable_functions = layer.importable_functions();
+		let importable_consts = layer.importable_consts();
+		let importable_statics = layer.importable_statics();
 
-		for &importing in layer.importable_consts() {
-			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
-			}
-		}
-
-		for &importing in layer.importable_statics() {
-			if let Some(name) = names.iter().find(|n| n.item == importing.name) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, Some(name.span));
+		for name in names {
+			if let Some(&importing) = importable_functions.get(name.item) {
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
+			} else if let Some(&importing) = importable_consts.get(name.item) {
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
+			} else if let Some(&importing) = importable_statics.get(name.item) {
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
 			}
 		}
 	} else {
 		// TODO: Add asterisk syntax for importing all items in a scope
 
-		for &importing in layer.importable_functions() {
-			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		for &importing in layer.importable_functions().values() {
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 
-		for &importing in layer.importable_consts() {
-			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		for &importing in layer.importable_consts().values() {
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 
-		for &importing in layer.importable_statics() {
-			symbols.push_imported_symbol(messages, function_initial_symbols_len, importing, None);
+		for &importing in layer.importable_statics().values() {
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 	}
 }
@@ -700,7 +782,7 @@ fn create_block_types<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
@@ -742,7 +824,7 @@ fn create_block_types<'a>(
 				messages,
 				type_store,
 				symbols,
-				function_initial_symbols_len,
+				function_initial_scope_count,
 				module_path,
 				enclosing_generic_parameters,
 				scope_id,
@@ -753,7 +835,7 @@ fn create_block_types<'a>(
 				messages,
 				type_store,
 				symbols,
-				function_initial_symbols_len,
+				function_initial_scope_count,
 				module_path,
 				enclosing_generic_parameters,
 				scope_id,
@@ -767,7 +849,7 @@ fn create_block_struct<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
@@ -799,14 +881,14 @@ fn create_block_struct<'a>(
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
-	symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+	symbols.push_symbol(messages, function_initial_scope_count, symbol);
 }
 
 fn create_block_enum<'a>(
 	messages: &mut Messages,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
@@ -886,7 +968,7 @@ fn create_block_enum<'a>(
 	let span = statement.name.span;
 	assert_eq!(type_store.user_types.len(), enum_shape_index);
 	let symbol = type_store.register_type(name, generic_parameters, kind, module_path, scope_id, span);
-	symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+	symbols.push_symbol(messages, function_initial_scope_count, symbol);
 }
 
 fn fill_block_types<'a>(
@@ -897,19 +979,19 @@ fn fill_block_types<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
 ) {
 	for statement in &block.statements {
 		if let tree::Statement::Struct(statement) = statement {
 			// TODO: Rip this out similar to how it was for functions
 			let shape_index = symbols
-				.symbols
+				.scopes
 				.iter()
 				.rev()
-				.find_map(|symbol| {
-					if let SymbolKind::Type { shape_index } = symbol.kind {
-						if symbol.name == statement.name.item {
+				.find_map(|scope| {
+					if let Some(symbol) = scope.get(statement.name.item) {
+						if let SymbolKind::Type { shape_index } = symbol.kind {
 							return Some(shape_index);
 						}
 					}
@@ -923,7 +1005,7 @@ fn fill_block_types<'a>(
 			for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
 				let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
 				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
 			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -937,7 +1019,7 @@ fn fill_block_types<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_symbols_len,
+					function_initial_scope_count,
 					&blank_generic_parameters,
 					&field.parsed_type,
 				) {
@@ -981,12 +1063,12 @@ fn fill_block_types<'a>(
 		if let tree::Statement::Enum(statement) = statement {
 			// TODO: Rip this out similar to how it was for functions
 			let enum_shape_index = symbols
-				.symbols
+				.scopes
 				.iter()
 				.rev()
-				.find_map(|symbol| {
-					if let SymbolKind::Type { shape_index } = symbol.kind {
-						if symbol.name == statement.name.item {
+				.find_map(|scope| {
+					if let Some(symbol) = scope.get(statement.name.item) {
+						if let SymbolKind::Type { shape_index } = symbol.kind {
 							return Some(shape_index);
 						}
 					}
@@ -1000,7 +1082,7 @@ fn fill_block_types<'a>(
 			for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
 				let kind = SymbolKind::UserTypeGeneric { shape_index: enum_shape_index, generic_index };
 				let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
 			let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -1014,7 +1096,7 @@ fn fill_block_types<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_symbols_len,
+					function_initial_scope_count,
 					&blank_generic_parameters,
 					&shared_field.parsed_type,
 				) {
@@ -1051,7 +1133,7 @@ fn fill_block_types<'a>(
 					root_layers,
 					scope.symbols,
 					module_path,
-					function_initial_symbols_len,
+					function_initial_scope_count,
 					&variant_shape,
 					statement,
 				);
@@ -1091,7 +1173,7 @@ fn fill_struct_like_enum_variant<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	variant_shape: &EnumVariantShape<'a>,
 	statement: &tree::Enum<'a>,
 ) {
@@ -1102,7 +1184,7 @@ fn fill_struct_like_enum_variant<'a>(
 	for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
 		let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
-		scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
 
 	let mut fields = Vec::new();
@@ -1116,7 +1198,7 @@ fn fill_struct_like_enum_variant<'a>(
 			generic_usages,
 			root_layers,
 			scope.symbols,
-			function_initial_symbols_len,
+			function_initial_scope_count,
 			&blank_generic_parameters,
 			&shared_field.parsed_type,
 		) {
@@ -1146,7 +1228,7 @@ fn fill_struct_like_enum_variant<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_symbols_len,
+					function_initial_scope_count,
 					&blank_generic_parameters,
 					&field.parsed_type,
 				) {
@@ -1174,7 +1256,7 @@ fn fill_struct_like_enum_variant<'a>(
 				generic_usages,
 				root_layers,
 				scope.symbols,
-				function_initial_symbols_len,
+				function_initial_scope_count,
 				&blank_generic_parameters,
 				&transparent.parsed_type,
 			) {
@@ -1410,15 +1492,15 @@ fn create_block_functions<'a>(
 			readables.starting_index = readables.overall_len();
 
 			let method_base_shape_index = statement.method_attribute.as_ref().and_then(|attribute| {
-				method_base_shape_index(messages, root_layers, type_store, symbols, symbols.len(), attribute)
+				method_base_shape_index(messages, root_layers, type_store, symbols, symbols.scopes.len(), attribute)
 			});
 			let base_shape_generics = method_base_shape_index.map(|method_base_shape_index| {
 				let base_shape = &type_store.user_types[method_base_shape_index];
 				base_shape.generic_parameters.clone() // I am sad
 			});
 
+			let function_initial_scope_count = symbols.scopes.len();
 			let scope = symbols.child_scope();
-			let function_initial_symbols_len = scope.symbols.len();
 			let function_shape_index = function_store.shapes.len();
 
 			let capacity = statement.generics.len()
@@ -1432,7 +1514,7 @@ fn create_block_functions<'a>(
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
-				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
 			let explicit_generics_len = explicit_generics.len();
@@ -1446,7 +1528,7 @@ fn create_block_functions<'a>(
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let span = Some(parent_parameter.name.span);
 				let symbol = Symbol { name: parent_parameter.name.item, kind, span };
-				scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
 			let mut base_type_arguments;
@@ -1464,7 +1546,7 @@ fn create_block_functions<'a>(
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(base_type_parameter.name.span);
 					let symbol = Symbol { name: base_type_parameter.name.item, kind, span };
-					scope.symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+					scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 				}
 
 				base_type_arguments.explicit_len = base_shape_generics.explicit_len();
@@ -1484,7 +1566,7 @@ fn create_block_functions<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_symbols_len,
+					function_initial_scope_count,
 					enclosing_generic_parameters,
 					parsed_type,
 				);
@@ -1542,7 +1624,7 @@ fn create_block_functions<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_symbols_len,
+					function_initial_scope_count,
 					enclosing_generic_parameters,
 					&parameter.item.parsed_type,
 				);
@@ -1635,7 +1717,7 @@ fn create_block_functions<'a>(
 				let kind = SymbolKind::Function { function_shape_index };
 				let span = Some(statement.name.span);
 				let symbol = Symbol { name: name.item, kind, span };
-				symbols.push_symbol(messages, function_initial_symbols_len, symbol);
+				symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
 			readables.readables.truncate(original_readables_overall_len);
@@ -1651,14 +1733,14 @@ fn method_base_shape_index<'a>(
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_symbols_len: usize,
+	function_initial_scope_count: usize,
 	method_attribute: &'a Node<MethodAttribute>,
 ) -> Option<usize> {
 	let symbol = symbols.lookup_symbol(
 		messages,
 		root_layers,
 		type_store,
-		function_initial_symbols_len,
+		function_initial_scope_count,
 		&method_attribute.item.base_type.item,
 	)?;
 
@@ -1699,8 +1781,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		create_block_types(
 			context.messages,
 			context.type_store,
-			context.symbols,
-			context.function_initial_symbols_len,
+			context.symbols_scope.symbols,
+			context.function_initial_scope_count,
 			context.module_path,
 			context.generic_parameters,
 			block,
@@ -1713,9 +1795,9 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.bump,
 			context.messages,
 			context.root_layers,
-			context.symbols,
+			context.symbols_scope.symbols,
 			context.module_path,
-			context.function_initial_symbols_len,
+			context.function_initial_scope_count,
 			block,
 			is_root,
 		);
@@ -1726,9 +1808,9 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.function_store,
 			context.function_generic_usages,
 			context.root_layers,
-			context.symbols,
+			context.symbols_scope.symbols,
 			context.module_path,
-			context.function_initial_symbols_len,
+			context.function_initial_scope_count,
 			block,
 		);
 	}
@@ -1738,9 +1820,9 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		context.bump,
 		context.messages,
 		context.root_layers,
-		context.symbols,
+		context.symbols_scope.symbols,
 		context.module_path,
-		context.function_initial_symbols_len,
+		context.function_initial_scope_count,
 		block,
 		is_root,
 	);
@@ -1754,7 +1836,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.function_generic_usages,
 			context.externs,
 			context.readables,
-			context.symbols,
+			context.symbols_scope.symbols,
 			context.module_path,
 			context.generic_parameters,
 			block,
@@ -1895,8 +1977,9 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	let function_shape_index = context.local_function_shape_index(statement.index_in_block);
 	let return_type = context.function_store.shapes[function_shape_index].return_type;
 	let generics = context.function_store.shapes[function_shape_index].generic_parameters.clone();
+	let function_initial_scope_count = context.symbols_scope.symbols.scopes.len();
 	let mut scope = context.child_scope_for_function(return_type, &generics);
-	scope.function_initial_symbols_len = scope.symbols.len();
+	scope.function_initial_scope_count = function_initial_scope_count;
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	for (generic_index, generic) in generics.parameters().iter().enumerate() {
@@ -3399,10 +3482,10 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				context.module_path,
 				context.function_generic_usages,
 				context.root_layers,
-				context.symbols,
+				context.symbols_scope.symbols,
 				shape_index,
 				Some(span),
-				context.function_initial_symbols_len,
+				context.function_initial_scope_count,
 				context.generic_parameters,
 				&read.type_arguments,
 			) else {
@@ -3420,6 +3503,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 	};
 
 	let Some(readable) = context.readables.get(readable_index) else {
+		// dbg!(&context.readables);
 		panic!("Symbol pointed to unknown readable index {readable_index}, {read:?}");
 	};
 

@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -83,10 +81,10 @@ pub struct RootLayer<'a> {
 	pub name: &'a str,
 	pub children: FxHashMap<&'a str, RootLayer<'a>>,
 	pub symbols: Symbols<'a>,
-	pub importable_types_range: Range<usize>,
-	pub importable_functions_range: Range<usize>,
-	pub importable_consts_range: Range<usize>,
-	pub importable_statics_range: Range<usize>,
+	pub importable_types_index: usize,
+	pub importable_functions_index: usize,
+	pub importable_consts_index: usize,
+	pub importable_statics_index: usize,
 }
 
 impl<'a> RootLayer<'a> {
@@ -95,10 +93,10 @@ impl<'a> RootLayer<'a> {
 			name,
 			children: FxHashMap::default(),
 			symbols: Symbols::new(),
-			importable_types_range: 0..0,
-			importable_functions_range: 0..0,
-			importable_consts_range: 0..0,
-			importable_statics_range: 0..0,
+			importable_types_index: usize::MAX,
+			importable_functions_index: usize::MAX,
+			importable_consts_index: usize::MAX,
+			importable_statics_index: usize::MAX,
 		}
 	}
 
@@ -107,7 +105,7 @@ impl<'a> RootLayer<'a> {
 
 		let segment = &segments[0];
 		let name = segment.item;
-		let found = self.symbols.symbols.iter().find(|symbol| symbol.name == name);
+		let found = self.symbols.scopes.iter().find_map(|scope| scope.get(name));
 
 		if found.is_none() {
 			messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
@@ -115,19 +113,19 @@ impl<'a> RootLayer<'a> {
 		found.copied()
 	}
 
-	pub fn importable_types(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_types_range.clone()]
+	pub fn importable_types(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
+		&self.symbols.scopes[self.importable_types_index]
 	}
 
-	pub fn importable_functions(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_functions_range.clone()]
+	pub fn importable_functions(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
+		&self.symbols.scopes[self.importable_functions_index]
 	}
 
-	pub fn importable_consts(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_consts_range.clone()]
+	pub fn importable_consts(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
+		&self.symbols.scopes[self.importable_consts_index]
 	}
 
-	pub fn importable_statics(&self) -> &[Symbol<'a>] {
-		&self.symbols.symbols[self.importable_statics_range.clone()]
+	pub fn importable_statics(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
+		&self.symbols.scopes[self.importable_statics_index]
 	}
 }

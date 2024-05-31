@@ -48,32 +48,22 @@ impl std::fmt::Display for SymbolKind {
 
 #[derive(Debug, Clone)]
 pub struct Symbols<'a> {
-	pub symbols: Vec<Symbol<'a>>,
+	pub scopes: Vec<FxHashMap<&'a str, Symbol<'a>>>,
+	unused_scopes: Vec<FxHashMap<&'a str, Symbol<'a>>>,
 }
 
 impl<'a> Symbols<'a> {
 	pub fn new() -> Self {
-		Symbols { symbols: Vec::new() }
-	}
-
-	pub fn len(&self) -> usize {
-		self.symbols.len()
-	}
-
-	pub fn is_empty(&self) -> bool {
-		self.symbols.is_empty()
-	}
-
-	pub fn duplicate(&mut self, other: &Symbols<'a>) {
-		self.symbols.clear();
-		self.symbols.extend_from_slice(&other.symbols);
+		Symbols { scopes: Vec::new(), unused_scopes: Vec::new() }
 	}
 
 	pub fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
-		SymbolsScope { initial_symbols_len: self.len(), symbols: self }
+		let scope = self.unused_scopes.pop().unwrap_or_else(|| FxHashMap::default());
+		self.scopes.push(scope);
+		SymbolsScope { symbols: self }
 	}
 
-	pub fn push_symbol(&mut self, messages: &mut Messages, function_initial_symbols_len: usize, symbol: Symbol<'a>) {
+	pub fn push_symbol(&mut self, messages: &mut Messages, function_initial_scope_count: usize, symbol: Symbol<'a>) {
 		let can_shadow = matches!(
 			symbol.kind,
 			SymbolKind::Let { .. }
@@ -83,7 +73,7 @@ impl<'a> Symbols<'a> {
 		);
 
 		if !can_shadow {
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_len, symbol.name) {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name) {
 				// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 				messages.message(
 					error!("Duplicate symbol `{}`", symbol.name)
@@ -93,48 +83,50 @@ impl<'a> Symbols<'a> {
 			}
 		}
 
-		// Pushing the symbol even if duplicate seems to be a better failure state for following errors
-		self.symbols.push(symbol);
+		// Pushing the symbol even if duplicate is probably has less error virality
+		self.scopes.last_mut().unwrap().insert(symbol.name, symbol);
 	}
 
 	pub fn push_imported_symbol(
 		&mut self,
 		messages: &mut Messages,
-		function_initial_symbols_len: usize,
+		function_initial_scope_count: usize,
 		symbol: Symbol<'a>,
 		import_span: Option<Span>,
 	) {
-		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_len, symbol.name) {
+		if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name) {
 			messages.message(
 				error!("Import conflicts with existing symbol `{}`", found.name)
 					.span_if_some(import_span)
 					.note_if_some(found.span, "Existing symbol here"),
 			);
 		} else {
-			self.symbols.push(symbol);
+			self.scopes.last_mut().unwrap().insert(symbol.name, symbol);
 		}
 	}
 
-	fn find_local_symbol_matching_name(&self, function_initial_symbols_len: usize, name: &str) -> Option<Symbol<'a>> {
-		let mut index = self.symbols.len();
-		for &symbol in self.symbols.iter().rev() {
-			index -= 1;
+	fn find_local_symbol_matching_name(&self, function_initial_scope_count: usize, name: &str) -> Option<Symbol<'a>> {
+		let mut scope_index = self.scopes.len();
+		for scope in self.scopes.iter().rev() {
+			scope_index -= 1;
 
-			if symbol.name == name {
-				if index < function_initial_symbols_len {
-					match symbol.kind {
-						SymbolKind::Function { .. }
-						| SymbolKind::Type { .. }
-						| SymbolKind::Const { .. }
-						| SymbolKind::Static { .. }
-						| SymbolKind::BuiltinType { .. } => {}
+			let Some(&symbol) = scope.get(name) else {
+				continue;
+			};
 
-						_ => break,
-					}
+			if scope_index < function_initial_scope_count {
+				match symbol.kind {
+					SymbolKind::Function { .. }
+					| SymbolKind::Type { .. }
+					| SymbolKind::Const { .. }
+					| SymbolKind::Static { .. }
+					| SymbolKind::BuiltinType { .. } => {}
+
+					_ => break,
 				}
-
-				return Some(symbol);
 			}
+
+			return Some(symbol);
 		}
 
 		None
@@ -145,7 +137,7 @@ impl<'a> Symbols<'a> {
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
 		type_store: &TypeStore<'a>,
-		function_initial_symbols_len: usize,
+		function_initial_scope_count: usize,
 		path: &PathSegments<'a>,
 	) -> Option<Symbol<'a>> {
 		if let [segment] = path.segments.as_slice() {
@@ -156,7 +148,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_len, name) {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, name) {
 				return Some(found);
 			}
 
@@ -168,14 +160,24 @@ impl<'a> Symbols<'a> {
 	}
 }
 
+#[derive(Debug)]
 pub struct SymbolsScope<'a, 'b> {
-	pub initial_symbols_len: usize,
 	pub symbols: &'b mut Symbols<'a>,
+}
+
+impl<'a, 'b> SymbolsScope<'a, 'b> {
+	pub fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
+		let scope = self.symbols.unused_scopes.pop().unwrap_or_else(|| FxHashMap::default());
+		self.symbols.scopes.push(scope);
+		SymbolsScope { symbols: self.symbols }
+	}
 }
 
 impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 	fn drop(&mut self) {
-		self.symbols.symbols.truncate(self.initial_symbols_len);
+		let mut scope = self.symbols.scopes.pop().unwrap();
+		scope.clear();
+		self.symbols.unused_scopes.push(scope);
 	}
 }
 
@@ -257,6 +259,11 @@ impl<'a> Readables<'a> {
 	}
 
 	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
+		// if name == "new_capacity" {
+		// 	dbg!(&self, std::backtrace::Backtrace::force_capture());
+		// 	println!();
+		// 	println!();
+		// }
 		let index = self.readables.len() - self.starting_index;
 		self.readables.push(Readable { name, type_id, kind });
 		index
