@@ -474,12 +474,6 @@ pub struct Slice {
 	pub mutable: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct SliceDescription {
-	pub entry: u32, // First immutable, then mutable directly following
-	pub sliced_type_id: TypeId,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UserTypeSpecializationDescription {
 	pub shape_index: usize,
@@ -493,7 +487,6 @@ pub struct TypeStore<'a> {
 	pub primative_type_symbols: Vec<Symbol<'a>>,
 
 	pub type_entries: RwLock<Vec<TypeEntry>>,
-	pub slice_descriptions: Vec<SliceDescription>,
 	pub user_types: Vec<UserType<'a>>,
 	pub user_type_generate_order: Mutex<Vec<UserTypeSpecializationDescription>>,
 
@@ -576,7 +569,6 @@ impl<'a> TypeStore<'a> {
 			debug_generics,
 			primative_type_symbols,
 			type_entries: RwLock::new(type_entries),
-			slice_descriptions: Vec::new(),
 			user_types: Vec::new(),
 			user_type_generate_order: Mutex::new(Vec::new()),
 			any_collapse_type_id,
@@ -984,7 +976,6 @@ impl<'a> TypeStore<'a> {
 
 	fn get_or_create_reference_entries(&mut self, type_id: TypeId) -> u32 {
 		let entry = self.type_entries.read().unwrap()[type_id.index()];
-		let generic_poisoned = entry.generic_poisoned;
 		if let Some(entries) = entry.reference_entries {
 			return entries;
 		}
@@ -1007,12 +998,8 @@ impl<'a> TypeStore<'a> {
 		entries.push(entry);
 
 		let kind = TypeEntryKind::Slice(Slice { type_id, mutable: false });
-		let description = SliceDescription { entry: entries.len() as u32, sliced_type_id: type_id };
 		let entry = TypeEntry::new(&entries, &self.user_types, kind);
 		entries.push(entry);
-		if !generic_poisoned {
-			self.slice_descriptions.push(description);
-		}
 
 		let kind = TypeEntryKind::Slice(Slice { type_id, mutable: true });
 		let entry = TypeEntry::new(&entries, &self.user_types, kind);
