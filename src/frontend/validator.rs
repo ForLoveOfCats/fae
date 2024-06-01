@@ -290,6 +290,7 @@ pub fn validate<'a>(
 	let mut readables = Readables::new();
 	create_root_functions(
 		messages,
+		lang_items,
 		root_layers,
 		type_store,
 		function_store,
@@ -482,6 +483,7 @@ fn fill_root_types<'a>(
 
 fn create_root_functions<'a>(
 	messages: &mut Messages<'a>,
+	lang_items: &mut LangItems,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -507,6 +509,7 @@ fn create_root_functions<'a>(
 
 		create_block_functions(
 			messages,
+			lang_items,
 			root_layers,
 			type_store,
 			function_store,
@@ -1581,6 +1584,7 @@ fn report_cyclic_user_type<'a>(
 
 fn create_block_functions<'a>(
 	messages: &mut Messages<'a>,
+	lang_items: &mut LangItems,
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &mut FunctionStore<'a>,
@@ -1825,6 +1829,13 @@ fn create_block_functions<'a>(
 					}
 				}
 			} else {
+				if let Some(lang_attribute) = &statement.lang_attribute {
+					let lang_name = lang_attribute.item.name;
+					let lang_span = lang_attribute.span;
+					let function_id = FunctionId { function_shape_index, specialization_index: 0 };
+					lang_items.register_lang_function(messages, function_id, lang_name, lang_span);
+				}
+
 				let kind = SymbolKind::Function { function_shape_index };
 				let span = Some(statement.name.span);
 				let symbol = Symbol { name: name.item, kind, span };
@@ -1943,6 +1954,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	if !is_root {
 		create_block_functions(
 			context.messages,
+			context.lang_items,
 			context.root_layers,
 			context.type_store,
 			context.function_store,
@@ -2276,16 +2288,13 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			TypeArguments::new_from_explicit(Vec::new()),
 			None,
 		);
-	} else if let Some(lang_attribute) = &shape.lang_attribute {
-		let lang_name = lang_attribute.item.name;
-		let lang_span = lang_attribute.span;
-
+	} else if shape.lang_attribute.is_some() {
 		if let Some(type_parameter_span) = type_parameter_span {
 			let message = error!("Lang item function may not have any generic type parameters");
 			context.message(message.span(type_parameter_span));
 		}
 
-		let result = context.function_store.get_or_add_specialization(
+		context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
 			context.module_path,
@@ -2294,13 +2303,6 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			TypeArguments::new_from_explicit(Vec::new()),
 			None,
 		);
-
-		if let Some(FunctionSpecializationResult { specialization_index, .. }) = result {
-			let function_id = FunctionId { function_shape_index, specialization_index };
-			context
-				.lang_items
-				.register_lang_function(context.messages, function_id, lang_name, lang_span);
-		}
 	}
 }
 
