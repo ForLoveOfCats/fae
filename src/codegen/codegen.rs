@@ -441,7 +441,7 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 	let type_id = context.specialize_type_id(read.base.type_id);
 	let entry = &context.type_store.type_entries.read().unwrap()[type_id.index()];
 	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
-		match &context.type_store.user_types[shape_index].kind {
+		match &context.type_store.user_types.read().unwrap()[shape_index].kind {
 			UserTypeKind::Struct { shape } => {
 				let specialization = &shape.specializations[specialization_index];
 				let field_type_id = specialization.fields[read.field_index].type_id;
@@ -590,7 +590,7 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	let expression_type_id = context.specialize_type_id(conversion.expression.type_id);
 	let entry = context.type_store.type_entries.read().unwrap()[expression_type_id.index()];
 	let variant_index = match entry.kind {
-		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types[shape_index].kind {
+		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types.read().unwrap()[shape_index].kind {
 			UserTypeKind::Struct { shape } => shape.variant_index.unwrap(),
 			kind => unreachable!("{kind:?}"),
 		},
