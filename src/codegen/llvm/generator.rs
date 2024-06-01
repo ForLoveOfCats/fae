@@ -320,7 +320,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn register_type_descriptions(&mut self, type_store: &TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
-		for shape in &type_store.user_types {
+		for shape in type_store.user_types.read().unwrap().iter() {
 			let specialization_count = match &shape.kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
 				UserTypeKind::Enum { shape } => shape.specializations.len(),
@@ -336,7 +336,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for &description in type_store.user_type_generate_order.lock().unwrap().iter() {
 			field_types_buffer.clear();
 			shared_field_types_buffer.clear();
-			let shape = &type_store.user_types[description.shape_index];
+			let shape = &type_store.user_types.read().unwrap()[description.shape_index];
 
 			match &shape.kind {
 				UserTypeKind::Struct { shape } => {
@@ -950,7 +950,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let entry = type_store.type_entries.read().unwrap()[type_id.index()];
 		let type_id = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let shape = &type_store.user_types[shape_index];
+				let shape = &type_store.user_types.read().unwrap()[shape_index];
 				match &shape.kind {
 					UserTypeKind::Struct { shape } => {
 						field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
