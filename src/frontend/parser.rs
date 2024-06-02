@@ -52,7 +52,7 @@ pub fn parse_block<'a>(
 
 		let newline = tokens.expect(messages, TokenKind::Newline)?;
 
-		let block = Block { statements };
+		let block = Block { statements: statements.into_bump_slice() };
 		let span = fat_arrow.span + newline.span;
 		return Ok(Node::new(block, span));
 	}
@@ -70,7 +70,7 @@ pub fn parse_block<'a>(
 	Ok(Node::new(block, span))
 }
 
-pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> BumpVec<'a, Statement<'a>> {
+pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> &'a [Statement<'a>] {
 	let mut items = BumpVec::new_in(bump);
 	let mut next_function_index = 0;
 
@@ -81,7 +81,7 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 			}
 
 			if tokens.next().is_err() {
-				return items;
+				return items.into_bump_slice();
 			}
 		}
 
@@ -96,7 +96,7 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 
 		let token = match tokens.peek() {
 			Ok(token) => token,
-			Err(_) => return items,
+			Err(_) => return items.into_bump_slice(),
 		};
 
 		if token.kind == TokenKind::CloseBrace {
@@ -108,7 +108,7 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 		}
 	}
 
-	items
+	items.into_bump_slice()
 }
 
 fn parse_statement<'a>(
@@ -351,7 +351,7 @@ fn parse_expression_climb<'a>(
 					let variant_name = tokens.expect(messages, TokenKind::Word)?;
 					let binding_name = Some(Node::from_token(first.text, first));
 					let variant_name = Node::from_token(variant_name.text, variant_name);
-					(binding_name, bump_vec![in bump; variant_name])
+					(binding_name, bump_vec![in bump; variant_name].into_bump_slice())
 				} else {
 					let mut variant_names = bump_vec![in bump; Node::from_token(first.text, first)];
 
@@ -361,7 +361,7 @@ fn parse_expression_climb<'a>(
 						variant_names.push(Node::from_token(name.text, name));
 					}
 
-					(None, variant_names)
+					(None, variant_names.into_bump_slice())
 				}
 			};
 
@@ -510,7 +510,7 @@ fn parse_expression_atom<'a>(
 			};
 
 			if is_call {
-				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_else(|| BumpVec::new_in(bump));
+				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
 				let arguments_node = parse_arguments(bump, messages, tokens)?;
 				let arguments = arguments_node.item;
 				let span = path_segments.span + arguments_node.span;
@@ -524,7 +524,7 @@ fn parse_expression_atom<'a>(
 					Some(type_arguments) => path_segments.span + type_arguments.span,
 					None => path_segments.span,
 				};
-				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_else(|| BumpVec::new_in(bump));
+				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
 				let type_object = Type::Path { path_segments, type_arguments, dot_access: None };
 				let parsed_type = Node::new(type_object, type_span);
 
@@ -540,7 +540,7 @@ fn parse_expression_atom<'a>(
 				Some(type_arguments) => path_segments.span + type_arguments.span,
 				None => path_segments.span,
 			};
-			let type_arguments = type_arguments.map(|node| node.item).unwrap_or_else(|| BumpVec::new_in(bump));
+			let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
 			let read = Read { path_segments, type_arguments };
 
 			Ok(Node::new(Expression::Read(read), span))
@@ -578,7 +578,7 @@ fn parse_expression_atom<'a>(
 
 			let close_token = tokens.expect(messages, TokenKind::CloseBracket)?;
 
-			let literal = ArrayLiteral { expressions };
+			let literal = ArrayLiteral { expressions: expressions.into_bump_slice() };
 			let expression = Expression::ArrayLiteral(literal);
 			let span = open_token.span + close_token.span;
 			Ok(Node::new(expression, span))
@@ -703,7 +703,7 @@ fn parse_following_period<'a>(
 	if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokens.peek_kind() {
 		let type_arguments = parse_type_arguments(bump, messages, tokens)?
 			.map(|a| a.item)
-			.unwrap_or_else(|| BumpVec::new_in(bump));
+			.unwrap_or_default();
 		let arguments_node = parse_arguments(bump, messages, tokens)?;
 		let span = atom.span + arguments_node.span;
 		let arguments = arguments_node.item;
@@ -829,7 +829,7 @@ fn parse_if_else_chain<'a>(
 		}
 	}
 
-	let value = IfElseChain { entries, else_body };
+	let value = IfElseChain { entries: entries.into_bump_slice(), else_body };
 	let expression = Expression::IfElseChain(bump.alloc(value));
 	Ok(Node::new(expression, span))
 }
@@ -879,7 +879,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 				let variant_name = tokens.expect(messages, TokenKind::Word)?;
 				let binding_name = Some(Node::from_token(first.text, first));
 				let variant_name = Node::from_token(variant_name.text, variant_name);
-				(binding_name, bump_vec![in bump; variant_name])
+				(binding_name, bump_vec![in bump; variant_name].into_bump_slice())
 			} else {
 				let mut variant_names = bump_vec![in bump; Node::from_token(first.text, first)];
 
@@ -889,7 +889,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 					variant_names.push(Node::from_token(name.text, name));
 				}
 
-				(None, variant_names)
+				(None, variant_names.into_bump_slice())
 			}
 		};
 
@@ -902,7 +902,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 	let close_brace = tokens.expect(messages, TokenKind::CloseBrace)?;
 	let span = match_token.span + close_brace.span;
 
-	let boxed_match = bump.alloc(Match { expression, arms, else_arm });
+	let boxed_match = bump.alloc(Match { expression, arms: arms.into_bump_slice(), else_arm });
 	let expression = Expression::Match(boxed_match);
 	Ok(Node::new(expression, span))
 }
@@ -929,7 +929,7 @@ fn parse_type_arguments<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
-) -> ParseResult<Option<Node<BumpVec<'a, Node<Type<'a>>>>>> {
+) -> ParseResult<Option<Node<&'a [Node<Type<'a>>]>>> {
 	if tokens.peek_kind() != Ok(TokenKind::OpenGeneric) {
 		return Ok(None);
 	}
@@ -955,14 +955,14 @@ fn parse_type_arguments<'a>(
 		messages.message(error!("Empty type argument list").span(span));
 	}
 
-	Ok(Some(Node::new(types, span)))
+	Ok(Some(Node::new(types.into_bump_slice(), span)))
 }
 
 fn parse_arguments<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
-) -> ParseResult<Node<BumpVec<'a, Node<Expression<'a>>>>> {
+) -> ParseResult<Node<&'a [Node<Expression<'a>>]>> {
 	let open_paren_token = tokens.expect(messages, TokenKind::OpenParen)?;
 
 	let multi_line = tokens.peek_kind() == Ok(TokenKind::Newline);
@@ -993,7 +993,7 @@ fn parse_arguments<'a>(
 	let close_paren_token = tokens.expect(messages, TokenKind::CloseParen)?;
 
 	let span = open_paren_token.span + close_paren_token.span;
-	Ok(Node::new(expressions, span))
+	Ok(Node::new(expressions.into_bump_slice(), span))
 }
 
 fn parse_struct_initializer<'a>(
@@ -1016,8 +1016,8 @@ fn parse_struct_initializer<'a>(
 			tokens.next()?;
 			parse_expression(bump, messages, tokens, true)?
 		} else {
-			let path = PathSegments { segments: bump_vec![in bump; name] };
-			let type_arguments = BumpVec::new_in(bump);
+			let path = PathSegments { segments: bump_vec![in bump; name].into_bump_slice() };
+			let type_arguments = &[];
 			let read = Read { path_segments: Node::new(path, name.span), type_arguments };
 			Node::new(Expression::Read(read), name.span)
 		};
@@ -1037,7 +1037,7 @@ fn parse_struct_initializer<'a>(
 
 	let close_brace_token = tokens.expect(messages, TokenKind::CloseBrace)?;
 
-	let initializer = StructInitializer { field_initializers };
+	let initializer = StructInitializer { field_initializers: field_initializers.into_bump_slice() };
 	let span = open_brace_token.span + close_brace_token.span;
 	Ok(Node::new(initializer, span))
 }
@@ -1171,7 +1171,7 @@ fn parse_generic_attribute<'a>(
 	}
 
 	let span = generic_token.span + names.last().as_ref().unwrap().span;
-	let generic_atttribute = GenericAttribute { names };
+	let generic_atttribute = GenericAttribute { names: names.into_bump_slice() };
 	Ok(Node::new(generic_atttribute, span))
 }
 
@@ -1297,8 +1297,8 @@ fn parse_import_statement<'a>(
 		return Err(());
 	}
 
-	let path_segments = PathSegments { segments };
-	let item = Import { path_segments, symbol_names };
+	let path_segments = PathSegments { segments: segments.into_bump_slice() };
+	let item = Import { path_segments, symbol_names: symbol_names.into_bump_slice() };
 	Ok(Node { item, span })
 }
 
@@ -1322,7 +1322,7 @@ fn parse_path_segments<'a>(
 	}
 
 	let span = segments.first().unwrap().span + segments.last().unwrap().span;
-	Ok(Node::new(PathSegments { segments }, span))
+	Ok(Node::new(PathSegments { segments: segments.into_bump_slice() }, span))
 }
 
 fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Type<'a>>> {
@@ -1397,7 +1397,11 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 				None
 			};
 
-			let path = Type::Path { path_segments, type_arguments, dot_access };
+			let path = Type::Path {
+				path_segments,
+				type_arguments: type_arguments.into_bump_slice(),
+				dot_access,
+			};
 			Node::new(path, span)
 		}
 	};
@@ -1414,7 +1418,7 @@ fn parse_function_declaration<'a>(
 	consume_newline: bool,
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.item.names.as_slice(),
+		Some(attribute) => attribute.item.names,
 		None => &[],
 	};
 	let extern_attribute = attributes.extern_attribute;
@@ -1508,7 +1512,10 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 
 	tokens.expect(messages, TokenKind::CloseParen)?;
 
-	Ok(Parameters { parameters, c_varargs: c_vararg })
+	Ok(Parameters {
+		parameters: parameters.into_bump_slice(),
+		c_varargs: c_vararg,
+	})
 }
 
 fn parse_struct_declaration<'a>(
@@ -1519,7 +1526,7 @@ fn parse_struct_declaration<'a>(
 	consume_newline: bool,
 ) -> ParseResult<Struct<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.item.names.as_slice(),
+		Some(attribute) => attribute.item.names,
 		None => &[],
 	};
 
@@ -1552,7 +1559,7 @@ fn parse_struct_declaration<'a>(
 		tokens.expect(messages, TokenKind::Newline)?;
 	}
 
-	Ok(Struct { generics, name, fields })
+	Ok(Struct { generics, name, fields: fields.into_bump_slice() })
 }
 
 fn parse_enum_declaration<'a>(
@@ -1563,7 +1570,7 @@ fn parse_enum_declaration<'a>(
 	consume_newline: bool,
 ) -> ParseResult<Enum<'a>> {
 	let generics = match attributes.generic_attribute {
-		Some(attribute) => attribute.item.names.as_slice(),
+		Some(attribute) => attribute.item.names,
 		None => &[],
 	};
 
@@ -1639,7 +1646,7 @@ fn parse_enum_declaration<'a>(
 				}
 
 				let name = Node::from_token(field_name_token.text, field_name_token);
-				let struct_like = StructLikeVariant { name, fields: variant_fields };
+				let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
 				let variant = EnumVariant::StructLike(struct_like);
 				variants.push(variant);
 			}
@@ -1658,8 +1665,8 @@ fn parse_enum_declaration<'a>(
 	Ok(Enum {
 		generics,
 		name,
-		shared_fields,
-		variants,
+		shared_fields: shared_fields.into_bump_slice(),
+		variants: variants.into_bump_slice(),
 		transparent_variant_count,
 	})
 }

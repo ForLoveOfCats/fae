@@ -138,7 +138,7 @@ impl<'a> Symbols<'a> {
 		function_initial_scope_count: usize,
 		path: &PathSegments<'a>,
 	) -> Option<Symbol<'a>> {
-		if let [segment] = path.segments.as_slice() {
+		if let [segment] = path.segments {
 			let name = segment.item;
 
 			let primatives = &type_store.primative_type_symbols;

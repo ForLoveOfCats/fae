@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 
-use bumpalo::collections::Vec as BumpVec;
-
 use crate::frontend::file::SourceFile;
 use crate::frontend::span::Span;
 use crate::frontend::tokenizer::Token;
@@ -16,18 +14,18 @@ pub struct File<'a> {
 //TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
 #[derive(Debug)]
 pub struct PathSegments<'a> {
-	pub segments: BumpVec<'a, Node<&'a str>>,
+	pub segments: &'a [Node<&'a str>],
 }
 
 #[derive(Debug)]
 pub struct Import<'a> {
 	pub path_segments: PathSegments<'a>,
-	pub symbol_names: BumpVec<'a, Node<&'a str>>,
+	pub symbol_names: &'a [Node<&'a str>],
 }
 
 #[derive(Debug)]
 pub struct GenericAttribute<'a> {
-	pub names: BumpVec<'a, Node<&'a str>>,
+	pub names: &'a [Node<&'a str>],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -130,7 +128,7 @@ pub enum Type<'a> {
 
 	Path {
 		path_segments: Node<PathSegments<'a>>,
-		type_arguments: BumpVec<'a, Node<Type<'a>>>,
+		type_arguments: &'a [Node<Type<'a>>],
 		dot_access: Option<&'a Node<&'a str>>,
 	},
 }
@@ -139,15 +137,15 @@ pub enum Type<'a> {
 pub struct Struct<'a> {
 	pub generics: &'a [Node<&'a str>],
 	pub name: Node<&'a str>,
-	pub fields: BumpVec<'a, Field<'a>>,
+	pub fields: &'a [Field<'a>],
 }
 
 #[derive(Debug)]
 pub struct Enum<'a> {
 	pub generics: &'a [Node<&'a str>],
 	pub name: Node<&'a str>,
-	pub shared_fields: BumpVec<'a, Field<'a>>,
-	pub variants: BumpVec<'a, EnumVariant<'a>>,
+	pub shared_fields: &'a [Field<'a>],
+	pub variants: &'a [EnumVariant<'a>],
 	pub transparent_variant_count: usize,
 }
 
@@ -160,7 +158,7 @@ pub enum EnumVariant<'a> {
 #[derive(Debug)]
 pub struct StructLikeVariant<'a> {
 	pub name: Node<&'a str>,
-	pub fields: BumpVec<'a, Field<'a>>,
+	pub fields: &'a [Field<'a>],
 }
 
 #[derive(Debug)]
@@ -200,7 +198,7 @@ pub struct Function<'a> {
 
 #[derive(Debug)]
 pub struct Parameters<'a> {
-	pub parameters: BumpVec<'a, Node<Parameter<'a>>>,
+	pub parameters: &'a [Node<Parameter<'a>>],
 	pub c_varargs: Option<Span>,
 }
 
@@ -260,7 +258,7 @@ pub struct StringLiteral<'a> {
 
 #[derive(Debug)]
 pub struct ArrayLiteral<'a> {
-	pub expressions: BumpVec<'a, Node<Expression<'a>>>,
+	pub expressions: &'a [Node<Expression<'a>>],
 }
 
 #[derive(Debug)]
@@ -271,7 +269,7 @@ pub struct StructLiteral<'a> {
 
 #[derive(Debug)]
 pub struct StructInitializer<'a> {
-	pub field_initializers: BumpVec<'a, FieldInitializer<'a>>,
+	pub field_initializers: &'a [FieldInitializer<'a>],
 }
 
 #[derive(Debug)]
@@ -435,28 +433,28 @@ pub struct BinaryOperation<'a> {
 pub struct CheckIs<'a> {
 	pub left: Node<Expression<'a>>,
 	pub binding_name: Option<Node<&'a str>>,
-	pub variant_names: BumpVec<'a, Node<&'a str>>,
+	pub variant_names: &'a [Node<&'a str>],
 }
 
 #[derive(Debug)]
 pub struct Call<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: BumpVec<'a, Node<Type<'a>>>,
-	pub arguments: BumpVec<'a, Node<Expression<'a>>>,
+	pub type_arguments: &'a [Node<Type<'a>>],
+	pub arguments: &'a [Node<Expression<'a>>],
 }
 
 #[derive(Debug)]
 pub struct MethodCall<'a> {
 	pub base: Node<Expression<'a>>,
 	pub name: Node<&'a str>,
-	pub type_arguments: BumpVec<'a, Node<Type<'a>>>,
-	pub arguments: BumpVec<'a, Node<Expression<'a>>>,
+	pub type_arguments: &'a [Node<Type<'a>>],
+	pub arguments: &'a [Node<Expression<'a>>],
 }
 
 #[derive(Debug)]
 pub struct Read<'a> {
 	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: BumpVec<'a, Node<Type<'a>>>,
+	pub type_arguments: &'a [Node<Type<'a>>],
 }
 
 #[derive(Debug)]
@@ -556,7 +554,7 @@ impl<'a> Statement<'a> {
 
 #[derive(Debug)]
 pub struct Block<'a> {
-	pub statements: BumpVec<'a, Statement<'a>>,
+	pub statements: &'a [Statement<'a>],
 }
 
 #[derive(Debug)]
@@ -567,21 +565,21 @@ pub struct IfElseChainEntry<'a> {
 
 #[derive(Debug)]
 pub struct IfElseChain<'a> {
-	pub entries: BumpVec<'a, IfElseChainEntry<'a>>,
+	pub entries: &'a [IfElseChainEntry<'a>],
 	pub else_body: Option<Node<Block<'a>>>,
 }
 
 #[derive(Debug)]
 pub struct Match<'a> {
 	pub expression: Node<Expression<'a>>,
-	pub arms: BumpVec<'a, MatchArm<'a>>,
+	pub arms: &'a [MatchArm<'a>],
 	pub else_arm: Option<ElseArm<'a>>,
 }
 
 #[derive(Debug)]
 pub struct MatchArm<'a> {
 	pub binding_name: Option<Node<&'a str>>,
-	pub variant_names: BumpVec<'a, Node<&'a str>>,
+	pub variant_names: &'a [Node<&'a str>],
 	pub block: Node<Block<'a>>,
 }
 

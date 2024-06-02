@@ -69,7 +69,7 @@ impl<'a> RootLayers<'a> {
 	}
 
 	pub fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		let segments = path.segments.as_slice();
+		let segments = path.segments;
 		assert!(segments.len() > 1);
 		let layer = self.layer_for_module_path(messages, &segments[..segments.len() - 1])?;
 		layer.lookup_root_symbol(messages, &[*segments.last().unwrap()])
