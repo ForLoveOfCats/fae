@@ -699,18 +699,18 @@ fn resolve_block_type_imports<'a>(
 ) {
 	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = bump_vec![in bump; Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
-		let path = PathSegments { segments };
+		let path = PathSegments { segments: segments.into_bump_slice() };
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
 	}
 
-	for statement in &block.statements {
+	for statement in block.statements {
 		let import_statement = match statement {
 			tree::Statement::Import(import_statement) => import_statement,
 			_ => continue,
 		};
 
 		let path = &import_statement.item.path_segments;
-		let names = Some(import_statement.item.symbol_names.as_slice());
+		let names = Some(import_statement.item.symbol_names);
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, path, names);
 	}
 }
@@ -754,18 +754,18 @@ fn resolve_block_non_type_imports<'a>(
 ) {
 	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = bump_vec![in bump; Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())];
-		let path = PathSegments { segments };
+		let path = PathSegments { segments: segments.into_bump_slice() };
 		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
 	}
 
-	for statement in &block.statements {
+	for statement in block.statements {
 		let import_statement = match statement {
 			tree::Statement::Import(import_statement) => import_statement,
 			_ => continue,
 		};
 
 		let path = &import_statement.item.path_segments;
-		let names = Some(import_statement.item.symbol_names.as_slice());
+		let names = Some(import_statement.item.symbol_names);
 		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, path, names);
 	}
 }
@@ -825,7 +825,7 @@ fn create_block_types<'a>(
 	is_root: bool,
 	type_shape_indicies: &mut Vec<usize>,
 ) {
-	for statement in &block.statements {
+	for statement in block.statements {
 		if is_root {
 			match statement {
 				tree::Statement::Expression(..)
@@ -1039,7 +1039,7 @@ fn fill_block_types<'a>(
 ) {
 	let mut shape_index_iter = type_shape_indicies.iter();
 
-	for statement in &block.statements {
+	for statement in block.statements {
 		if let tree::Statement::Struct(statement) = statement {
 			fill_block_struct(
 				messages,
@@ -1100,7 +1100,7 @@ fn fill_block_struct<'a>(
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	let mut fields = Vec::with_capacity(statement.fields.len());
 
-	for field in &statement.fields {
+	for field in statement.fields {
 		let field_type = match type_store.lookup_type(
 			messages,
 			function_store,
@@ -1179,7 +1179,7 @@ fn fill_block_enum<'a>(
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
 
-	for shared_field in &statement.shared_fields {
+	for shared_field in statement.shared_fields {
 		let field_type = match type_store.lookup_type(
 			messages,
 			function_store,
@@ -1287,7 +1287,7 @@ fn fill_struct_like_enum_variant<'a>(
 	let mut fields = Vec::new();
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-	for shared_field in &statement.shared_fields {
+	for shared_field in statement.shared_fields {
 		let field_type = match type_store.lookup_type(
 			messages,
 			function_store,
@@ -1317,7 +1317,7 @@ fn fill_struct_like_enum_variant<'a>(
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	match tree_variant {
 		tree::EnumVariant::StructLike(struct_like) => {
-			for field in &struct_like.fields {
+			for field in struct_like.fields {
 				let field_type = match type_store.lookup_type(
 					messages,
 					function_store,
@@ -1600,7 +1600,7 @@ fn create_block_functions<'a>(
 ) {
 	let original_generic_usages_len = generic_usages.len();
 
-	for statement in &block.statements {
+	for statement in block.statements {
 		if let tree::Statement::Function(statement) = statement {
 			let original_readables_starting_index = readables.starting_index;
 			let original_readables_overall_len = readables.overall_len();
@@ -1878,7 +1878,7 @@ fn method_base_shape_index<'a>(
 }
 
 fn validate_block_consts<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {
-	for statement in &block.statements {
+	for statement in block.statements {
 		if let tree::Statement::Const(statement) = statement {
 			validate_const(context, statement);
 		}
@@ -1886,7 +1886,7 @@ fn validate_block_consts<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree:
 }
 
 fn validate_block_statics<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {
-	for statement in &block.statements {
+	for statement in block.statements {
 		if let tree::Statement::Static(statement) = statement {
 			validate_static(context, statement);
 		}
@@ -1977,7 +1977,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	let mut returns = false;
 	let mut statements = Vec::with_capacity(block.statements.len());
 
-	for statement in &block.statements {
+	for statement in block.statements {
 		context.expected_type = None;
 
 		match statement {
@@ -2653,7 +2653,7 @@ fn validate_match_expression<'a>(
 	let mut arms_returns = true;
 	let mut arms = Vec::new();
 
-	for arm in &match_expression.arms {
+	for arm in match_expression.arms {
 		let mut scope = context.child_scope();
 		let user_types = scope.type_store.user_types.read().unwrap();
 
@@ -2669,7 +2669,7 @@ fn validate_match_expression<'a>(
 
 		let mut variant_infos = Vec::with_capacity(arm.variant_names.len());
 
-		for variant_name in &arm.variant_names {
+		for variant_name in arm.variant_names {
 			let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
 				Some(&variant_index) => {
 					let variant = &enum_specialization.variants[variant_index];
@@ -2860,7 +2860,7 @@ fn validate_array_literal<'a>(
 ) -> Expression<'a> {
 	let mut returns = false;
 	let mut expressions = Vec::with_capacity(literal.expressions.len());
-	for expression in &literal.expressions {
+	for expression in literal.expressions {
 		let expression = validate_expression(context, expression);
 		returns |= expression.returns;
 		expressions.push(expression);
@@ -2953,7 +2953,7 @@ fn validate_struct_initializer<'a>(
 	let mut fields = fields.iter();
 	let mut field_initializers = Vec::new();
 
-	for intializer in &initializer.item.field_initializers {
+	for intializer in initializer.item.field_initializers {
 		let field = fields.next();
 
 		let mut scope = context.child_scope();
@@ -3049,7 +3049,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 
 	let mut type_argument_lookup_errored = false;
 	let mut explicit_arguments = Vec::new();
-	for type_argument in &call.type_arguments {
+	for type_argument in call.type_arguments {
 		if let Some(type_id) = context.lookup_type(type_argument) {
 			explicit_arguments.push(type_id);
 		} else {
@@ -4550,7 +4550,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 
 	let mut variant_infos = Vec::with_capacity(check.variant_names.len());
 
-	for variant_name in &check.variant_names {
+	for variant_name in check.variant_names {
 		let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
 			Some(&variant_index) => {
 				let variant = &enum_specialization.variants[variant_index];
