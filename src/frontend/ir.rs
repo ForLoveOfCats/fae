@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
@@ -80,7 +80,7 @@ impl GenericUsage {
 	pub fn apply_specialization<'a>(
 		&self,
 		messages: &mut Messages<'a>,
-		type_store: &mut TypeStore<'a>,
+		type_store: &TypeStore<'a>,
 		function_store: &mut FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
@@ -175,7 +175,7 @@ pub struct FunctionShape<'a> {
 	pub parameters: Vec<ParameterShape>,
 	pub c_varargs: bool,
 	pub return_type: TypeId,
-	pub block: Option<Rc<Block<'a>>>,
+	pub block: Option<Arc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
 
 	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
@@ -262,7 +262,7 @@ impl TypeArguments {
 	pub fn specialize_with_function_generics<'a>(
 		&mut self,
 		messages: &mut Messages<'a>,
-		type_store: &mut TypeStore<'a>,
+		type_store: &TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
