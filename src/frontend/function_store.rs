@@ -39,7 +39,7 @@ impl<'a> FunctionStore<'a> {
 	pub fn get_or_add_specialization(
 		&mut self,
 		messages: &mut Messages<'a>,
-		type_store: &mut TypeStore<'a>,
+		type_store: &TypeStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,

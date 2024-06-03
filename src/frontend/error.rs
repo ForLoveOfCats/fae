@@ -79,6 +79,15 @@ impl<'a> Messages<'a> {
 		Messages { messages: Vec::new(), any_errors: false, sources }
 	}
 
+	// TODO: REMOVE
+	pub fn fork(&self) -> Self {
+		Messages {
+			messages: Vec::new(),
+			any_errors: false,
+			sources: self.sources,
+		}
+	}
+
 	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
 		for message in &self.messages {
 			message.print(output, self.sources, stage);

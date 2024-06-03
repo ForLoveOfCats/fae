@@ -978,7 +978,7 @@ impl<'a> TypeStore<'a> {
 		Ok(false)
 	}
 
-	fn get_or_create_reference_entries(&mut self, type_id: TypeId) -> u32 {
+	fn get_or_create_reference_entries(&self, type_id: TypeId) -> u32 {
 		let entry = self.type_entries.read().unwrap()[type_id.index()];
 		if let Some(entries) = entry.reference_entries {
 			return entries;
@@ -1015,7 +1015,7 @@ impl<'a> TypeStore<'a> {
 		reference_entries
 	}
 
-	pub fn pointer_to(&mut self, type_id: TypeId, mutable: bool) -> TypeId {
+	pub fn pointer_to(&self, type_id: TypeId, mutable: bool) -> TypeId {
 		let reference_entries = self.get_or_create_reference_entries(type_id);
 		let entry = match mutable {
 			false => reference_entries,
@@ -1024,7 +1024,7 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn slice_of(&mut self, type_id: TypeId, mutable: bool) -> TypeId {
+	pub fn slice_of(&self, type_id: TypeId, mutable: bool) -> TypeId {
 		let reference_entries = self.get_or_create_reference_entries(type_id);
 		let entry = match mutable {
 			false => reference_entries + 2,
@@ -1093,7 +1093,7 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
+	pub fn register_function_generic(&self, function_shape_index: usize, generic_index: usize) -> TypeId {
 		let mut entries = self.type_entries.write().unwrap();
 		let entry = entries.len() as u32;
 		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
@@ -1102,7 +1102,7 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
-	pub fn calculate_layout(&mut self, type_id: TypeId) {
+	pub fn calculate_layout(&self, type_id: TypeId) {
 		let entry = self.type_entries.read().unwrap()[type_id.index()];
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
 			let user_types = self.user_types.read().unwrap();
@@ -1294,9 +1294,9 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn lookup_type(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
-		function_store: &mut FunctionStore<'a>,
+		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
@@ -1414,7 +1414,7 @@ impl<'a> TypeStore<'a> {
 	pub fn get_enum_variant(
 		&self,
 		messages: &mut Messages<'a>,
-		function_store: &mut FunctionStore<'a>,
+		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		base: TypeId,
 		name: Node<&'a str>,
@@ -1450,9 +1450,9 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn get_or_add_shape_specialization_in_scope(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
-		function_store: &mut FunctionStore<'a>,
+		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
@@ -1504,7 +1504,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn get_or_add_shape_specialization(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
@@ -1544,7 +1544,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	fn get_or_add_struct_shape_specialization(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
@@ -1647,7 +1647,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	fn get_or_add_enum_shape_specialization(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
@@ -1821,7 +1821,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn specialize_with_user_type_generics(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
@@ -1961,7 +1961,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn specialize_with_function_generics(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],

@@ -49,6 +49,7 @@ impl<'a> RootLayers<'a> {
 
 	pub fn create_module_path(&mut self, path: &'a [String]) -> &mut RootLayer<'a> {
 		assert!(!path.is_empty());
+
 		if let [piece] = &path {
 			if *piece == self.root_name {
 				return self.layers.entry(piece.as_str()).or_insert(RootLayer::new(piece));
@@ -62,7 +63,31 @@ impl<'a> RootLayers<'a> {
 			if piece_index + 1 == path.len() {
 				return layer;
 			}
+
 			layers = &mut layer.children;
+		}
+
+		unreachable!();
+	}
+
+	pub fn lookup_module_path(&self, path: &'a [String]) -> &RootLayer<'a> {
+		assert!(!path.is_empty());
+
+		if let [piece] = &path {
+			if *piece == self.root_name {
+				return self.layers.get(piece.as_str()).unwrap();
+			}
+		}
+
+		let mut layers = &self.layers;
+		for (piece_index, piece) in path.iter().enumerate() {
+			let layer = layers.get(piece.as_str()).unwrap();
+
+			if piece_index + 1 == path.len() {
+				return layer;
+			}
+
+			layers = &layer.children;
 		}
 
 		unreachable!();

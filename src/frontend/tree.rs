@@ -11,7 +11,6 @@ pub struct File<'a> {
 	pub block: Block<'a>,
 }
 
-//TODO: Write a `Vec` wrapper which guarantees at least one item as well as infallible `.first()` and `.last()`
 #[derive(Debug)]
 pub struct PathSegments<'a> {
 	pub segments: &'a [Node<&'a str>],
