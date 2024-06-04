@@ -2256,7 +2256,6 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		}
 	}
 
-	let mut function_store = context.function_store.write().unwrap();
 	let shape = &mut function_store.shapes[function_shape_index];
 	assert!(shape.generic_usages.is_empty());
 	shape.generic_usages = generic_usages;
@@ -2965,8 +2964,8 @@ fn validate_struct_literal<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let user_types = context.type_store.user_types.read().unwrap();
 	let type_entry = context.type_store.type_entries.read().unwrap()[type_id.index()];
+	let user_types = context.type_store.user_types.read().unwrap();
 	let indices = match &type_entry.kind {
 		&TypeEntryKind::UserType { shape_index, specialization_index } => {
 			let user_type = &user_types[shape_index];
@@ -3195,7 +3194,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 
 		let collapsed = context
 			.type_store
-			.collapse_to(context.messages, &context.function_store.read().unwrap(), parameter.type_id, argument)
+			.collapse_to(context.messages, &function_store, parameter.type_id, argument)
 			.unwrap_or(true);
 
 		if !collapsed {
@@ -3360,7 +3359,7 @@ fn validate_method_arguments<'a>(
 
 		let collapsed = context
 			.type_store
-			.collapse_to(context.messages, &context.function_store.read().unwrap(), parameter.type_id, argument)
+			.collapse_to(context.messages, &function_store, parameter.type_id, argument)
 			.unwrap_or(true);
 
 		if !collapsed {
@@ -4612,8 +4611,8 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		None => (left.type_id, left.is_mutable),
 	};
 
-	let user_types = context.type_store.user_types.read().unwrap();
 	let enum_entry = context.type_store.type_entries.read().unwrap()[left_type_id.index()];
+	let user_types = context.type_store.user_types.read().unwrap();
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => None,

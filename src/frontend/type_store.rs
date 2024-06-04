@@ -1419,8 +1419,8 @@ impl<'a> TypeStore<'a> {
 		base: TypeId,
 		name: Node<&'a str>,
 	) -> Option<TypeId> {
-		let user_types = self.user_types.read().unwrap();
 		let entry = self.type_entries.read().unwrap()[base.index()];
+		let user_types = self.user_types.read().unwrap();
 		let specialization = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
 				UserTypeKind::Struct { .. } => None,
@@ -1553,7 +1553,8 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
-		let user_types = self.user_types.read().unwrap();
+		let type_entries = self.type_entries.read().unwrap();
+		let user_types = self.user_types.write().unwrap();
 		let user_type = &user_types[shape_index];
 		let shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
@@ -1576,10 +1577,7 @@ impl<'a> TypeStore<'a> {
 			return Some(existing.type_id);
 		}
 
-		let type_arguments_generic_poisoned = type_arguments
-			.ids
-			.iter()
-			.any(|id| self.type_entries.read().unwrap()[id.index()].generic_poisoned);
+		let type_arguments_generic_poisoned = type_arguments.ids.iter().any(|id| type_entries[id.index()].generic_poisoned);
 
 		let mut fields = Vec::with_capacity(shape.fields.len());
 		for field in &shape.fields {
@@ -1592,6 +1590,7 @@ impl<'a> TypeStore<'a> {
 			});
 		}
 		drop(user_types);
+		drop(type_entries);
 
 		for field in &mut fields {
 			field.type_id = self.specialize_with_user_type_generics(
@@ -1605,6 +1604,7 @@ impl<'a> TypeStore<'a> {
 			);
 		}
 
+		let mut type_entries = self.type_entries.write().unwrap();
 		let mut user_types = self.user_types.write().unwrap();
 		let user_type = &mut user_types[shape_index];
 		let shape = match &mut user_type.kind {
@@ -1612,9 +1612,8 @@ impl<'a> TypeStore<'a> {
 			kind => unreachable!("{kind:?}"),
 		};
 
-		let mut entries = self.type_entries.write().unwrap();
 		let specialization_index = shape.specializations.len();
-		let type_id = TypeId { entry: entries.len() as u32 };
+		let type_id = TypeId { entry: type_entries.len() as u32 };
 		let been_filled = shape.been_filled;
 		let specialization = Struct {
 			shape_index,
@@ -1629,10 +1628,10 @@ impl<'a> TypeStore<'a> {
 			.specializations_by_type_arguments
 			.insert(type_arguments.clone(), specialization_index);
 
-		let entry = TypeEntry::new(&entries, &user_types, TypeEntryKind::UserType { shape_index, specialization_index });
-		entries.push(entry);
-		drop(entries);
+		let entry = TypeEntry::new(&type_entries, &user_types, TypeEntryKind::UserType { shape_index, specialization_index });
+		type_entries.push(entry);
 		drop(user_types);
+		drop(type_entries);
 
 		if type_arguments_generic_poisoned {
 			let usage = GenericUsage::UserType { type_arguments, shape_index };
@@ -1656,6 +1655,7 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
+		let type_entries = self.type_entries.read().unwrap();
 		let user_types = self.user_types.read().unwrap();
 		let user_type = &user_types[enum_shape_index];
 		let shape = match &user_type.kind {
@@ -1679,14 +1679,12 @@ impl<'a> TypeStore<'a> {
 			return Some(existing.type_id);
 		}
 
-		let type_arguments_generic_poisoned = type_arguments
-			.ids
-			.iter()
-			.any(|id| self.type_entries.read().unwrap()[id.index()].generic_poisoned);
+		let type_arguments_generic_poisoned = type_arguments.ids.iter().any(|id| type_entries[id.index()].generic_poisoned);
 
 		let mut shared_fields = Vec::with_capacity(shape.shared_fields.len() + 1);
 		let unspecialized_shared_fields = shape.shared_fields.clone();
 		drop(user_types);
+		drop(type_entries);
 
 		for field in unspecialized_shared_fields {
 			let type_id = self.specialize_with_user_type_generics(
@@ -1775,6 +1773,7 @@ impl<'a> TypeStore<'a> {
 			},
 		);
 
+		let mut type_entries = self.type_entries.write().unwrap();
 		let mut user_types = self.user_types.write().unwrap();
 		let user_type = &mut user_types[enum_shape_index];
 		let shape = match &mut user_type.kind {
@@ -1782,9 +1781,8 @@ impl<'a> TypeStore<'a> {
 			kind => unreachable!("{kind:?}"),
 		};
 
-		let mut entries = self.type_entries.write().unwrap();
 		let specialization_index = shape.specializations.len();
-		let type_id = TypeId { entry: entries.len() as u32 };
+		let type_id = TypeId { entry: type_entries.len() as u32 };
 		let been_filled = shape.been_filled;
 		let specialization = Enum {
 			shape_index: enum_shape_index,
@@ -1803,9 +1801,9 @@ impl<'a> TypeStore<'a> {
 			.insert(type_arguments.clone(), specialization_index);
 
 		let type_kind = TypeEntryKind::UserType { shape_index: enum_shape_index, specialization_index };
-		let entry = TypeEntry::new(&entries, &user_types, type_kind);
-		entries.push(entry);
-		drop(entries);
+		let entry = TypeEntry::new(&type_entries, &user_types, type_kind);
+		type_entries.push(entry);
+		drop(type_entries);
 		drop(user_types);
 
 		if type_arguments_generic_poisoned {
