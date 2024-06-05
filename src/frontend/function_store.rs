@@ -67,7 +67,7 @@ impl<'a> FunctionStore<'a> {
 		let generic_poisoned = type_arguments
 			.ids
 			.iter()
-			.any(|id| type_store.type_entries.read().unwrap()[id.index()].generic_poisoned);
+			.any(|id| type_store.type_entries.read()[id.index()].generic_poisoned);
 
 		let parameters = shape
 			.parameters
@@ -153,7 +153,7 @@ impl<'a> FunctionStore<'a> {
 			.type_arguments
 			.ids
 			.iter()
-			.any(|id| type_store.type_entries.read().unwrap()[id.index()].generic_poisoned);
+			.any(|id| type_store.type_entries.read()[id.index()].generic_poisoned);
 		if !generic_poisoned {
 			return function_id;
 		}

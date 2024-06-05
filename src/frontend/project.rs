@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
 use std::time::Instant;
 
+use parking_lot::RwLock;
 use serde::Deserialize;
 
 use crate::cli::{CliArguments, CodegenBackend, CompileCommand};
@@ -192,10 +192,10 @@ pub fn build_project(
 		CodegenBackend::LLVM => llvm::driver::generate_code(
 			cli_arguments,
 			&mut messages,
-			&lang_items.read().unwrap(),
+			&lang_items.read(),
 			&mut type_store,
-			&mut function_store.write().unwrap(),
-			&statics.read().unwrap(),
+			&mut function_store.write(),
+			&statics.read(),
 		),
 	};
 	if cli_arguments.command != CompileCommand::CompilerTest {
