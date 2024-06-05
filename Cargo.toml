@@ -11,6 +11,7 @@ debug = true
 
 [dependencies]
 rustc-hash = "1.1.0"
+parking_lot = "0.12.3"
 bumpalo = { version = "3.16.0", features = ["collections"] }
 bumpalo-herd = "0.1.2"
 llvm-sys = { version = "181.0.0", features = ["no-llvm-linking"] }

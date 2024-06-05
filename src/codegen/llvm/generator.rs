@@ -121,7 +121,7 @@ impl LLVMTypes {
 
 	// Cannot accept `void` type and assumes that any struct asked for has been registered; does not follow pointers
 	pub fn type_to_llvm_type(&self, context: LLVMContextRef, type_store: &TypeStore, type_id: TypeId) -> LLVMTypeRef {
-		let entry = type_store.type_entries.read().unwrap()[type_id.index()];
+		let entry = type_store.type_entries.read()[type_id.index()];
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
@@ -320,7 +320,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn register_type_descriptions(&mut self, type_store: &TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
-		for shape in type_store.user_types.read().unwrap().iter() {
+		for shape in type_store.user_types.read().iter() {
 			let specialization_count = match &shape.kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
 				UserTypeKind::Enum { shape } => shape.specializations.len(),
@@ -333,10 +333,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
 
-		for &description in type_store.user_type_generate_order.lock().unwrap().iter() {
+		for &description in type_store.user_type_generate_order.lock().iter() {
 			field_types_buffer.clear();
 			shared_field_types_buffer.clear();
-			let shape = &type_store.user_types.read().unwrap()[description.shape_index];
+			let shape = &type_store.user_types.read()[description.shape_index];
 
 			match &shape.kind {
 				UserTypeKind::Struct { shape } => {
@@ -947,10 +947,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let field_type;
 		let field_pointer;
 
-		let entry = type_store.type_entries.read().unwrap()[type_id.index()];
+		let entry = type_store.type_entries.read()[type_id.index()];
 		let type_id = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let shape = &type_store.user_types.read().unwrap()[shape_index];
+				let shape = &type_store.user_types.read()[shape_index];
 				match &shape.kind {
 					UserTypeKind::Struct { shape } => {
 						field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
