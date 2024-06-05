@@ -342,8 +342,6 @@ pub fn validate<'a>(
 
 	assert_eq!(function_generic_usages.len(), 0);
 
-	let start = std::time::Instant::now();
-
 	let root_layers: &RootLayers = root_layers;
 	let type_store: &TypeStore = type_store;
 
@@ -369,7 +367,7 @@ pub fn validate<'a>(
 					let local_function_shape_indicies = parsed_files.1.next();
 					drop(parsed_files);
 					let Some(parsed_file) = parsed_file else {
-						return;
+						break;
 					};
 					let mut local_function_shape_indicies = local_function_shape_indicies.unwrap();
 
@@ -424,8 +422,6 @@ pub fn validate<'a>(
 			});
 		}
 	});
-
-	dbg!(start.elapsed().as_millis());
 
 	if function_store.read().unwrap().main.is_none() {
 		let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
@@ -545,11 +541,10 @@ fn create_root_functions<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	local_function_shape_indicies: &mut Vec<Vec<usize>>,
 ) {
-	for (index, parsed_file) in parsed_files.iter().enumerate() {
+	for (iteration_index, parsed_file) in parsed_files.iter().enumerate() {
 		let block = &parsed_file.block;
 
 		let file_index = parsed_file.source_file.index;
-		assert_eq!(index, file_index);
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
 		//Yuck, I do not like this
@@ -572,7 +567,7 @@ fn create_root_functions<'a>(
 			parsed_file.module_path,
 			&GenericParameters::new_from_explicit(Vec::new()),
 			block,
-			&mut local_function_shape_indicies[index],
+			&mut local_function_shape_indicies[iteration_index],
 			scope_id,
 		);
 
@@ -1763,13 +1758,15 @@ fn create_block_functions<'a>(
 					MethodKind::Static => None,
 				};
 
-				if let (Some(shape_index), Some(mutable)) = (method_base_shape_index, mutable) {
+				let method_base_shape_index = method_base_shape_index.unwrap();
+
+				if let Some(mutable) = mutable {
 					let base_type = type_store.get_or_add_shape_specialization(
 						messages,
 						&function_store,
 						module_path,
 						generic_usages,
-						shape_index,
+						method_base_shape_index,
 						Some(method_attribute.span),
 						base_type_arguments,
 					);
@@ -2241,6 +2238,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 	if !generic_usages.is_empty() && !shape.specializations.is_empty() {
 		for specialization in shape.specializations.clone() {
+			if specialization.generic_poisoned {
+				continue;
+			}
+
 			for generic_usage in generic_usages.clone().iter() {
 				generic_usage.apply_specialization(
 					context.messages,
