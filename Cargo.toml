@@ -6,6 +6,9 @@ edition = "2021"
 [features]
 bundled = []
 
+[profile.release]
+debug = true
+
 [dependencies]
 rustc-hash = "1.1.0"
 bumpalo = { version = "3.16.0", features = ["collections"] }

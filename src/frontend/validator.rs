@@ -348,7 +348,7 @@ pub fn validate<'a>(
 	let parsed_files = Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
 
 	std::thread::scope(|scope| {
-		for _ in 0..2 {
+		for _ in 0..12 {
 			let parsed_files = &parsed_files;
 			let mut messages = messages.fork();
 			let externs = &externs;
@@ -2696,8 +2696,8 @@ fn validate_match_expression<'a>(
 		None => (expression.type_id, expression.is_mutable),
 	};
 
-	let user_types = context.type_store.user_types.read().unwrap();
 	let enum_entry = context.type_store.type_entries.read().unwrap()[expression_type_id.index()];
+	let user_types = context.type_store.user_types.read().unwrap();
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => None,
@@ -2725,9 +2725,10 @@ fn validate_match_expression<'a>(
 
 	for arm in match_expression.arms {
 		let mut scope = context.child_scope();
-		let user_types = scope.type_store.user_types.read().unwrap();
 
 		let enum_entry = scope.type_store.type_entries.read().unwrap()[expression_type_id.index()];
+		let user_types = scope.type_store.user_types.read().unwrap();
+
 		let enum_specialization = match enum_entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
 				UserTypeKind::Struct { .. } => unreachable!(),
@@ -2822,8 +2823,8 @@ fn validate_match_expression<'a>(
 		None
 	};
 
-	let user_types = context.type_store.user_types.read().unwrap();
 	let enum_entry = context.type_store.type_entries.read().unwrap()[expression_type_id.index()];
+	let user_types = context.type_store.user_types.read().unwrap();
 	let enum_specialization = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
 			UserTypeKind::Struct { .. } => unreachable!(),
