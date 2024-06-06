@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use parking_lot::RwLock;
 use serde::Deserialize;
 
 use crate::cli::{CliArguments, CodegenBackend, CompileCommand};
@@ -17,6 +16,7 @@ use crate::frontend::symbols::Statics;
 use crate::frontend::tokenizer::Tokenizer;
 use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
+use crate::lock::RwLock;
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,

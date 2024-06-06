@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use bumpalo_herd::Herd;
-use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 
 use crate::cli::CliArguments;
@@ -16,6 +15,7 @@ use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol
 use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribute, MethodKind, PathSegments};
 use crate::frontend::tree::{MethodAttribute, Node};
 use crate::frontend::type_store::*;
+use crate::lock::RwLock;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
@@ -39,7 +39,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub root_layers: &'b RootLayers<'a>,
 
 	pub lang_items: &'b RwLock<LangItems>,
-	pub externs: &'b Mutex<Externs>,
+	pub externs: &'b RwLock<Externs>,
 	pub constants: &'b RwLock<Vec<ConstantValue<'a>>>,
 	pub statics: &'b RwLock<Statics<'a>>,
 	pub initial_readables_starting_index: usize,
@@ -264,7 +264,7 @@ pub fn validate<'a>(
 ) {
 	let herd_member = herd.get();
 	let mut function_generic_usages = Vec::new();
-	let externs = Mutex::new(Externs::new());
+	let externs = RwLock::new(Externs::new());
 	let mut constants = RwLock::new(Vec::new());
 
 	let mut type_shape_indicies = Vec::with_capacity(parsed_files.len());
@@ -342,7 +342,7 @@ pub fn validate<'a>(
 	let root_layers: &RootLayers = root_layers;
 	let type_store: &TypeStore = type_store;
 
-	let parsed_files = Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
+	let parsed_files = parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
 
 	std::thread::scope(|scope| {
 		for _ in 0..2 {
@@ -420,7 +420,7 @@ pub fn validate<'a>(
 		}
 	});
 
-	if function_store.main.lock().is_none() {
+	if function_store.main.read().is_none() {
 		let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
 		messages.message(error);
 	}
@@ -533,7 +533,7 @@ fn create_root_functions<'a>(
 	type_store: &TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	externs: &Mutex<Externs>,
+	externs: &RwLock<Externs>,
 	readables: &mut Readables<'a>,
 	parsed_files: &'a [tree::File<'a>],
 	local_function_shape_indicies: &mut Vec<Vec<usize>>,
@@ -583,7 +583,7 @@ fn validate_root_consts<'a>(
 	type_store: &TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
-	externs: &Mutex<Externs>,
+	externs: &RwLock<Externs>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
@@ -661,7 +661,7 @@ fn validate_root_statics<'a>(
 	type_store: &TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
-	externs: &Mutex<Externs>,
+	externs: &RwLock<Externs>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
@@ -1633,7 +1633,7 @@ fn create_block_functions<'a>(
 	type_store: &TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	externs: &Mutex<Externs>,
+	externs: &RwLock<Externs>,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -1832,7 +1832,7 @@ fn create_block_functions<'a>(
 			let name = statement.name;
 			if let Some(Node { item: extern_attribute, .. }) = statement.extern_attribute {
 				// TODO: Detect duplicate externs
-				externs.lock().push(messages, extern_attribute.name, name.span);
+				externs.write().push(messages, extern_attribute.name, name.span);
 			}
 
 			let root_name = root_layers.root_name.as_str();
@@ -2323,7 +2323,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		);
 
 		if let Some(result) = result {
-			let mut main = context.function_store.main.lock();
+			let mut main = context.function_store.main.write();
 			if main.is_some() {
 				// TODO: Store all duplicat main functions, print at end sorted so the messages
 				// have a consistant order independent of file order
@@ -2437,7 +2437,7 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 	if let Some(extern_attribute) = statement.item.extern_attribute {
 		// TODO: Detect duplicate externs
 		let name = extern_attribute.item.name;
-		context.externs.lock().push(context.messages, name, statement.span);
+		context.externs.write().push(context.messages, name, statement.span);
 	} else {
 		let error = error!("Static definition must have extern attribute");
 		context.message(error.span(statement.span));

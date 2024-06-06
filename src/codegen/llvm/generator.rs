@@ -333,7 +333,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
 
-		for &description in type_store.user_type_generate_order.lock().iter() {
+		for &description in type_store.user_type_generate_order.read().iter() {
 			field_types_buffer.clear();
 			shared_field_types_buffer.clear();
 			let shape = &type_store.user_types.read()[description.shape_index];

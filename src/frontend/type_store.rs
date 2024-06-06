@@ -1,4 +1,3 @@
-use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -11,6 +10,7 @@ use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::{self, FieldAttribute, Node};
+use crate::lock::RwLock;
 
 // TODO: This should probably be a u64
 #[derive(Debug, Clone, Copy, Hash)]
@@ -491,7 +491,7 @@ pub struct TypeStore<'a> {
 
 	pub type_entries: RwLock<Vec<TypeEntry>>,
 	pub user_types: RwLock<Vec<UserType<'a>>>,
-	pub user_type_generate_order: Mutex<Vec<UserTypeSpecializationDescription>>,
+	pub user_type_generate_order: RwLock<Vec<UserTypeSpecializationDescription>>,
 
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
@@ -573,7 +573,7 @@ impl<'a> TypeStore<'a> {
 			primative_type_symbols,
 			type_entries: RwLock::new(type_entries),
 			user_types: RwLock::new(Vec::new()),
-			user_type_generate_order: Mutex::new(Vec::new()),
+			user_type_generate_order: RwLock::new(Vec::new()),
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -1137,7 +1137,7 @@ impl<'a> TypeStore<'a> {
 
 					if !entry.generic_poisoned {
 						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.lock().push(description);
+						self.user_type_generate_order.write().push(description);
 					}
 
 					let layout = Layout { size, alignment };
@@ -1172,7 +1172,7 @@ impl<'a> TypeStore<'a> {
 
 					if !entry.generic_poisoned {
 						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.lock().push(description);
+						self.user_type_generate_order.write().push(description);
 					}
 
 					let tag_memory_size = alignment.max(1);

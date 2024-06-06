@@ -1,12 +1,10 @@
-use parking_lot::lock_api::RwLockUpgradableReadGuard;
-use parking_lot::{Mutex, RwLock};
-
 use crate::frontend::error::Messages;
 use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
 };
 use crate::frontend::span::Span;
 use crate::frontend::type_store::TypeStore;
+use crate::lock::RwLock;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
@@ -16,7 +14,7 @@ pub struct FunctionStore<'a> {
 	// the shape has been fully constructed so signature types can be looked up
 	pub generics: RwLock<Vec<GenericParameters<'a>>>,
 
-	pub main: Mutex<Option<FunctionId>>,
+	pub main: RwLock<Option<FunctionId>>,
 }
 
 impl<'a> FunctionStore<'a> {
@@ -24,7 +22,7 @@ impl<'a> FunctionStore<'a> {
 		FunctionStore {
 			shapes: RwLock::new(Vec::new()),
 			generics: RwLock::new(Vec::new()),
-			main: Mutex::new(None),
+			main: RwLock::new(None),
 		}
 	}
 
@@ -53,7 +51,7 @@ impl<'a> FunctionStore<'a> {
 		type_arguments: TypeArguments,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
-		let shapes = self.shapes.upgradable_read();
+		let shapes = self.shapes.read();
 		let shape = &shapes[function_shape_index];
 
 		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
@@ -71,7 +69,6 @@ impl<'a> FunctionStore<'a> {
 			return Some(result);
 		}
 
-		// let shape = &shapes[function_shape_index];
 		let generic_poisoned = type_arguments
 			.ids
 			.iter()
@@ -116,7 +113,10 @@ impl<'a> FunctionStore<'a> {
 			been_queued: false,
 			been_generated: false,
 		};
-		let mut shapes = RwLockUpgradableReadGuard::upgrade(shapes);
+
+		drop(shapes);
+		let mut shapes = self.shapes.write();
+
 		let shape = &mut shapes[function_shape_index];
 		shape.specializations.push(concrete);
 		shape
