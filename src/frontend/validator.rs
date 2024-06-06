@@ -345,7 +345,7 @@ pub fn validate<'a>(
 	let parsed_files = parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
 
 	std::thread::scope(|scope| {
-		for _ in 0..2 {
+		for _ in 0..6 {
 			let parsed_files = &parsed_files;
 			let mut messages = messages.fork();
 			let externs = &externs;
@@ -3798,7 +3798,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			external_access = method_base_index != as_enum.shape_index;
 		}
 		&as_enum.shared_fields
-	} else if let Some(as_slice) = type_id.as_slice(context.type_store) {
+	} else if let Some(as_slice) = type_id.as_slice(&type_entries) {
 		drop(user_types);
 		drop(type_entries);
 		slice_fields = [

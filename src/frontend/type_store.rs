@@ -131,8 +131,8 @@ impl TypeId {
 		None
 	}
 
-	pub fn as_slice(self, type_store: &TypeStore) -> Option<Slice> {
-		let entry = type_store.type_entries.read()[self.index()];
+	pub fn as_slice(self, type_entries: &[TypeEntry]) -> Option<Slice> {
+		let entry = type_entries[self.index()];
 		if let TypeEntryKind::Slice(slice) = entry.kind {
 			return Some(slice);
 		}
@@ -1985,9 +1985,10 @@ impl<'a> TypeStore<'a> {
 						let specialization = &shape.specializations[*specialization_index];
 						let mut new_struct_type_arguments = specialization.type_arguments.clone();
 						drop(user_types);
+						drop(type_entries);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
-							let entry = type_entries[struct_type_argument.index()];
+							let entry = self.type_entries.read()[struct_type_argument.index()];
 							match entry.kind {
 								TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
 
@@ -2011,8 +2012,6 @@ impl<'a> TypeStore<'a> {
 								_ => {}
 							}
 						}
-
-						drop(type_entries);
 
 						self.get_or_add_struct_shape_specialization(
 							messages,
@@ -2128,44 +2127,52 @@ impl<'a> TypeStore<'a> {
 		type_id: TypeId,
 		debug_generics: bool,
 	) -> String {
-		match self.type_entries.read()[type_id.index()].kind {
+		let type_entry = self.type_entries.read()[type_id.index()];
+		match type_entry.kind {
 			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let user_types = self.user_types.read();
 				let user_type = &user_types[shape_index];
+				let user_type_name = user_type.name;
+				let explicit_generic_parameters_len = user_type.generic_parameters.explicit_len();
+
 				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
+						let parent_enum_shape_index = shape.parent_enum_shape_index;
 						let specialization = &shape.specializations[specialization_index];
-						let type_arguments = specialization.type_arguments.ids[0..user_type.generic_parameters.explicit_len()]
+						let type_arguments = specialization.type_arguments.ids[0..explicit_generic_parameters_len].to_vec();
+						drop(user_types);
+
+						let type_arguments = type_arguments
 							.iter()
 							.map(|a| self.internal_type_name(function_store, _module_path, *a, debug_generics))
 							.collect::<Vec<_>>()
 							.join(", ");
 
-						if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
-							let enum_name = user_types[parent_enum_shape_index].name;
-							if user_type.generic_parameters.explicit_len() == 0 {
-								format!("{enum_name}.{}", user_type.name)
+						if let Some(parent_enum_shape_index) = parent_enum_shape_index {
+							let enum_name = self.user_types.read()[parent_enum_shape_index].name;
+							if explicit_generic_parameters_len == 0 {
+								format!("{enum_name}.{}", user_type_name)
 							} else {
-								format!("{enum_name}.{}<{}>", user_type.name, type_arguments)
+								format!("{enum_name}.{}<{}>", user_type_name, type_arguments)
 							}
 						} else {
-							if user_type.generic_parameters.explicit_len() == 0 {
-								user_type.name.to_owned()
+							if explicit_generic_parameters_len == 0 {
+								user_type_name.to_owned()
 							} else {
-								format!("{}<{}>", user_type.name, type_arguments)
+								format!("{}<{}>", user_type_name, type_arguments)
 							}
 						}
 					}
 
 					UserTypeKind::Enum { shape } => {
-						if user_type.generic_parameters.explicit_len() == 0 {
+						if explicit_generic_parameters_len == 0 {
 							return user_type.name.to_owned();
 						}
 
 						let specialization = &shape.specializations[specialization_index];
-						let type_arguments = specialization.type_arguments.ids[0..user_type.generic_parameters.explicit_len()]
+						let type_arguments = specialization.type_arguments.ids[0..explicit_generic_parameters_len]
 							.iter()
 							.map(|a| self.internal_type_name(function_store, _module_path, *a, debug_generics))
 							.collect::<Vec<_>>()
