@@ -27,7 +27,7 @@ pub fn generate_code<'a>(
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
-	function_store: &mut FunctionStore<'a>,
+	function_store: &FunctionStore<'a>,
 	statics: &Statics,
 ) -> PathBuf {
 	#[cfg(target_os = "linux")]

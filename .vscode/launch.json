@@ -9,11 +9,7 @@
 			"request": "launch",
 			"name": "Debug executable 'fae'",
 			"cargo": {
-				"args": [
-					"build",
-					"--bin=fae",
-					"--package=fae"
-				],
+				"args": ["build", "--release"],
 				"filter": {
 					"name": "fae",
 					"kind": "bin"

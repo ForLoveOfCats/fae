@@ -142,7 +142,7 @@ pub fn build_project(
 	let lang_items = RwLock::new(LangItems::new());
 	let mut root_layers = RootLayers::new(root_name);
 	let mut type_store = TypeStore::new(cli_arguments.debug_generics);
-	let function_store = RwLock::new(FunctionStore::new());
+	let function_store = FunctionStore::new();
 	let statics = RwLock::new(Statics::new());
 	validate(
 		cli_arguments,
@@ -194,7 +194,7 @@ pub fn build_project(
 			&mut messages,
 			&lang_items.read(),
 			&mut type_store,
-			&mut function_store.write(),
+			&function_store, // TODO: Avoid having single threaded generation pay the rwlock cost
 			&statics.read(),
 		),
 	};
