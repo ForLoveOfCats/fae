@@ -694,7 +694,7 @@ fn generate_intrinsic<G: Generator>(
 
 		"user_main_function" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			if let Some(main) = *context.function_store.main.lock() {
+			if let Some(main) = *context.function_store.main.read() {
 				generator.generate_call(context.type_store, main, &[]);
 			}
 			None

@@ -7,6 +7,7 @@ mod cli;
 mod codegen;
 mod color;
 mod frontend;
+mod lock;
 mod test;
 
 use std::os::unix::process::ExitStatusExt;
