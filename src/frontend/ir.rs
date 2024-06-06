@@ -81,7 +81,7 @@ impl GenericUsage {
 		&self,
 		messages: &mut Messages<'a>,
 		type_store: &TypeStore<'a>,
-		function_store: &mut FunctionStore<'a>,
+		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,

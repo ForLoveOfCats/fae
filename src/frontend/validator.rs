@@ -33,7 +33,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub type_shape_indicies: &'b mut Vec<usize>,
 
 	pub type_store: &'b TypeStore<'a>,
-	pub function_store: &'b RwLock<FunctionStore<'a>>, // TODO: Make internally locking
+	pub function_store: &'b FunctionStore<'a>,
 	pub function_generic_usages: &'b mut Vec<GenericUsage>,
 
 	pub root_layers: &'b RootLayers<'a>,
@@ -218,7 +218,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	pub fn lookup_type(&mut self, parsed_type: &Node<tree::Type<'a>>) -> Option<TypeId> {
 		self.type_store.lookup_type(
 			self.messages,
-			&self.function_store.read(),
+			self.function_store,
 			self.module_path,
 			self.function_generic_usages,
 			self.root_layers,
@@ -231,7 +231,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 	pub fn get_enum_variant(&mut self, base: TypeId, name: Node<&'a str>) -> Option<TypeId> {
 		self.type_store
-			.get_enum_variant(self.messages, &self.function_store.read(), self.module_path, base, name)
+			.get_enum_variant(self.messages, self.function_store, self.module_path, base, name)
 	}
 
 	pub fn local_function_shape_index(&self, index: usize) -> usize {
@@ -239,18 +239,15 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	}
 
 	pub fn type_name(&self, type_id: TypeId) -> String {
-		self.type_store
-			.type_name(&self.function_store.read(), self.module_path, type_id)
+		self.type_store.type_name(self.function_store, self.module_path, type_id)
 	}
 
 	pub fn collapse_fair(&mut self, a: &mut Expression<'a>, b: &mut Expression<'a>) -> Result<TypeId, ()> {
-		self.type_store
-			.collapse_fair(self.messages, &self.function_store.read(), a, b)
+		self.type_store.collapse_fair(self.messages, self.function_store, a, b)
 	}
 
 	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Result<bool, ()> {
-		self.type_store
-			.collapse_to(self.messages, &self.function_store.read(), to, from)
+		self.type_store.collapse_to(self.messages, self.function_store, to, from)
 	}
 }
 
@@ -261,7 +258,7 @@ pub fn validate<'a>(
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	statics: &RwLock<Statics<'a>>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
@@ -348,7 +345,7 @@ pub fn validate<'a>(
 	let parsed_files = Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
 
 	std::thread::scope(|scope| {
-		for _ in 0..12 {
+		for _ in 0..2 {
 			let parsed_files = &parsed_files;
 			let mut messages = messages.fork();
 			let externs = &externs;
@@ -423,7 +420,7 @@ pub fn validate<'a>(
 		}
 	});
 
-	if function_store.read().main.is_none() {
+	if function_store.main.lock().is_none() {
 		let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
 		messages.message(error);
 	}
@@ -498,7 +495,7 @@ fn resolve_root_type_imports<'a>(
 fn fill_root_types<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 	type_shape_indicies: &mut [Vec<usize>],
@@ -534,7 +531,7 @@ fn create_root_functions<'a>(
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	externs: &Mutex<Externs>,
 	readables: &mut Readables<'a>,
@@ -584,7 +581,7 @@ fn validate_root_consts<'a>(
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
 	externs: &Mutex<Externs>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
@@ -662,7 +659,7 @@ fn validate_root_statics<'a>(
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
 	externs: &Mutex<Externs>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
@@ -1075,7 +1072,7 @@ fn create_block_enum<'a>(
 fn fill_block_types<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1124,7 +1121,7 @@ fn fill_block_types<'a>(
 fn fill_block_struct<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1150,7 +1147,7 @@ fn fill_block_struct<'a>(
 	for field in statement.fields {
 		let field_type = match type_store.lookup_type(
 			messages,
-			&function_store.read(),
+			function_store,
 			module_path,
 			generic_usages,
 			root_layers,
@@ -1203,7 +1200,7 @@ fn fill_block_struct<'a>(
 fn fill_block_enum<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1229,7 +1226,7 @@ fn fill_block_enum<'a>(
 	for shared_field in statement.shared_fields {
 		let field_type = match type_store.lookup_type(
 			messages,
-			&function_store.read(),
+			function_store,
 			module_path,
 			generic_usages,
 			root_layers,
@@ -1310,7 +1307,7 @@ fn fill_block_enum<'a>(
 fn fill_struct_like_enum_variant<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1337,7 +1334,7 @@ fn fill_struct_like_enum_variant<'a>(
 	for shared_field in statement.shared_fields {
 		let field_type = match type_store.lookup_type(
 			messages,
-			&function_store.read(),
+			function_store,
 			module_path,
 			generic_usages,
 			root_layers,
@@ -1367,7 +1364,7 @@ fn fill_struct_like_enum_variant<'a>(
 			for field in struct_like.fields {
 				let field_type = match type_store.lookup_type(
 					messages,
-					&function_store.read(),
+					function_store,
 					module_path,
 					generic_usages,
 					root_layers,
@@ -1395,7 +1392,7 @@ fn fill_struct_like_enum_variant<'a>(
 		tree::EnumVariant::Transparent(transparent) => {
 			let field_type = match type_store.lookup_type(
 				messages,
-				&function_store.read(),
+				function_store,
 				module_path,
 				generic_usages,
 				root_layers,
@@ -1435,7 +1432,7 @@ fn fill_struct_like_enum_variant<'a>(
 fn fill_pre_existing_struct_specializations<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	module_path: &'a [String],
 	shape_index: usize,
@@ -1467,7 +1464,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 		for field in &mut fields {
 			field.type_id = type_store.specialize_with_user_type_generics(
 				messages,
-				&function_store.read(),
+				function_store,
 				module_path,
 				generic_usages,
 				shape_index,
@@ -1522,7 +1519,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 fn fill_pre_existing_enum_specializations<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	module_path: &'a [String],
 	shape_index: usize,
@@ -1546,7 +1543,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 		for field in &mut specialization.shared_fields {
 			field.type_id = type_store.specialize_with_user_type_generics(
 				messages,
-				&function_store.read(),
+				function_store,
 				module_path,
 				generic_usages,
 				shape_index,
@@ -1558,7 +1555,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 		for variant in &mut specialization.variants {
 			variant.type_id = type_store.specialize_with_user_type_generics(
 				messages,
-				&function_store.read(),
+				function_store,
 				module_path,
 				generic_usages,
 				shape_index,
@@ -1608,14 +1605,13 @@ fn fill_pre_existing_enum_specializations<'a>(
 fn report_cyclic_user_type<'a>(
 	messages: &mut Messages<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	module_path: &'a [String],
 	type_id: TypeId,
 	chain: Vec<UserTypeChainLink<'a>>,
 	invoke_span: Span,
 ) {
-	let function_store = function_store.read();
-	let name = type_store.type_name(&function_store, module_path, type_id);
+	let name = type_store.type_name(function_store, module_path, type_id);
 	let mut error = error!("Cyclic user type {}", name).span(invoke_span);
 
 	for link in chain {
@@ -1635,7 +1631,7 @@ fn create_block_functions<'a>(
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
 	type_store: &TypeStore<'a>,
-	function_store: &RwLock<FunctionStore<'a>>,
+	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	externs: &Mutex<Externs>,
 	readables: &mut Readables<'a>,
@@ -1664,8 +1660,9 @@ fn create_block_functions<'a>(
 
 			let function_initial_scope_count = symbols.scopes.len();
 			let scope = symbols.child_scope();
-			let mut function_store = function_store.write();
-			let function_shape_index = function_store.shapes.len();
+			let mut function_store_shapes = function_store.shapes.write();
+			let mut function_store_generics = function_store.generics.write();
+			let function_shape_index = function_store_shapes.len();
 
 			let capacity = statement.generics.len()
 				+ enclosing_generic_parameters.parameters().len()
@@ -1720,7 +1717,8 @@ fn create_block_functions<'a>(
 				base_type_arguments = TypeArguments::new_from_explicit(Vec::new());
 			}
 
-			function_store.generics.push(generic_parameters.clone());
+			function_store_generics.push(generic_parameters.clone());
+			drop(function_store_generics);
 
 			let return_type = if let Some(parsed_type) = &statement.parsed_type {
 				let type_id = type_store.lookup_type(
@@ -1859,7 +1857,8 @@ fn create_block_functions<'a>(
 				specializations_by_type_arguments: FxHashMap::default(),
 				specializations: Vec::new(),
 			};
-			function_store.shapes.push(shape);
+			function_store_shapes.push(shape);
+			drop(function_store_shapes);
 
 			local_function_shape_indicies.push(function_shape_index);
 
@@ -2154,10 +2153,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	}
 
 	let function_shape_index = context.local_function_shape_index(statement.index_in_block);
-	let function_store = context.function_store.read();
-	let return_type = function_store.shapes[function_shape_index].return_type;
-	let generics = function_store.shapes[function_shape_index].generic_parameters.clone();
-	drop(function_store);
+	let function_store_shapes = context.function_store.shapes.read();
+	let return_type = function_store_shapes[function_shape_index].return_type;
+	let generics = function_store_shapes[function_shape_index].generic_parameters.clone();
+	drop(function_store_shapes);
 
 	let function_initial_scope_count = context.symbols_scope.symbols.scopes.len();
 	let mut scope = context.child_scope_for_function(return_type, &generics);
@@ -2170,10 +2169,11 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		scope.push_symbol(symbol);
 	}
 
+	let function_store_shapes = scope.function_store.shapes.read();
+
 	let mut maybe_self = 0;
 	if let Some(method_attribute) = &statement.method_attribute {
-		let function_store = scope.function_store.read();
-		let shape = &function_store.shapes[function_shape_index];
+		let shape = &function_store_shapes[function_shape_index];
 		scope.method_base_index = shape.method_base_index;
 
 		let is_method = match method_attribute.item.kind {
@@ -2196,12 +2196,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		let span = parameter.span;
 		let parameter = &parameter.item;
 
-		let function_store = scope.function_store.read();
-		let shape = &function_store.shapes[function_shape_index];
+		let shape = &function_store_shapes[function_shape_index];
 		let parameter_shape = &shape.parameters[index + maybe_self];
 		let stored_readable_index = parameter_shape.readable_index;
 		let parameter_shape_type_id = parameter_shape.type_id;
-		drop(function_store);
 
 		assert_eq!(stored_readable_index, index + maybe_self);
 		let kind = match parameter.is_mutable {
@@ -2219,6 +2217,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		scope.push_symbol(Symbol { name, kind, span: Some(span) });
 	}
 
+	drop(function_store_shapes);
+
 	let tree_block = &statement.block.as_ref().unwrap().item;
 	let block = validate_block(scope, tree_block, false);
 
@@ -2227,8 +2227,8 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		context.message(error.span(statement.name.span));
 	}
 
-	let mut function_store = context.function_store.write();
-	let shape = &mut function_store.shapes[function_shape_index];
+	let mut function_store_shapes = context.function_store.shapes.write();
+	let shape = &mut function_store_shapes[function_shape_index];
 	assert!(shape.block.is_none());
 	shape.block = Some(Arc::new(block));
 
@@ -2236,7 +2236,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	context.function_generic_usages.truncate(initial_generic_usages_len);
 
 	if !generic_usages.is_empty() && !shape.specializations.is_empty() {
-		for specialization in shape.specializations.clone() {
+		let specializations = shape.specializations.clone();
+		drop(function_store_shapes);
+
+		for specialization in specializations {
 			if specialization.generic_poisoned {
 				continue;
 			}
@@ -2245,7 +2248,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 				generic_usage.apply_specialization(
 					context.messages,
 					context.type_store,
-					&mut function_store,
+					context.function_store,
 					context.module_path,
 					&mut generic_usages,
 					function_shape_index,
@@ -2254,9 +2257,12 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 				);
 			}
 		}
+	} else {
+		drop(function_store_shapes);
 	}
 
-	let shape = &mut function_store.shapes[function_shape_index];
+	let mut function_store_shapes = context.function_store.shapes.write();
+	let shape = &mut function_store_shapes[function_shape_index];
 	assert!(shape.generic_usages.is_empty());
 	shape.generic_usages = generic_usages;
 
@@ -2271,6 +2277,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		let has_return_type = !shape.return_type.is_void(context.type_store);
 
 		let export_span = shape.export_attribute.map(|a| a.span);
+		drop(function_store_shapes);
 
 		let parameters = statement.parameters.parameters.iter();
 		let parameter_span = parameters.fold(None, |sum, p| match sum {
@@ -2305,7 +2312,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			return;
 		}
 
-		let result = function_store.get_or_add_specialization(
+		let result = context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
 			context.module_path,
@@ -2316,7 +2323,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		);
 
 		if let Some(result) = result {
-			if function_store.main.is_some() {
+			let mut main = context.function_store.main.lock();
+			if main.is_some() {
+				// TODO: Store all duplicat main functions, print at end sorted so the messages
+				// have a consistant order independent of file order
 				let message = error!("Duplicate main function");
 				context.message(message.span(statement.name.span));
 				return;
@@ -2324,11 +2334,12 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 			let specialization_index = result.specialization_index;
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			function_store.main = Some(function_id);
+			*main = Some(function_id);
 		}
 	} else if statement.method_attribute.is_some() {
 		let extern_span = shape.extern_attribute.map(|a| a.span);
 		let export_span = shape.export_attribute.map(|a| a.span);
+		drop(function_store_shapes);
 
 		if let Some(extern_span) = extern_span {
 			let message = error!("Method may not have an extern attribute");
@@ -2340,12 +2351,13 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.message(message.span(export_span));
 		}
 	} else if statement.export_attribute.is_some() {
+		drop(function_store_shapes);
 		if let Some(type_parameter_span) = type_parameter_span {
 			let message = error!("Exported function may not have any generic type parameters");
 			context.message(message.span(type_parameter_span));
 		}
 
-		function_store.get_or_add_specialization(
+		context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
 			context.module_path,
@@ -2355,12 +2367,13 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			None,
 		);
 	} else if shape.lang_attribute.is_some() {
+		drop(function_store_shapes);
 		if let Some(type_parameter_span) = type_parameter_span {
 			let message = error!("Lang item function may not have any generic type parameters");
 			context.message(message.span(type_parameter_span));
 		}
 
-		function_store.get_or_add_specialization(
+		context.function_store.get_or_add_specialization(
 			context.messages,
 			context.type_store,
 			context.module_path,
@@ -3132,8 +3145,8 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	}
 
 	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-	let function_store = context.function_store.read();
-	let shape = &function_store.shapes[function_shape_index];
+	let function_store_shapes = context.function_store.shapes.read();
+	let shape = &function_store_shapes[function_shape_index];
 	if shape.generic_parameters.implicit_len() != 0 {
 		// The only functions with implicit generic parameters are inner functions, and if we have it
 		// in scope then that means it must be somewhere within ourselves or our function parent chain
@@ -3142,10 +3155,9 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 			type_arguments.push_implicit(parameter.generic_type_id);
 		}
 	}
-	drop(function_store);
+	drop(function_store_shapes);
 
-	let mut function_store = context.function_store.write();
-	let result = function_store.get_or_add_specialization(
+	let result = context.function_store.get_or_add_specialization(
 		context.messages,
 		context.type_store,
 		context.module_path,
@@ -3154,7 +3166,6 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		type_arguments,
 		Some(span),
 	);
-	drop(function_store);
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
 		None => return Expression::any_collapse(context.type_store, span),
@@ -3165,37 +3176,38 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	for (index, argument) in call.arguments.iter().enumerate() {
 		let mut scope = context.child_scope();
 
-		let function_store = scope.function_store.read();
-		let shape = &function_store.shapes[function_shape_index];
+		let function_store_shapes = scope.function_store.shapes.read();
+		let shape = &function_store_shapes[function_shape_index];
 		let specialization = &shape.specializations[specialization_index];
 		scope.expected_type = match specialization.parameters.get(index) {
 			Some(parameter) => Some(parameter.type_id),
 			None => None,
 		};
-		drop(function_store);
+		drop(function_store_shapes);
 
 		let argument = validate_expression(&mut scope, argument);
 		returns |= argument.returns;
 		arguments.push(argument);
 	}
 
-	let function_store = context.function_store.read();
-	let shape = &function_store.shapes[function_shape_index];
+	let function_store_shapes = context.function_store.shapes.read();
+	let shape = &function_store_shapes[function_shape_index];
 	let specialization = &shape.specializations[specialization_index];
-	let specialization_parameters_len = specialization.parameters.len();
+	let specialization_parameters = specialization.parameters.clone();
 	let has_c_varargs = shape.c_varargs;
+	drop(function_store_shapes);
 
 	// Don't bail immediately with type mismatch, we want to check every argument and the argument count
 	let mut arguments_type_mismatch = false;
 	for (index, argument) in arguments.iter_mut().enumerate() {
-		let parameter = match specialization.parameters.get(index) {
+		let parameter = match specialization_parameters.get(index) {
 			Some(parameter) => parameter,
 			None => break,
 		};
 
 		let collapsed = context
 			.type_store
-			.collapse_to(context.messages, &function_store, parameter.type_id, argument)
+			.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
 			.unwrap_or(true);
 
 		if !collapsed {
@@ -3209,17 +3221,15 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		}
 	}
 
-	drop(function_store);
-
 	if has_c_varargs {
-		if arguments.len() < specialization_parameters_len {
-			let error = error!("Expected at least {} arguments, got {}", specialization_parameters_len, arguments.len());
+		if arguments.len() < specialization_parameters.len() {
+			let error = error!("Expected at least {} arguments, got {}", specialization_parameters.len(), arguments.len());
 			context.message(error.span(span));
 			return Expression::any_collapse(context.type_store, span);
 		}
 
 		let mut vararg_error = false;
-		let remaining_arguments = &arguments[specialization_parameters_len..];
+		let remaining_arguments = &arguments[specialization_parameters.len()..];
 		for argument in remaining_arguments {
 			let is_integer = argument.type_id.is_untyped_integer(context.type_store);
 			let is_decimal = argument.type_id.is_untyped_decimal(context.type_store);
@@ -3233,8 +3243,8 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		if vararg_error {
 			return Expression::any_collapse(context.type_store, span);
 		}
-	} else if arguments.len() != specialization_parameters_len {
-		let error = error!("Expected {} arguments, got {}", specialization_parameters_len, arguments.len());
+	} else if arguments.len() != specialization_parameters.len() {
+		let error = error!("Expected {} arguments, got {}", specialization_parameters.len(), arguments.len());
 		context.message(error.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	}
@@ -3275,8 +3285,8 @@ fn get_method_function_specialization<'a>(
 	}
 
 	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-	let function_store = context.function_store.read();
-	let shape = &function_store.shapes[function_shape_index];
+	let function_store_shapes = context.function_store.shapes.read();
+	let shape = &function_store_shapes[function_shape_index];
 	if shape.generic_parameters.implicit_len() != 0 {
 		// The only functions with implicit generic parameters are inner functions, and if we have it
 		// in scope then that means it must be somewhere within ourselves or our function parent chain
@@ -3285,7 +3295,7 @@ fn get_method_function_specialization<'a>(
 			type_arguments.push_implicit(parameter.generic_type_id);
 		}
 	}
-	drop(function_store);
+	drop(function_store_shapes);
 
 	let user_types = context.type_store.user_types.read();
 	let user_type = &user_types[base_shape_index];
@@ -3300,8 +3310,7 @@ fn get_method_function_specialization<'a>(
 
 	drop(user_types);
 
-	let mut function_store = context.function_store.write();
-	function_store.get_or_add_specialization(
+	context.function_store.get_or_add_specialization(
 		context.messages,
 		context.type_store,
 		context.module_path,
@@ -3332,35 +3341,37 @@ fn validate_method_arguments<'a>(
 	for (index, argument) in call_arguments.iter().enumerate() {
 		let mut scope = context.child_scope();
 
-		let function_store = scope.function_store.read();
-		let shape = &function_store.shapes[function_shape_index];
+		let function_store_shapes = scope.function_store.shapes.read();
+		let shape = &function_store_shapes[function_shape_index];
 		let specialization = &shape.specializations[function_specialization_index];
 		scope.expected_type = match specialization.parameters.get(index + maybe_self) {
 			Some(parameter) => Some(parameter.type_id),
 			None => None,
 		};
-		drop(function_store);
+		drop(function_store_shapes);
 
 		let argument = validate_expression(&mut scope, argument);
 		returns |= argument.returns;
 		arguments.push(argument);
 	}
 
-	let function_store = context.function_store.read();
-	let shape = &function_store.shapes[function_shape_index];
+	let function_store_shapes = context.function_store.shapes.read();
+	let shape = &function_store_shapes[function_shape_index];
 	let specialization = &shape.specializations[function_specialization_index];
+	let specialization_parameters = specialization.parameters.clone();
+	drop(function_store_shapes);
 
 	// Don't bail immediately with type mismatch, we want to check every argument and the argument count
 	let mut arguments_type_mismatch = false;
 	for (index, argument) in arguments.iter_mut().enumerate() {
-		let parameter = match specialization.parameters.get(index + maybe_self) {
+		let parameter = match specialization_parameters.get(index + maybe_self) {
 			Some(parameter) => parameter,
 			None => break,
 		};
 
 		let collapsed = context
 			.type_store
-			.collapse_to(context.messages, &function_store, parameter.type_id, argument)
+			.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
 			.unwrap_or(true);
 
 		if !collapsed {
@@ -3374,8 +3385,8 @@ fn validate_method_arguments<'a>(
 		}
 	}
 
-	if arguments.len() != specialization.parameters.len() - maybe_self {
-		let expected = specialization.parameters.len() - maybe_self;
+	if arguments.len() != specialization_parameters.len() - maybe_self {
+		let expected = specialization_parameters.len() - maybe_self;
 		let error = error!("Expected {expected} arguments, got {}", arguments.len());
 		context.message(error.span(span));
 		return None;
@@ -3709,7 +3720,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		SymbolKind::Type { shape_index } => {
 			let Some(type_id) = context.type_store.get_or_add_shape_specialization_in_scope(
 				context.messages,
-				&context.function_store.read(),
+				context.function_store,
 				context.module_path,
 				context.function_generic_usages,
 				context.root_layers,

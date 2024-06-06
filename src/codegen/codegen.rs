@@ -18,7 +18,7 @@ pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
-	function_store: &mut FunctionStore<'a>,
+	function_store: &FunctionStore<'a>,
 	statics: &Statics,
 	generator: &mut G,
 ) {
@@ -26,8 +26,8 @@ pub fn generate<'a, G: Generator>(
 	generator.register_statics(type_store, statics);
 	generator.register_functions(type_store, function_store);
 
-	for function_shape_index in 0..function_store.shapes.len() {
-		let shape = &function_store.shapes[function_shape_index];
+	for function_shape_index in 0..function_store.shapes.read().len() {
+		let shape = &function_store.shapes.read()[function_shape_index];
 		if shape.extern_attribute.is_some() || shape.intrinsic_attribute.is_some() {
 			continue;
 		}
@@ -378,7 +378,7 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 	);
 
 	let is_intrinsic = {
-		let shape = &context.function_store.shapes[function_id.function_shape_index];
+		let shape = &context.function_store.shapes.read()[function_id.function_shape_index];
 		shape.intrinsic_attribute.is_some()
 	};
 
@@ -650,7 +650,7 @@ fn generate_intrinsic<G: Generator>(
 ) -> Option<G::Binding> {
 	let span = call.span;
 
-	let shape = &context.function_store.shapes[function_id.function_shape_index];
+	let shape = &context.function_store.shapes.read()[function_id.function_shape_index];
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	match call.name {
@@ -694,7 +694,7 @@ fn generate_intrinsic<G: Generator>(
 
 		"user_main_function" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			if let Some(main) = context.function_store.main {
+			if let Some(main) = *context.function_store.main.lock() {
 				generator.generate_call(context.type_store, main, &[]);
 			}
 			None

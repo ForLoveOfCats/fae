@@ -427,8 +427,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn register_functions(&mut self, type_store: &TypeStore, function_store: &FunctionStore) {
 		assert_eq!(self.functions.len(), 0);
 
-		for function_shape_index in 0..function_store.shapes.len() {
-			let shape = &function_store.shapes[function_shape_index];
+		for function_shape_index in 0..function_store.shapes.read().len() {
+			let shape = &function_store.shapes.read()[function_shape_index];
 			if shape.intrinsic_attribute.is_some() {
 				self.functions.push(Vec::new());
 				continue;

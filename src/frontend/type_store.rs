@@ -1375,7 +1375,7 @@ impl<'a> TypeStore<'a> {
 					return None;
 				}
 
-				let generics = &function_store.generics[function_shape_index];
+				let generics = &function_store.generics.read()[function_shape_index];
 				let generic = &generics.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
@@ -1949,7 +1949,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			&TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
-				let generic_parameters = &function_store.shapes[function_shape_index].generic_parameters;
+				let generic_parameters = &function_store.shapes.read()[function_shape_index].generic_parameters;
 				generic_parameters.parameters()[generic_index].generic_type_id
 			}
 		}
@@ -1970,6 +1970,7 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::BuiltinType { .. } => type_id,
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
+				let type_entries = self.type_entries.read();
 				let mut user_types = self.user_types.write();
 				let user_type = &mut user_types[*shape_index];
 				match &mut user_type.kind {
@@ -1979,7 +1980,7 @@ impl<'a> TypeStore<'a> {
 						drop(user_types);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
-							let entry = self.type_entries.read()[struct_type_argument.index()];
+							let entry = type_entries[struct_type_argument.index()];
 							match entry.kind {
 								TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
 
@@ -2018,10 +2019,11 @@ impl<'a> TypeStore<'a> {
 
 					UserTypeKind::Enum { shape } => {
 						let specialization = &mut shape.specializations[*specialization_index];
-						let any_function_generic =
-							specialization.type_arguments.ids.iter().any(|t| {
-								matches!(self.type_entries.read()[t.index()].kind, TypeEntryKind::FunctionGeneric { .. })
-							});
+						let any_function_generic = specialization
+							.type_arguments
+							.ids
+							.iter()
+							.any(|t| matches!(type_entries[t.index()].kind, TypeEntryKind::FunctionGeneric { .. }));
 
 						if !any_function_generic {
 							return type_id;
@@ -2031,7 +2033,7 @@ impl<'a> TypeStore<'a> {
 						drop(user_types);
 
 						for enum_type_argument in &mut new_enum_type_arguments.ids {
-							let entry = &self.type_entries.read()[enum_type_argument.index()];
+							let entry = &type_entries[enum_type_argument.index()];
 							match &entry.kind {
 								TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
 
@@ -2043,6 +2045,8 @@ impl<'a> TypeStore<'a> {
 								_ => {}
 							}
 						}
+
+						drop(type_entries);
 
 						self.get_or_add_enum_shape_specialization(
 							messages,
@@ -2181,7 +2185,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
 				if let Some(function_store) = function_store {
-					let shape = &function_store.shapes[function_shape_index];
+					let shape = &function_store.shapes.read()[function_shape_index];
 					let generic = &shape.generic_parameters.parameters()[generic_index];
 
 					if debug_generics {

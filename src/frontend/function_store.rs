@@ -1,3 +1,6 @@
+use parking_lot::lock_api::RwLockUpgradableReadGuard;
+use parking_lot::{Mutex, RwLock};
+
 use crate::frontend::error::Messages;
 use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
@@ -7,18 +10,22 @@ use crate::frontend::type_store::TypeStore;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
-	pub shapes: Vec<FunctionShape<'a>>,
+	pub shapes: RwLock<Vec<FunctionShape<'a>>>,
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
-	pub generics: Vec<GenericParameters<'a>>,
+	pub generics: RwLock<Vec<GenericParameters<'a>>>,
 
-	pub main: Option<FunctionId>,
+	pub main: Mutex<Option<FunctionId>>,
 }
 
 impl<'a> FunctionStore<'a> {
 	pub fn new() -> Self {
-		FunctionStore { shapes: Vec::new(), generics: Vec::new(), main: None }
+		FunctionStore {
+			shapes: RwLock::new(Vec::new()),
+			generics: RwLock::new(Vec::new()),
+			main: Mutex::new(None),
+		}
 	}
 
 	fn get_specialization(
@@ -26,7 +33,7 @@ impl<'a> FunctionStore<'a> {
 		function_shape_index: usize,
 		type_arguments: &TypeArguments,
 	) -> Option<FunctionSpecializationResult> {
-		let shape = &self.shapes[function_shape_index];
+		let shape = &self.shapes.read()[function_shape_index];
 
 		if let Some(&specialization_index) = shape.specializations_by_type_arguments.get(type_arguments) {
 			let return_type = shape.specializations[specialization_index].return_type;
@@ -37,7 +44,7 @@ impl<'a> FunctionStore<'a> {
 	}
 
 	pub fn get_or_add_specialization(
-		&mut self,
+		&self,
 		messages: &mut Messages<'a>,
 		type_store: &TypeStore<'a>,
 		module_path: &'a [String],
@@ -46,7 +53,8 @@ impl<'a> FunctionStore<'a> {
 		type_arguments: TypeArguments,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
-		let shape = &self.shapes[function_shape_index];
+		let shapes = self.shapes.upgradable_read();
+		let shape = &shapes[function_shape_index];
 
 		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
 			let expected = shape.generic_parameters.explicit_len();
@@ -63,7 +71,7 @@ impl<'a> FunctionStore<'a> {
 			return Some(result);
 		}
 
-		let shape = &self.shapes[function_shape_index];
+		// let shape = &shapes[function_shape_index];
 		let generic_poisoned = type_arguments
 			.ids
 			.iter()
@@ -108,7 +116,8 @@ impl<'a> FunctionStore<'a> {
 			been_queued: false,
 			been_generated: false,
 		};
-		let shape = &mut self.shapes[function_shape_index];
+		let mut shapes = RwLockUpgradableReadGuard::upgrade(shapes);
+		let shape = &mut shapes[function_shape_index];
 		shape.specializations.push(concrete);
 		shape
 			.specializations_by_type_arguments
@@ -118,7 +127,9 @@ impl<'a> FunctionStore<'a> {
 			let usage = GenericUsage::Function { type_arguments, function_shape_index };
 			generic_usages.push(usage)
 		} else {
-			for generic_usage in shape.generic_usages.clone() {
+			let shape_generic_usages = shape.generic_usages.clone();
+			drop(shapes);
+			for generic_usage in shape_generic_usages {
 				generic_usage.apply_specialization(
 					messages,
 					type_store,
@@ -143,7 +154,7 @@ impl<'a> FunctionStore<'a> {
 		caller_shape_index: usize,
 		caller_type_arguments: &TypeArguments,
 	) -> FunctionId {
-		let shape = &self.shapes[function_id.function_shape_index];
+		let shape = &self.shapes.read()[function_id.function_shape_index];
 		let specialization = &shape.specializations[function_id.specialization_index];
 		if specialization.type_arguments.is_empty() {
 			return function_id;
