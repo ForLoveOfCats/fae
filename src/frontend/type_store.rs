@@ -2012,6 +2012,8 @@ impl<'a> TypeStore<'a> {
 							}
 						}
 
+						drop(type_entries);
+
 						self.get_or_add_struct_shape_specialization(
 							messages,
 							function_store,
