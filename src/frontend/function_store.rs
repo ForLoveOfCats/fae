@@ -65,6 +65,8 @@ impl<'a> FunctionStore<'a> {
 		assert_eq!(shape.generic_parameters.implicit_len(), type_arguments.implicit_len);
 		assert_eq!(shape.generic_parameters.method_base_len(), type_arguments.method_base_len);
 
+		drop(shapes);
+
 		if let Some(result) = self.get_specialization(function_shape_index, &type_arguments) {
 			return Some(result);
 		}
@@ -74,6 +76,8 @@ impl<'a> FunctionStore<'a> {
 			.iter()
 			.any(|id| type_store.type_entries.read()[id.index()].generic_poisoned);
 
+		let shapes = self.shapes.read();
+		let shape = &shapes[function_shape_index];
 		let parameters = shape
 			.parameters
 			.iter()
