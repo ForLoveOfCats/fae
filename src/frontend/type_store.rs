@@ -1223,19 +1223,24 @@ impl<'a> TypeStore<'a> {
 		}
 	}
 
-	pub fn find_user_type_dependency_chain(&self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
-		let entry = self.type_entries.read()[from.index()];
+	pub fn find_user_type_dependency_chain(
+		type_entries: &[TypeEntry],
+		user_types: &[UserType<'a>],
+		from: TypeId,
+		to: TypeId,
+	) -> Option<Vec<UserTypeChainLink<'a>>> {
+		let entry = type_entries[from.index()];
 		let (shape_index, specialization_index) = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 			_ => return None,
 		};
 
-		let user_type = &self.user_types.read()[shape_index];
+		let user_type = &user_types[shape_index];
 		match &user_type.kind {
 			UserTypeKind::Struct { shape } => {
 				let specialization = &shape.specializations[specialization_index];
 				for field in &specialization.fields {
-					if self.direct_match(field.type_id, to) {
+					if field.type_id.entry == to.entry {
 						let link = UserTypeChainLink {
 							user_type: specialization.type_id,
 							field_name: field.name,
@@ -1244,7 +1249,8 @@ impl<'a> TypeStore<'a> {
 						return Some(vec![link]);
 					}
 
-					if let Some(mut chain) = self.find_user_type_dependency_chain(field.type_id, to) {
+					let chain = Self::find_user_type_dependency_chain(type_entries, user_types, field.type_id, to);
+					if let Some(mut chain) = chain {
 						chain.insert(
 							0,
 							UserTypeChainLink {
@@ -1263,7 +1269,7 @@ impl<'a> TypeStore<'a> {
 
 				for (name, &variant_index) in &specialization.variants_by_name {
 					let variant = &specialization.variants[variant_index];
-					if self.direct_match(variant.type_id, to) {
+					if variant.type_id.entry == to.entry {
 						let link = UserTypeChainLink {
 							user_type: specialization.type_id,
 							field_name: name,
@@ -1272,7 +1278,8 @@ impl<'a> TypeStore<'a> {
 						return Some(vec![link]);
 					}
 
-					if let Some(mut chain) = self.find_user_type_dependency_chain(variant.type_id, to) {
+					let chain = Self::find_user_type_dependency_chain(type_entries, user_types, variant.type_id, to);
+					if let Some(mut chain) = chain {
 						chain.insert(
 							0,
 							UserTypeChainLink {

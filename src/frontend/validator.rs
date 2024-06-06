@@ -1489,6 +1489,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 	}
 	drop(user_types);
 
+	let type_entries = type_store.type_entries.read();
 	let user_types = type_store.user_types.read();
 	let mut type_ids = Vec::new();
 	match &user_types[shape_index].kind {
@@ -1497,7 +1498,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 
 			for specialization in &shape.specializations {
 				let type_id = specialization.type_id;
-				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
+				let chain = TypeStore::find_user_type_dependency_chain(&type_entries, &user_types, type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
 				} else {
@@ -1510,6 +1511,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 	}
 
 	drop(user_types);
+	drop(type_entries);
 
 	for type_id in type_ids {
 		type_store.calculate_layout(type_id);
@@ -1575,6 +1577,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 	}
 	drop(user_types);
 
+	let type_entries = type_store.type_entries.read();
 	let user_types = type_store.user_types.read();
 	let mut type_ids = Vec::new();
 	match &user_types[shape_index].kind {
@@ -1583,7 +1586,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 
 			for specialization in &shape.specializations {
 				let type_id = specialization.type_id;
-				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
+				let chain = TypeStore::find_user_type_dependency_chain(&type_entries, &user_types, type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
 				} else {
@@ -1596,6 +1599,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 	}
 
 	drop(user_types);
+	drop(type_entries);
 
 	for type_id in type_ids {
 		type_store.calculate_layout(type_id);
