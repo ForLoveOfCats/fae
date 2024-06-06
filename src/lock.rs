@@ -74,6 +74,7 @@ impl<T> RwLock<T> {
 					});
 				}
 			};
+			drop(locations);
 
 			ReadGuard { guard: self.lock.read(), locations: self.locations.clone() }
 		}
@@ -100,6 +101,7 @@ impl<T> RwLock<T> {
 					});
 				}
 			};
+			drop(locations);
 
 			WriteGuard { guard: self.lock.write(), locations: self.locations.clone() }
 		}
