@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 use bumpalo_herd::Herd;
@@ -343,6 +344,7 @@ pub fn validate<'a>(
 	let type_store: &TypeStore = type_store;
 
 	let parsed_files = parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
+	let stderr = parking_lot::Mutex::new(std::io::stderr());
 
 	std::thread::scope(|scope| {
 		for _ in 0..6 {
@@ -350,6 +352,7 @@ pub fn validate<'a>(
 			let mut messages = messages.fork();
 			let externs = &externs;
 			let constants = &constants;
+			let stderr = &stderr;
 
 			scope.spawn(move || {
 				let herd_member = herd.get();
@@ -415,6 +418,11 @@ pub fn validate<'a>(
 					validate_block(context, &parsed_file.block, true);
 
 					function_generic_usages.clear();
+				}
+
+				if messages.any_messages() {
+					let mut stderr = stderr.lock();
+					messages.print_messages(stderr.deref_mut(), "Parallel Validation");
 				}
 			});
 		}
@@ -1880,7 +1888,7 @@ fn create_block_functions<'a>(
 						};
 
 						let methods = &mut type_store.user_types.write()[shape_index].methods;
-						methods.insert(statement.name.item, info);
+						assert!(methods.insert(statement.name.item, info).is_none()); // TODO: Detect duplicate methods
 					}
 				}
 			} else {
