@@ -76,8 +76,8 @@ impl<'a> FunctionStore<'a> {
 			.iter()
 			.any(|id| type_store.type_entries.read()[id.index()].generic_poisoned);
 
-		let shapes = self.shapes.read();
-		let shape = &shapes[function_shape_index];
+		let mut shapes = self.shapes.write();
+		let shape = &mut shapes[function_shape_index];
 		let parameters = shape
 			.parameters
 			.iter()
@@ -118,10 +118,6 @@ impl<'a> FunctionStore<'a> {
 			been_generated: false,
 		};
 
-		drop(shapes);
-		let mut shapes = self.shapes.write();
-
-		let shape = &mut shapes[function_shape_index];
 		shape.specializations.push(concrete);
 		shape
 			.specializations_by_type_arguments
