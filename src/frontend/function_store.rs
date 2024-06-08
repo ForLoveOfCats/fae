@@ -44,7 +44,7 @@ impl<'a> FunctionStore<'a> {
 	pub fn get_or_add_specialization(
 		&self,
 		messages: &mut Messages<'a>,
-		type_store: &TypeStore<'a>,
+		type_store: &mut TypeStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
@@ -74,7 +74,7 @@ impl<'a> FunctionStore<'a> {
 		let generic_poisoned = type_arguments
 			.ids
 			.iter()
-			.any(|id| type_store.type_entries.read()[id.index()].generic_poisoned);
+			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
 
 		let mut shapes = self.shapes.write();
 		let shape = &mut shapes[function_shape_index];
@@ -164,7 +164,7 @@ impl<'a> FunctionStore<'a> {
 			.type_arguments
 			.ids
 			.iter()
-			.any(|id| type_store.type_entries.read()[id.index()].generic_poisoned);
+			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
 		if !generic_poisoned {
 			return function_id;
 		}

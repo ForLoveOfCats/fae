@@ -43,8 +43,8 @@ pub fn classification_buffer() -> [Class; 8] {
 }
 
 // Huge thanks to the Zig selfhost compiler for making the spec algorithm make sense
-pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8], type_id: TypeId) -> &'buf mut [Class] {
-	let entry = type_store.type_entries.read()[type_id.index()];
+pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class; 8], type_id: TypeId) -> &'buf mut [Class] {
+	let entry = type_store.type_entries.get(type_id);
 
 	match entry.kind {
 		TypeEntryKind::BuiltinType { kind } => match kind {
@@ -95,7 +95,9 @@ pub fn classify_type<'buf>(type_store: &TypeStore, buffer: &'buf mut [Class; 8],
 				return &mut buffer[..1];
 			}
 
-			let user_type = &type_store.user_types.read()[shape_index];
+			let user_types = type_store.user_types.clone();
+			let user_type = &user_types.read()[shape_index];
+
 			let shape = match &user_type.kind {
 				UserTypeKind::Struct { shape } => shape,
 

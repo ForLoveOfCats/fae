@@ -135,13 +135,14 @@ pub fn build_project(
 	// Make sure to remove the rand dependency while at it
 	use rand::prelude::*;
 	parsed_files.shuffle(&mut rand::thread_rng());
+	// parsed_files.sort_by(|a, b| a.module_path.cmp(b.module_path));
 
 	//Partially parallelizable
 	let validate_start = Instant::now();
 	let herd = bumpalo_herd::Herd::new();
 	let lang_items = RwLock::new(LangItems::new());
 	let mut root_layers = RootLayers::new(root_name);
-	let mut type_store = TypeStore::new(cli_arguments.debug_generics);
+	let mut type_store = TypeStore::new(cli_arguments.debug_generics, cli_arguments.debug_type_ids);
 	let function_store = FunctionStore::new();
 	let statics = RwLock::new(Statics::new());
 	validate(
