@@ -7,29 +7,16 @@ use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeId, TypeStore};
 
-/*
-TODO: Move more zero-sized-type handling logic out of generator implementations and
-into the codegen driver. The primary roadblock currently is that the validator cannot
-fully reason about which values are zero-sized as generic types have an unknown size
-so it is forced to emit readable indicies for zero-sized bindings. This then requires that the
-generator know that these indicies do not have a runtime value and it virally infects all
-expression handling logic.
-
-Perhaps the validator can process all function specializations and generate readable
-indicies at that point so it can skip zero-sized bindings. This would require the validator to
-emit pre-specialized IR for each function version which seems necessary for const-eval
-anyway so that is probably the path forward. This should be done at the same time as
-a significant IR flattening to make it cheaper to construct and interpret.
-*/
-
+// TODO: Rip out this abstraction, it's causing more touble than it's worth. It didn't end up moving
+// very much common logic out of the generator and resulted in plenty of complications
 pub trait Generator {
 	type Binding: Clone + Copy + std::fmt::Debug;
 
-	fn register_type_descriptions(&mut self, type_store: &TypeStore);
+	fn register_type_descriptions(&mut self, type_store: &mut TypeStore);
 
-	fn register_statics(&mut self, type_store: &TypeStore, statics: &Statics);
+	fn register_statics(&mut self, type_store: &mut TypeStore, statics: &Statics);
 
-	fn register_functions(&mut self, type_store: &TypeStore, function_store: &FunctionStore);
+	fn register_functions(&mut self, type_store: &mut TypeStore, function_store: &FunctionStore);
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId);
 
@@ -74,7 +61,7 @@ pub trait Generator {
 
 	fn generate_array_literal(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		elements: &[Self::Binding],
 		element_type_id: TypeId,
 		slice_type_id: TypeId,
@@ -90,14 +77,14 @@ pub trait Generator {
 
 	fn generate_call(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		function_id: FunctionId,
 		arguments: &[Option<Self::Binding>],
 	) -> Option<Self::Binding>;
 
 	fn generate_method_call(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		function_id: FunctionId,
 		base_pointer_type_id: TypeId,
 		arguments: &mut [Option<Self::Binding>],
@@ -107,7 +94,12 @@ pub trait Generator {
 
 	fn generate_static_read(&mut self, static_index: usize) -> Self::Binding;
 
-	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding>;
+	fn generate_field_read(
+		&mut self,
+		type_store: &mut TypeStore,
+		base: Self::Binding,
+		field_index: usize,
+	) -> Option<Self::Binding>;
 
 	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding;
 
@@ -115,14 +107,15 @@ pub trait Generator {
 
 	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding;
 
-	fn generate_dereference(&mut self, type_store: &TypeStore, base: Self::Binding, pointed_type_id: TypeId) -> Self::Binding;
+	fn generate_dereference(&mut self, type_store: &mut TypeStore, base: Self::Binding, pointed_type_id: TypeId)
+		-> Self::Binding;
 
-	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding;
+	fn generate_cast(&mut self, type_store: &mut TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding;
 
 	fn generate_slice_index(
 		&mut self,
 		lang_items: &LangItems,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		item_type: TypeId,
 		base: Self::Binding,
 		index: Self::Binding,
@@ -150,7 +143,7 @@ pub trait Generator {
 
 	fn generate_enum_variant_to_enum(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		enum_type_id: TypeId,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,

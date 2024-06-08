@@ -22,7 +22,7 @@ pub trait LLVMAbi {
 
 	fn define_function(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		context: LLVMContextRef,
 		module: LLVMModuleRef,
 		builder: LLVMBuilderRef,
@@ -35,7 +35,7 @@ pub trait LLVMAbi {
 	fn call_function(
 		&mut self,
 		generator: &LLVMGenerator<Self>,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		function: &DefinedFunction,
 		arguments: &[Option<generator::Binding>],
 	) -> Option<generator::Binding>
@@ -177,7 +177,7 @@ impl SysvAbi {
 
 	fn construct_parameter_information(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		context: LLVMContextRef,
 		llvm_types: &LLVMTypes,
 		parameter_type_id: TypeId,
@@ -308,7 +308,7 @@ impl LLVMAbi for SysvAbi {
 
 	fn define_function(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		context: LLVMContextRef,
 		module: LLVMModuleRef,
 		builder: LLVMBuilderRef,
@@ -509,7 +509,7 @@ impl LLVMAbi for SysvAbi {
 	fn call_function(
 		&mut self,
 		generator: &LLVMGenerator<Self>,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		function: &DefinedFunction,
 		arguments: &[Option<generator::Binding>],
 	) -> Option<generator::Binding> {

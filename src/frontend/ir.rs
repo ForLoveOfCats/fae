@@ -80,7 +80,7 @@ impl GenericUsage {
 	pub fn apply_specialization<'a>(
 		&self,
 		messages: &mut Messages<'a>,
-		type_store: &TypeStore<'a>,
+		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
@@ -247,7 +247,7 @@ impl TypeArguments {
 	pub fn specialize_with_function_generics<'a>(
 		&mut self,
 		messages: &mut Messages<'a>,
-		type_store: &TypeStore<'a>,
+		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,

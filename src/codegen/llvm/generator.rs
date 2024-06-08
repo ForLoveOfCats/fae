@@ -120,8 +120,8 @@ impl LLVMTypes {
 	}
 
 	// Cannot accept `void` type and assumes that any struct asked for has been registered; does not follow pointers
-	pub fn type_to_llvm_type(&self, context: LLVMContextRef, type_store: &TypeStore, type_id: TypeId) -> LLVMTypeRef {
-		let entry = type_store.type_entries.read()[type_id.index()];
+	pub fn type_to_llvm_type(&self, context: LLVMContextRef, type_store: &mut TypeStore, type_id: TypeId) -> LLVMTypeRef {
+		let entry = type_store.type_entries.get(type_id);
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => match kind {
@@ -283,7 +283,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		}
 	}
 
-	fn value_auto_deref_pointer(&mut self, type_store: &TypeStore, binding: Binding) -> ValuePointer {
+	fn value_auto_deref_pointer(&mut self, type_store: &mut TypeStore, binding: Binding) -> ValuePointer {
 		match binding.kind {
 			BindingKind::Value(value) => unsafe {
 				let llvm_type = LLVMTypeOf(value);
@@ -317,7 +317,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	type Binding = Binding;
 
-	fn register_type_descriptions(&mut self, type_store: &TypeStore) {
+	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
 		for shape in type_store.user_types.read().iter() {
@@ -333,10 +333,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
 
-		for &description in type_store.user_type_generate_order.read().iter() {
+		let user_type_generate_order = type_store.user_type_generate_order.clone();
+		let user_types = type_store.user_types.clone();
+		for &description in user_type_generate_order.read().iter() {
 			field_types_buffer.clear();
 			shared_field_types_buffer.clear();
-			let shape = &type_store.user_types.read()[description.shape_index];
+			let shape = &user_types.read()[description.shape_index];
 
 			match &shape.kind {
 				UserTypeKind::Struct { shape } => {
@@ -407,7 +409,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn register_statics(&mut self, type_store: &TypeStore, statics: &Statics) {
+	fn register_statics(&mut self, type_store: &mut TypeStore, statics: &Statics) {
 		for static_instance in &statics.statics {
 			let llvm_type = self
 				.llvm_types
@@ -424,7 +426,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn register_functions(&mut self, type_store: &TypeStore, function_store: &FunctionStore) {
+	fn register_functions(&mut self, type_store: &mut TypeStore, function_store: &FunctionStore) {
 		assert_eq!(self.functions.len(), 0);
 
 		for function_shape_index in 0..function_store.shapes.read().len() {
@@ -780,7 +782,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_array_literal(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		elements: &[Self::Binding],
 		element_type_id: TypeId,
 		slice_type_id: TypeId,
@@ -870,7 +872,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_call(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		function_id: FunctionId,
 		arguments: &[Option<Binding>],
 	) -> Option<Binding> {
@@ -886,7 +888,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_method_call(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		function_id: FunctionId,
 		base_pointer_type_id: TypeId,
 		arguments: &mut [Option<Self::Binding>],
@@ -940,14 +942,19 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.statics[static_index]
 	}
 
-	fn generate_field_read(&mut self, type_store: &TypeStore, base: Self::Binding, field_index: usize) -> Option<Self::Binding> {
+	fn generate_field_read(
+		&mut self,
+		type_store: &mut TypeStore,
+		base: Self::Binding,
+		field_index: usize,
+	) -> Option<Self::Binding> {
 		let index = field_index as u32;
 		let ValuePointer { pointer, mut pointed_type, type_id } = self.value_auto_deref_pointer(type_store, base);
 
 		let field_type;
 		let field_pointer;
 
-		let entry = type_store.type_entries.read()[type_id.index()];
+		let entry = type_store.type_entries.get(type_id);
 		let type_id = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
 				let shape = &type_store.user_types.read()[shape_index];
@@ -1076,7 +1083,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id: pointer_type_id, kind }
 	}
 
-	fn generate_dereference(&mut self, type_store: &TypeStore, base: Self::Binding, pointed_type_id: TypeId) -> Self::Binding {
+	fn generate_dereference(
+		&mut self,
+		type_store: &mut TypeStore,
+		base: Self::Binding,
+		pointed_type_id: TypeId,
+	) -> Self::Binding {
 		let pointer = match base.kind {
 			BindingKind::Value(value) => value,
 
@@ -1090,7 +1102,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id: pointed_type_id, kind }
 	}
 
-	fn generate_cast(&mut self, type_store: &TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
+	fn generate_cast(&mut self, type_store: &mut TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
 		let from = base.to_value(self.builder);
 		let from_type_kind = unsafe { LLVMGetTypeKind(LLVMTypeOf(from)) };
 		let from_pointer = from_type_kind == LLVMPointerTypeKind;
@@ -1191,7 +1203,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn generate_slice_index(
 		&mut self,
 		lang_items: &LangItems,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		item_type: TypeId,
 		base: Self::Binding,
 		index: Self::Binding,
@@ -1705,7 +1717,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_enum_variant_to_enum(
 		&mut self,
-		type_store: &TypeStore,
+		type_store: &mut TypeStore,
 		enum_type_id: TypeId,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
