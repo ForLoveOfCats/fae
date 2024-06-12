@@ -1487,7 +1487,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 	let mut user_types = type_store.user_types.write();
 	match &mut user_types[shape_index].kind {
 		UserTypeKind::Struct { shape } => {
-			shape.specializations = specializations;
+			shape.specializations = specializations; // TODO: Definitely a race condition
 		}
 
 		kind => unreachable!("{kind:?}"),
@@ -1575,7 +1575,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 	let mut user_types = type_store.user_types.write();
 	match &mut user_types[shape_index].kind {
 		UserTypeKind::Enum { shape } => {
-			shape.specializations = specializations;
+			shape.specializations = specializations; // TODO: Definitely a race condition
 		}
 
 		kind => unreachable!("{kind:?}"),

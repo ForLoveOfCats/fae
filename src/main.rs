@@ -33,6 +33,14 @@ fn main() {
 	let project_path = cli_arguments.project_path.as_deref().unwrap_or_else(|| Path::new("./"));
 	let built_project = build_project(&cli_arguments, &mut stderr, project_path, None);
 
+	// if let Some(lock) = parking_lot::CONTENTIONS.get() {
+	// 	let contentions = lock.lock().unwrap();
+	// 	let mut contentions = contentions.iter().map(|(a, b)| (*a, *b)).collect::<Vec<_>>();
+	// 	contentions.sort_by_key(|c| c.1);
+	// 	contentions.reverse();
+	// 	dbg!(contentions);
+	// }
+
 	let Some(binary_path) = built_project.binary_path else {
 		if let CompileCommand::Build | CompileCommand::Run = cli_arguments.command {
 			std::process::exit(-1);

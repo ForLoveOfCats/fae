@@ -1661,7 +1661,7 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
-		let user_types = self.user_types.write();
+		let user_types = self.user_types.read();
 		let user_type = &user_types[shape_index];
 		let shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
@@ -2097,9 +2097,9 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::BuiltinType { .. } => type_id,
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let mut user_types = self.user_types.write();
-				let user_type = &mut user_types[*shape_index];
-				match &mut user_type.kind {
+				let user_types = self.user_types.read();
+				let user_type = &user_types[*shape_index];
+				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[*specialization_index];
 						let mut new_struct_type_arguments = specialization.type_arguments.clone();
@@ -2144,7 +2144,7 @@ impl<'a> TypeStore<'a> {
 					}
 
 					UserTypeKind::Enum { shape } => {
-						let specialization = &mut shape.specializations[*specialization_index];
+						let specialization = &shape.specializations[*specialization_index];
 						let any_function_generic = specialization
 							.type_arguments
 							.ids

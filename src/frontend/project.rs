@@ -133,8 +133,8 @@ pub fn build_project(
 
 	// TODO: Remove this once confident about order independence
 	// Make sure to remove the rand dependency while at it
-	use rand::prelude::*;
-	parsed_files.shuffle(&mut rand::thread_rng());
+	// use rand::prelude::*;
+	// parsed_files.shuffle(&mut rand::thread_rng());
 	// parsed_files.sort_by(|a, b| a.module_path.cmp(b.module_path));
 
 	//Partially parallelizable

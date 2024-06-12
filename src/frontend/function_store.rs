@@ -76,10 +76,13 @@ impl<'a> FunctionStore<'a> {
 			.iter()
 			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
 
-		let mut shapes = self.shapes.write();
-		let shape = &mut shapes[function_shape_index];
-		let parameters = shape
-			.parameters
+		let shapes = self.shapes.read();
+		let shape = &shapes[function_shape_index];
+		let unspecialized_return_type = shape.return_type;
+		let parameters = shape.parameters.clone();
+		drop(shapes);
+
+		let parameters = parameters
 			.iter()
 			.map(|parameter| {
 				let type_id = type_store.specialize_with_function_generics(
@@ -105,9 +108,11 @@ impl<'a> FunctionStore<'a> {
 			generic_usages,
 			function_shape_index,
 			&type_arguments,
-			shape.return_type,
+			unspecialized_return_type,
 		);
 
+		let mut shapes = self.shapes.write();
+		let shape = &mut shapes[function_shape_index];
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
 			type_arguments: type_arguments.clone(),
