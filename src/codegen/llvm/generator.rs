@@ -321,7 +321,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
 		for shape in type_store.user_types.read().iter() {
-			let specialization_count = match &shape.kind {
+			let specialization_count = match &shape.read().kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
 				UserTypeKind::Enum { shape } => shape.specializations.len(),
 			};
@@ -338,9 +338,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		for &description in user_type_generate_order.read().iter() {
 			field_types_buffer.clear();
 			shared_field_types_buffer.clear();
-			let shape = &user_types.read()[description.shape_index];
 
-			match &shape.kind {
+			let user_type = user_types.read()[description.shape_index].clone();
+			let user_type = user_type.read();
+			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
 					let specialization = &shape.specializations[description.specialization_index];
 					for field in &specialization.fields {
@@ -429,7 +430,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn register_functions(&mut self, type_store: &mut TypeStore, function_store: &FunctionStore) {
 		assert_eq!(self.functions.len(), 0);
 
-		for function_shape_index in 0..function_store.shapes.read().len() {
+		let function_count = function_store.shapes.read().len();
+		for function_shape_index in 0..function_count {
 			let shape = &function_store.shapes.read()[function_shape_index];
 			if shape.intrinsic_attribute.is_some() {
 				self.functions.push(Vec::new());
@@ -957,8 +959,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let entry = type_store.type_entries.get(type_id);
 		let type_id = match entry.kind {
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let shape = &type_store.user_types.read()[shape_index];
-				match &shape.kind {
+				let user_type = type_store.user_types.read()[shape_index].clone();
+				let user_type = user_type.read();
+				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
 						field_pointer = unsafe {
