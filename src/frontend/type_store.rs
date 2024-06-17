@@ -2067,8 +2067,11 @@ impl<'a> TypeStore<'a> {
 			}
 
 			&TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
-				let generic_parameters = &function_store.shapes.read()[function_shape_index].generic_parameters;
-				generic_parameters.parameters()[generic_index].generic_type_id
+				function_store.shapes.read()[function_shape_index]
+					.read()
+					.generic_parameters
+					.parameters()[generic_index]
+					.generic_type_id
 			}
 		}
 	}
@@ -2318,8 +2321,10 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
 				if let Some(function_store) = function_store {
-					let shape = &function_store.shapes.read()[function_shape_index];
-					let generic = &shape.generic_parameters.parameters()[generic_index];
+					let generic = function_store.shapes.read()[function_shape_index]
+						.read()
+						.generic_parameters
+						.parameters()[generic_index];
 
 					if debug_generics {
 						format!("FunctionGeneric {function_shape_index} {generic_index} {}", generic.name.item)

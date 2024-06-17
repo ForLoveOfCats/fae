@@ -28,7 +28,8 @@ pub fn generate<'a, G: Generator>(
 
 	let function_count = function_store.shapes.read().len();
 	for function_shape_index in 0..function_count {
-		let shape = &function_store.shapes.read()[function_shape_index];
+		let lock = function_store.shapes.read()[function_shape_index].clone();
+		let shape = lock.read();
 		if shape.extern_attribute.is_some() || shape.intrinsic_attribute.is_some() {
 			continue;
 		}
@@ -48,7 +49,7 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
+			generate_function(messages, lang_items, type_store, function_store, generator, &shape, function_id);
 		}
 	}
 
@@ -378,10 +379,10 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 		context.function_type_arguments,
 	);
 
-	let is_intrinsic = {
-		let shape = &context.function_store.shapes.read()[function_id.function_shape_index];
-		shape.intrinsic_attribute.is_some()
-	};
+	let is_intrinsic = context.function_store.shapes.read()[function_id.function_shape_index]
+		.read()
+		.intrinsic_attribute
+		.is_some();
 
 	if is_intrinsic {
 		return generate_intrinsic(context, generator, function_id, call);
@@ -653,7 +654,8 @@ fn generate_intrinsic<G: Generator>(
 ) -> Option<G::Binding> {
 	let span = call.span;
 
-	let shape = &context.function_store.shapes.read()[function_id.function_shape_index];
+	let lock = context.function_store.shapes.read()[function_id.function_shape_index].clone();
+	let shape = lock.read();
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	match call.name {
