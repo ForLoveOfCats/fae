@@ -1187,8 +1187,8 @@ impl<'a> TypeStore<'a> {
 	pub fn calculate_layout(&mut self, type_id: TypeId) {
 		let entry = self.type_entries.get(type_id);
 		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
-			let user_type = self.user_types.read()[shape_index].clone();
-			let mut user_type = user_type.write();
+			let lock = self.user_types.read()[shape_index].clone();
+			let user_type = lock.read();
 			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
 					let specialization = &shape.specializations[specialization_index];
@@ -1198,6 +1198,7 @@ impl<'a> TypeStore<'a> {
 
 					// Belch
 					let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
+					drop(user_type);
 
 					let mut size = 0;
 					let mut alignment = 1;
@@ -1224,6 +1225,7 @@ impl<'a> TypeStore<'a> {
 					}
 
 					let layout = Layout { size, alignment };
+					let mut user_type = lock.write();
 					match &mut user_type.kind {
 						UserTypeKind::Struct { shape } => {
 							shape.specializations[specialization_index].layout = Some(layout);
@@ -1240,6 +1242,7 @@ impl<'a> TypeStore<'a> {
 					}
 
 					let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
+					drop(user_type);
 
 					let mut size = 0;
 					let mut alignment = 1;
@@ -1261,6 +1264,7 @@ impl<'a> TypeStore<'a> {
 					size += tag_memory_size;
 
 					let layout = Layout { size, alignment };
+					let mut user_type = lock.write();
 					match &mut user_type.kind {
 						UserTypeKind::Enum { shape } => {
 							let specialization = &mut shape.specializations[specialization_index];
