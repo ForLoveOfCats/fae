@@ -118,7 +118,7 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command == CompileCommand::Parse {
-		if !is_test {
+		if !is_test && !cfg!(feature = "measure-lock-contention") {
 			std::mem::forget(parsed_files);
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
@@ -162,7 +162,7 @@ pub fn build_project(
 	messages.print_messages(err_output, "Validation");
 	messages.reset();
 	if any_errors {
-		if !is_test {
+		if !is_test && !cfg!(feature = "measure-lock-contention") {
 			std::mem::forget(function_store);
 			std::mem::forget(type_store);
 			std::mem::forget(parsed_files);
@@ -177,7 +177,7 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command == CompileCommand::Check {
-		if !is_test {
+		if !is_test && !cfg!(feature = "measure-lock-contention") {
 			std::mem::forget(function_store);
 			std::mem::forget(type_store);
 			std::mem::forget(parsed_files);
@@ -211,7 +211,7 @@ pub fn build_project(
 		eprintln!("        {BOLD_GREEN}Built binary{RESET} {}", binary_path.display());
 	}
 
-	if !is_test {
+	if !is_test && !cfg!(feature = "measure-lock-contention") {
 		std::mem::forget(function_store);
 		std::mem::forget(type_store);
 		std::mem::forget(parsed_files);

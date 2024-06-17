@@ -343,8 +343,8 @@ pub fn validate<'a>(
 	let root_layers: &RootLayers = root_layers;
 	let type_store: &TypeStore = type_store;
 
-	let parsed_files = parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
-	let stderr = parking_lot::Mutex::new(std::io::stderr());
+	let parsed_files = crate::lock::parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
+	let stderr = crate::lock::parking_lot::Mutex::new(std::io::stderr());
 
 	std::thread::scope(|scope| {
 		for _ in 0..6 {

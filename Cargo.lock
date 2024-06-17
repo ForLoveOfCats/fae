@@ -60,7 +60,8 @@ dependencies = [
  "bumpalo",
  "bumpalo-herd",
  "llvm-sys",
- "parking_lot",
+ "parking_lot 0.12.3",
+ "parking_lot 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand",
  "rustc-hash",
  "serde",
@@ -125,6 +126,14 @@ dependencies = [
 [[package]]
 name = "lock_api"
 version = "0.4.12"
+dependencies = [
+ "autocfg",
+ "scopeguard",
+]
+
+[[package]]
+name = "lock_api"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
 dependencies = [
@@ -141,11 +150,30 @@ checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
 [[package]]
 name = "parking_lot"
 version = "0.12.3"
+dependencies = [
+ "lock_api 0.4.12",
+ "parking_lot_core 0.9.10",
+]
+
+[[package]]
+name = "parking_lot"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
 dependencies = [
- "lock_api",
- "parking_lot_core",
+ "lock_api 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot_core 0.9.10 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.9.10"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "redox_syscall",
+ "smallvec",
+ "windows-targets",
 ]
 
 [[package]]
