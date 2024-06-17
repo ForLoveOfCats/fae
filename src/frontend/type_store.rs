@@ -1655,8 +1655,8 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
-		let user_type = self.user_types.read()[shape_index].clone();
-		let user_type = user_type.read();
+		let lock = self.user_types.read()[shape_index].clone();
+		let user_type = lock.read();
 		let shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 			kind => unreachable!("{kind:?}"),
@@ -1678,11 +1678,6 @@ impl<'a> TypeStore<'a> {
 			return Some(existing.type_id);
 		}
 
-		let type_arguments_generic_poisoned = type_arguments
-			.ids
-			.iter()
-			.any(|id| self.type_entries.get(*id).generic_poisoned);
-
 		let mut fields = Vec::with_capacity(shape.fields.len());
 		for field in &shape.fields {
 			fields.push(Field {
@@ -1694,6 +1689,11 @@ impl<'a> TypeStore<'a> {
 			});
 		}
 		drop(user_type);
+
+		let type_arguments_generic_poisoned = type_arguments
+			.ids
+			.iter()
+			.any(|id| self.type_entries.get(*id).generic_poisoned);
 
 		for field in &mut fields {
 			field.type_id = self.specialize_with_user_type_generics(
@@ -1707,8 +1707,7 @@ impl<'a> TypeStore<'a> {
 			);
 		}
 
-		let user_type = self.user_types.read()[shape_index].clone();
-		let mut user_type = user_type.write();
+		let mut user_type = lock.write();
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 			kind => unreachable!("{kind:?}"),
@@ -1761,8 +1760,8 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
-		let user_type = self.user_types.read()[enum_shape_index].clone();
-		let user_type = user_type.read();
+		let lock = self.user_types.read()[enum_shape_index].clone();
+		let user_type = lock.read();
 		let shape = match &user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
@@ -1784,14 +1783,14 @@ impl<'a> TypeStore<'a> {
 			return Some(existing.type_id);
 		}
 
+		let mut shared_fields = Vec::with_capacity(shape.shared_fields.len() + 1);
+		let unspecialized_shared_fields = shape.shared_fields.clone();
+		drop(user_type);
+
 		let type_arguments_generic_poisoned = type_arguments
 			.ids
 			.iter()
 			.any(|id| self.type_entries.get(*id).generic_poisoned);
-
-		let mut shared_fields = Vec::with_capacity(shape.shared_fields.len() + 1);
-		let unspecialized_shared_fields = shape.shared_fields.clone();
-		drop(user_type);
 
 		for field in unspecialized_shared_fields {
 			let type_id = self.specialize_with_user_type_generics(
@@ -1813,8 +1812,7 @@ impl<'a> TypeStore<'a> {
 			});
 		}
 
-		let user_type = self.user_types.read()[enum_shape_index].clone();
-		let user_type = user_type.read();
+		let user_type = lock.read();
 		let shape = match &user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
@@ -1880,8 +1878,7 @@ impl<'a> TypeStore<'a> {
 			},
 		);
 
-		let user_type = self.user_types.read()[enum_shape_index].clone();
-		let mut user_type = user_type.write();
+		let mut user_type = lock.write();
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
