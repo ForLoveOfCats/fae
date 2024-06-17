@@ -946,18 +946,18 @@ fn create_block_struct<'a>(
 	scope_id: ScopeId,
 	statement: &tree::Struct<'a>,
 ) -> usize {
-	//Start off with no fields, they will be added during the next pre-pass
-	//so that all types exist in order to populate field types
+	// Start off with no fields, they will be added during the next pre-pass
+	// so that all types exist in order to populate field types
 
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
 	let mut explicit_generics = Vec::with_capacity(capacity);
 
 	let user_types = type_store.user_types.clone();
-	let mut user_types = user_types.write();
+	let mut user_types = user_types.write(); // This write lock is quite unfortunate
 
 	let shape_index = user_types.len();
 	for (generic_index, &generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(&user_types, shape_index, generic_index);
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
 		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
 	}
 
@@ -965,7 +965,7 @@ fn create_block_struct<'a>(
 	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
-		let generic_type_id = type_store.register_user_type_generic(&user_types, shape_index, generic_index);
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
 		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
@@ -975,6 +975,8 @@ fn create_block_struct<'a>(
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, module_path, scope_id, span);
+	drop(user_types);
+
 	let kind = SymbolKind::Type { shape_index };
 	let symbol = Symbol { name, kind, span: Some(span) };
 	symbols.push_symbol(messages, function_initial_scope_count, symbol);
@@ -995,11 +997,11 @@ fn create_block_enum<'a>(
 	let mut explicit_generics = Vec::with_capacity(capacity);
 
 	let user_types = type_store.user_types.clone();
-	let mut user_types = user_types.write();
+	let mut user_types = user_types.write(); // This write lock is quite unfortunate
 
 	let enum_shape_index = user_types.len() + statement.variants.len();
 	for (generic_index, &generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(&user_types, enum_shape_index, generic_index);
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
 	}
 
@@ -1007,7 +1009,7 @@ fn create_block_enum<'a>(
 	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
-		let generic_type_id = type_store.register_user_type_generic(&user_types, enum_shape_index, generic_index);
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
@@ -1026,7 +1028,7 @@ fn create_block_enum<'a>(
 
 		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
 		for (generic_index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
-			let generic_type_id = type_store.register_user_type_generic(&user_types, struct_shape_index, generic_index);
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
 			variant_explicit_generics.push(GenericParameter { name: enum_explicit_generic.name, generic_type_id });
 		}
 
@@ -1034,7 +1036,7 @@ fn create_block_enum<'a>(
 		let mut variant_generic_parameters = GenericParameters::new_from_explicit(variant_explicit_generics);
 		for (index, enum_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
 			let generic_index = explicit_generics_len + index;
-			let generic_type_id = type_store.register_user_type_generic(&user_types, struct_shape_index, generic_index);
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
 			let parameter = GenericParameter { name: enum_parameter.name, generic_type_id };
 			variant_generic_parameters.push_implicit(parameter);
 		}
@@ -1068,6 +1070,8 @@ fn create_block_enum<'a>(
 	let span = statement.name.span;
 	assert_eq!(user_types.len(), enum_shape_index);
 	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, module_path, scope_id, span);
+	drop(user_types);
+
 	let kind = SymbolKind::Type { shape_index };
 	let symbol = Symbol { name, kind, span: Some(span) };
 	symbols.push_symbol(messages, function_initial_scope_count, symbol);
@@ -1135,8 +1139,8 @@ fn fill_block_struct<'a>(
 	statement: &tree::Struct<'a>,
 	shape_index: usize,
 ) {
-	let user_types = type_store.user_types.read();
-	let user_type = &user_types[shape_index];
+	let lock = type_store.user_types.read()[shape_index].clone();
+	let user_type = lock.read();
 	let scope = symbols.child_scope();
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
@@ -1144,7 +1148,7 @@ fn fill_block_struct<'a>(
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
-	drop(user_types);
+	drop(user_type);
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	let mut fields = Vec::with_capacity(statement.fields.len());
@@ -1176,15 +1180,15 @@ fn fill_block_struct<'a>(
 		fields.push(node);
 	}
 
-	let mut user_types = type_store.user_types.write();
-	match &mut user_types[shape_index].kind {
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			shape.fields = fields;
 			assert!(!shape.been_filled);
 			shape.been_filled = true;
 
 			let has_specializations = !shape.specializations.is_empty();
-			drop(user_types);
+			drop(user_type);
 
 			if has_specializations {
 				fill_pre_existing_struct_specializations(
@@ -1214,8 +1218,8 @@ fn fill_block_enum<'a>(
 	statement: &tree::Enum<'a>,
 	enum_shape_index: usize,
 ) {
-	let user_types = type_store.user_types.read();
-	let user_type = &user_types[enum_shape_index];
+	let lock = type_store.user_types.read()[enum_shape_index].clone();
+	let user_type = lock.read();
 	let scope = symbols.child_scope();
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
@@ -1223,7 +1227,7 @@ fn fill_block_enum<'a>(
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
-	drop(user_types);
+	drop(user_type);
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
@@ -1255,8 +1259,7 @@ fn fill_block_enum<'a>(
 		shared_fields.push(node);
 	}
 
-	let user_types = type_store.user_types.read();
-	let user_type = &user_types[enum_shape_index];
+	let user_type = lock.read();
 	let shape = match &user_type.kind {
 		UserTypeKind::Enum { shape } => shape,
 		UserTypeKind::Struct { .. } => unreachable!(),
@@ -1264,7 +1267,7 @@ fn fill_block_enum<'a>(
 
 	// Yuck
 	let mut variant_shapes = shape.variant_shapes.clone();
-	drop(user_types);
+	drop(user_type);
 
 	for variant_shape in &mut variant_shapes {
 		fill_struct_like_enum_variant(
@@ -1281,8 +1284,8 @@ fn fill_block_enum<'a>(
 		);
 	}
 
-	let mut user_types = type_store.user_types.write();
-	match &mut user_types[enum_shape_index].kind {
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
 		UserTypeKind::Struct { .. } => unreachable!(),
 
 		UserTypeKind::Enum { shape } => {
@@ -1293,7 +1296,7 @@ fn fill_block_enum<'a>(
 			shape.been_filled = true;
 
 			let has_specializations = !shape.specializations.is_empty();
-			drop(user_types);
+			drop(user_type);
 
 			if has_specializations {
 				fill_pre_existing_enum_specializations(
@@ -1324,14 +1327,14 @@ fn fill_struct_like_enum_variant<'a>(
 	let scope = symbols.child_scope();
 	let tree_variant = &statement.variants[variant_shape.variant_index];
 
-	let user_types = type_store.user_types.read();
-	let struct_shape = &user_types[variant_shape.struct_shape_index];
+	let lock = type_store.user_types.read()[variant_shape.struct_shape_index].clone();
+	let struct_shape = lock.read();
 	for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
 		let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
 		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
 		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
-	drop(user_types);
+	drop(struct_shape);
 
 	let mut fields = Vec::new();
 
@@ -1422,8 +1425,8 @@ fn fill_struct_like_enum_variant<'a>(
 		}
 	}
 
-	let mut user_types = type_store.user_types.write();
-	match &mut user_types[variant_shape.struct_shape_index].kind {
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			shape.fields = fields;
 			assert!(!shape.been_filled);
@@ -1442,8 +1445,8 @@ fn fill_pre_existing_struct_specializations<'a>(
 	module_path: &'a [String],
 	shape_index: usize,
 ) {
-	let user_types = type_store.user_types.read();
-	let user_type = &user_types[shape_index];
+	let lock = type_store.user_types.read()[shape_index].clone();
+	let user_type = lock.read();
 	let span = user_type.span;
 	let shape = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
@@ -1462,7 +1465,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 	}
 
 	let mut specializations = shape.specializations.clone(); // Belch
-	drop(user_types);
+	drop(user_type);
 
 	for specialization in &mut specializations {
 		let mut fields = fields.clone();
@@ -1484,27 +1487,27 @@ fn fill_pre_existing_struct_specializations<'a>(
 		specialization.fields = fields;
 	}
 
-	let mut user_types = type_store.user_types.write();
-	match &mut user_types[shape_index].kind {
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			shape.specializations = specializations; // TODO: Definitely a race condition
 		}
 
 		kind => unreachable!("{kind:?}"),
 	}
-	drop(user_types);
 
-	let user_types = type_store.user_types.clone();
-	let user_types = user_types.read();
+	// TODO: This is probably no faster than just keeping the write lock, measure and see
+	drop(user_type);
+	let user_type = lock.read();
 
 	let mut type_ids = Vec::new();
-	match &user_types[shape_index].kind {
+	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			type_ids.reserve(shape.specializations.len());
 
 			for specialization in &shape.specializations {
 				let type_id = specialization.type_id;
-				let chain = type_store.find_user_type_dependency_chain(&user_types, type_id, type_id);
+				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
 				} else {
@@ -1516,7 +1519,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	}
 
-	drop(user_types);
+	drop(user_type);
 
 	for type_id in type_ids {
 		type_store.calculate_layout(type_id);
@@ -1531,8 +1534,8 @@ fn fill_pre_existing_enum_specializations<'a>(
 	module_path: &'a [String],
 	shape_index: usize,
 ) {
-	let user_types = type_store.user_types.read();
-	let user_type = &user_types[shape_index];
+	let lock = type_store.user_types.read()[shape_index].clone();
+	let user_type = lock.read();
 	let span = user_type.span;
 	let shape = match &user_type.kind {
 		UserTypeKind::Enum { shape } => shape,
@@ -1540,7 +1543,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 	};
 
 	let mut specializations = shape.specializations.clone(); // Belch
-	drop(user_types);
+	drop(user_type);
 
 	for specialization in &mut specializations {
 		assert!(!specialization.been_filled);
@@ -1572,27 +1575,25 @@ fn fill_pre_existing_enum_specializations<'a>(
 		}
 	}
 
-	let mut user_types = type_store.user_types.write();
-	match &mut user_types[shape_index].kind {
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
 		UserTypeKind::Enum { shape } => {
 			shape.specializations = specializations; // TODO: Definitely a race condition
 		}
 
 		kind => unreachable!("{kind:?}"),
 	}
-	drop(user_types);
-
-	let user_types = type_store.user_types.clone();
-	let user_types = user_types.read();
+	drop(user_type);
 
 	let mut type_ids = Vec::new();
-	match &user_types[shape_index].kind {
+	let user_type = lock.read();
+	match &user_type.kind {
 		UserTypeKind::Enum { shape } => {
 			type_ids.reserve(shape.specializations.len());
 
 			for specialization in &shape.specializations {
 				let type_id = specialization.type_id;
-				let chain = type_store.find_user_type_dependency_chain(&user_types, type_id, type_id);
+				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
 				} else {
@@ -1604,7 +1605,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	}
 
-	drop(user_types);
+	drop(user_type);
 
 	for type_id in type_ids {
 		type_store.calculate_layout(type_id);
@@ -1663,8 +1664,10 @@ fn create_block_functions<'a>(
 				method_base_shape_index(messages, root_layers, type_store, symbols, symbols.scopes.len(), attribute)
 			});
 			let base_shape_generics = method_base_shape_index.map(|method_base_shape_index| {
-				let base_shape = &type_store.user_types.read()[method_base_shape_index];
-				base_shape.generic_parameters.clone() // I am sad
+				type_store.user_types.read()[method_base_shape_index]
+					.read()
+					.generic_parameters
+					.clone() // I am sad
 			});
 
 			let function_initial_scope_count = symbols.scopes.len();
@@ -1873,7 +1876,8 @@ fn create_block_functions<'a>(
 
 			if let Some(method_attribute) = &statement.method_attribute {
 				if let Some(shape_index) = method_base_shape_index {
-					let base_scope_id = type_store.user_types.read()[shape_index].scope_id;
+					let lock = type_store.user_types.read()[shape_index].clone();
+					let base_scope_id = lock.read().scope_id;
 					if scope_id != base_scope_id {
 						let error = error!("Method must be defined in the same scope as the self type");
 						messages.message(error.span(statement.name.span));
@@ -1884,7 +1888,7 @@ fn create_block_functions<'a>(
 							kind: method_attribute.item.kind,
 						};
 
-						let methods = &mut type_store.user_types.write()[shape_index].methods;
+						let methods = &mut lock.write().methods;
 						assert!(methods.insert(statement.name.item, info).is_none()); // TODO: Detect duplicate methods
 					}
 				}
@@ -2713,49 +2717,56 @@ fn validate_match_expression<'a>(
 		None => (expression.type_id, expression.is_mutable),
 	};
 
-	let enum_entry = context.type_store.type_entries.get(expression_type_id);
-	let user_types = context.type_store.user_types.clone();
-	let user_types = user_types.read();
-
-	let enum_specialization = match enum_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
-			UserTypeKind::Struct { .. } => None,
-			UserTypeKind::Enum { shape } => Some(&shape.specializations[specialization_index]),
-		},
-
-		_ => None,
-	};
-
-	let Some(enum_specialization) = enum_specialization else {
+	let report_not_enum_error = |context: &mut Context| {
 		let found = context.type_name(expression_type_id);
 		let error = error!("Cannot match on type {found} as it is not an enum");
 		context.messages.message(error.span(expression.span));
-		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let enum_entry = context.type_store.type_entries.get(expression_type_id);
+	let (shape_index, specialization_index) = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+
+		_ => {
+			report_not_enum_error(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let user_type = context.type_store.user_types.read()[shape_index].clone();
+	let user_type = user_type.read();
+	let enum_specialization = match &user_type.kind {
+		UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
+
+		UserTypeKind::Struct { .. } => {
+			report_not_enum_error(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
 	};
 
 	let mut encountered_variants = Vec::<Option<Span>>::with_capacity(enum_specialization.variants_by_name.len());
 	for _ in 0..enum_specialization.variants_by_name.len() {
 		encountered_variants.push(None);
 	}
-	drop(user_types);
+	drop(user_type);
 
 	let mut arms_returns = true;
 	let mut arms = Vec::new();
 
 	for arm in match_expression.arms {
 		let mut scope = context.child_scope();
-
 		let enum_entry = scope.type_store.type_entries.get(expression_type_id);
-		let user_types = scope.type_store.user_types.clone();
-		let user_types = user_types.read();
 
-		let enum_specialization = match enum_entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
-				UserTypeKind::Struct { .. } => unreachable!(),
-				UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
-			},
-
+		let (shape_index, specialization_index) = match enum_entry.kind {
+			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 			kind => unreachable!("{kind:?}"),
+		};
+
+		let user_type = scope.type_store.user_types.read()[shape_index].clone();
+		let user_type = user_type.read();
+		let enum_specialization = match &user_type.kind {
+			UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
+			UserTypeKind::Struct { .. } => unreachable!(),
 		};
 
 		let mut variant_infos = Vec::with_capacity(arm.variant_names.len());
@@ -2787,7 +2798,7 @@ fn validate_match_expression<'a>(
 			encountered_variants[variant_index] = Some(variant_name.span);
 		}
 
-		drop(user_types);
+		drop(user_type);
 
 		let binding_name = if let Some(binding_name) = arm.binding_name {
 			Some(binding_name)
@@ -2805,17 +2816,16 @@ fn validate_match_expression<'a>(
 			assert_eq!(arm.variant_names.len(), 1);
 
 			let type_id = if let Some(info) = variant_infos.last() {
-				let user_types = scope.type_store.user_types.read();
-				let (shape, specialization) = info
-					.type_id
-					.as_struct(&mut scope.type_store.type_entries, &user_types)
-					.unwrap();
-				if shape.is_transparent_variant {
-					assert_eq!(specialization.fields.len(), 1);
-					specialization.fields.first().unwrap().type_id
-				} else {
-					info.type_id
-				}
+				info.type_id
+					.as_struct(&mut scope.type_store, |shape, specialization| {
+						if shape.is_transparent_variant {
+							assert_eq!(specialization.fields.len(), 1);
+							specialization.fields.first().unwrap().type_id
+						} else {
+							info.type_id
+						}
+					})
+					.unwrap()
 			} else {
 				scope.type_store.any_collapse_type_id()
 			};
@@ -2846,16 +2856,16 @@ fn validate_match_expression<'a>(
 	};
 
 	let enum_entry = context.type_store.type_entries.get(expression_type_id);
-	let user_types = context.type_store.user_types.clone();
-	let user_types = user_types.read();
-
-	let enum_specialization = match enum_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
-			UserTypeKind::Struct { .. } => unreachable!(),
-			UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
-		},
-
+	let (shape_index, specialization_index) = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
 		kind => unreachable!("{kind:?}"),
+	};
+
+	let user_type = context.type_store.user_types.read()[shape_index].clone();
+	let user_type = user_type.read();
+	let enum_specialization = match &user_type.kind {
+		UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
+		UserTypeKind::Struct { .. } => unreachable!(),
 	};
 
 	let mut all_variants_covered = true;
@@ -2872,7 +2882,7 @@ fn validate_match_expression<'a>(
 		}
 	}
 
-	drop(user_types);
+	drop(user_type);
 
 	if let Some(else_arm) = &match_expression.else_arm {
 		if all_variants_covered {
@@ -2990,37 +3000,36 @@ fn validate_struct_literal<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let type_entry = context.type_store.type_entries.get(type_id);
-	let user_types = context.type_store.user_types.read();
-	let indices = match &type_entry.kind {
-		&TypeEntryKind::UserType { shape_index, specialization_index } => {
-			let user_type = &user_types[shape_index];
-			match &user_type.kind {
-				UserTypeKind::Struct { .. } => Some((shape_index, specialization_index)),
-				_ => None,
-			}
-		}
-
-		_ => None,
-	};
-
-	let Some((shape_index, specialization_index)) = indices else {
-		drop(user_types);
+	let report_not_struct = |context: &mut Context| {
 		let name = context.type_name(type_id);
 		let message = error!("Cannot construct type {name} like a struct as it is not a struct");
 		context.messages.message(message.span(literal.parsed_type.span));
-		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let user_type = &user_types[shape_index];
+	let type_entry = context.type_store.type_entries.get(type_id);
+	let (shape_index, specialization_index) = match &type_entry.kind {
+		&TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+
+		_ => {
+			report_not_struct(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let user_type = context.type_store.user_types.read()[shape_index].clone();
+	let user_type = user_type.read();
 	let shape = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
-		kind => unreachable!("{kind:?}"),
+
+		_ => {
+			report_not_struct(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
 	};
 
 	// Hate this clone
 	let fields = shape.specializations[specialization_index].fields.clone();
-	drop(user_types);
+	drop(user_type);
 
 	let mut returns = false;
 	let field_initializers = validate_struct_initializer(
@@ -3108,8 +3117,8 @@ fn validate_struct_initializer<'a>(
 		field_initializers.push(FieldInitializer { expression });
 	}
 
-	let user_types = context.type_store.user_types.read();
-	let user_type = &user_types[shape_index];
+	let user_type = context.type_store.user_types.read()[shape_index].clone();
+	let user_type = user_type.read();
 	let shape = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape,
 		kind => unreachable!("{kind:?}"),
@@ -3310,8 +3319,8 @@ fn get_method_function_specialization<'a>(
 	}
 	drop(function_store_shapes);
 
-	let user_types = context.type_store.user_types.read();
-	let user_type = &user_types[base_shape_index];
+	let user_type = context.type_store.user_types.read()[base_shape_index].clone();
+	let user_type = user_type.read();
 	let method_base_arguments = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape.specializations[base_specialization_index].type_arguments.ids.as_slice(),
 		UserTypeKind::Enum { shape } => shape.specializations[base_specialization_index].type_arguments.ids.as_slice(),
@@ -3321,7 +3330,7 @@ fn get_method_function_specialization<'a>(
 		type_arguments.push_method_base(base_argument);
 	}
 
-	drop(user_types);
+	drop(user_type);
 
 	context.function_store.get_or_add_specialization(
 		context.messages,
@@ -3450,14 +3459,14 @@ fn validate_method_call<'a>(
 		}
 	};
 
-	let user_types = context.type_store.user_types.read();
-	let user_type = &user_types[base_shape_index];
+	let user_type = context.type_store.user_types.read()[base_shape_index].clone();
+	let user_type = user_type.read();
 	let method_info = match user_type.methods.get(method_call.name.item) {
 		Some(method_info) => method_info,
 
 		None => {
 			let name = method_call.name.item;
-			drop(user_types);
+			drop(user_type);
 			let found = context.type_name(base.type_id);
 			let error = error!("No method {name} on type {found}");
 			context.messages.message(error.span(span));
@@ -3478,7 +3487,7 @@ fn validate_method_call<'a>(
 		}
 	};
 
-	drop(user_types);
+	drop(user_type);
 
 	if mutable_self && !base_mutable {
 		let name = method_call.name.item;
@@ -3546,14 +3555,14 @@ fn validate_static_method_call<'a>(
 	};
 
 	// Holy mother of indentation
-	let user_types = context.type_store.user_types.read();
-	let user_type = &user_types[base_shape_index];
+	let user_type = context.type_store.user_types.read()[base_shape_index].clone();
+	let user_type = user_type.read();
 	match &user_type.kind {
 		UserTypeKind::Enum { shape } => {
 			let specialization = &shape.specializations[base_specialization_index];
 			if let Some(&variant_index) = specialization.variants_by_name.get(method_call.name.item) {
 				let variant = specialization.variants[variant_index];
-				drop(user_types);
+				drop(user_type);
 				if variant.is_transparent {
 					if !method_call.type_arguments.is_empty() {
 						let span = method_call
@@ -3576,13 +3585,12 @@ fn validate_static_method_call<'a>(
 
 					let expression = method_call.arguments.first().unwrap();
 
-					let user_types = context.type_store.user_types.read();
-					let (_, as_struct) = variant
+					let expected_type_id = variant
 						.type_id
-						.as_struct(&mut context.type_store.type_entries, &user_types)
+						.as_struct(&mut context.type_store, |_, specialization| {
+							specialization.fields.first().unwrap().type_id
+						})
 						.unwrap();
-					let expected_type_id = as_struct.fields.first().unwrap().type_id;
-					drop(user_types);
 
 					let mut returns = false;
 					let Some(field_initializers) =
@@ -3597,16 +3605,15 @@ fn validate_static_method_call<'a>(
 					return Expression { span, type_id, is_mutable: true, returns, kind };
 				}
 			} else {
-				drop(user_types);
+				drop(user_type);
 			}
 		}
 
-		_ => drop(user_types),
+		_ => drop(user_type),
 	};
 
-	let user_types = context.type_store.user_types.clone();
-	let user_types = user_types.read();
-	let user_type = &user_types[base_shape_index];
+	let user_type = context.type_store.user_types.read()[base_shape_index].clone();
+	let user_type = user_type.read();
 	let method_info = match user_type.methods.get(method_call.name.item) {
 		Some(method_info) => method_info,
 
@@ -3630,7 +3637,7 @@ fn validate_static_method_call<'a>(
 		MethodKind::Static => {}
 	};
 	let function_shape_index = method_info.function_shape_index;
-	drop(user_types);
+	drop(user_type);
 
 	let result = get_method_function_specialization(
 		context,
@@ -3792,27 +3799,87 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		None => (base.type_id, base.is_mutable),
 	};
 
-	let user_types = context.type_store.user_types.clone();
-	let user_types = user_types.read();
+	// Dumb name, this structure is forced to make the lock scope juggling not horrid
+	fn handle_fields<'a>(
+		context: &mut Context<'a, '_, '_>,
+		dot_access: &tree::DotAccess<'a>,
+		base: Expression<'a>,
+		mutable: bool,
+		fields: &[Field<'a>],
+		external_access: bool,
+		span: Span,
+	) -> Expression<'a> {
+		// TODO: Hashmapify this linear lookup
+		let mut fields = fields.iter().enumerate();
+		let Some((field_index, field)) = fields.find(|f| f.1.name == dot_access.name.item) else {
+			let type_name = context.type_name(base.type_id);
+			let error = error!("No field `{}` on {}", dot_access.name.item, type_name);
+			context.messages.message(error.span(dot_access.name.span));
+			return Expression::any_collapse(context.type_store, span);
+		};
 
-	// Dumb hack to store fields array in outer scope so a slice can be taken
-	let slice_fields;
-	let str_fields;
+		let is_private = matches!(field.attribute, Some(Node { item: FieldAttribute::Private, .. }));
+		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
+		let is_read_only = field.read_only;
 
-	let mut external_access = true;
-	let fields: &[Field] = if let Some((_, as_struct)) = type_id.as_struct(&mut context.type_store.type_entries, &user_types) {
-		if let Some(method_base_index) = context.method_base_index {
-			external_access = method_base_index != as_struct.shape_index;
+		if external_access && is_private {
+			let type_name = context.type_name(base.type_id);
+			let error = error!("Cannot publicly access private field `{}` on type {}", dot_access.name.item, type_name);
+			context.messages.message(error.span(dot_access.name.span));
+			return Expression::any_collapse(context.type_store, span);
 		}
-		&as_struct.fields
-	} else if let Some(as_enum) = type_id.as_enum(&mut context.type_store.type_entries, &user_types) {
-		if let Some(method_base_index) = context.method_base_index {
-			external_access = method_base_index != as_enum.shape_index;
+
+		let type_id = field.type_id;
+		let (is_mutable, reason) = if external_access && is_readable {
+			(false, Some(FieldReadImmutableReason::Readable))
+		} else if is_read_only {
+			(false, Some(FieldReadImmutableReason::ReadOnly))
+		} else {
+			(mutable, None)
+		};
+
+		let field_read = FieldRead {
+			base,
+			name: field.name,
+			type_id,
+			field_index,
+			immutable_reason: reason,
+		};
+		let kind = ExpressionKind::FieldRead(Box::new(field_read));
+		Expression { span, type_id, is_mutable, returns: false, kind }
+	}
+
+	let type_entry = context.type_store.type_entries.get(type_id);
+	match type_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => {
+			let user_type = context.type_store.user_types.read()[shape_index].clone();
+			let user_type = user_type.read();
+
+			let mut external_access = true;
+			match &user_type.kind {
+				UserTypeKind::Struct { shape } => {
+					if let Some(method_base_index) = context.method_base_index {
+						external_access = method_base_index != shape_index;
+					}
+					let fields = &shape.specializations[specialization_index].fields;
+					return handle_fields(context, dot_access, base, mutable, fields, external_access, span);
+				}
+
+				UserTypeKind::Enum { shape } => {
+					if let Some(method_base_index) = context.method_base_index {
+						external_access = method_base_index != shape_index;
+					}
+					let fields = &shape.specializations[specialization_index].shared_fields;
+					return handle_fields(context, dot_access, base, mutable, fields, external_access, span);
+				}
+			}
 		}
-		&as_enum.shared_fields
-	} else if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
-		drop(user_types);
-		slice_fields = [
+
+		_ => {}
+	}
+
+	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
+		let slice_fields = &[
 			Field {
 				span: None,
 				name: "pointer",
@@ -3828,11 +3895,10 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				read_only: true,
 			},
 		];
-		&slice_fields
+		return handle_fields(context, dot_access, base, mutable, slice_fields, false, span);
 	} else if type_id.is_string(context.type_store) {
-		drop(user_types);
 		let u8_type_id = context.type_store.u8_type_id();
-		str_fields = [
+		let str_fields = &[
 			Field {
 				span: None,
 				name: "pointer",
@@ -3855,53 +3921,14 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				read_only: true,
 			},
 		];
-		&str_fields
+		return handle_fields(context, dot_access, base, mutable, str_fields, false, span);
 	} else {
 		let on = base.kind.name_with_article();
 		let found = context.type_name(base.type_id);
 		let error = error!("Cannot access field on {on} of type {found}");
 		context.messages.message(error.span(span));
 		return Expression::any_collapse(context.type_store, span);
-	};
-
-	// TODO: Hashmapify this linear lookup
-	let mut fields = fields.iter().enumerate();
-	let Some((field_index, field)) = fields.find(|f| f.1.name == dot_access.name.item) else {
-		let type_name = context.type_name(base.type_id);
-		let error = error!("No field `{}` on {}", dot_access.name.item, type_name);
-		context.messages.message(error.span(dot_access.name.span));
-		return Expression::any_collapse(context.type_store, span);
-	};
-
-	let is_private = matches!(field.attribute, Some(Node { item: FieldAttribute::Private, .. }));
-	let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
-	let is_read_only = field.read_only;
-
-	if external_access && is_private {
-		let type_name = context.type_name(base.type_id);
-		let error = error!("Cannot publicly access private field `{}` on type {}", dot_access.name.item, type_name);
-		context.messages.message(error.span(dot_access.name.span));
-		return Expression::any_collapse(context.type_store, span);
 	}
-
-	let type_id = field.type_id;
-	let (is_mutable, reason) = if external_access && is_readable {
-		(false, Some(FieldReadImmutableReason::Readable))
-	} else if is_read_only {
-		(false, Some(FieldReadImmutableReason::ReadOnly))
-	} else {
-		(mutable, None)
-	};
-
-	let field_read = FieldRead {
-		base,
-		name: field.name,
-		type_id,
-		field_index,
-		immutable_reason: reason,
-	};
-	let kind = ExpressionKind::FieldRead(Box::new(field_read));
-	Expression { span, type_id, is_mutable, returns: false, kind }
 }
 
 fn validate_inferred_enum<'a>(
@@ -3915,36 +3942,44 @@ fn validate_inferred_enum<'a>(
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let user_types = context.type_store.user_types.read();
-	let Some(as_enum) = expected_type.as_enum(&mut context.type_store.type_entries, &user_types) else {
-		let error = error!("Cannot infer enum type for variant, the expected type is not an enum");
-		context.messages.message(error.span(span));
-		return Expression::any_collapse(context.type_store, span);
-	};
+	let entry = context.type_store.type_entries.get(expected_type);
+	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+		let lock = context.type_store.user_types.read()[shape_index].clone();
+		let user_type = lock.read();
+		if let UserTypeKind::Enum { shape } = &user_type.kind {
+			let specialization = &shape.specializations[specialization_index];
+			let Some(&variant_index) = specialization.variants_by_name.get(inferred_enum.name.item) else {
+				let type_id = specialization.type_id;
+				let expected = context.type_name(type_id);
+				let error = error!("Expected enum {expected} has no variant named `{}`", inferred_enum.name.item);
+				context.messages.message(error.span(inferred_enum.name.span));
+				return Expression::any_collapse(context.type_store, span);
+			};
 
-	let Some(&variant_index) = as_enum.variants_by_name.get(inferred_enum.name.item) else {
-		let type_id = as_enum.type_id;
-		drop(user_types);
-		let expected = context.type_name(type_id);
-		let error = error!("Expected enum {expected} has no variant named `{}`", inferred_enum.name.item);
-		context.messages.message(error.span(inferred_enum.name.span));
-		return Expression::any_collapse(context.type_store, span);
-	};
+			let variant = specialization.variants[variant_index];
+			let type_id = variant.type_id;
 
-	let variant = as_enum.variants[variant_index];
-	let type_id = variant.type_id;
-	drop(user_types);
+			let mut returns = false;
+			let Some(field_initializers) = validate_enum_initializer(
+				context,
+				inferred_enum.name.item,
+				type_id,
+				&mut returns,
+				inferred_enum.initializer,
+				span,
+			) else {
+				return Expression::any_collapse(context.type_store, span);
+			};
 
-	let mut returns = false;
-	let Some(field_initializers) =
-		validate_enum_initializer(context, inferred_enum.name.item, type_id, &mut returns, inferred_enum.initializer, span)
-	else {
-		return Expression::any_collapse(context.type_store, span);
-	};
+			let literal = StructLiteral { type_id, field_initializers };
+			let kind = ExpressionKind::StructLiteral(literal);
+			return Expression { span, type_id, is_mutable: true, returns, kind };
+		}
+	}
 
-	let literal = StructLiteral { type_id, field_initializers };
-	let kind = ExpressionKind::StructLiteral(literal);
-	Expression { span, type_id, is_mutable: true, returns, kind }
+	let error = error!("Cannot infer enum type for variant, the expected type is not an enum");
+	context.messages.message(error.span(span));
+	Expression::any_collapse(context.type_store, span)
 }
 
 fn validate_dot_access_enum_literal<'a>(
@@ -3994,8 +4029,8 @@ fn validate_enum_initializer<'a>(
 		_ => unreachable!(),
 	};
 
-	let user_types = context.type_store.user_types.read();
-	let user_type = &user_types[variant_shape_index];
+	let user_type = context.type_store.user_types.read()[variant_shape_index].clone();
+	let user_type = user_type.read();
 	let fields = match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			if shape.is_transparent_variant {
@@ -4023,7 +4058,7 @@ fn validate_enum_initializer<'a>(
 					.unwrap()
 					.type_id;
 
-				drop(user_types);
+				drop(user_type);
 				return validate_transparent_variant_initializer(context, returns, expression, expected_type_id);
 			}
 
@@ -4034,7 +4069,7 @@ fn validate_enum_initializer<'a>(
 		UserTypeKind::Enum { .. } => unreachable!(),
 	};
 
-	drop(user_types);
+	drop(user_type);
 
 	if let Some(initializer) = initializer {
 		if fields.is_empty() {
@@ -4637,16 +4672,31 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		None => (left.type_id, left.is_mutable),
 	};
 
-	let enum_entry = context.type_store.type_entries.get(left_type_id);
-	let user_types = context.type_store.user_types.clone();
-	let user_types = user_types.read();
-	let enum_specialization = match enum_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => match &user_types[shape_index].kind {
-			UserTypeKind::Struct { .. } => None,
-			UserTypeKind::Enum { shape } => Some(&shape.specializations[specialization_index]),
-		},
+	let report_not_enum = |context: &mut Context| {
+		let found = context.type_name(left_type_id);
+		let error = error!("Cannot check is on type {found} as it is not an enum");
+		context.messages.message(error.span(left.span));
+	};
 
-		_ => None,
+	let enum_entry = context.type_store.type_entries.get(left_type_id);
+	let (shape_index, specialization_index) = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+
+		_ => {
+			report_not_enum(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let user_type = context.type_store.user_types.read()[shape_index].clone();
+	let user_type = user_type.read();
+	let enum_specialization = match &user_type.kind {
+		UserTypeKind::Enum { shape } => Some(&shape.specializations[specialization_index]),
+
+		UserTypeKind::Struct { .. } => {
+			report_not_enum(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
 	};
 
 	let Some(enum_specialization) = enum_specialization else {
@@ -4690,7 +4740,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		encountered_variants[variant_index] = Some(variant_name.span);
 	}
 
-	drop(user_types);
+	drop(user_type);
 
 	let binding_name = if !context.can_is_bind {
 		if let Some(binding_name) = check.binding_name {
@@ -4715,17 +4765,16 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		assert_eq!(check.variant_names.len(), 1);
 
 		let type_id = if let Some(info) = variant_infos.last() {
-			let user_types = context.type_store.user_types.read();
-			let (shape, specialization) = info
-				.type_id
-				.as_struct(&mut context.type_store.type_entries, &user_types)
-				.unwrap();
-			if shape.is_transparent_variant {
-				assert_eq!(specialization.fields.len(), 1);
-				specialization.fields.first().unwrap().type_id
-			} else {
-				info.type_id
-			}
+			info.type_id
+				.as_struct(&mut context.type_store, |shape, specialization| {
+					if shape.is_transparent_variant {
+						assert_eq!(specialization.fields.len(), 1);
+						specialization.fields.first().unwrap().type_id
+					} else {
+						info.type_id
+					}
+				})
+				.unwrap()
 		} else {
 			context.type_store.any_collapse_type_id()
 		};

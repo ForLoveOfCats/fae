@@ -26,7 +26,8 @@ pub fn generate<'a, G: Generator>(
 	generator.register_statics(type_store, statics);
 	generator.register_functions(type_store, function_store);
 
-	for function_shape_index in 0..function_store.shapes.read().len() {
+	let function_count = function_store.shapes.read().len();
+	for function_shape_index in 0..function_count {
 		let shape = &function_store.shapes.read()[function_shape_index];
 		if shape.extern_attribute.is_some() || shape.intrinsic_attribute.is_some() {
 			continue;
@@ -441,9 +442,9 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 	let type_id = context.specialize_type_id(read.base.type_id);
 	let entry = &context.type_store.type_entries.get(type_id);
 	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
-		let user_types = context.type_store.user_types.clone();
-		let user_types = user_types.read();
-		match &user_types[shape_index].kind {
+		let user_type = context.type_store.user_types.read()[shape_index].clone();
+		let user_type = user_type.read();
+		match &user_type.kind {
 			UserTypeKind::Struct { shape } => {
 				let specialization = &shape.specializations[specialization_index];
 				let field_type_id = specialization.fields[read.field_index].type_id;
@@ -592,7 +593,7 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	let expression_type_id = context.specialize_type_id(conversion.expression.type_id);
 	let entry = context.type_store.type_entries.get(expression_type_id);
 	let variant_index = match entry.kind {
-		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types.read()[shape_index].kind {
+		TypeEntryKind::UserType { shape_index, .. } => match &context.type_store.user_types.read()[shape_index].read().kind {
 			UserTypeKind::Struct { shape } => shape.variant_index.unwrap(),
 			kind => unreachable!("{kind:?}"),
 		},

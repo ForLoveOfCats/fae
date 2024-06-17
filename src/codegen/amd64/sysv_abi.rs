@@ -95,8 +95,8 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 				return &mut buffer[..1];
 			}
 
-			let user_types = type_store.user_types.clone();
-			let user_type = &user_types.read()[shape_index];
+			let user_type = type_store.user_types.read()[shape_index].clone();
+			let user_type = user_type.read();
 
 			let shape = match &user_type.kind {
 				UserTypeKind::Struct { shape } => shape,
