@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::frontend::error::Messages;
 use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
@@ -8,7 +10,7 @@ use crate::lock::RwLock;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
-	pub shapes: RwLock<Vec<FunctionShape<'a>>>,
+	pub shapes: RwLock<Vec<Arc<RwLock<FunctionShape<'a>>>>>,
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
@@ -31,7 +33,8 @@ impl<'a> FunctionStore<'a> {
 		function_shape_index: usize,
 		type_arguments: &TypeArguments,
 	) -> Option<FunctionSpecializationResult> {
-		let shape = &self.shapes.read()[function_shape_index];
+		let lock = self.shapes.read()[function_shape_index].clone();
+		let shape = lock.read();
 
 		if let Some(&specialization_index) = shape.specializations_by_type_arguments.get(type_arguments) {
 			let return_type = shape.specializations[specialization_index].return_type;
@@ -51,8 +54,8 @@ impl<'a> FunctionStore<'a> {
 		type_arguments: TypeArguments,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
-		let shapes = self.shapes.read();
-		let shape = &shapes[function_shape_index];
+		let lock = self.shapes.read()[function_shape_index].clone();
+		let shape = lock.read();
 
 		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
 			let expected = shape.generic_parameters.explicit_len();
@@ -65,7 +68,7 @@ impl<'a> FunctionStore<'a> {
 		assert_eq!(shape.generic_parameters.implicit_len(), type_arguments.implicit_len);
 		assert_eq!(shape.generic_parameters.method_base_len(), type_arguments.method_base_len);
 
-		drop(shapes);
+		drop(shape);
 
 		if let Some(result) = self.get_specialization(function_shape_index, &type_arguments) {
 			return Some(result);
@@ -76,11 +79,10 @@ impl<'a> FunctionStore<'a> {
 			.iter()
 			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
 
-		let shapes = self.shapes.read();
-		let shape = &shapes[function_shape_index];
+		let shape = lock.read();
 		let unspecialized_return_type = shape.return_type;
 		let parameters = shape.parameters.clone();
-		drop(shapes);
+		drop(shape);
 
 		let parameters = parameters
 			.iter()
@@ -111,8 +113,7 @@ impl<'a> FunctionStore<'a> {
 			unspecialized_return_type,
 		);
 
-		let mut shapes = self.shapes.write();
-		let shape = &mut shapes[function_shape_index];
+		let mut shape = lock.write();
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
 			type_arguments: type_arguments.clone(),
@@ -133,7 +134,7 @@ impl<'a> FunctionStore<'a> {
 			generic_usages.push(usage)
 		} else {
 			let shape_generic_usages = shape.generic_usages.clone();
-			drop(shapes);
+			drop(shape);
 			for generic_usage in shape_generic_usages {
 				generic_usage.apply_specialization(
 					messages,
@@ -159,7 +160,8 @@ impl<'a> FunctionStore<'a> {
 		caller_shape_index: usize,
 		caller_type_arguments: &TypeArguments,
 	) -> FunctionId {
-		let shape = &self.shapes.read()[function_id.function_shape_index];
+		let lock = self.shapes.read()[function_id.function_shape_index].clone();
+		let shape = lock.read();
 		let specialization = &shape.specializations[function_id.specialization_index];
 		if specialization.type_arguments.is_empty() {
 			return function_id;
