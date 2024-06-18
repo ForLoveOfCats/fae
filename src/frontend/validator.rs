@@ -254,6 +254,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 pub fn validate<'a>(
 	cli_arguments: &'a CliArguments,
+	is_test: bool,
 	herd: &'a Herd,
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
@@ -425,6 +426,10 @@ pub fn validate<'a>(
 				if messages.any_messages() {
 					let mut stderr = stderr.lock();
 					messages.print_messages(stderr.deref_mut(), "Parallel Validation");
+				}
+
+				if !is_test && !cfg!(feature = "measure-lock-contention") {
+					std::mem::forget(type_store);
 				}
 			});
 		}

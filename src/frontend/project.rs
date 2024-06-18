@@ -147,6 +147,7 @@ pub fn build_project(
 	let statics = RwLock::new(Statics::new());
 	validate(
 		cli_arguments,
+		is_test,
 		&herd,
 		&mut messages,
 		&lang_items,
