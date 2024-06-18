@@ -54,6 +54,8 @@ impl<'a> FunctionStore<'a> {
 		type_arguments: TypeArguments,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
+		let _zone = zone!("function specialization");
+
 		let lock = self.shapes.read()[function_shape_index].clone();
 		let shape = lock.read();
 
