@@ -1614,6 +1614,8 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
+		let _zone = zone!("user type specialization");
+
 		let user_type = self.user_types.read()[shape_index].clone();
 		let shape = user_type.read();
 		match &shape.kind {
@@ -1655,6 +1657,8 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
+		let _zone = zone!("struct specialization");
+
 		let lock = self.user_types.read()[shape_index].clone();
 		let user_type = lock.read();
 		let shape = match &user_type.kind {
@@ -1760,6 +1764,8 @@ impl<'a> TypeStore<'a> {
 		invoke_span: Option<Span>,
 		type_arguments: TypeArguments,
 	) -> Option<TypeId> {
+		let _zone = zone!("enum specialization");
+
 		let lock = self.user_types.read()[enum_shape_index].clone();
 		let user_type = lock.read();
 		let shape = match &user_type.kind {

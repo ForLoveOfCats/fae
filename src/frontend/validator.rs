@@ -356,6 +356,7 @@ pub fn validate<'a>(
 			let stderr = &stderr;
 
 			scope.spawn(move || {
+				set_thread_name!("validator thread");
 				let herd_member = herd.get();
 
 				let mut type_shape_indicies = Vec::new();

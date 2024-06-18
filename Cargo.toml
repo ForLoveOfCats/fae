@@ -8,11 +8,15 @@ default = [
 	"upstream-parking-lot",
 	#"measure-lock-contention",
 	#"duplicate-lock-checking",
+	#"tracy-profile",
+	#"tracy-profile-zones",
 ]
 bundled = []
 upstream-parking-lot = ["dep:parking_lot_upstream"]
 measure-lock-contention = ["dep:parking_lot_contention"]
 duplicate-lock-checking = []
+tracy-profile = ["dep:tracy-client"]
+tracy-profile-zones = ["tracy-profile"]
 
 [profile.release]
 debug = true
@@ -28,6 +32,7 @@ unicode-width = "0.1.12"
 toml = "0.8.12"
 serde = { version = "1.0.145", features = ["derive"] }
 rand = "0.8.5"
+tracy-client = { version = "0.17.0", features = ["manual-lifetime"], optional = true }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5.4"

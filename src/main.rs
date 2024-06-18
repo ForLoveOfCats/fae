@@ -2,6 +2,9 @@
 mod multi_line_string;
 
 #[macro_use]
+mod tracy;
+
+#[macro_use]
 mod cli;
 
 mod codegen;
@@ -23,6 +26,9 @@ use frontend::project::build_project;
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
+	#[cfg(feature = "tracy-profile")]
+	let _tracy = tracy::Main::new();
+
 	let cli_arguments = parse_arguments();
 	if cli_arguments.command == CompileCommand::CompilerTest {
 		test::run_tests(cli_arguments);
