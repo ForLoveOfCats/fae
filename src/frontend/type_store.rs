@@ -478,10 +478,21 @@ pub struct UserTypeSpecializationDescription {
 
 const TYPE_ENTRY_CHUNK_MAX_LENGTH: usize = 50;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TypeEntries {
 	local_chunks: Vec<Option<Vec<TypeEntry>>>,
 	global_chunks: Arc<RwLock<Vec<Vec<TypeEntry>>>>,
+}
+
+// TODO: Remove this once the root pass is parallelized and we don't need to "cheap clone" anymore
+// Each worker thread will just reuse their existing type store between both passes
+impl Clone for TypeEntries {
+	fn clone(&self) -> Self {
+		TypeEntries {
+			local_chunks: Vec::new(),
+			global_chunks: self.global_chunks.clone(),
+		}
+	}
 }
 
 impl TypeEntries {
