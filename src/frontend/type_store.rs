@@ -1895,6 +1895,9 @@ impl<'a> TypeStore<'a> {
 			},
 		);
 
+		let concrete_type_arguments_clone = type_arguments.clone();
+		let key_type_arguments_clone = type_arguments.clone();
+
 		let mut user_type = lock.write();
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
@@ -1905,7 +1908,7 @@ impl<'a> TypeStore<'a> {
 		let specialization = Enum {
 			shape_index: enum_shape_index,
 			type_id: TypeId::unusable(),
-			type_arguments: type_arguments.clone(),
+			type_arguments: concrete_type_arguments_clone,
 			been_filled,
 			shared_fields,
 			variants,
@@ -1917,7 +1920,7 @@ impl<'a> TypeStore<'a> {
 		shape.specializations.push(specialization);
 		shape
 			.specializations_by_type_arguments
-			.insert(type_arguments.clone(), specialization_index);
+			.insert(key_type_arguments_clone, specialization_index);
 
 		let kind = TypeEntryKind::UserType { shape_index: enum_shape_index, specialization_index };
 		let entry = TypeEntry {
