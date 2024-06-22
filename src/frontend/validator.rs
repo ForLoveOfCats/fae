@@ -1502,16 +1502,18 @@ fn fill_pre_existing_struct_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	}
 
-	// TODO: This is probably no faster than just keeping the write lock, measure and see
 	drop(user_type);
 	let user_type = lock.read();
 
 	let mut type_ids = Vec::new();
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
-			type_ids.reserve(shape.specializations.len());
+			let specializations = shape.specializations.clone();
+			drop(user_type);
 
-			for specialization in &shape.specializations {
+			type_ids.reserve(specializations.len());
+
+			for specialization in &specializations {
 				let type_id = specialization.type_id;
 				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
 				if let Some(chain) = chain {
@@ -1524,8 +1526,6 @@ fn fill_pre_existing_struct_specializations<'a>(
 
 		kind => unreachable!("{kind:?}"),
 	}
-
-	drop(user_type);
 
 	for type_id in type_ids {
 		type_store.calculate_layout(type_id);
