@@ -167,7 +167,7 @@ pub struct FunctionShape<'a> {
 	pub c_varargs: bool,
 	pub return_type: TypeId,
 	pub block: Option<Arc<Block<'a>>>,
-	pub generic_usages: Vec<GenericUsage>,
+	pub generic_usages: Arc<Vec<GenericUsage>>,
 
 	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
 	pub specializations: Vec<Function>,

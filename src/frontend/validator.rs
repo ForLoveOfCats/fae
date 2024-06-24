@@ -1873,7 +1873,7 @@ fn create_block_functions<'a>(
 				c_varargs,
 				return_type,
 				block: None,
-				generic_usages: Vec::new(),
+				generic_usages: Arc::new(Vec::new()),
 				specializations_by_type_arguments: FxHashMap::default(),
 				specializations: Vec::new(),
 			};
@@ -2279,7 +2279,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 	let mut shape = lock.write();
 	assert!(shape.generic_usages.is_empty());
-	shape.generic_usages = generic_usages;
+	shape.generic_usages = Arc::new(generic_usages);
 
 	let type_parameters_iter = shape.generic_parameters.explicit_parameters().iter();
 	let type_parameter_span = type_parameters_iter.fold(None, |sum, p| match sum {

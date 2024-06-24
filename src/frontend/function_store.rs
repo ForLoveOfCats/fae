@@ -137,7 +137,7 @@ impl<'a> FunctionStore<'a> {
 		} else {
 			let shape_generic_usages = shape.generic_usages.clone();
 			drop(shape);
-			for generic_usage in shape_generic_usages {
+			for generic_usage in shape_generic_usages.iter() {
 				generic_usage.apply_specialization(
 					messages,
 					type_store,
