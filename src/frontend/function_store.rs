@@ -192,6 +192,7 @@ impl<'a> FunctionStore<'a> {
 			caller_shape_index,
 			caller_type_arguments,
 		);
+		drop(shape);
 
 		let result = self
 			.get_specialization(function_id.function_shape_index, &type_arguments)
