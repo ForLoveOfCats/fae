@@ -51,7 +51,7 @@ impl<'a> FunctionStore<'a> {
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
-		type_arguments: TypeArguments,
+		type_arguments: Arc<TypeArguments>,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
 		let _zone = zone!("function specialization");
@@ -115,13 +115,10 @@ impl<'a> FunctionStore<'a> {
 			unspecialized_return_type,
 		);
 
-		let concrete_type_arguments_clone = type_arguments.clone();
-		let key_type_arguments_clone = type_arguments.clone();
-
 		let mut shape = lock.write();
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
-			type_arguments: concrete_type_arguments_clone,
+			type_arguments: type_arguments.clone(),
 			generic_poisoned,
 			parameters,
 			return_type,
@@ -132,7 +129,7 @@ impl<'a> FunctionStore<'a> {
 		shape.specializations.push(concrete);
 		shape
 			.specializations_by_type_arguments
-			.insert(key_type_arguments_clone, specialization_index);
+			.insert(type_arguments.clone(), specialization_index);
 
 		if generic_poisoned {
 			let usage = GenericUsage::Function { type_arguments, function_shape_index };
@@ -182,7 +179,7 @@ impl<'a> FunctionStore<'a> {
 		}
 
 		let mut generic_usages = Vec::new();
-		let mut type_arguments = specialization.type_arguments.clone();
+		let mut type_arguments = TypeArguments::clone(&specialization.type_arguments);
 		type_arguments.specialize_with_function_generics(
 			messages,
 			type_store,
