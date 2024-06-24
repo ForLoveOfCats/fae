@@ -1185,13 +1185,13 @@ impl<'a> TypeStore<'a> {
 
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {
 		let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index };
-		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
+		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
 		self.type_entries.push_entry(type_entry)
 	}
 
 	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
 		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
-		let type_entry = TypeEntry::new(self, kind);
+		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
 		self.type_entries.push_entry(type_entry)
 	}
 
