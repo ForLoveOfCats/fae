@@ -2331,7 +2331,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			TypeArguments::new_from_explicit(Vec::new()),
+			Arc::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
 		);
 
@@ -2376,7 +2376,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			TypeArguments::new_from_explicit(Vec::new()),
+			Arc::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
 		);
 	} else if shape.lang_attribute.is_some() {
@@ -2392,7 +2392,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			TypeArguments::new_from_explicit(Vec::new()),
+			Arc::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
 		);
 	}
@@ -3185,7 +3185,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
-		type_arguments,
+		Arc::new(type_arguments),
 		Some(span),
 	);
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
@@ -3336,7 +3336,7 @@ fn get_method_function_specialization<'a>(
 		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
-		type_arguments,
+		Arc::new(type_arguments),
 		Some(span),
 	)
 }

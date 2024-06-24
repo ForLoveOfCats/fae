@@ -72,8 +72,14 @@ impl<'a> GenericParameters<'a> {
 
 #[derive(Debug, Clone)]
 pub enum GenericUsage {
-	UserType { type_arguments: Arc<TypeArguments>, shape_index: usize },
-	Function { type_arguments: TypeArguments, function_shape_index: usize },
+	UserType {
+		type_arguments: Arc<TypeArguments>,
+		shape_index: usize,
+	},
+	Function {
+		type_arguments: Arc<TypeArguments>,
+		function_shape_index: usize,
+	},
 }
 
 impl GenericUsage {
@@ -118,7 +124,7 @@ impl GenericUsage {
 				type_arguments,
 				function_shape_index: usage_function_shape_index,
 			} => {
-				let mut type_arguments = type_arguments.clone();
+				let mut type_arguments = TypeArguments::clone(&type_arguments);
 				type_arguments.specialize_with_function_generics(
 					messages,
 					type_store,
@@ -135,7 +141,7 @@ impl GenericUsage {
 					module_path,
 					generic_usages,
 					*usage_function_shape_index,
-					type_arguments,
+					Arc::new(type_arguments),
 					invoke_span,
 				);
 			}
@@ -163,7 +169,7 @@ pub struct FunctionShape<'a> {
 	pub block: Option<Arc<Block<'a>>>,
 	pub generic_usages: Vec<GenericUsage>,
 
-	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
+	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
 	pub specializations: Vec<Function>,
 }
 
@@ -270,7 +276,7 @@ impl TypeArguments {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-	pub type_arguments: TypeArguments,
+	pub type_arguments: Arc<TypeArguments>,
 	pub generic_poisoned: bool,
 	pub parameters: Vec<Parameter>,
 	pub return_type: TypeId,
