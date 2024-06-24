@@ -19,6 +19,7 @@ use std::process::Command;
 
 use cli::{parse_arguments, CompileCommand};
 use color::{BOLD_GREEN, RESET};
+use frontend::error::StderrOutput;
 use frontend::project::build_project;
 
 #[cfg(not(target_env = "msvc"))]
@@ -35,9 +36,12 @@ fn main() {
 		return;
 	}
 
+	let supports_color = cli_arguments.color_messages;
 	let mut stderr = std::io::stderr();
+	let mut output = StderrOutput { supports_color, stderr: &mut stderr };
+
 	let project_path = cli_arguments.project_path.as_deref().unwrap_or_else(|| Path::new("./"));
-	let built_project = build_project(&cli_arguments, &mut stderr, project_path, None);
+	let built_project = build_project(&cli_arguments, &mut output, project_path, None);
 
 	#[cfg(feature = "measure-lock-contention")]
 	if let Some(lock) = parking_lot_contention::CONTENTIONS.get() {

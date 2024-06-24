@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use unicode_width::UnicodeWidthChar;
 
 use crate::frontend::file::SourceFile;
@@ -9,7 +11,10 @@ pub type ParseResult<T> = std::result::Result<T, ()>;
 
 pub trait WriteFmt {
 	fn supports_color(&self) -> bool;
+
 	fn write_fmt(&mut self, args: std::fmt::Arguments);
+
+	fn alertln(&mut self, prefix: &str, trailing: std::fmt::Arguments);
 }
 
 impl WriteFmt for String {
@@ -20,15 +25,31 @@ impl WriteFmt for String {
 	fn write_fmt(&mut self, args: std::fmt::Arguments) {
 		std::fmt::Write::write_fmt(self, args).unwrap()
 	}
+
+	fn alertln(&mut self, _: &str, _: std::fmt::Arguments) {}
 }
 
-impl WriteFmt for std::io::Stderr {
+pub struct StderrOutput<'a> {
+	pub supports_color: bool,
+	pub stderr: &'a mut std::io::Stderr,
+}
+
+impl<'a> WriteFmt for StderrOutput<'a> {
 	fn supports_color(&self) -> bool {
-		true
+		self.supports_color
 	}
 
 	fn write_fmt(&mut self, args: std::fmt::Arguments) {
-		std::io::Write::write_fmt(self, args).unwrap()
+		std::io::Write::write_fmt(&mut self.stderr, args).unwrap()
+	}
+
+	fn alertln(&mut self, prefix: &str, trailing: std::fmt::Arguments) {
+		use crate::color::{BOLD_GREEN, RESET};
+		if self.supports_color {
+			writeln!(self.stderr, "{BOLD_GREEN}{prefix}:{RESET} {trailing}").unwrap();
+		} else {
+			writeln!(self.stderr, "{prefix}: {trailing}").unwrap();
+		}
 	}
 }
 

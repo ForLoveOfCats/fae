@@ -5,7 +5,6 @@ use serde::Deserialize;
 
 use crate::cli::{CliArguments, CodegenBackend, CompileCommand};
 use crate::codegen::llvm;
-use crate::color::*;
 use crate::frontend::error::{Messages, WriteFmt};
 use crate::frontend::file::{load_all_files, load_single_file};
 use crate::frontend::function_store::FunctionStore;
@@ -32,7 +31,7 @@ pub struct ProjectConfig {
 
 pub fn build_project(
 	cli_arguments: &CliArguments,
-	err_output: &mut impl WriteFmt,
+	message_output: &mut impl WriteFmt,
 	project_path: &Path,
 	test_config: Option<ProjectConfig>,
 ) -> BuiltProject {
@@ -91,9 +90,11 @@ pub fn build_project(
 	};
 
 	match cli_arguments.command {
-		CompileCommand::Parse => eprintln!("    {BOLD_GREEN}Parsing project{RESET} {root_name}"),
-		CompileCommand::Check => eprintln!("    {BOLD_GREEN}Checking project{RESET} {root_name}"),
-		CompileCommand::Build | CompileCommand::Run => eprintln!("    {BOLD_GREEN}Building project{RESET} {root_name}"),
+		CompileCommand::Parse => message_output.alertln("    Parsing project", format_args!("{root_name}")),
+		CompileCommand::Check => message_output.alertln("    Checking project", format_args!("{root_name}")),
+		CompileCommand::Build | CompileCommand::Run => {
+			message_output.alertln("    Building project", format_args!("{root_name}"))
+		}
 		CompileCommand::CompilerTest => {}
 	}
 
@@ -114,7 +115,7 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
-		eprintln!("    {BOLD_GREEN}Parsed all files{RESET} took {} ms", parse_start.elapsed().as_millis());
+		message_output.alertln("    Parsed all files", format_args!("took {} ms", parse_start.elapsed().as_millis()));
 	}
 
 	if cli_arguments.command == CompileCommand::Parse {
@@ -128,7 +129,7 @@ pub fn build_project(
 
 	any_errors |= messages.any_errors();
 	any_messages |= messages.any_messages();
-	messages.print_messages(err_output, "Parse");
+	messages.print_messages(message_output, "Parse");
 	messages.reset();
 
 	// TODO: Remove this once confident about order independence
@@ -160,7 +161,7 @@ pub fn build_project(
 
 	any_errors |= messages.any_errors();
 	any_messages |= messages.any_messages();
-	messages.print_messages(err_output, "Validation");
+	messages.print_messages(message_output, "Validation");
 	messages.reset();
 	if any_errors {
 		if !is_test && !cfg!(feature = "measure-lock-contention") {
@@ -174,7 +175,7 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
-		eprintln!("   {BOLD_GREEN}Validated project{RESET} took {} ms", validate_start.elapsed().as_millis());
+		message_output.alertln("   Validated project", format_args!("took {} ms", validate_start.elapsed().as_millis()));
 	}
 
 	if cli_arguments.command == CompileCommand::Check {
@@ -201,7 +202,7 @@ pub fn build_project(
 		),
 	};
 	if cli_arguments.command != CompileCommand::CompilerTest {
-		eprintln!("    {BOLD_GREEN}Finished codegen{RESET} took {} ms", codegen_start.elapsed().as_millis());
+		message_output.alertln("    Finished codegen", format_args!("took {} ms", codegen_start.elapsed().as_millis()));
 	}
 
 	assert!(!messages.any_errors());
@@ -209,7 +210,7 @@ pub fn build_project(
 	any_messages |= messages.any_messages();
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
-		eprintln!("        {BOLD_GREEN}Built binary{RESET} {}", binary_path.display());
+		message_output.alertln("        Built binary", format_args!("{}", binary_path.display()));
 	}
 
 	if !is_test && !cfg!(feature = "measure-lock-contention") {
