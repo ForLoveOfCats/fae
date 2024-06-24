@@ -1784,7 +1784,7 @@ fn create_block_functions<'a>(
 						generic_usages,
 						method_base_shape_index,
 						Some(method_attribute.span),
-						base_type_arguments,
+						Arc::new(base_type_arguments),
 					);
 					let type_id = match base_type {
 						Some(base_type) => type_store.pointer_to(base_type, mutable),

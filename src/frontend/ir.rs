@@ -72,7 +72,7 @@ impl<'a> GenericParameters<'a> {
 
 #[derive(Debug, Clone)]
 pub enum GenericUsage {
-	UserType { type_arguments: TypeArguments, shape_index: usize },
+	UserType { type_arguments: Arc<TypeArguments>, shape_index: usize },
 	Function { type_arguments: TypeArguments, function_shape_index: usize },
 }
 
@@ -90,7 +90,7 @@ impl GenericUsage {
 	) {
 		match self {
 			GenericUsage::UserType { type_arguments, shape_index } => {
-				let mut specialized_type_arguments = type_arguments.clone();
+				let mut specialized_type_arguments = TypeArguments::clone(type_arguments);
 				for type_argument in &mut specialized_type_arguments.ids {
 					*type_argument = type_store.specialize_with_function_generics(
 						messages,
@@ -110,7 +110,7 @@ impl GenericUsage {
 					generic_usages,
 					*shape_index,
 					None,
-					specialized_type_arguments,
+					Arc::new(specialized_type_arguments),
 				);
 			}
 
