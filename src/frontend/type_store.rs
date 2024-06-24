@@ -159,7 +159,7 @@ pub struct StructShape<'a> {
 	pub variant_index: Option<usize>,
 	pub is_transparent_variant: bool,
 
-	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
+	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
 	pub specializations: Vec<Struct<'a>>,
 }
 
@@ -195,7 +195,7 @@ pub struct FieldShape<'a> {
 pub struct Struct<'a> {
 	pub shape_index: usize,
 	pub type_id: TypeId,
-	pub type_arguments: TypeArguments,
+	pub type_arguments: Arc<TypeArguments>,
 	pub been_filled: bool,
 	pub fields: Vec<Field<'a>>,
 	pub layout: Option<Layout>,
@@ -218,7 +218,7 @@ pub struct EnumShape<'a> {
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
 	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
 
-	pub specializations_by_type_arguments: FxHashMap<TypeArguments, usize>,
+	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
 	pub specializations: Vec<Enum<'a>>,
 }
 
@@ -248,7 +248,7 @@ pub struct EnumVariantShape<'a> {
 pub struct Enum<'a> {
 	pub shape_index: usize,
 	pub type_id: TypeId,
-	pub type_arguments: TypeArguments,
+	pub type_arguments: Arc<TypeArguments>,
 	pub been_filled: bool,
 	pub shared_fields: Vec<Field<'a>>,
 	pub variants: Vec<EnumVariant>,
@@ -1611,7 +1611,7 @@ impl<'a> TypeStore<'a> {
 			generic_usages,
 			shape_index,
 			invoke_span,
-			type_arguments,
+			Arc::new(type_arguments),
 		)
 	}
 
@@ -1623,7 +1623,7 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: TypeArguments,
+		type_arguments: Arc<TypeArguments>,
 	) -> Option<TypeId> {
 		let _zone = zone!("user type specialization");
 
@@ -1666,7 +1666,7 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: TypeArguments,
+		type_arguments: Arc<TypeArguments>,
 	) -> Option<TypeId> {
 		let _zone = zone!("struct specialization");
 
@@ -1773,7 +1773,7 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		enum_shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: TypeArguments,
+		type_arguments: Arc<TypeArguments>,
 	) -> Option<TypeId> {
 		let _zone = zone!("enum specialization");
 
@@ -1841,7 +1841,7 @@ impl<'a> TypeStore<'a> {
 		let mut variants = Vec::new();
 
 		for variant_shape in variant_shapes {
-			let mut new_struct_type_arguments = type_arguments.clone();
+			let mut new_struct_type_arguments = TypeArguments::clone(&type_arguments);
 
 			for struct_type_argument in &mut new_struct_type_arguments.ids {
 				let entry = self.type_entries.get(*struct_type_argument);
@@ -1872,7 +1872,7 @@ impl<'a> TypeStore<'a> {
 					generic_usages,
 					variant_shape.struct_shape_index,
 					None,
-					new_struct_type_arguments,
+					Arc::new(new_struct_type_arguments),
 				)
 				.unwrap();
 
@@ -1895,9 +1895,6 @@ impl<'a> TypeStore<'a> {
 			},
 		);
 
-		let concrete_type_arguments_clone = type_arguments.clone();
-		let key_type_arguments_clone = type_arguments.clone();
-
 		let mut user_type = lock.write();
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
@@ -1908,7 +1905,7 @@ impl<'a> TypeStore<'a> {
 		let specialization = Enum {
 			shape_index: enum_shape_index,
 			type_id: TypeId::unusable(),
-			type_arguments: concrete_type_arguments_clone,
+			type_arguments: type_arguments.clone(),
 			been_filled,
 			shared_fields,
 			variants,
@@ -1920,7 +1917,7 @@ impl<'a> TypeStore<'a> {
 		shape.specializations.push(specialization);
 		shape
 			.specializations_by_type_arguments
-			.insert(key_type_arguments_clone, specialization_index);
+			.insert(type_arguments.clone(), specialization_index);
 
 		let kind = TypeEntryKind::UserType { shape_index: enum_shape_index, specialization_index };
 		let entry = TypeEntry {
@@ -1957,7 +1954,7 @@ impl<'a> TypeStore<'a> {
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		type_shape_index: usize,
-		type_arguments: TypeArguments,
+		type_arguments: Arc<TypeArguments>,
 		type_id: TypeId,
 	) -> TypeId {
 		let entry = self.type_entries.get(type_id);
@@ -1970,7 +1967,7 @@ impl<'a> TypeStore<'a> {
 				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[*specialization_index];
-						let mut new_struct_type_arguments = specialization.type_arguments.clone();
+						let mut new_struct_type_arguments = TypeArguments::clone(&specialization.type_arguments);
 						drop(user_type);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
@@ -2004,14 +2001,14 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							new_struct_type_arguments,
+							Arc::new(new_struct_type_arguments),
 						)
 						.unwrap()
 					}
 
 					UserTypeKind::Enum { shape } => {
 						let specialization = &shape.specializations[*specialization_index];
-						let mut new_enum_type_arguments = specialization.type_arguments.clone();
+						let mut new_enum_type_arguments = TypeArguments::clone(&specialization.type_arguments);
 						drop(user_type);
 
 						for enum_type_argument in &mut new_enum_type_arguments.ids {
@@ -2045,7 +2042,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							new_enum_type_arguments,
+							Arc::new(new_enum_type_arguments),
 						)
 						.unwrap()
 					}
@@ -2113,7 +2110,7 @@ impl<'a> TypeStore<'a> {
 				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[*specialization_index];
-						let mut new_struct_type_arguments = specialization.type_arguments.clone();
+						let mut new_struct_type_arguments = TypeArguments::clone(&specialization.type_arguments);
 						drop(user_type);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
@@ -2149,7 +2146,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							new_struct_type_arguments,
+							Arc::new(new_struct_type_arguments),
 						)
 						.unwrap()
 					}
@@ -2166,9 +2163,10 @@ impl<'a> TypeStore<'a> {
 							return type_id;
 						}
 
-						let mut new_enum_type_arguments = specialization.type_arguments.clone();
+						let type_arguments = specialization.type_arguments.clone();
 						drop(user_type);
 
+						let mut new_enum_type_arguments = TypeArguments::clone(&type_arguments);
 						for enum_type_argument in &mut new_enum_type_arguments.ids {
 							let entry = self.type_entries.get(*enum_type_argument);
 							match &entry.kind {
@@ -2190,7 +2188,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							new_enum_type_arguments,
+							Arc::new(new_enum_type_arguments),
 						)
 						.unwrap()
 					}
