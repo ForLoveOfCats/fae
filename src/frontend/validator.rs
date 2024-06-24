@@ -1298,7 +1298,7 @@ fn fill_block_enum<'a>(
 
 		UserTypeKind::Enum { shape } => {
 			assert!(shape.shared_fields.is_empty());
-			shape.shared_fields = shared_fields;
+			shape.shared_fields = Arc::new(shared_fields);
 			shape.variant_shapes = variant_shapes;
 			assert!(!shape.been_filled);
 			shape.been_filled = true;

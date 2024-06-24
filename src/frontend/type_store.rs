@@ -213,7 +213,7 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct EnumShape<'a> {
 	pub been_filled: bool,
-	pub shared_fields: Vec<Node<FieldShape<'a>>>,
+	pub shared_fields: Arc<Vec<Node<FieldShape<'a>>>>,
 
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
 	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
@@ -226,7 +226,7 @@ impl<'a> EnumShape<'a> {
 	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: FxHashMap<&'a str, usize>) -> Self {
 		EnumShape {
 			been_filled: false,
-			shared_fields: Vec::new(),
+			shared_fields: Arc::new(Vec::new()),
 			variant_shapes,
 			variant_shapes_by_name,
 			specializations_by_type_arguments: FxHashMap::default(),
@@ -1809,7 +1809,7 @@ impl<'a> TypeStore<'a> {
 			.iter()
 			.any(|id| self.type_entries.get(*id).generic_poisoned);
 
-		for field in unspecialized_shared_fields {
+		for field in unspecialized_shared_fields.iter() {
 			let type_id = self.specialize_with_user_type_generics(
 				messages,
 				function_store,
