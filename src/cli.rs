@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub struct CliArguments {
 	pub project_path: Option<PathBuf>,
 	pub command: CompileCommand,
+	pub color_messages: bool,
 	pub std_enabled: bool,
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
@@ -43,6 +44,7 @@ pub fn parse_arguments() -> CliArguments {
 	let mut cli_arguments = CliArguments {
 		project_path: None,
 		command: CompileCommand::Build,
+		color_messages: true,
 		std_enabled: true,
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LLVM,
@@ -129,6 +131,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			eprintln!("Options:");
 			eprintln!("  --help: Print this help message");
 			eprintln!("  --release: Build artifacts with optimizations enabled");
+			eprintln!("  --disable-message-color: Avoid printing messages with color highlights");
 			eprintln!("  --debug-generics: Include useful debug information when printing types");
 			eprintln!("  --debug-type-ids: Print types as their internal type id index value");
 			eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
@@ -137,6 +140,10 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 
 		Some("--release") => {
 			cli_arguments.optimize_artifacts = true;
+		}
+
+		Some("--disable-message-color") => {
+			cli_arguments.color_messages = false;
 		}
 
 		Some("--debug-generics") => {

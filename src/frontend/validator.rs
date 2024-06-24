@@ -424,8 +424,10 @@ pub fn validate<'a>(
 				}
 
 				if messages.any_messages() {
+					let supports_color = cli_arguments.color_messages;
 					let mut stderr = stderr.lock();
-					messages.print_messages(stderr.deref_mut(), "Parallel Validation");
+					let mut output = StderrOutput { supports_color, stderr: stderr.deref_mut() };
+					messages.print_messages(&mut output, "Parallel Validation");
 				}
 
 				if !is_test && !cfg!(feature = "measure-lock-contention") {
