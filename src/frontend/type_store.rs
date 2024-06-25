@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -13,7 +11,7 @@ use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::{self, FieldAttribute, Node};
 use crate::lock::RwLock;
-use crate::reference::Ref;
+use crate::reference::{Ref, SliceRef};
 
 // TODO: This should probably be a u64
 #[derive(Debug, Clone, Copy, Hash)]
@@ -214,7 +212,7 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct EnumShape<'a> {
 	pub been_filled: bool,
-	pub shared_fields: Arc<[Node<FieldShape<'a>>]>,
+	pub shared_fields: SliceRef<Node<FieldShape<'a>>>,
 
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
 	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
@@ -227,7 +225,7 @@ impl<'a> EnumShape<'a> {
 	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: FxHashMap<&'a str, usize>) -> Self {
 		EnumShape {
 			been_filled: false,
-			shared_fields: Arc::new([]),
+			shared_fields: SliceRef::new_empty(),
 			variant_shapes,
 			variant_shapes_by_name,
 			specializations_by_type_arguments: FxHashMap::default(),
@@ -565,7 +563,7 @@ pub struct TypeStore<'a> {
 	pub debug_generics: bool,
 	pub debug_type_ids: bool,
 
-	pub primative_type_symbols: Arc<[Symbol<'a>]>,
+	pub primative_type_symbols: SliceRef<Symbol<'a>>,
 
 	pub type_entries: TypeEntries,
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
@@ -649,7 +647,7 @@ impl<'a> TypeStore<'a> {
 		let mut type_store = TypeStore {
 			debug_generics,
 			debug_type_ids,
-			primative_type_symbols: Arc::from(primative_type_symbols),
+			primative_type_symbols: SliceRef::from(primative_type_symbols),
 			type_entries,
 			user_types: Ref::new(RwLock::new(Vec::new())),
 			user_type_generate_order: Ref::new(RwLock::new(Vec::new())),

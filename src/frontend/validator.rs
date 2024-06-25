@@ -1,5 +1,4 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
 
 use bumpalo_herd::Herd;
 use rustc_hash::FxHashMap;
@@ -17,7 +16,7 @@ use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribut
 use crate::frontend::tree::{MethodAttribute, Node};
 use crate::frontend::type_store::*;
 use crate::lock::RwLock;
-use crate::reference::Ref;
+use crate::reference::{Ref, SliceRef};
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
@@ -1299,7 +1298,7 @@ fn fill_block_enum<'a>(
 
 		UserTypeKind::Enum { shape } => {
 			assert!(shape.shared_fields.is_empty());
-			shape.shared_fields = Arc::from(shared_fields);
+			shape.shared_fields = SliceRef::from(shared_fields);
 			shape.variant_shapes = variant_shapes;
 			assert!(!shape.been_filled);
 			shape.been_filled = true;
@@ -1874,7 +1873,7 @@ fn create_block_functions<'a>(
 				c_varargs,
 				return_type,
 				block: None,
-				generic_usages: Arc::new([]),
+				generic_usages: SliceRef::new_empty(),
 				specializations_by_type_arguments: FxHashMap::default(),
 				specializations: Vec::new(),
 			};
@@ -2280,7 +2279,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 	let mut shape = lock.write();
 	assert!(shape.generic_usages.is_empty());
-	shape.generic_usages = Arc::from(generic_usages);
+	shape.generic_usages = SliceRef::from(generic_usages);
 
 	let type_parameters_iter = shape.generic_parameters.explicit_parameters().iter();
 	let type_parameter_span = type_parameters_iter.fold(None, |sum, p| match sum {
