@@ -8,6 +8,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::span::Span;
 use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
+use crate::reference::Ref;
 
 #[derive(Debug, Copy, Clone)]
 pub struct GenericParameter<'a> {
@@ -73,11 +74,11 @@ impl<'a> GenericParameters<'a> {
 #[derive(Debug, Clone)]
 pub enum GenericUsage {
 	UserType {
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 		shape_index: usize,
 	},
 	Function {
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 		function_shape_index: usize,
 	},
 }
@@ -116,7 +117,7 @@ impl GenericUsage {
 					generic_usages,
 					*shape_index,
 					None,
-					Arc::new(specialized_type_arguments),
+					Ref::new(specialized_type_arguments),
 				);
 			}
 
@@ -141,7 +142,7 @@ impl GenericUsage {
 					module_path,
 					generic_usages,
 					*usage_function_shape_index,
-					Arc::new(type_arguments),
+					Ref::new(type_arguments),
 					invoke_span,
 				);
 			}
@@ -166,10 +167,10 @@ pub struct FunctionShape<'a> {
 	pub parameters: Vec<ParameterShape>,
 	pub c_varargs: bool,
 	pub return_type: TypeId,
-	pub block: Option<Arc<Block<'a>>>,
+	pub block: Option<Ref<Block<'a>>>,
 	pub generic_usages: Arc<[GenericUsage]>,
 
-	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
+	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Function>,
 }
 
@@ -276,7 +277,7 @@ impl TypeArguments {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-	pub type_arguments: Arc<TypeArguments>,
+	pub type_arguments: Ref<TypeArguments>,
 	pub generic_poisoned: bool,
 	pub parameters: Vec<Parameter>,
 	pub return_type: TypeId,

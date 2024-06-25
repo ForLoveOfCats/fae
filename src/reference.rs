@@ -1,0 +1,109 @@
+use std::boxed::Box;
+use std::hash::Hash;
+use std::ops::Deref;
+use std::ptr::NonNull;
+
+#[cfg(feature = "measure-lock-contention")]
+use std::alloc;
+#[cfg(feature = "measure-lock-contention")]
+use std::mem::transmute;
+#[cfg(feature = "measure-lock-contention")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Debug)]
+pub struct Ref<T> {
+	pointer: NonNull<RefAllocated<T>>,
+}
+
+unsafe impl<T: Sync + Send> Send for Ref<T> {}
+unsafe impl<T: Sync + Send> Sync for Ref<T> {}
+
+struct RefAllocated<T> {
+	#[cfg(feature = "measure-lock-contention")]
+	reference_count: AtomicUsize,
+	data: T,
+}
+
+impl<T> Clone for Ref<T> {
+	#[inline]
+	fn clone(&self) -> Self {
+		#[cfg(feature = "measure-lock-contention")]
+		self.allocated().reference_count.fetch_add(1, Ordering::Relaxed);
+		Self { pointer: self.pointer }
+	}
+}
+
+impl<T: PartialEq> PartialEq for Ref<T> {
+	#[inline]
+	fn eq(&self, other: &Ref<T>) -> bool {
+		self.allocated().data.eq(&other.allocated().data)
+	}
+
+	#[inline]
+	fn ne(&self, other: &Ref<T>) -> bool {
+		self.allocated().data.ne(&other.allocated().data)
+	}
+}
+
+impl<T: Eq> Eq for Ref<T> {}
+
+impl<T: Hash> Hash for Ref<T> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.allocated().data.hash(state)
+	}
+}
+
+impl<T> Deref for Ref<T> {
+	type Target = T;
+
+	#[inline]
+	fn deref(&self) -> &T {
+		&self.allocated().data
+	}
+}
+
+impl<T> AsRef<T> for Ref<T> {
+	fn as_ref(&self) -> &T {
+		&**self
+	}
+}
+
+impl<T> std::borrow::Borrow<T> for Ref<T> {
+	fn borrow(&self) -> &T {
+		&**self
+	}
+}
+
+impl<T> Ref<T> {
+	#[inline]
+	pub fn new(data: T) -> Ref<T> {
+		let boxed = Box::new(RefAllocated {
+			#[cfg(feature = "measure-lock-contention")]
+			reference_count: AtomicUsize::new(1),
+			data,
+		});
+		Ref { pointer: Box::leak(boxed).into() }
+	}
+
+	#[inline]
+	fn allocated(&self) -> &RefAllocated<T> {
+		unsafe { self.pointer.as_ref() }
+	}
+}
+
+#[cfg(feature = "measure-lock-contention")]
+impl<T> Drop for Ref<T> {
+	fn drop(&mut self) {
+		if self.allocated().reference_count.fetch_sub(1, Ordering::Release) != 1 {
+			return;
+		}
+
+		std::sync::atomic::fence(Ordering::Acquire);
+
+		unsafe {
+			std::ptr::drop_in_place(self.pointer.as_ptr());
+			let layout = alloc::Layout::for_value::<RefAllocated<T>>(transmute(self.pointer.as_ptr()));
+			alloc::dealloc(self.pointer.as_ptr() as _, layout);
+		}
+	}
+}

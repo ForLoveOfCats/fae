@@ -11,6 +11,7 @@ mod codegen;
 mod color;
 mod frontend;
 mod lock;
+mod reference;
 mod test;
 
 use std::os::unix::process::ExitStatusExt;
