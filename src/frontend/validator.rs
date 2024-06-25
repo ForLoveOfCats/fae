@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use bumpalo_herd::Herd;
 use rustc_hash::FxHashMap;
 
@@ -256,7 +254,7 @@ pub fn validate<'a>(
 	cli_arguments: &'a CliArguments,
 	is_test: bool,
 	herd: &'a Herd,
-	messages: &mut Messages<'a>,
+	root_messages: &mut RootMessages<'a>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -274,10 +272,10 @@ pub fn validate<'a>(
 		type_shape_indicies.push(Vec::new());
 	}
 
-	create_root_types(messages, type_store, root_layers, parsed_files, type_shape_indicies.as_mut_slice());
-	resolve_root_type_imports(cli_arguments, &herd_member, messages, root_layers, parsed_files);
+	create_root_types(root_messages, type_store, root_layers, parsed_files, type_shape_indicies.as_mut_slice());
+	resolve_root_type_imports(cli_arguments, &herd_member, root_messages, root_layers, parsed_files);
 	fill_root_types(
-		messages,
+		root_messages,
 		type_store,
 		function_store,
 		root_layers,
@@ -292,7 +290,7 @@ pub fn validate<'a>(
 
 	let mut readables = Readables::new();
 	create_root_functions(
-		messages,
+		root_messages,
 		lang_items,
 		root_layers,
 		type_store,
@@ -308,7 +306,7 @@ pub fn validate<'a>(
 	validate_root_consts(
 		cli_arguments,
 		&herd_member,
-		messages,
+		root_messages,
 		lang_items,
 		root_layers,
 		type_store,
@@ -325,7 +323,7 @@ pub fn validate<'a>(
 	validate_root_statics(
 		cli_arguments,
 		&herd_member,
-		messages,
+		root_messages,
 		lang_items,
 		root_layers,
 		type_store,
@@ -345,16 +343,15 @@ pub fn validate<'a>(
 	let type_store: &TypeStore = type_store;
 
 	let parsed_files = crate::lock::parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
-	let stderr = crate::lock::parking_lot::Mutex::new(std::io::stderr());
+	let root_messages = crate::lock::parking_lot::Mutex::new(root_messages);
 
 	std::thread::scope(|scope| {
 		for _ in 0..6 {
 			let parsed_files = &parsed_files;
-			let mut messages = messages.fork();
 			let mut type_store = type_store.clone();
 			let externs = &externs;
 			let constants = &constants;
-			let stderr = &stderr;
+			let root_messages = &root_messages;
 
 			scope.spawn(move || {
 				set_thread_name!("validator thread");
@@ -385,6 +382,7 @@ pub fn validate<'a>(
 
 					let mut next_scope_index = 1;
 					let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+					let mut messages = Messages::new(parsed_file.module_path);
 					let context = Context {
 						cli_arguments,
 						herd_member: &herd_member,
@@ -421,13 +419,10 @@ pub fn validate<'a>(
 					validate_block(context, &parsed_file.block, true);
 
 					function_generic_usages.clear();
-				}
 
-				if messages.any_messages() {
-					let supports_color = cli_arguments.color_messages;
-					let mut stderr = stderr.lock();
-					let mut output = StderrOutput { supports_color, stderr: stderr.deref_mut() };
-					messages.print_messages(&mut output, "Parallel Validation");
+					if messages.any_messages() {
+						root_messages.lock().add_messages_if_any(messages);
+					}
 				}
 
 				if !is_test && !cfg!(feature = "measure-lock-contention") {
@@ -438,13 +433,12 @@ pub fn validate<'a>(
 	});
 
 	if function_store.main.read().is_none() {
-		let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
-		messages.message(error);
+		root_messages.lock().mark_main_missing();
 	}
 }
 
 fn create_root_types<'a>(
-	messages: &mut Messages,
+	root_messages: &mut RootMessages<'a>,
 	type_store: &mut TypeStore<'a>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
@@ -463,8 +457,10 @@ fn create_root_types<'a>(
 		assert_eq!(importable_types_index, 0);
 		layer.symbols.scopes.push(FxHashMap::default());
 
+		let mut messages = Messages::new(parsed_file.module_path);
+
 		create_block_types(
-			messages,
+			&mut messages,
 			type_store,
 			&mut layer.symbols,
 			0,
@@ -477,13 +473,15 @@ fn create_root_types<'a>(
 		);
 
 		layer.importable_types_index = importable_types_index;
+
+		root_messages.add_messages_if_any(messages);
 	}
 }
 
 fn resolve_root_type_imports<'a>(
 	cli_arguments: &CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
-	messages: &mut Messages,
+	root_messages: &mut RootMessages<'a>,
 	root_layers: &mut RootLayers<'a>,
 	parsed_files: &[tree::File<'a>],
 ) {
@@ -491,12 +489,14 @@ fn resolve_root_type_imports<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.symbols.clone(); // Belch
 
+		let mut messages = Messages::new(parsed_file.module_path);
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
+
 		resolve_block_type_imports(
 			cli_arguments,
 			herd_member,
-			messages,
+			&mut messages,
 			root_layers,
 			&mut symbols,
 			module_path,
@@ -506,11 +506,13 @@ fn resolve_root_type_imports<'a>(
 		);
 
 		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
+
+		root_messages.add_messages_if_any(messages);
 	}
 }
 
 fn fill_root_types<'a>(
-	messages: &mut Messages<'a>,
+	root_messages: &mut RootMessages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	root_layers: &mut RootLayers<'a>,
@@ -524,9 +526,10 @@ fn fill_root_types<'a>(
 
 		// TODO: This is definitely wrong
 		let mut generic_usages = Vec::new();
+		let mut messages = Messages::new(parsed_file.module_path);
 
 		fill_block_types(
-			messages,
+			&mut messages,
 			type_store,
 			function_store,
 			&mut generic_usages,
@@ -540,11 +543,13 @@ fn fill_root_types<'a>(
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		layer.symbols = symbols;
+
+		root_messages.add_messages_if_any(messages);
 	}
 }
 
 fn create_root_functions<'a>(
-	messages: &mut Messages<'a>,
+	root_messages: &mut RootMessages<'a>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -568,8 +573,10 @@ fn create_root_functions<'a>(
 		assert_eq!(importable_functions_index, 1);
 		symbols.scopes.push(FxHashMap::default());
 
+		let mut messages = Messages::new(parsed_file.module_path);
+
 		create_block_functions(
-			messages,
+			&mut messages,
 			lang_items,
 			root_layers,
 			type_store,
@@ -588,13 +595,15 @@ fn create_root_functions<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		layer.importable_functions_index = importable_functions_index;
 		layer.symbols = symbols;
+
+		root_messages.add_messages_if_any(messages);
 	}
 }
 
 fn validate_root_consts<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
-	messages: &mut Messages<'a>,
+	root_messages: &mut RootMessages<'a>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -623,6 +632,7 @@ fn validate_root_consts<'a>(
 
 		let mut next_scope_index = 1;
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let mut messages = Messages::new(parsed_file.module_path);
 		let mut context = Context {
 			cli_arguments,
 			herd_member,
@@ -630,7 +640,7 @@ fn validate_root_consts<'a>(
 			module_path,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
-			messages,
+			messages: &mut messages,
 			type_shape_indicies,
 			type_store,
 			function_store,
@@ -666,13 +676,15 @@ fn validate_root_consts<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		layer.importable_consts_index = importable_consts_index;
 		layer.symbols = symbols;
+
+		root_messages.add_messages_if_any(messages);
 	}
 }
 
 fn validate_root_statics<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
-	messages: &mut Messages<'a>,
+	root_messages: &mut RootMessages<'a>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &mut RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
@@ -701,6 +713,7 @@ fn validate_root_statics<'a>(
 
 		let mut next_scope_index = 1;
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let mut messages = Messages::new(parsed_file.module_path);
 		let mut context = Context {
 			cli_arguments,
 			herd_member,
@@ -708,7 +721,7 @@ fn validate_root_statics<'a>(
 			module_path,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
-			messages,
+			messages: &mut messages,
 			type_shape_indicies,
 			type_store,
 			function_store,
@@ -744,6 +757,8 @@ fn validate_root_statics<'a>(
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		layer.importable_statics_index = importable_statics_index;
 		layer.symbols = symbols;
+
+		root_messages.add_messages_if_any(messages);
 	}
 }
 

@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::cli::{CliArguments, CodegenBackend, CompileCommand};
 use crate::codegen::llvm;
-use crate::frontend::error::{Messages, WriteFmt};
+use crate::frontend::error::{Messages, RootMessages, WriteFmt};
 use crate::frontend::file::{load_all_files, load_single_file};
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
@@ -100,7 +100,7 @@ pub fn build_project(
 
 	let mut any_errors = false;
 	let mut any_messages = false;
-	let mut messages = Messages::new(&files);
+	let mut root_messages = RootMessages::new(&files);
 
 	//Parallelizable
 	let bump = bumpalo::Bump::new();
@@ -109,8 +109,10 @@ pub fn build_project(
 	let mut tokens_vec = Vec::new();
 	for file in &files {
 		let mut tokenizer = Tokenizer::new(file.index, &file.source);
+		let mut messages = Messages::new(&file.module_path);
 		let mut tokens = tokenizer.tokenize(std::mem::take(&mut tokens_vec), &mut messages);
 		parsed_files.push(parse_file(&bump, &mut messages, &mut tokens, file));
+		root_messages.add_messages_if_any(messages);
 		tokens_vec = tokens.tear_down();
 	}
 
@@ -127,10 +129,10 @@ pub fn build_project(
 		return BuiltProject { binary_path: None, any_messages, any_errors };
 	}
 
-	any_errors |= messages.any_errors();
-	any_messages |= messages.any_messages();
-	messages.print_messages(message_output, "Parse");
-	messages.reset();
+	any_errors |= root_messages.any_errors();
+	any_messages |= root_messages.any_messages();
+	root_messages.print_messages(message_output, "Parse");
+	root_messages.reset();
 
 	// TODO: Remove this once confident about order independence
 	// Make sure to remove the rand dependency while at it
@@ -150,7 +152,7 @@ pub fn build_project(
 		cli_arguments,
 		is_test,
 		&herd,
-		&mut messages,
+		&mut root_messages,
 		&lang_items,
 		&mut root_layers,
 		&mut type_store,
@@ -159,10 +161,10 @@ pub fn build_project(
 		&parsed_files,
 	);
 
-	any_errors |= messages.any_errors();
-	any_messages |= messages.any_messages();
-	messages.print_messages(message_output, "Validation");
-	messages.reset();
+	any_errors |= root_messages.any_errors();
+	any_messages |= root_messages.any_messages();
+	root_messages.print_messages(message_output, "Validation");
+	root_messages.reset();
 	if any_errors {
 		if !is_test && !cfg!(feature = "measure-lock-contention") {
 			std::mem::forget(function_store);
@@ -191,10 +193,11 @@ pub fn build_project(
 
 	//Not parallelizable
 	let codegen_start = Instant::now();
+	let mut codegen_messages = Messages::new(&[]);
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => llvm::driver::generate_code(
 			cli_arguments,
-			&mut messages,
+			&mut codegen_messages,
 			&lang_items.read(),
 			&mut type_store,
 			&function_store, // TODO: Avoid having single threaded generation pay the rwlock cost
@@ -205,9 +208,7 @@ pub fn build_project(
 		message_output.alertln("    Finished codegen", format_args!("took {} ms", codegen_start.elapsed().as_millis()));
 	}
 
-	assert!(!messages.any_errors());
-	any_errors |= messages.any_errors();
-	any_messages |= messages.any_messages();
+	assert!(!codegen_messages.any_messages());
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("        Built binary", format_args!("{}", binary_path.display()));
