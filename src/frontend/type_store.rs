@@ -213,7 +213,7 @@ pub struct Field<'a> {
 #[derive(Debug)]
 pub struct EnumShape<'a> {
 	pub been_filled: bool,
-	pub shared_fields: Arc<Vec<Node<FieldShape<'a>>>>,
+	pub shared_fields: Arc<[Node<FieldShape<'a>>]>,
 
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
 	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
@@ -226,7 +226,7 @@ impl<'a> EnumShape<'a> {
 	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: FxHashMap<&'a str, usize>) -> Self {
 		EnumShape {
 			been_filled: false,
-			shared_fields: Arc::new(Vec::new()),
+			shared_fields: Arc::new([]),
 			variant_shapes,
 			variant_shapes_by_name,
 			specializations_by_type_arguments: FxHashMap::default(),
@@ -564,7 +564,7 @@ pub struct TypeStore<'a> {
 	pub debug_generics: bool,
 	pub debug_type_ids: bool,
 
-	pub primative_type_symbols: Arc<Vec<Symbol<'a>>>,
+	pub primative_type_symbols: Arc<[Symbol<'a>]>,
 
 	pub type_entries: TypeEntries,
 	pub user_types: Arc<RwLock<Vec<Arc<RwLock<UserType<'a>>>>>>,
@@ -648,7 +648,7 @@ impl<'a> TypeStore<'a> {
 		let mut type_store = TypeStore {
 			debug_generics,
 			debug_type_ids,
-			primative_type_symbols: Arc::new(primative_type_symbols),
+			primative_type_symbols: Arc::from(primative_type_symbols),
 			type_entries,
 			user_types: Arc::new(RwLock::new(Vec::new())),
 			user_type_generate_order: Arc::new(RwLock::new(Vec::new())),
