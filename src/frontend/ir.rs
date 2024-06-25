@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
@@ -8,7 +7,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::span::Span;
 use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
-use crate::reference::Ref;
+use crate::reference::{Ref, SliceRef};
 
 #[derive(Debug, Copy, Clone)]
 pub struct GenericParameter<'a> {
@@ -168,7 +167,7 @@ pub struct FunctionShape<'a> {
 	pub c_varargs: bool,
 	pub return_type: TypeId,
 	pub block: Option<Ref<Block<'a>>>,
-	pub generic_usages: Arc<[GenericUsage]>,
+	pub generic_usages: SliceRef<GenericUsage>,
 
 	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Function>,

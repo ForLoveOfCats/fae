@@ -29,6 +29,7 @@ impl<T> Clone for Ref<T> {
 	fn clone(&self) -> Self {
 		#[cfg(feature = "measure-lock-contention")]
 		self.allocated().reference_count.fetch_add(1, Ordering::Relaxed);
+
 		Self { pointer: self.pointer }
 	}
 }
@@ -76,7 +77,7 @@ impl<T> std::borrow::Borrow<T> for Ref<T> {
 
 impl<T> Ref<T> {
 	#[inline]
-	pub fn new(data: T) -> Ref<T> {
+	pub fn new(data: T) -> Self {
 		let boxed = Box::new(RefAllocated {
 			#[cfg(feature = "measure-lock-contention")]
 			reference_count: AtomicUsize::new(1),
@@ -105,5 +106,130 @@ impl<T> Drop for Ref<T> {
 			let layout = alloc::Layout::for_value::<RefAllocated<T>>(transmute(self.pointer.as_ptr()));
 			alloc::dealloc(self.pointer.as_ptr() as _, layout);
 		}
+	}
+}
+
+#[derive(Debug)]
+pub struct SliceRef<T> {
+	#[cfg(feature = "measure-lock-contention")]
+	reference_count_pointer: NonNull<AtomicUsize>,
+	data: NonNull<[T]>,
+}
+
+unsafe impl<T: Sync + Send> Send for SliceRef<T> {}
+unsafe impl<T: Sync + Send> Sync for SliceRef<T> {}
+
+impl<T> Clone for SliceRef<T> {
+	#[inline]
+	fn clone(&self) -> Self {
+		#[cfg(feature = "measure-lock-contention")]
+		unsafe { self.reference_count_pointer.as_ref() }.fetch_add(1, Ordering::Relaxed);
+
+		Self {
+			#[cfg(feature = "measure-lock-contention")]
+			reference_count_pointer: self.reference_count_pointer,
+			data: self.data,
+		}
+	}
+}
+
+impl<T: PartialEq> PartialEq for SliceRef<T> {
+	#[inline]
+	fn eq(&self, other: &SliceRef<T>) -> bool {
+		self.data.eq(&other.data)
+	}
+
+	#[inline]
+	fn ne(&self, other: &SliceRef<T>) -> bool {
+		self.data.ne(&other.data)
+	}
+}
+
+impl<T: Eq> Eq for SliceRef<T> {}
+
+impl<T: Hash> Hash for SliceRef<T> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.data.hash(state)
+	}
+}
+
+impl<T> Deref for SliceRef<T> {
+	type Target = [T];
+
+	#[inline]
+	fn deref(&self) -> &[T] {
+		unsafe { self.data.as_ref() }
+	}
+}
+
+impl<T> AsRef<[T]> for SliceRef<T> {
+	fn as_ref(&self) -> &[T] {
+		&**self
+	}
+}
+
+impl<T> std::borrow::Borrow<[T]> for SliceRef<T> {
+	fn borrow(&self) -> &[T] {
+		&**self
+	}
+}
+
+#[cfg(feature = "measure-lock-contention")]
+impl<T> Drop for SliceRef<T> {
+	fn drop(&mut self) {
+		if unsafe { self.reference_count_pointer.as_ref() }.fetch_sub(1, Ordering::Release) != 1 {
+			return;
+		}
+
+		std::sync::atomic::fence(Ordering::Acquire);
+
+		if self.data.len() == 0 {
+			return;
+		}
+
+		unsafe {
+			for item in self.data.as_mut() {
+				std::ptr::drop_in_place(item);
+			}
+
+			let layout = alloc::Layout::for_value::<[T]>(transmute(self.data.as_ptr()));
+			alloc::dealloc(self.data.as_ptr() as _, layout);
+		}
+	}
+}
+
+#[cfg(feature = "measure-lock-contention")]
+impl<T> From<Vec<T>> for SliceRef<T> {
+	fn from(value: Vec<T>) -> Self {
+		let boxed = Box::new(AtomicUsize::new(1));
+		SliceRef {
+			reference_count_pointer: Box::leak(boxed).into(),
+			data: value.leak().into(),
+		}
+	}
+}
+
+impl<T> SliceRef<T> {
+	pub fn new_empty() -> Self {
+		#[cfg(feature = "measure-lock-contention")]
+		let boxed = Box::new(AtomicUsize::new(1));
+
+		let data = unsafe {
+			let pointer = NonNull::<T>::dangling().as_ptr();
+			std::slice::from_raw_parts_mut(pointer, 0)
+		};
+
+		Self {
+			#[cfg(feature = "measure-lock-contention")]
+			reference_count_pointer: Box::leak(boxed).into(),
+			data: data.into(),
+		}
+	}
+}
+
+#[cfg(not(feature = "measure-lock-contention"))]
+impl<T> From<Vec<T>> for SliceRef<T> {
+	fn from(value: Vec<T>) -> Self {
+		SliceRef { data: value.leak().into() }
 	}
 }
