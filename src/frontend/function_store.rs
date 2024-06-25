@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::frontend::error::Messages;
 use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
@@ -7,10 +5,11 @@ use crate::frontend::ir::{
 use crate::frontend::span::Span;
 use crate::frontend::type_store::TypeStore;
 use crate::lock::RwLock;
+use crate::reference::Ref;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
-	pub shapes: RwLock<Vec<Arc<RwLock<FunctionShape<'a>>>>>,
+	pub shapes: RwLock<Vec<Ref<RwLock<FunctionShape<'a>>>>>,
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
@@ -51,7 +50,7 @@ impl<'a> FunctionStore<'a> {
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 		invoke_span: Option<Span>,
 	) -> Option<FunctionSpecializationResult> {
 		let _zone = zone!("function specialization");

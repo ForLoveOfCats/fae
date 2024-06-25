@@ -17,6 +17,7 @@ use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribut
 use crate::frontend::tree::{MethodAttribute, Node};
 use crate::frontend::type_store::*;
 use crate::lock::RwLock;
+use crate::reference::Ref;
 
 #[derive(Debug)]
 pub struct Context<'a, 'b, 'c> {
@@ -1786,7 +1787,7 @@ fn create_block_functions<'a>(
 						generic_usages,
 						method_base_shape_index,
 						Some(method_attribute.span),
-						Arc::new(base_type_arguments),
+						Ref::new(base_type_arguments),
 					);
 					let type_id = match base_type {
 						Some(base_type) => type_store.pointer_to(base_type, mutable),
@@ -1877,7 +1878,7 @@ fn create_block_functions<'a>(
 				specializations_by_type_arguments: FxHashMap::default(),
 				specializations: Vec::new(),
 			};
-			function_store_shapes.push(Arc::new(RwLock::new(shape)));
+			function_store_shapes.push(Ref::new(RwLock::new(shape)));
 			drop(function_store_shapes);
 
 			local_function_shape_indicies.push(function_shape_index);
@@ -2246,7 +2247,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 	let mut shape = lock.write();
 	assert!(shape.block.is_none());
-	shape.block = Some(Arc::new(block));
+	shape.block = Some(Ref::new(block));
 
 	let mut generic_usages = context.function_generic_usages[initial_generic_usages_len..].to_vec();
 	context.function_generic_usages.truncate(initial_generic_usages_len);
@@ -2333,7 +2334,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			Arc::new(TypeArguments::new_from_explicit(Vec::new())),
+			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
 		);
 
@@ -2378,7 +2379,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			Arc::new(TypeArguments::new_from_explicit(Vec::new())),
+			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
 		);
 	} else if shape.lang_attribute.is_some() {
@@ -2394,7 +2395,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			context.module_path,
 			context.function_generic_usages,
 			function_shape_index,
-			Arc::new(TypeArguments::new_from_explicit(Vec::new())),
+			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
 		);
 	}
@@ -3187,7 +3188,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
-		Arc::new(type_arguments),
+		Ref::new(type_arguments),
 		Some(span),
 	);
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
@@ -3338,7 +3339,7 @@ fn get_method_function_specialization<'a>(
 		context.module_path,
 		context.function_generic_usages,
 		function_shape_index,
-		Arc::new(type_arguments),
+		Ref::new(type_arguments),
 		Some(span),
 	)
 }

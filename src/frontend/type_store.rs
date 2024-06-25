@@ -13,6 +13,7 @@ use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::{self, FieldAttribute, Node};
 use crate::lock::RwLock;
+use crate::reference::Ref;
 
 // TODO: This should probably be a u64
 #[derive(Debug, Clone, Copy, Hash)]
@@ -159,7 +160,7 @@ pub struct StructShape<'a> {
 	pub variant_index: Option<usize>,
 	pub is_transparent_variant: bool,
 
-	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
+	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Struct<'a>>,
 }
 
@@ -195,7 +196,7 @@ pub struct FieldShape<'a> {
 pub struct Struct<'a> {
 	pub shape_index: usize,
 	pub type_id: TypeId,
-	pub type_arguments: Arc<TypeArguments>,
+	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
 	pub fields: Vec<Field<'a>>,
 	pub layout: Option<Layout>,
@@ -218,7 +219,7 @@ pub struct EnumShape<'a> {
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
 	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
 
-	pub specializations_by_type_arguments: FxHashMap<Arc<TypeArguments>, usize>,
+	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Enum<'a>>,
 }
 
@@ -248,7 +249,7 @@ pub struct EnumVariantShape<'a> {
 pub struct Enum<'a> {
 	pub shape_index: usize,
 	pub type_id: TypeId,
-	pub type_arguments: Arc<TypeArguments>,
+	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
 	pub shared_fields: Vec<Field<'a>>,
 	pub variants: Vec<EnumVariant>,
@@ -481,7 +482,7 @@ const TYPE_ENTRY_CHUNK_MAX_LENGTH: usize = 50;
 #[derive(Debug)]
 pub struct TypeEntries {
 	local_chunks: Vec<Option<Vec<TypeEntry>>>,
-	global_chunks: Arc<RwLock<Vec<Vec<TypeEntry>>>>,
+	global_chunks: Ref<RwLock<Vec<Vec<TypeEntry>>>>,
 }
 
 // TODO: Remove this once the root pass is parallelized and we don't need to "cheap clone" anymore
@@ -499,7 +500,7 @@ impl TypeEntries {
 	fn new() -> TypeEntries {
 		TypeEntries {
 			local_chunks: Vec::new(),
-			global_chunks: Arc::new(RwLock::new(vec![Vec::with_capacity(TYPE_ENTRY_CHUNK_MAX_LENGTH)])),
+			global_chunks: Ref::new(RwLock::new(vec![Vec::with_capacity(TYPE_ENTRY_CHUNK_MAX_LENGTH)])),
 		}
 	}
 
@@ -567,8 +568,8 @@ pub struct TypeStore<'a> {
 	pub primative_type_symbols: Arc<[Symbol<'a>]>,
 
 	pub type_entries: TypeEntries,
-	pub user_types: Arc<RwLock<Vec<Arc<RwLock<UserType<'a>>>>>>,
-	pub user_type_generate_order: Arc<RwLock<Vec<UserTypeSpecializationDescription>>>,
+	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
+	pub user_type_generate_order: Ref<RwLock<Vec<UserTypeSpecializationDescription>>>,
 
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
@@ -650,8 +651,8 @@ impl<'a> TypeStore<'a> {
 			debug_type_ids,
 			primative_type_symbols: Arc::from(primative_type_symbols),
 			type_entries,
-			user_types: Arc::new(RwLock::new(Vec::new())),
-			user_type_generate_order: Arc::new(RwLock::new(Vec::new())),
+			user_types: Ref::new(RwLock::new(Vec::new())),
+			user_type_generate_order: Ref::new(RwLock::new(Vec::new())),
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -1158,7 +1159,7 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn register_type(
-		user_types: &mut Vec<Arc<RwLock<UserType<'a>>>>,
+		user_types: &mut Vec<Ref<RwLock<UserType<'a>>>>,
 		name: &'a str,
 		generic_parameters: GenericParameters<'a>,
 		kind: UserTypeKind<'a>,
@@ -1178,7 +1179,7 @@ impl<'a> TypeStore<'a> {
 			methods: FxHashMap::default(),
 			kind,
 		};
-		user_types.push(Arc::new(RwLock::new(user_type)));
+		user_types.push(Ref::new(RwLock::new(user_type)));
 
 		shape_index
 	}
@@ -1611,7 +1612,7 @@ impl<'a> TypeStore<'a> {
 			generic_usages,
 			shape_index,
 			invoke_span,
-			Arc::new(type_arguments),
+			Ref::new(type_arguments),
 		)
 	}
 
@@ -1623,7 +1624,7 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 	) -> Option<TypeId> {
 		let _zone = zone!("user type specialization");
 
@@ -1666,7 +1667,7 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 	) -> Option<TypeId> {
 		let _zone = zone!("struct specialization");
 
@@ -1773,7 +1774,7 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		enum_shape_index: usize,
 		invoke_span: Option<Span>,
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 	) -> Option<TypeId> {
 		let _zone = zone!("enum specialization");
 
@@ -1872,7 +1873,7 @@ impl<'a> TypeStore<'a> {
 					generic_usages,
 					variant_shape.struct_shape_index,
 					None,
-					Arc::new(new_struct_type_arguments),
+					Ref::new(new_struct_type_arguments),
 				)
 				.unwrap();
 
@@ -1954,7 +1955,7 @@ impl<'a> TypeStore<'a> {
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		type_shape_index: usize,
-		type_arguments: Arc<TypeArguments>,
+		type_arguments: Ref<TypeArguments>,
 		type_id: TypeId,
 	) -> TypeId {
 		let entry = self.type_entries.get(type_id);
@@ -2001,7 +2002,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							Arc::new(new_struct_type_arguments),
+							Ref::new(new_struct_type_arguments),
 						)
 						.unwrap()
 					}
@@ -2042,7 +2043,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							Arc::new(new_enum_type_arguments),
+							Ref::new(new_enum_type_arguments),
 						)
 						.unwrap()
 					}
@@ -2146,7 +2147,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							Arc::new(new_struct_type_arguments),
+							Ref::new(new_struct_type_arguments),
 						)
 						.unwrap()
 					}
@@ -2188,7 +2189,7 @@ impl<'a> TypeStore<'a> {
 							generic_usages,
 							*shape_index,
 							None,
-							Arc::new(new_enum_type_arguments),
+							Ref::new(new_enum_type_arguments),
 						)
 						.unwrap()
 					}
