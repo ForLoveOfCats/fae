@@ -9,6 +9,27 @@ pub const TABULATOR_SIZE: usize = 4;
 
 pub type ParseResult<T> = std::result::Result<T, ()>;
 
+#[macro_export]
+macro_rules! error {
+	($($arg:tt)*) => {
+		$crate::frontend::error::Message::error(format!( $($arg)* ))
+	}
+}
+
+#[macro_export]
+macro_rules! warning {
+	($($arg:tt)*) => {
+		$crate::frontend::error::Message::warning(format!( $($arg)* ))
+	}
+}
+
+#[macro_export]
+macro_rules! note {
+	($span:expr, $($arg:tt)*) => {
+		$crate::frontend::error::Note::new($span, format!( $($arg)* ))
+	}
+}
+
 pub trait WriteFmt {
 	fn supports_color(&self) -> bool;
 
@@ -92,39 +113,12 @@ impl Colors {
 pub struct Messages<'a> {
 	messages: Vec<Message>,
 	any_errors: bool,
-	sources: &'a [SourceFile],
+	module_path: &'a [String],
 }
 
 impl<'a> Messages<'a> {
-	pub fn new(sources: &'a [SourceFile]) -> Self {
-		Messages { messages: Vec::new(), any_errors: false, sources }
-	}
-
-	// TODO: REMOVE
-	pub fn fork(&self) -> Self {
-		Messages {
-			messages: Vec::new(),
-			any_errors: false,
-			sources: self.sources,
-		}
-	}
-
-	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
-		for message in &self.messages {
-			message.print(output, self.sources, stage);
-			writeln!(output);
-		}
-
-		self.messages.clear();
-	}
-
-	pub fn reset(&mut self) {
-		self.messages.clear();
-		self.any_errors = false;
-	}
-
-	pub fn any_errors(&self) -> bool {
-		self.any_errors
+	pub fn new(module_path: &'a [String]) -> Self {
+		Messages { messages: Vec::new(), any_errors: false, module_path }
 	}
 
 	pub fn any_messages(&self) -> bool {
@@ -134,6 +128,73 @@ impl<'a> Messages<'a> {
 	pub fn message(&mut self, message: Message) {
 		self.any_errors |= message.kind == MessageKind::Error;
 		self.messages.push(message);
+	}
+}
+
+#[derive(Debug)]
+pub struct RootMessages<'a> {
+	file_messages: Vec<Messages<'a>>,
+	missing_main: bool,
+	any_errors: bool,
+	sources: &'a [SourceFile],
+}
+
+impl<'a> RootMessages<'a> {
+	pub fn new(sources: &'a [SourceFile]) -> Self {
+		RootMessages {
+			file_messages: Vec::new(),
+			missing_main: false,
+			any_errors: false,
+			sources,
+		}
+	}
+
+	pub fn mark_main_missing(&mut self) {
+		self.missing_main = true;
+		self.any_errors = true;
+	}
+
+	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
+		// Very important that this be a stable sort as different passes in the validator
+		// can emit separate message packages for the same file and we need to maintain
+		// their relative order
+		self.file_messages.sort_by(|a, b| a.module_path.cmp(&b.module_path));
+
+		for file_messages in &self.file_messages {
+			for message in &file_messages.messages {
+				message.print(output, self.sources, stage);
+				writeln!(output);
+			}
+		}
+
+		if self.missing_main {
+			let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
+			error.print(output, self.sources, stage);
+			writeln!(output);
+		}
+
+		self.file_messages.clear();
+	}
+
+	pub fn reset(&mut self) {
+		self.file_messages.clear();
+		self.missing_main = false;
+		self.any_errors = false;
+	}
+
+	pub fn any_errors(&self) -> bool {
+		self.any_errors
+	}
+
+	pub fn any_messages(&self) -> bool {
+		!self.file_messages.is_empty() || self.missing_main
+	}
+
+	pub fn add_messages_if_any(&mut self, messages: Messages<'a>) {
+		if messages.any_messages() {
+			self.any_errors |= messages.any_errors;
+			self.file_messages.push(messages);
+		}
 	}
 }
 
@@ -302,20 +363,6 @@ impl Message {
 	}
 }
 
-#[macro_export]
-macro_rules! error {
-	($($arg:tt)*) => {
-		$crate::frontend::error::Message::error(format!( $($arg)* ))
-	}
-}
-
-#[macro_export]
-macro_rules! warning {
-	($($arg:tt)*) => {
-		$crate::frontend::error::Message::warning(format!( $($arg)* ))
-	}
-}
-
 #[derive(Debug)]
 pub struct Note {
 	text: String,
@@ -329,13 +376,6 @@ impl Note {
 
 	pub fn maybe_new(text: &str, span: Option<Span>) -> Option<Note> {
 		Some(Note { text: text.to_owned(), span: span? })
-	}
-}
-
-#[macro_export]
-macro_rules! note {
-	($span:expr, $($arg:tt)*) => {
-		$crate::frontend::error::Note::new($span, format!( $($arg)* ))
 	}
 }
 
