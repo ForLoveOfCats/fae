@@ -1,10 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "upstream-parking-lot")]
-pub use parking_lot_upstream as parking_lot;
+use parking_lot_upstream as parking_lot;
 
 #[cfg(feature = "measure-lock-contention")]
-pub use parking_lot_contention as parking_lot;
+use parking_lot_contention as parking_lot;
 
 #[derive(Debug)]
 pub struct RwLock<T> {
