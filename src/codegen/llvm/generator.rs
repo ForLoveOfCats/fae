@@ -344,7 +344,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
 					let specialization = &shape.specializations[description.specialization_index];
-					for field in &specialization.fields {
+					for field in specialization.fields.iter() {
 						let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
 						field_types_buffer.push(llvm_type);
 					}

@@ -126,7 +126,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 			let mut combine_size = 0;
 			let mut buffer_index = 0;
 
-			for field in &specialization.fields {
+			for field in specialization.fields.iter() {
 				let field_layout = type_store.type_layout(field.type_id);
 				if field_layout.size <= 0 {
 					continue;
