@@ -134,12 +134,6 @@ pub fn build_project(
 	root_messages.print_messages(message_output, "Parse");
 	root_messages.reset();
 
-	// TODO: Remove this once confident about order independence
-	// Make sure to remove the rand dependency while at it
-	// use rand::prelude::*;
-	// parsed_files.shuffle(&mut rand::thread_rng());
-	// parsed_files.sort_by(|a, b| a.module_path.cmp(b.module_path));
-
 	//Partially parallelizable
 	let validate_start = Instant::now();
 	let herd = bumpalo_herd::Herd::new();
