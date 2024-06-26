@@ -27,22 +27,6 @@ impl<'a> FunctionStore<'a> {
 		}
 	}
 
-	fn get_specialization(
-		&self,
-		function_shape_index: usize,
-		type_arguments: &TypeArguments,
-	) -> Option<FunctionSpecializationResult> {
-		let lock = self.shapes.read()[function_shape_index].clone();
-		let shape = lock.read();
-
-		if let Some(&specialization_index) = shape.specializations_by_type_arguments.get(type_arguments) {
-			let return_type = shape.specializations[specialization_index].return_type;
-			return Some(FunctionSpecializationResult { specialization_index, return_type });
-		}
-
-		None
-	}
-
 	pub fn get_or_add_specialization(
 		&self,
 		messages: &mut Messages<'a>,
@@ -56,7 +40,7 @@ impl<'a> FunctionStore<'a> {
 		let _zone = zone!("function specialization");
 
 		let lock = self.shapes.read()[function_shape_index].clone();
-		let shape = lock.read();
+		let mut shape = lock.write();
 
 		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
 			let expected = shape.generic_parameters.explicit_len();
@@ -69,10 +53,9 @@ impl<'a> FunctionStore<'a> {
 		assert_eq!(shape.generic_parameters.implicit_len(), type_arguments.implicit_len);
 		assert_eq!(shape.generic_parameters.method_base_len(), type_arguments.method_base_len);
 
-		drop(shape);
-
-		if let Some(result) = self.get_specialization(function_shape_index, &type_arguments) {
-			return Some(result);
+		if let Some(&specialization_index) = shape.specializations_by_type_arguments.get(&type_arguments) {
+			let return_type = shape.specializations[specialization_index].return_type;
+			return Some(FunctionSpecializationResult { specialization_index, return_type });
 		}
 
 		let generic_poisoned = type_arguments
@@ -80,10 +63,8 @@ impl<'a> FunctionStore<'a> {
 			.iter()
 			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
 
-		let shape = lock.read();
 		let unspecialized_return_type = shape.return_type;
 		let parameters = shape.parameters.clone();
-		drop(shape);
 
 		let parameters = parameters
 			.iter()
@@ -114,7 +95,6 @@ impl<'a> FunctionStore<'a> {
 			unspecialized_return_type,
 		);
 
-		let mut shape = lock.write();
 		let specialization_index = shape.specializations.len();
 		let concrete = Function {
 			type_arguments: type_arguments.clone(),
@@ -188,16 +168,14 @@ impl<'a> FunctionStore<'a> {
 			caller_shape_index,
 			caller_type_arguments,
 		);
-		drop(shape);
-
-		let result = self
-			.get_specialization(function_id.function_shape_index, &type_arguments)
-			.unwrap();
 		assert!(generic_usages.is_empty());
+
+		let &specialization_index = shape.specializations_by_type_arguments.get(&type_arguments).unwrap();
+		drop(shape);
 
 		FunctionId {
 			function_shape_index: function_id.function_shape_index,
-			specialization_index: result.specialization_index,
+			specialization_index,
 		}
 	}
 }
