@@ -1507,7 +1507,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 		assert!(!specialization.been_filled);
 		specialization.been_filled;
 		assert_eq!(specialization.fields.len(), 0);
-		specialization.fields = fields;
+		specialization.fields = SliceRef::from(fields);
 	}
 
 	let mut user_type = lock.write();
@@ -1573,7 +1573,8 @@ fn fill_pre_existing_enum_specializations<'a>(
 		specialization.been_filled;
 		assert_eq!(specialization.variants_by_name.len(), 0);
 
-		for field in &mut specialization.shared_fields {
+		let mut shared_fields = specialization.shared_fields.to_vec();
+		for field in &mut shared_fields {
 			field.type_id = type_store.specialize_with_user_type_generics(
 				messages,
 				function_store,
@@ -1584,8 +1585,10 @@ fn fill_pre_existing_enum_specializations<'a>(
 				field.type_id,
 			);
 		}
+		specialization.shared_fields = SliceRef::from(shared_fields);
 
-		for variant in &mut specialization.variants {
+		let mut variants = specialization.variants.to_vec();
+		for variant in &mut variants {
 			variant.type_id = type_store.specialize_with_user_type_generics(
 				messages,
 				function_store,
@@ -1596,6 +1599,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 				variant.type_id,
 			);
 		}
+		specialization.variants = SliceRef::from(variants);
 	}
 
 	let mut user_type = lock.write();
@@ -2786,12 +2790,16 @@ fn validate_match_expression<'a>(
 			UserTypeKind::Struct { .. } => unreachable!(),
 		};
 
+		let variants = enum_specialization.variants.clone();
+		let variants_by_name = enum_specialization.variants_by_name.clone();
+		drop(user_type);
+
 		let mut variant_infos = Vec::with_capacity(arm.variant_names.len());
 
 		for variant_name in arm.variant_names {
-			let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
+			let (variant_type_id, variant_index) = match variants_by_name.get(variant_name.item) {
 				Some(&variant_index) => {
-					let variant = &enum_specialization.variants[variant_index];
+					let variant = &variants[variant_index];
 					(variant.type_id, variant_index)
 				}
 
@@ -2814,8 +2822,6 @@ fn validate_match_expression<'a>(
 			}
 			encountered_variants[variant_index] = Some(variant_name.span);
 		}
-
-		drop(user_type);
 
 		let binding_name = if let Some(binding_name) = arm.binding_name {
 			Some(binding_name)
@@ -2884,9 +2890,11 @@ fn validate_match_expression<'a>(
 		UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
 		UserTypeKind::Struct { .. } => unreachable!(),
 	};
+	let variants = enum_specialization.variants.clone();
+	drop(user_type);
 
 	let mut all_variants_covered = true;
-	for (variant_index, variant) in enum_specialization.variants.iter().enumerate() {
+	for (variant_index, variant) in variants.iter().enumerate() {
 		if encountered_variants[variant_index].is_none() {
 			all_variants_covered = false;
 			if else_arm.is_some() {
@@ -2898,8 +2906,6 @@ fn validate_match_expression<'a>(
 			context.messages.message(error.span(span));
 		}
 	}
-
-	drop(user_type);
 
 	if let Some(else_arm) = &match_expression.else_arm {
 		if all_variants_covered {
@@ -3875,16 +3881,18 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 					if let Some(method_base_index) = context.method_base_index {
 						external_access = method_base_index != shape_index;
 					}
-					let fields = &shape.specializations[specialization_index].fields;
-					return handle_fields(context, dot_access, base, mutable, fields, external_access, span);
+					let fields = shape.specializations[specialization_index].fields.clone();
+					drop(user_type);
+					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
 				}
 
 				UserTypeKind::Enum { shape } => {
 					if let Some(method_base_index) = context.method_base_index {
 						external_access = method_base_index != shape_index;
 					}
-					let fields = &shape.specializations[specialization_index].shared_fields;
-					return handle_fields(context, dot_access, base, mutable, fields, external_access, span);
+					let fields = shape.specializations[specialization_index].shared_fields.clone();
+					drop(user_type);
+					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
 				}
 			}
 		}
@@ -3960,17 +3968,22 @@ fn validate_inferred_enum<'a>(
 	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
 		let lock = context.type_store.user_types.read()[shape_index].clone();
 		let user_type = lock.read();
+
 		if let UserTypeKind::Enum { shape } = &user_type.kind {
 			let specialization = &shape.specializations[specialization_index];
-			let Some(&variant_index) = specialization.variants_by_name.get(inferred_enum.name.item) else {
-				let type_id = specialization.type_id;
-				let expected = context.type_name(type_id);
+			let specialization_type_id = specialization.type_id;
+			let variants = specialization.variants.clone();
+			let variants_by_name = specialization.variants_by_name.clone();
+			drop(user_type);
+
+			let Some(&variant_index) = variants_by_name.get(inferred_enum.name.item) else {
+				let expected = context.type_name(specialization_type_id);
 				let error = error!("Expected enum {expected} has no variant named `{}`", inferred_enum.name.item);
 				context.messages.message(error.span(inferred_enum.name.span));
 				return Expression::any_collapse(context.type_store, span);
 			};
 
-			let variant = specialization.variants[variant_index];
+			let variant = variants[variant_index];
 			let type_id = variant.type_id;
 
 			let mut returns = false;
@@ -4720,17 +4733,21 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let mut encountered_variants = Vec::<Option<Span>>::with_capacity(enum_specialization.variants_by_name.len());
-	for _ in 0..enum_specialization.variants_by_name.len() {
+	let variants = enum_specialization.variants.clone();
+	let variants_by_name = enum_specialization.variants_by_name.clone();
+	drop(user_type);
+
+	let mut encountered_variants = Vec::<Option<Span>>::with_capacity(variants_by_name.len());
+	for _ in 0..variants_by_name.len() {
 		encountered_variants.push(None);
 	}
 
 	let mut variant_infos = Vec::with_capacity(check.variant_names.len());
 
 	for variant_name in check.variant_names {
-		let (variant_type_id, variant_index) = match enum_specialization.variants_by_name.get(variant_name.item) {
+		let (variant_type_id, variant_index) = match variants_by_name.get(variant_name.item) {
 			Some(&variant_index) => {
-				let variant = &enum_specialization.variants[variant_index];
+				let variant = &variants[variant_index];
 				(variant.type_id, variant_index)
 			}
 
@@ -4753,8 +4770,6 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		}
 		encountered_variants[variant_index] = Some(variant_name.span);
 	}
-
-	drop(user_type);
 
 	let binding_name = if !context.can_is_bind {
 		if let Some(binding_name) = check.binding_name {

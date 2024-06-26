@@ -196,7 +196,7 @@ pub struct Struct<'a> {
 	pub type_id: TypeId,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
-	pub fields: Vec<Field<'a>>,
+	pub fields: SliceRef<Field<'a>>,
 	pub layout: Option<Layout>,
 }
 
@@ -249,9 +249,9 @@ pub struct Enum<'a> {
 	pub type_id: TypeId,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
-	pub shared_fields: Vec<Field<'a>>,
-	pub variants: Vec<EnumVariant>,
-	pub variants_by_name: FxHashMap<&'a str, usize>, // Index into variants vec
+	pub shared_fields: SliceRef<Field<'a>>,
+	pub variants: SliceRef<EnumVariant>,
+	pub variants_by_name: Ref<FxHashMap<&'a str, usize>>, // Index into variants vec
 	pub layout: Option<Layout>,
 	pub tag_memory_size: Option<i64>,
 }
@@ -1334,7 +1334,7 @@ impl<'a> TypeStore<'a> {
 		match &user_type.kind {
 			UserTypeKind::Struct { shape } => {
 				let specialization = &shape.specializations[specialization_index];
-				for field in &specialization.fields {
+				for field in specialization.fields.iter() {
 					if field.type_id.entry == to.entry {
 						let link = UserTypeChainLink {
 							user_type: specialization.type_id,
@@ -1362,7 +1362,7 @@ impl<'a> TypeStore<'a> {
 			UserTypeKind::Enum { shape } => {
 				let specialization = &shape.specializations[specialization_index];
 
-				for (name, &variant_index) in &specialization.variants_by_name {
+				for (name, &variant_index) in specialization.variants_by_name.iter() {
 					let variant = &specialization.variants[variant_index];
 					if variant.type_id.entry == to.entry {
 						let link = UserTypeChainLink {
@@ -1733,7 +1733,7 @@ impl<'a> TypeStore<'a> {
 			type_id: TypeId::unusable(),
 			type_arguments: type_arguments.clone(),
 			been_filled,
-			fields,
+			fields: SliceRef::from(fields),
 			layout: None,
 		};
 
@@ -1906,9 +1906,9 @@ impl<'a> TypeStore<'a> {
 			type_id: TypeId::unusable(),
 			type_arguments: type_arguments.clone(),
 			been_filled,
-			shared_fields,
-			variants,
-			variants_by_name,
+			shared_fields: SliceRef::from(shared_fields),
+			variants: SliceRef::from(variants),
+			variants_by_name: Ref::new(variants_by_name),
 			layout: None,
 			tag_memory_size: None,
 		};

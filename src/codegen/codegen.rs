@@ -13,6 +13,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::lock::ReadGuard;
 
 pub fn generate<'a, G: Generator>(
 	messages: &mut Messages<'a>,
@@ -34,7 +35,11 @@ pub fn generate<'a, G: Generator>(
 			continue;
 		}
 
-		for specialization_index in 0..shape.specializations.len() {
+		let specialization_count = shape.specializations.len();
+		drop(shape);
+
+		for specialization_index in 0..specialization_count {
+			let shape = lock.read();
 			let specialization = &shape.specializations[specialization_index];
 			if specialization.generic_poisoned {
 				continue;
@@ -49,7 +54,7 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(messages, lang_items, type_store, function_store, generator, &shape, function_id);
+			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
 		}
 	}
 
@@ -92,7 +97,7 @@ pub fn generate_function<'a, G: Generator>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generator: &mut G,
-	shape: &FunctionShape<'a>,
+	shape: ReadGuard<FunctionShape<'a>>,
 	function_id: FunctionId,
 ) {
 	let specialization = &shape.specializations[function_id.specialization_index];
@@ -109,8 +114,10 @@ pub fn generate_function<'a, G: Generator>(
 	let module_path = shape.module_path;
 	let type_arguments = specialization.type_arguments.clone();
 	let Some(block) = shape.block.clone() else {
-		unreachable!("{shape:?}");
+		unreachable!("{:?}", *shape);
 	};
+
+	drop(shape);
 
 	let mut context = Context {
 		messages,
