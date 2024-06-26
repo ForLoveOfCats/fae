@@ -256,97 +256,134 @@ pub fn validate<'a>(
 	herd: &'a Herd,
 	root_messages: &mut RootMessages<'a>,
 	lang_items: &RwLock<LangItems>,
-	root_layers: &mut RootLayers<'a>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	statics: &RwLock<Statics<'a>>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
-	let herd_member = herd.get();
-	let mut function_generic_usages = Vec::new();
-	let externs = RwLock::new(Externs::new());
-	let mut constants = RwLock::new(Vec::new());
-
 	let mut type_shape_indicies = Vec::with_capacity(parsed_files.len());
 	for _ in 0..parsed_files.len() {
-		type_shape_indicies.push(Vec::new());
+		type_shape_indicies.push(RwLock::new(Vec::new()));
 	}
-
-	create_root_types(root_messages, type_store, root_layers, parsed_files, type_shape_indicies.as_mut_slice());
-	resolve_root_type_imports(cli_arguments, &herd_member, root_messages, root_layers, parsed_files);
-	fill_root_types(
-		root_messages,
-		type_store,
-		function_store,
-		root_layers,
-		parsed_files,
-		type_shape_indicies.as_mut_slice(),
-	);
 
 	let mut local_function_shape_indicies = Vec::new();
 	for _ in 0..parsed_files.len() {
-		local_function_shape_indicies.push(Vec::new());
+		local_function_shape_indicies.push(RwLock::new(Vec::new()));
 	}
 
-	let mut readables = Readables::new();
-	create_root_functions(
-		root_messages,
-		lang_items,
-		root_layers,
-		type_store,
-		function_store,
-		&mut function_generic_usages,
-		&externs,
-		&mut readables,
-		parsed_files,
-		&mut local_function_shape_indicies,
-	);
-	function_generic_usages.clear();
+	let root_messages = RwLock::new(root_messages);
 
-	validate_root_consts(
-		cli_arguments,
-		&herd_member,
-		root_messages,
-		lang_items,
-		root_layers,
-		type_store,
-		function_store,
-		&mut function_generic_usages,
-		&externs,
-		&constants,
-		statics,
-		&mut readables,
-		parsed_files,
-		type_shape_indicies.as_mut_slice(),
-	);
+	let parsed_files_iter_1 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter_2 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter_3 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter_4 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter_5 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
 
-	validate_root_statics(
-		cli_arguments,
-		&herd_member,
-		root_messages,
-		lang_items,
-		root_layers,
-		type_store,
-		function_store,
-		&mut function_generic_usages,
-		&externs,
-		&mut constants,
-		statics,
-		&mut readables,
-		parsed_files,
-		type_shape_indicies.as_mut_slice(),
-	);
+	const THREAD_COUNT: usize = 6;
+	let barrier = std::sync::Barrier::new(THREAD_COUNT);
+	let externs = RwLock::new(Externs::new());
+	let constants = RwLock::new(Vec::new());
 
-	assert_eq!(function_generic_usages.len(), 0);
-
-	let root_layers: &RootLayers = root_layers;
-	let type_store: &TypeStore = type_store;
-
-	let parsed_files = crate::lock::parking_lot::Mutex::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
-	let root_messages = crate::lock::parking_lot::Mutex::new(root_messages);
-
+	let first_pass = std::time::Instant::now();
 	std::thread::scope(|scope| {
-		for _ in 0..6 {
+		for _ in 0..THREAD_COUNT {
+			scope.spawn(|| {
+				set_thread_name!("validator thread");
+
+				let mut type_store = type_store.clone();
+				let herd_member = herd.get();
+				let mut function_generic_usages = Vec::new();
+
+				create_root_types(&root_messages, &mut type_store, root_layers, &parsed_files_iter_1, &type_shape_indicies);
+
+				barrier.wait();
+
+				resolve_root_type_imports(cli_arguments, &herd_member, &root_messages, root_layers, &parsed_files_iter_2);
+
+				barrier.wait();
+
+				fill_root_types(
+					&root_messages,
+					&mut type_store,
+					function_store,
+					root_layers,
+					&parsed_files_iter_3,
+					&type_shape_indicies,
+				);
+
+				barrier.wait();
+
+				let mut readables = Readables::new();
+				create_root_functions(
+					&root_messages,
+					lang_items,
+					root_layers,
+					&mut type_store,
+					function_store,
+					&mut function_generic_usages,
+					&externs,
+					&mut readables,
+					&parsed_files_iter_4,
+					&local_function_shape_indicies,
+				);
+				function_generic_usages.clear();
+
+				barrier.wait();
+
+				validate_root_consts(
+					cli_arguments,
+					&herd_member,
+					&root_messages,
+					lang_items,
+					root_layers,
+					&mut type_store,
+					function_store,
+					&mut function_generic_usages,
+					&externs,
+					&constants,
+					statics,
+					&mut readables,
+					&parsed_files_iter_5,
+					&type_shape_indicies,
+				);
+
+				barrier.wait();
+
+				validate_root_statics(
+					cli_arguments,
+					&herd_member,
+					&root_messages,
+					lang_items,
+					root_layers,
+					&mut type_store,
+					function_store,
+					&mut function_generic_usages,
+					&externs,
+					&constants,
+					statics,
+					&mut readables,
+					&parsed_files_iter_6,
+					&type_shape_indicies,
+				);
+
+				assert_eq!(function_generic_usages.len(), 0);
+			});
+		}
+	});
+	dbg!(first_pass.elapsed());
+
+	// let root_layers: &RootLayers = root_layers;
+	// let type_store: &TypeStore = type_store;
+
+	let parsed_files = RwLock::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
+	// let root_messages = crate::lock::parking_lot::Mutex::new(root_messages);
+
+	let second_pass = std::time::Instant::now();
+	std::thread::scope(|scope| {
+		for _ in 0..THREAD_COUNT {
 			let parsed_files = &parsed_files;
 			let mut type_store = type_store.clone();
 			let externs = &externs;
@@ -362,20 +399,21 @@ pub fn validate<'a>(
 				let mut readables = Readables::new();
 
 				loop {
-					let mut parsed_files = parsed_files.lock();
+					let mut parsed_files = parsed_files.write();
 					let parsed_file = parsed_files.0.next();
 					let local_function_shape_indicies = parsed_files.1.next();
 					drop(parsed_files);
 					let Some(parsed_file) = parsed_file else {
 						break;
 					};
-					let mut local_function_shape_indicies = local_function_shape_indicies.unwrap();
+					let mut local_function_shape_indicies = local_function_shape_indicies.as_ref().unwrap().write();
 
 					let file_index = parsed_file.source_file.index;
 					let module_path = parsed_file.module_path;
 
 					let layer = root_layers.lookup_module_path(module_path);
-					let mut symbols = layer.symbols.clone();
+					let mut layer_guard = layer.write();
+					// let mut symbols = layer.symbols.clone();
 
 					readables.starting_index = 0;
 					readables.readables.clear();
@@ -405,8 +443,8 @@ pub fn validate<'a>(
 						readables: &mut readables,
 						initial_local_function_shape_indicies_len: 0,
 						local_function_shape_indicies: &mut local_function_shape_indicies,
-						function_initial_scope_count: symbols.scopes.len(),
-						symbols_scope: symbols.child_scope(),
+						function_initial_scope_count: layer_guard.symbols.scopes.len(),
+						symbols_scope: layer_guard.symbols.child_scope(),
 						next_loop_index: 0,
 						current_loop_index: None,
 						can_is_bind: false,
@@ -421,7 +459,7 @@ pub fn validate<'a>(
 					function_generic_usages.clear();
 
 					if messages.any_messages() {
-						root_messages.lock().add_messages_if_any(messages);
+						root_messages.write().add_messages_if_any(messages);
 					}
 				}
 
@@ -432,62 +470,79 @@ pub fn validate<'a>(
 		}
 	});
 
+	dbg!(second_pass.elapsed());
+
 	if function_store.main.read().is_none() {
-		root_messages.lock().mark_main_missing();
+		root_messages.write().mark_main_missing();
 	}
 }
 
 fn create_root_types<'a>(
-	root_messages: &mut RootMessages<'a>,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
 	type_store: &mut TypeStore<'a>,
-	root_layers: &mut RootLayers<'a>,
-	parsed_files: &[tree::File<'a>],
-	type_shape_indicies: &mut [Vec<usize>],
+	root_layers: &RootLayers<'a>,
+	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
+	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
-	for parsed_file in parsed_files.iter() {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
 		let file_index = parsed_file.source_file.index;
-		let type_shape_indicies = &mut type_shape_indicies[file_index];
+		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let mut layer_guard = layer.write();
 
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let block = &parsed_file.block;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
-		let importable_types_index = layer.symbols.scopes.len();
+		let importable_types_index = layer_guard.symbols.scopes.len();
 		assert_eq!(importable_types_index, 0);
-		layer.symbols.scopes.push(FxHashMap::default());
+		layer_guard.symbols.scopes.push(FxHashMap::default());
 
 		let mut messages = Messages::new(parsed_file.module_path);
 
 		create_block_types(
 			&mut messages,
 			type_store,
-			&mut layer.symbols,
+			&mut layer_guard.symbols,
 			0,
 			parsed_file.module_path,
 			&blank_generic_parameters,
 			block,
 			scope_id,
 			true,
-			type_shape_indicies,
+			&mut type_shape_indicies,
 		);
 
-		layer.importable_types_index = importable_types_index;
+		layer_guard.importable_types_index = importable_types_index;
 
-		root_messages.add_messages_if_any(messages);
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
 fn resolve_root_type_imports<'a>(
 	cli_arguments: &CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
-	root_messages: &mut RootMessages<'a>,
-	root_layers: &mut RootLayers<'a>,
-	parsed_files: &[tree::File<'a>],
+	root_messages: &RwLock<&mut RootMessages<'a>>,
+	root_layers: &RootLayers<'a>,
+	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
 ) {
-	for parsed_file in parsed_files {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		let mut symbols = layer.symbols.clone(); // Belch
+		let mut layer_guard = layer.write();
 
 		let mut messages = Messages::new(parsed_file.module_path);
 		let module_path = parsed_file.module_path;
@@ -498,31 +553,37 @@ fn resolve_root_type_imports<'a>(
 			herd_member,
 			&mut messages,
 			root_layers,
-			&mut symbols,
+			&mut layer_guard.symbols,
 			module_path,
 			0,
 			block,
 			true,
 		);
 
-		root_layers.create_module_path(parsed_file.module_path).symbols = symbols;
-
-		root_messages.add_messages_if_any(messages);
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
 fn fill_root_types<'a>(
-	root_messages: &mut RootMessages<'a>,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	root_layers: &mut RootLayers<'a>,
-	parsed_files: &[tree::File<'a>],
-	type_shape_indicies: &mut [Vec<usize>],
+	root_layers: &RootLayers<'a>,
+	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
+	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
-	for parsed_file in parsed_files {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		let mut symbols = layer.symbols.clone(); // Belch
-		let type_shape_indicies = &mut type_shape_indicies[parsed_file.source_file.index];
+		let mut layer_guard = layer.write();
+		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index].write();
 
 		// TODO: This is definitely wrong
 		let mut generic_usages = Vec::new();
@@ -534,44 +595,49 @@ fn fill_root_types<'a>(
 			function_store,
 			&mut generic_usages,
 			root_layers,
-			&mut symbols,
+			&mut layer_guard.symbols,
 			parsed_file.module_path,
 			0,
 			&parsed_file.block,
-			type_shape_indicies,
+			&mut type_shape_indicies,
 		);
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.symbols = symbols;
-
-		root_messages.add_messages_if_any(messages);
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
 fn create_root_functions<'a>(
-	root_messages: &mut RootMessages<'a>,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
-	root_layers: &mut RootLayers<'a>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
 	externs: &RwLock<Externs>,
 	readables: &mut Readables<'a>,
-	parsed_files: &'a [tree::File<'a>],
-	local_function_shape_indicies: &mut Vec<Vec<usize>>,
+	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	local_function_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
-	for (iteration_index, parsed_file) in parsed_files.iter().enumerate() {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
 		let block = &parsed_file.block;
 
 		let file_index = parsed_file.source_file.index;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
-		//Yuck, I do not like this
-		let mut symbols = root_layers.create_module_path(parsed_file.module_path).symbols.clone();
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let mut layer_guard = layer.write();
+		let mut local_function_shape_indicies = local_function_shape_indicies[parsed_file.source_file.index].write();
 
-		let importable_functions_index = symbols.scopes.len();
+		let importable_functions_index = layer_guard.symbols.scopes.len();
 		assert_eq!(importable_functions_index, 1);
-		symbols.scopes.push(FxHashMap::default());
+		layer_guard.symbols.scopes.push(FxHashMap::default());
 
 		let mut messages = Messages::new(parsed_file.module_path);
 
@@ -584,28 +650,28 @@ fn create_root_functions<'a>(
 			generic_usages,
 			externs,
 			readables,
-			&mut symbols,
+			&mut layer_guard.symbols,
 			parsed_file.module_path,
 			&GenericParameters::new_from_explicit(Vec::new()),
 			block,
-			&mut local_function_shape_indicies[iteration_index],
+			&mut local_function_shape_indicies,
 			scope_id,
 		);
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_functions_index = importable_functions_index;
-		layer.symbols = symbols;
+		layer_guard.importable_functions_index = importable_functions_index;
 
-		root_messages.add_messages_if_any(messages);
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
 fn validate_root_consts<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
-	root_messages: &mut RootMessages<'a>,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
-	root_layers: &mut RootLayers<'a>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
@@ -613,21 +679,27 @@ fn validate_root_consts<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
-	parsed_files: &'a [tree::File<'a>],
-	type_shape_indicies: &mut [Vec<usize>],
+	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
-	for parsed_file in parsed_files {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
-		let type_shape_indicies = &mut type_shape_indicies[file_index];
+		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		let mut symbols = layer.symbols.clone();
+		let mut layer_guard = layer.write();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
 
-		let importable_consts_index = symbols.scopes.len();
+		let importable_consts_index = layer_guard.symbols.scopes.len();
 		assert_eq!(importable_consts_index, 2);
 
 		let mut next_scope_index = 1;
@@ -641,7 +713,7 @@ fn validate_root_consts<'a>(
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
-			type_shape_indicies,
+			type_shape_indicies: &mut type_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -655,8 +727,8 @@ fn validate_root_consts<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
-			function_initial_scope_count: symbols.scopes.len(),
-			symbols_scope: symbols.child_scope(),
+			function_initial_scope_count: layer_guard.symbols.scopes.len(),
+			symbols_scope: layer_guard.symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -673,20 +745,20 @@ fn validate_root_consts<'a>(
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_consts_index = importable_consts_index;
-		layer.symbols = symbols;
+		layer_guard.importable_consts_index = importable_consts_index;
 
-		root_messages.add_messages_if_any(messages);
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
 fn validate_root_statics<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
-	root_messages: &mut RootMessages<'a>,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
-	root_layers: &mut RootLayers<'a>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
@@ -694,21 +766,27 @@ fn validate_root_statics<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
-	parsed_files: &'a [tree::File<'a>],
-	type_shape_indicies: &mut [Vec<usize>],
+	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
-	for parsed_file in parsed_files {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
 		let file_index = parsed_file.source_file.index;
 		let module_path = parsed_file.module_path;
-		let type_shape_indicies = &mut type_shape_indicies[file_index];
+		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		let mut symbols = layer.symbols.clone();
+		let mut layer_guard = layer.write();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
 
-		let importable_statics_index = symbols.scopes.len();
+		let importable_statics_index = layer_guard.symbols.scopes.len();
 		assert_eq!(importable_statics_index, 3);
 
 		let mut next_scope_index = 1;
@@ -722,7 +800,7 @@ fn validate_root_statics<'a>(
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
-			type_shape_indicies,
+			type_shape_indicies: &mut type_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -736,8 +814,8 @@ fn validate_root_statics<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
-			function_initial_scope_count: symbols.scopes.len(),
-			symbols_scope: symbols.child_scope(),
+			function_initial_scope_count: layer_guard.symbols.scopes.len(),
+			symbols_scope: layer_guard.symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -754,11 +832,11 @@ fn validate_root_statics<'a>(
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
-		layer.importable_statics_index = importable_statics_index;
-		layer.symbols = symbols;
+		layer_guard.importable_statics_index = importable_statics_index;
 
-		root_messages.add_messages_if_any(messages);
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
@@ -803,15 +881,17 @@ fn resolve_import_for_block_types<'a>(
 		return;
 	};
 
+	let layer_guard = layer.read();
+
 	if let Some(names) = names {
-		let importable_types = layer.importable_types();
+		let importable_types = layer_guard.importable_types();
 		for name in names {
 			if let Some(&importing) = importable_types.get(name.item) {
 				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
 			}
 		}
 	} else {
-		for &importing in layer.importable_types().values() {
+		for &importing in layer_guard.importable_types().values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 	}
@@ -858,10 +938,12 @@ fn resolve_import_for_block_non_types<'a>(
 		return;
 	};
 
+	let layer_guard = layer.read();
+
 	if let Some(names) = names {
-		let importable_functions = layer.importable_functions();
-		let importable_consts = layer.importable_consts();
-		let importable_statics = layer.importable_statics();
+		let importable_functions = layer_guard.importable_functions();
+		let importable_consts = layer_guard.importable_consts();
+		let importable_statics = layer_guard.importable_statics();
 
 		for name in names {
 			if let Some(&importing) = importable_functions.get(name.item) {
@@ -875,15 +957,15 @@ fn resolve_import_for_block_non_types<'a>(
 	} else {
 		// TODO: Add asterisk syntax for importing all items in a scope
 
-		for &importing in layer.importable_functions().values() {
+		for &importing in layer_guard.importable_functions().values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 
-		for &importing in layer.importable_consts().values() {
+		for &importing in layer_guard.importable_consts().values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 
-		for &importing in layer.importable_statics().values() {
+		for &importing in layer_guard.importable_statics().values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 	}

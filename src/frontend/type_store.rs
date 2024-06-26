@@ -267,7 +267,6 @@ pub struct EnumVariant {
 pub struct UserType<'a> {
 	pub name: &'a str,
 	pub span: Span,
-	pub module_path: &'a [String],
 	pub scope_id: ScopeId,
 	pub generic_parameters: GenericParameters<'a>,
 	pub methods: FxHashMap<&'a str, MethodInfo>,
@@ -1161,7 +1160,7 @@ impl<'a> TypeStore<'a> {
 		name: &'a str,
 		generic_parameters: GenericParameters<'a>,
 		kind: UserTypeKind<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		scope_id: ScopeId,
 		span: Span,
 	) -> usize {
@@ -1171,7 +1170,6 @@ impl<'a> TypeStore<'a> {
 		let user_type = UserType {
 			name,
 			span,
-			module_path,
 			scope_id,
 			generic_parameters,
 			methods: FxHashMap::default(),
@@ -1396,7 +1394,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
@@ -1514,7 +1512,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		base: TypeId,
 		name: Node<&'a str>,
 	) -> Option<TypeId> {
@@ -1564,7 +1562,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
 		symbols: &Symbols<'a>,
@@ -1618,7 +1616,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
@@ -1661,7 +1659,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
@@ -1768,7 +1766,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		enum_shape_index: usize,
 		invoke_span: Option<Span>,
@@ -1950,7 +1948,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		type_shape_index: usize,
 		type_arguments: Ref<TypeArguments>,
@@ -2093,7 +2091,7 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
@@ -2232,7 +2230,7 @@ impl<'a> TypeStore<'a> {
 		}
 	}
 
-	pub fn type_name(&mut self, function_store: &FunctionStore, module_path: &'a [String], type_id: TypeId) -> String {
+	pub fn type_name(&mut self, function_store: &FunctionStore, module_path: &[String], type_id: TypeId) -> String {
 		let name = self.internal_type_name(Some(function_store), module_path, type_id, self.debug_generics, self.debug_type_ids);
 		format!("`{name}`")
 	}
@@ -2250,7 +2248,7 @@ impl<'a> TypeStore<'a> {
 	fn internal_type_name(
 		&mut self,
 		function_store: Option<&FunctionStore>,
-		_module_path: &'a [String],
+		_module_path: &[String],
 		type_id: TypeId,
 		debug_generics: bool,
 		debug_type_ids: bool,
