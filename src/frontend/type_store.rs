@@ -1160,7 +1160,6 @@ impl<'a> TypeStore<'a> {
 		name: &'a str,
 		generic_parameters: GenericParameters<'a>,
 		kind: UserTypeKind<'a>,
-		module_path: &[String],
 		scope_id: ScopeId,
 		span: Span,
 	) -> usize {

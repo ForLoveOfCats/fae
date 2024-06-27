@@ -287,7 +287,6 @@ pub fn validate<'a>(
 	let externs = RwLock::new(Externs::new());
 	let constants = RwLock::new(Vec::new());
 
-	let first_pass = std::time::Instant::now();
 	std::thread::scope(|scope| {
 		for _ in 0..THREAD_COUNT {
 			scope.spawn(|| {
@@ -368,100 +367,27 @@ pub fn validate<'a>(
 					&parsed_files_iter_6,
 					&type_shape_indicies,
 				);
-
 				assert_eq!(function_generic_usages.len(), 0);
-			});
-		}
-	});
-	dbg!(first_pass.elapsed());
 
-	// let root_layers: &RootLayers = root_layers;
-	// let type_store: &TypeStore = type_store;
+				barrier.wait();
 
-	let parsed_files = RwLock::new((parsed_files.iter(), local_function_shape_indicies.into_iter()));
-	// let root_messages = crate::lock::parking_lot::Mutex::new(root_messages);
-
-	let second_pass = std::time::Instant::now();
-	std::thread::scope(|scope| {
-		for _ in 0..THREAD_COUNT {
-			let parsed_files = &parsed_files;
-			let mut type_store = type_store.clone();
-			let externs = &externs;
-			let constants = &constants;
-			let root_messages = &root_messages;
-
-			scope.spawn(move || {
-				set_thread_name!("validator thread");
-				let herd_member = herd.get();
-
-				let mut type_shape_indicies = Vec::new();
-				let mut function_generic_usages = Vec::new();
-				let mut readables = Readables::new();
-
-				loop {
-					let mut parsed_files = parsed_files.write();
-					let parsed_file = parsed_files.0.next();
-					let local_function_shape_indicies = parsed_files.1.next();
-					drop(parsed_files);
-					let Some(parsed_file) = parsed_file else {
-						break;
-					};
-					let mut local_function_shape_indicies = local_function_shape_indicies.as_ref().unwrap().write();
-
-					let file_index = parsed_file.source_file.index;
-					let module_path = parsed_file.module_path;
-
-					let layer = root_layers.lookup_module_path(module_path);
-					let mut layer_guard = layer.write();
-					// let mut symbols = layer.symbols.clone();
-
-					readables.starting_index = 0;
-					readables.readables.clear();
-
-					let mut next_scope_index = 1;
-					let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-					let mut messages = Messages::new(parsed_file.module_path);
-					let context = Context {
-						cli_arguments,
-						herd_member: &herd_member,
-						file_index,
-						module_path,
-						next_scope_index: &mut next_scope_index,
-						scope_index: 0,
-						messages: &mut messages,
-						type_shape_indicies: &mut type_shape_indicies,
-						type_store: &mut type_store,
-						function_store,
-						function_generic_usages: &mut function_generic_usages,
-						root_layers,
-						lang_items,
-						externs,
-						constants,
-						statics,
-						initial_readables_starting_index: 0,
-						initial_readables_overall_len: 0,
-						readables: &mut readables,
-						initial_local_function_shape_indicies_len: 0,
-						local_function_shape_indicies: &mut local_function_shape_indicies,
-						function_initial_scope_count: layer_guard.symbols.scopes.len(),
-						symbols_scope: layer_guard.symbols.child_scope(),
-						next_loop_index: 0,
-						current_loop_index: None,
-						can_is_bind: false,
-						expected_type: None,
-						return_type: None,
-						generic_parameters: &blank_generic_parameters,
-						method_base_index: None,
-					};
-
-					validate_block(context, &parsed_file.block, true);
-
-					function_generic_usages.clear();
-
-					if messages.any_messages() {
-						root_messages.write().add_messages_if_any(messages);
-					}
-				}
+				deep_pass(
+					cli_arguments,
+					&herd_member,
+					&root_messages,
+					lang_items,
+					root_layers,
+					&mut type_store,
+					function_store,
+					&mut function_generic_usages,
+					&externs,
+					&constants,
+					statics,
+					&mut readables,
+					&parsed_files_iter_7,
+					&type_shape_indicies,
+					&local_function_shape_indicies,
+				);
 
 				if !is_test && !cfg!(feature = "measure-lock-contention") {
 					std::mem::forget(type_store);
@@ -470,10 +396,89 @@ pub fn validate<'a>(
 		}
 	});
 
-	dbg!(second_pass.elapsed());
-
 	if function_store.main.read().is_none() {
 		root_messages.write().mark_main_missing();
+	}
+}
+
+fn deep_pass<'a>(
+	cli_arguments: &'a CliArguments,
+	herd_member: &bumpalo_herd::Member<'a>,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
+	lang_items: &RwLock<LangItems>,
+	root_layers: &RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	function_generic_usages: &mut Vec<GenericUsage>,
+	externs: &RwLock<Externs>,
+	constants: &RwLock<Vec<ConstantValue<'a>>>,
+	statics: &RwLock<Statics<'a>>,
+	readables: &mut Readables<'a>,
+	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	type_shape_indicies: &[RwLock<Vec<usize>>],
+	local_function_shape_indicies: &[RwLock<Vec<usize>>],
+) {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index].write();
+		let mut local_function_shape_indicies = local_function_shape_indicies[parsed_file.source_file.index].write();
+
+		let file_index = parsed_file.source_file.index;
+		let module_path = parsed_file.module_path;
+
+		let layer = root_layers.lookup_module_path(module_path);
+		let mut layer_guard = layer.write();
+
+		readables.starting_index = 0;
+		readables.readables.clear();
+
+		let mut next_scope_index = 1;
+		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+		let mut messages = Messages::new(parsed_file.module_path);
+		let context = Context {
+			cli_arguments,
+			herd_member: &herd_member,
+			file_index,
+			module_path,
+			next_scope_index: &mut next_scope_index,
+			scope_index: 0,
+			messages: &mut messages,
+			type_shape_indicies: &mut type_shape_indicies,
+			type_store,
+			function_store,
+			function_generic_usages,
+			root_layers,
+			lang_items,
+			externs: &externs,
+			constants: &constants,
+			statics,
+			initial_readables_starting_index: 0,
+			initial_readables_overall_len: 0,
+			readables,
+			initial_local_function_shape_indicies_len: 0,
+			local_function_shape_indicies: &mut local_function_shape_indicies,
+			function_initial_scope_count: layer_guard.symbols.scopes.len(),
+			symbols_scope: layer_guard.symbols.child_scope(),
+			next_loop_index: 0,
+			current_loop_index: None,
+			can_is_bind: false,
+			expected_type: None,
+			return_type: None,
+			generic_parameters: &blank_generic_parameters,
+			method_base_index: None,
+		};
+
+		validate_block(context, &parsed_file.block, true);
+
+		function_generic_usages.clear();
+
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
 	}
 }
 
@@ -511,7 +516,6 @@ fn create_root_types<'a>(
 			type_store,
 			&mut layer_guard.symbols,
 			0,
-			parsed_file.module_path,
 			&blank_generic_parameters,
 			block,
 			scope_id,
@@ -976,7 +980,6 @@ fn create_block_types<'a>(
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
-	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
 	scope_id: ScopeId,
@@ -1019,7 +1022,6 @@ fn create_block_types<'a>(
 				type_store,
 				symbols,
 				function_initial_scope_count,
-				module_path,
 				enclosing_generic_parameters,
 				scope_id,
 				statement,
@@ -1031,7 +1033,6 @@ fn create_block_types<'a>(
 				type_store,
 				symbols,
 				function_initial_scope_count,
-				module_path,
 				enclosing_generic_parameters,
 				scope_id,
 				statement,
@@ -1046,7 +1047,6 @@ fn create_block_struct<'a>(
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
-	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
 	statement: &tree::Struct<'a>,
@@ -1079,7 +1079,7 @@ fn create_block_struct<'a>(
 	let shape = StructShape::new(statement.name.item, None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
-	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, module_path, scope_id, span);
+	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, scope_id, span);
 	drop(user_types);
 
 	let kind = SymbolKind::Type { shape_index };
@@ -1093,7 +1093,6 @@ fn create_block_enum<'a>(
 	type_store: &mut TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
-	module_path: &'a [String],
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
 	statement: &tree::Enum<'a>,
@@ -1156,7 +1155,7 @@ fn create_block_enum<'a>(
 
 		let shape = StructShape::new(name, Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
-		TypeStore::register_type(&mut user_types, name, variant_generic_parameters, kind, module_path, scope_id, span);
+		TypeStore::register_type(&mut user_types, name, variant_generic_parameters, kind, scope_id, span);
 
 		let variant_shape = EnumVariantShape {
 			name,
@@ -1174,7 +1173,7 @@ fn create_block_enum<'a>(
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	assert_eq!(user_types.len(), enum_shape_index);
-	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, module_path, scope_id, span);
+	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, scope_id, span);
 	drop(user_types);
 
 	let kind = SymbolKind::Type { shape_index };
@@ -2080,7 +2079,6 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.type_store,
 			context.symbols_scope.symbols,
 			context.function_initial_scope_count,
-			context.module_path,
 			context.generic_parameters,
 			block,
 			scope_id,
