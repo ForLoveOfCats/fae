@@ -545,7 +545,7 @@ fn resolve_root_type_imports<'a>(
 		};
 		drop(guard);
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut layer_guard = layer.write();
 
 		let mut messages = Messages::new(parsed_file.module_path);
@@ -585,7 +585,7 @@ fn fill_root_types<'a>(
 		};
 		drop(guard);
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut layer_guard = layer.write();
 		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index].write();
 
@@ -635,7 +635,7 @@ fn create_root_functions<'a>(
 		let file_index = parsed_file.source_file.index;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut layer_guard = layer.write();
 		let mut local_function_shape_indicies = local_function_shape_indicies[parsed_file.source_file.index].write();
 
@@ -697,7 +697,7 @@ fn validate_root_consts<'a>(
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut layer_guard = layer.write();
 
 		readables.starting_index = 0;
@@ -784,7 +784,7 @@ fn validate_root_statics<'a>(
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
-		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut layer_guard = layer.write();
 
 		readables.starting_index = 0;
