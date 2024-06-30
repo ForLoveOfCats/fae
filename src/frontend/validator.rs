@@ -282,7 +282,7 @@ pub fn validate<'a>(
 	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
 	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
 
-	const THREAD_COUNT: usize = 6;
+	const THREAD_COUNT: usize = 2;
 	let barrier = std::sync::Barrier::new(THREAD_COUNT);
 	let externs = RwLock::new(Externs::new());
 	let constants = RwLock::new(Vec::new());
@@ -431,7 +431,7 @@ fn deep_pass<'a>(
 		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.lookup_module_path(module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
@@ -461,8 +461,8 @@ fn deep_pass<'a>(
 			readables,
 			initial_local_function_shape_indicies_len: 0,
 			local_function_shape_indicies: &mut local_function_shape_indicies,
-			function_initial_scope_count: layer_guard.symbols.scopes.len(),
-			symbols_scope: layer_guard.symbols.child_scope(),
+			function_initial_scope_count: symbols.scopes.len(),
+			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -475,6 +475,7 @@ fn deep_pass<'a>(
 		validate_block(context, &parsed_file.block, true);
 
 		function_generic_usages.clear();
+		layer.write().symbols = symbols;
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -499,22 +500,22 @@ fn create_root_types<'a>(
 		let file_index = parsed_file.source_file.index;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 		let layer = root_layers.create_module_path(parsed_file.module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let block = &parsed_file.block;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
-		let importable_types_index = layer_guard.symbols.scopes.len();
+		let importable_types_index = symbols.scopes.len();
 		assert_eq!(importable_types_index, 0);
-		layer_guard.symbols.scopes.push(FxHashMap::default());
+		symbols.scopes.push(FxHashMap::default());
 
 		let mut messages = Messages::new(parsed_file.module_path);
 
 		create_block_types(
 			&mut messages,
 			type_store,
-			&mut layer_guard.symbols,
+			&mut symbols,
 			0,
 			&blank_generic_parameters,
 			block,
@@ -523,7 +524,10 @@ fn create_root_types<'a>(
 			&mut type_shape_indicies,
 		);
 
+		let mut layer_guard = layer.write();
 		layer_guard.importable_types_index = importable_types_index;
+		layer_guard.symbols = symbols;
+		drop(layer_guard);
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -546,7 +550,7 @@ fn resolve_root_type_imports<'a>(
 		drop(guard);
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 
 		let mut messages = Messages::new(parsed_file.module_path);
 		let module_path = parsed_file.module_path;
@@ -557,12 +561,14 @@ fn resolve_root_type_imports<'a>(
 			herd_member,
 			&mut messages,
 			root_layers,
-			&mut layer_guard.symbols,
+			&mut symbols,
 			module_path,
 			0,
 			block,
 			true,
 		);
+
+		layer.write().symbols = symbols;
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -586,7 +592,7 @@ fn fill_root_types<'a>(
 		drop(guard);
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index].write();
 
 		// TODO: This is definitely wrong
@@ -599,12 +605,14 @@ fn fill_root_types<'a>(
 			function_store,
 			&mut generic_usages,
 			root_layers,
-			&mut layer_guard.symbols,
+			&mut symbols,
 			parsed_file.module_path,
 			0,
 			&parsed_file.block,
 			&mut type_shape_indicies,
 		);
+
+		layer.write().symbols = symbols;
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -636,12 +644,12 @@ fn create_root_functions<'a>(
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 		let mut local_function_shape_indicies = local_function_shape_indicies[parsed_file.source_file.index].write();
 
-		let importable_functions_index = layer_guard.symbols.scopes.len();
+		let importable_functions_index = symbols.scopes.len();
 		assert_eq!(importable_functions_index, 1);
-		layer_guard.symbols.scopes.push(FxHashMap::default());
+		symbols.scopes.push(FxHashMap::default());
 
 		let mut messages = Messages::new(parsed_file.module_path);
 
@@ -654,7 +662,7 @@ fn create_root_functions<'a>(
 			generic_usages,
 			externs,
 			readables,
-			&mut layer_guard.symbols,
+			&mut symbols,
 			parsed_file.module_path,
 			&GenericParameters::new_from_explicit(Vec::new()),
 			block,
@@ -662,7 +670,10 @@ fn create_root_functions<'a>(
 			scope_id,
 		);
 
+		let mut layer_guard = layer.write();
 		layer_guard.importable_functions_index = importable_functions_index;
+		layer_guard.symbols = symbols;
+		drop(layer_guard);
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -698,12 +709,12 @@ fn validate_root_consts<'a>(
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
 
-		let importable_consts_index = layer_guard.symbols.scopes.len();
+		let importable_consts_index = symbols.scopes.len();
 		assert_eq!(importable_consts_index, 2);
 
 		let mut next_scope_index = 1;
@@ -731,8 +742,8 @@ fn validate_root_consts<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
-			function_initial_scope_count: layer_guard.symbols.scopes.len(),
-			symbols_scope: layer_guard.symbols.child_scope(),
+			function_initial_scope_count: symbols.scopes.len(),
+			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -749,7 +760,10 @@ fn validate_root_consts<'a>(
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
+		let mut layer_guard = layer.write();
 		layer_guard.importable_consts_index = importable_consts_index;
+		layer_guard.symbols = symbols;
+		drop(layer_guard);
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -785,12 +799,12 @@ fn validate_root_statics<'a>(
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
-		let mut layer_guard = layer.write();
+		let mut symbols = layer.read().symbols.clone();
 
 		readables.starting_index = 0;
 		readables.readables.clear();
 
-		let importable_statics_index = layer_guard.symbols.scopes.len();
+		let importable_statics_index = symbols.scopes.len();
 		assert_eq!(importable_statics_index, 3);
 
 		let mut next_scope_index = 1;
@@ -818,8 +832,8 @@ fn validate_root_statics<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
-			function_initial_scope_count: layer_guard.symbols.scopes.len(),
-			symbols_scope: layer_guard.symbols.child_scope(),
+			function_initial_scope_count: symbols.scopes.len(),
+			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
 			can_is_bind: false,
@@ -836,7 +850,10 @@ fn validate_root_statics<'a>(
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
+		let mut layer_guard = layer.write();
 		layer_guard.importable_statics_index = importable_statics_index;
+		layer_guard.symbols = symbols;
+		drop(layer_guard);
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -886,16 +903,27 @@ fn resolve_import_for_block_types<'a>(
 	};
 
 	let layer_guard = layer.read();
+	let importable_types_index = layer_guard.importable_types_index;
+	let source_symbols = layer_guard.symbols.clone();
+	drop(layer_guard);
+
+	// let source_symbols_guard = source_symbols.read();
+
+	// let source_symbols = {
+	// 	let layer_guard = layer.read();
+	// 	let importable_types_index = layer_guard.importable_types_index;
+	// 	layer_guard.symbols.read().scopes[importable_types_index].clone()
+	// };
 
 	if let Some(names) = names {
-		let importable_types = layer_guard.importable_types();
+		let importable_types = &source_symbols.scopes[importable_types_index];
 		for name in names {
 			if let Some(&importing) = importable_types.get(name.item) {
 				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
 			}
 		}
 	} else {
-		for &importing in layer_guard.importable_types().values() {
+		for &importing in source_symbols.scopes[importable_types_index].values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 	}
@@ -943,11 +971,16 @@ fn resolve_import_for_block_non_types<'a>(
 	};
 
 	let layer_guard = layer.read();
+	let importable_functions_index = layer_guard.importable_functions_index;
+	let importable_consts_index = layer_guard.importable_consts_index;
+	let importable_statics_index = layer_guard.importable_statics_index;
+	let source_symbols = layer_guard.symbols.clone();
+	drop(layer_guard);
 
 	if let Some(names) = names {
-		let importable_functions = layer_guard.importable_functions();
-		let importable_consts = layer_guard.importable_consts();
-		let importable_statics = layer_guard.importable_statics();
+		let importable_functions = &source_symbols.scopes[importable_functions_index];
+		let importable_consts = &source_symbols.scopes[importable_consts_index];
+		let importable_statics = &source_symbols.scopes[importable_statics_index];
 
 		for name in names {
 			if let Some(&importing) = importable_functions.get(name.item) {
@@ -961,15 +994,15 @@ fn resolve_import_for_block_non_types<'a>(
 	} else {
 		// TODO: Add asterisk syntax for importing all items in a scope
 
-		for &importing in layer_guard.importable_functions().values() {
+		for &importing in source_symbols.scopes[importable_functions_index].values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 
-		for &importing in layer_guard.importable_consts().values() {
+		for &importing in source_symbols.scopes[importable_consts_index].values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 
-		for &importing in layer_guard.importable_statics().values() {
+		for &importing in source_symbols.scopes[importable_statics_index].values() {
 			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
 		}
 	}
