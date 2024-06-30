@@ -121,7 +121,8 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command == CompileCommand::Parse {
-		if !is_test && !cfg!(feature = "measure-lock-contention") {
+		#[cfg(not(feature = "measure-lock-contention"))]
+		if !is_test {
 			std::mem::forget(parsed_files);
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
@@ -160,7 +161,8 @@ pub fn build_project(
 	root_messages.print_messages(message_output, "Validation");
 	root_messages.reset();
 	if any_errors {
-		if !is_test && !cfg!(feature = "measure-lock-contention") {
+		#[cfg(not(feature = "measure-lock-contention"))]
+		if !is_test {
 			std::mem::forget(function_store);
 			std::mem::forget(type_store);
 			std::mem::forget(parsed_files);
@@ -175,7 +177,8 @@ pub fn build_project(
 	}
 
 	if cli_arguments.command == CompileCommand::Check {
-		if !is_test && !cfg!(feature = "measure-lock-contention") {
+		#[cfg(not(feature = "measure-lock-contention"))]
+		if !is_test {
 			std::mem::forget(function_store);
 			std::mem::forget(type_store);
 			std::mem::forget(parsed_files);
@@ -208,7 +211,8 @@ pub fn build_project(
 		message_output.alertln("        Built binary", format_args!("{}", binary_path.display()));
 	}
 
-	if !is_test && !cfg!(feature = "measure-lock-contention") {
+	#[cfg(not(feature = "measure-lock-contention"))]
+	if !is_test {
 		std::mem::forget(function_store);
 		std::mem::forget(type_store);
 		std::mem::forget(parsed_files);
