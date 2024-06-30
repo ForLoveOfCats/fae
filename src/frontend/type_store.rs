@@ -2078,6 +2078,8 @@ impl<'a> TypeStore<'a> {
 
 			&TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
 				function_store.shapes.read()[function_shape_index]
+					.as_ref()
+					.unwrap()
 					.read()
 					.generic_parameters
 					.parameters()[generic_index]
@@ -2333,6 +2335,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
 				if let Some(function_store) = function_store {
 					let generic = function_store.shapes.read()[function_shape_index]
+						.as_ref()
+						.unwrap()
 						.read()
 						.generic_parameters
 						.parameters()[generic_index];

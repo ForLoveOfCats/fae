@@ -29,7 +29,7 @@ pub fn generate<'a, G: Generator>(
 
 	let function_count = function_store.shapes.read().len();
 	for function_shape_index in 0..function_count {
-		let lock = function_store.shapes.read()[function_shape_index].clone();
+		let lock = function_store.shapes.read()[function_shape_index].as_ref().unwrap().clone();
 		let shape = lock.read();
 		if shape.extern_attribute.is_some() || shape.intrinsic_attribute.is_some() {
 			continue;
@@ -387,6 +387,8 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 	);
 
 	let is_intrinsic = context.function_store.shapes.read()[function_id.function_shape_index]
+		.as_ref()
+		.unwrap()
 		.read()
 		.intrinsic_attribute
 		.is_some();
@@ -661,7 +663,10 @@ fn generate_intrinsic<G: Generator>(
 ) -> Option<G::Binding> {
 	let span = call.span;
 
-	let lock = context.function_store.shapes.read()[function_id.function_shape_index].clone();
+	let lock = context.function_store.shapes.read()[function_id.function_shape_index]
+		.as_ref()
+		.unwrap()
+		.clone();
 	let shape = lock.read();
 	let specialization = &shape.specializations[function_id.specialization_index];
 

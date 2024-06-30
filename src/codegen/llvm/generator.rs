@@ -432,7 +432,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let function_count = function_store.shapes.read().len();
 		for function_shape_index in 0..function_count {
-			let lock = function_store.shapes.read()[function_shape_index].clone();
+			let lock = function_store.shapes.read()[function_shape_index].as_ref().unwrap().clone();
 			let shape = lock.read();
 			if shape.intrinsic_attribute.is_some() {
 				self.functions.push(Vec::new());

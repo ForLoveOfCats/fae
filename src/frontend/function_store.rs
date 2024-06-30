@@ -9,7 +9,7 @@ use crate::reference::Ref;
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
-	pub shapes: RwLock<Vec<Ref<RwLock<FunctionShape<'a>>>>>,
+	pub shapes: RwLock<Vec<Option<Ref<RwLock<FunctionShape<'a>>>>>>,
 
 	// Need to have a copy of each shape's generic parameters around before
 	// the shape has been fully constructed so signature types can be looked up
@@ -39,7 +39,7 @@ impl<'a> FunctionStore<'a> {
 	) -> Option<FunctionSpecializationResult> {
 		let _zone = zone!("function specialization");
 
-		let lock = self.shapes.read()[function_shape_index].clone();
+		let lock = self.shapes.read()[function_shape_index].as_ref().unwrap().clone();
 		let mut shape = lock.write();
 
 		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
@@ -141,7 +141,7 @@ impl<'a> FunctionStore<'a> {
 		caller_shape_index: usize,
 		caller_type_arguments: &TypeArguments,
 	) -> FunctionId {
-		let lock = self.shapes.read()[function_id.function_shape_index].clone();
+		let lock = self.shapes.read()[function_id.function_shape_index].as_ref().unwrap().clone();
 		let shape = lock.read();
 		let specialization = &shape.specializations[function_id.specialization_index];
 		if specialization.type_arguments.is_empty() {

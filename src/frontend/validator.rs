@@ -282,7 +282,7 @@ pub fn validate<'a>(
 	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
 	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
 
-	const THREAD_COUNT: usize = 2;
+	const THREAD_COUNT: usize = 6;
 	let barrier = std::sync::Barrier::new(THREAD_COUNT);
 	let externs = RwLock::new(Externs::new());
 	let constants = RwLock::new(Vec::new());
@@ -1813,9 +1813,13 @@ fn create_block_functions<'a>(
 
 			let function_initial_scope_count = symbols.scopes.len();
 			let scope = symbols.child_scope();
+
 			let mut function_store_shapes = function_store.shapes.write();
 			let mut function_store_generics = function_store.generics.write();
 			let function_shape_index = function_store_shapes.len();
+			function_store_shapes.push(None);
+			drop(function_store_shapes);
+
 
 			let capacity = statement.generics.len()
 				+ enclosing_generic_parameters.parameters().len()
@@ -2010,8 +2014,7 @@ fn create_block_functions<'a>(
 				specializations_by_type_arguments: FxHashMap::default(),
 				specializations: Vec::new(),
 			};
-			function_store_shapes.push(Ref::new(RwLock::new(shape)));
-			drop(function_store_shapes);
+			function_store.shapes.write()[function_shape_index] = Some(Ref::new(RwLock::new(shape)));
 
 			local_function_shape_indicies.push(function_shape_index);
 
@@ -2306,7 +2309,10 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	}
 
 	let function_shape_index = context.local_function_shape_index(statement.index_in_block);
-	let lock = context.function_store.shapes.read()[function_shape_index].clone();
+	let lock = context.function_store.shapes.read()[function_shape_index]
+		.as_ref()
+		.unwrap()
+		.clone();
 	let shape = lock.read();
 	let return_type = shape.return_type;
 	let generics = shape.generic_parameters.clone();
@@ -3303,7 +3309,10 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	}
 
 	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-	let lock = context.function_store.shapes.read()[function_shape_index].clone();
+	let lock = context.function_store.shapes.read()[function_shape_index]
+		.as_ref()
+		.unwrap()
+		.clone();
 	let shape = lock.read();
 	if shape.generic_parameters.implicit_len() != 0 {
 		// The only functions with implicit generic parameters are inner functions, and if we have it
@@ -3441,7 +3450,10 @@ fn get_method_function_specialization<'a>(
 	}
 
 	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-	let lock = context.function_store.shapes.read()[function_shape_index].clone();
+	let lock = context.function_store.shapes.read()[function_shape_index]
+		.as_ref()
+		.unwrap()
+		.clone();
 	let shape = lock.read();
 	if shape.generic_parameters.implicit_len() != 0 {
 		// The only functions with implicit generic parameters are inner functions, and if we have it
@@ -3491,7 +3503,10 @@ fn validate_method_arguments<'a>(
 	is_static: bool,
 ) -> Option<MethodArgumentsResult<'a>> {
 	let maybe_self = if is_static { 0 } else { 1 };
-	let lock = context.function_store.shapes.read()[function_shape_index].clone();
+	let lock = context.function_store.shapes.read()[function_shape_index]
+		.as_ref()
+		.unwrap()
+		.clone();
 
 	let mut returns = false;
 	let mut arguments = Vec::with_capacity(call_arguments.len());
