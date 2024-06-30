@@ -135,20 +135,4 @@ impl<'a> RootLayer<'a> {
 		}
 		found.copied()
 	}
-
-	pub fn importable_types(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
-		&self.symbols.scopes[self.importable_types_index]
-	}
-
-	pub fn importable_functions(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
-		&self.symbols.scopes[self.importable_functions_index]
-	}
-
-	pub fn importable_consts(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
-		&self.symbols.scopes[self.importable_consts_index]
-	}
-
-	pub fn importable_statics(&self) -> &FxHashMap<&'a str, Symbol<'a>> {
-		&self.symbols.scopes[self.importable_statics_index]
-	}
 }
