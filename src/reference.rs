@@ -6,7 +6,7 @@ use std::ptr::NonNull;
 #[cfg(feature = "measure-lock-contention")]
 use std::alloc;
 #[cfg(feature = "measure-lock-contention")]
-use std::mem::transmute;
+use std::mem::{align_of, size_of};
 #[cfg(feature = "measure-lock-contention")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -102,8 +102,8 @@ impl<T> Drop for Ref<T> {
 		std::sync::atomic::fence(Ordering::Acquire);
 
 		unsafe {
-			std::ptr::drop_in_place(self.pointer.as_ptr());
-			let layout = alloc::Layout::for_value::<RefAllocated<T>>(transmute(self.pointer.as_ptr()));
+			std::ptr::drop_in_place::<T>(&mut self.pointer.as_mut().data);
+			let layout = alloc::Layout::new::<RefAllocated<T>>();
 			alloc::dealloc(self.pointer.as_ptr() as _, layout);
 		}
 	}
@@ -188,11 +188,12 @@ impl<T> Drop for SliceRef<T> {
 		}
 
 		unsafe {
-			for item in self.data.as_mut() {
-				std::ptr::drop_in_place(item);
-			}
+			let len = self.data.len();
+			std::ptr::drop_in_place(self.data.as_mut());
 
-			let layout = alloc::Layout::for_value::<[T]>(transmute(self.data.as_ptr()));
+			let size = size_of::<T>() * len;
+			let alignment = align_of::<T>();
+			let layout = alloc::Layout::from_size_align_unchecked(size, alignment);
 			alloc::dealloc(self.data.as_ptr() as _, layout);
 		}
 	}
