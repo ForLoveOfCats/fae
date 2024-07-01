@@ -94,6 +94,8 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 			}
 		};
 
+		tokens.consume_newlines();
+
 		let token = match tokens.peek() {
 			Ok(token) => token,
 			Err(_) => return items.into_bump_slice(),
@@ -1146,6 +1148,8 @@ fn parse_attributes<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 		} else {
 			break;
 		}
+
+		tokens.consume_newlines();
 	}
 
 	Ok(attributes)
