@@ -1617,7 +1617,6 @@ fn fill_pre_existing_struct_specializations<'a>(
 		}
 
 		assert!(!specialization.been_filled);
-		specialization.been_filled;
 		assert_eq!(specialization.fields.len(), 0);
 		specialization.fields = SliceRef::from(fields);
 	}
@@ -1625,7 +1624,13 @@ fn fill_pre_existing_struct_specializations<'a>(
 	let mut user_type = lock.write();
 	match &mut user_type.kind {
 		UserTypeKind::Struct { shape } => {
-			shape.specializations = specializations; // TODO: Definitely a race condition
+			for (actual, updated) in shape.specializations.iter_mut().zip(specializations.into_iter()) {
+				assert!(!actual.been_filled);
+				actual.been_filled = true;
+
+				assert_eq!(actual.fields.len(), 0);
+				actual.fields = updated.fields;
+			}
 		}
 
 		kind => unreachable!("{kind:?}"),
@@ -1682,7 +1687,6 @@ fn fill_pre_existing_enum_specializations<'a>(
 
 	for specialization in &mut specializations {
 		assert!(!specialization.been_filled);
-		specialization.been_filled;
 		assert_eq!(specialization.variants_by_name.len(), 0);
 
 		let mut shared_fields = specialization.shared_fields.to_vec();
@@ -1717,7 +1721,16 @@ fn fill_pre_existing_enum_specializations<'a>(
 	let mut user_type = lock.write();
 	match &mut user_type.kind {
 		UserTypeKind::Enum { shape } => {
-			shape.specializations = specializations; // TODO: Definitely a race condition
+			for (actual, updated) in shape.specializations.iter_mut().zip(specializations.into_iter()) {
+				assert!(!actual.been_filled);
+				actual.been_filled = true;
+				assert_eq!(actual.variants_by_name.len(), 0);
+
+				assert_eq!(actual.shared_fields.len(), 0);
+				actual.shared_fields = updated.shared_fields;
+				assert_eq!(actual.variants.len(), 0);
+				actual.variants = updated.variants;
+			}
 		}
 
 		kind => unreachable!("{kind:?}"),
