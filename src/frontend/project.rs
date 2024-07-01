@@ -19,7 +19,6 @@ use crate::lock::RwLock;
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,
-	pub any_errors: bool,
 	pub any_messages: bool,
 }
 
@@ -127,7 +126,7 @@ pub fn build_project(
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
 		}
-		return BuiltProject { binary_path: None, any_messages, any_errors };
+		return BuiltProject { binary_path: None, any_messages };
 	}
 
 	any_errors |= root_messages.any_errors();
@@ -169,7 +168,7 @@ pub fn build_project(
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
 		}
-		return BuiltProject { binary_path: None, any_messages, any_errors };
+		return BuiltProject { binary_path: None, any_messages };
 	}
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
@@ -185,7 +184,7 @@ pub fn build_project(
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
 		}
-		return BuiltProject { binary_path: None, any_messages, any_errors };
+		return BuiltProject { binary_path: None, any_messages };
 	}
 
 	//Not parallelizable
@@ -219,7 +218,7 @@ pub fn build_project(
 		std::mem::forget(tokens_vec);
 		std::mem::forget(bump);
 	}
-	BuiltProject { binary_path: Some(binary_path), any_messages, any_errors }
+	BuiltProject { binary_path: Some(binary_path), any_messages }
 }
 
 fn std_path() -> PathBuf {

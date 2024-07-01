@@ -136,12 +136,12 @@ impl<T> Clone for SliceRef<T> {
 impl<T: PartialEq> PartialEq for SliceRef<T> {
 	#[inline]
 	fn eq(&self, other: &SliceRef<T>) -> bool {
-		self.data.eq(&other.data)
+		unsafe { self.data.as_ref().eq(other.data.as_ref()) }
 	}
 
 	#[inline]
 	fn ne(&self, other: &SliceRef<T>) -> bool {
-		self.data.ne(&other.data)
+		unsafe { self.data.as_ref().ne(other.data.as_ref()) }
 	}
 }
 

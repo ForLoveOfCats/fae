@@ -149,8 +149,6 @@ pub struct Layout {
 
 #[derive(Debug)]
 pub struct StructShape<'a> {
-	pub name: &'a str,
-
 	pub been_filled: bool,
 	pub fields: Vec<Node<FieldShape<'a>>>,
 
@@ -163,14 +161,8 @@ pub struct StructShape<'a> {
 }
 
 impl<'a> StructShape<'a> {
-	pub fn new(
-		name: &'a str,
-		parent_enum_shape_index: Option<usize>,
-		variant_index: Option<usize>,
-		is_transparent_variant: bool,
-	) -> Self {
+	pub fn new(parent_enum_shape_index: Option<usize>, variant_index: Option<usize>, is_transparent_variant: bool) -> Self {
 		StructShape {
-			name,
 			been_filled: false,
 			fields: Vec::new(),
 			parent_enum_shape_index,
@@ -192,7 +184,6 @@ pub struct FieldShape<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Struct<'a> {
-	pub shape_index: usize,
 	pub type_id: TypeId,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
@@ -215,19 +206,17 @@ pub struct EnumShape<'a> {
 	pub shared_fields: SliceRef<Node<FieldShape<'a>>>,
 
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
-	pub variant_shapes_by_name: FxHashMap<&'a str, usize>, // Index into variant shapes vec
 
 	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Enum<'a>>,
 }
 
 impl<'a> EnumShape<'a> {
-	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>, variant_shapes_by_name: FxHashMap<&'a str, usize>) -> Self {
+	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>) -> Self {
 		EnumShape {
 			been_filled: false,
 			shared_fields: SliceRef::new_empty(),
 			variant_shapes,
-			variant_shapes_by_name,
 			specializations_by_type_arguments: FxHashMap::default(),
 			specializations: Vec::new(),
 		}
@@ -245,7 +234,6 @@ pub struct EnumVariantShape<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Enum<'a> {
-	pub shape_index: usize,
 	pub type_id: TypeId,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
@@ -275,7 +263,6 @@ pub struct UserType<'a> {
 
 #[derive(Debug)]
 pub struct MethodInfo {
-	pub span: Span,
 	pub function_shape_index: usize,
 	pub kind: tree::MethodKind,
 }
@@ -1016,7 +1003,7 @@ impl<'a> TypeStore<'a> {
 					let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
 					let returns = expression.returns;
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
-					let conversion = Box::new(SliceMutableToImmutable { type_id, expression });
+					let conversion = Box::new(SliceMutableToImmutable { expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
 					*from = Expression { span: from.span, type_id, is_mutable: false, returns, kind };
 					return Ok(true);
@@ -1726,7 +1713,6 @@ impl<'a> TypeStore<'a> {
 
 		let been_filled = shape.been_filled;
 		let specialization = Struct {
-			shape_index,
 			type_id: TypeId::unusable(),
 			type_arguments: type_arguments.clone(),
 			been_filled,
@@ -1899,7 +1885,6 @@ impl<'a> TypeStore<'a> {
 
 		let been_filled = shape.been_filled;
 		let specialization = Enum {
-			shape_index: enum_shape_index,
 			type_id: TypeId::unusable(),
 			type_arguments: type_arguments.clone(),
 			been_filled,

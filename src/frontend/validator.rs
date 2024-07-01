@@ -1109,7 +1109,7 @@ fn create_block_struct<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = StructShape::new(statement.name.item, None, None, false);
+	let shape = StructShape::new(None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, scope_id, span);
@@ -1158,7 +1158,6 @@ fn create_block_enum<'a>(
 	}
 
 	let mut variants = Vec::new();
-	let mut variants_by_name = FxHashMap::default();
 
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = user_types.len();
@@ -1186,7 +1185,7 @@ fn create_block_enum<'a>(
 		let span = name.span;
 		let name = name.item;
 
-		let shape = StructShape::new(name, Some(enum_shape_index), Some(variant_index), is_transparent);
+		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
 		TypeStore::register_type(&mut user_types, name, variant_generic_parameters, kind, scope_id, span);
 
@@ -1198,11 +1197,10 @@ fn create_block_enum<'a>(
 			is_transparent,
 		};
 		variants.push(variant_shape);
-		variants_by_name.insert(name, variant_index);
 	}
 
 	let name = statement.name.item;
-	let shape = EnumShape::new(variants, variants_by_name);
+	let shape = EnumShape::new(variants);
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	assert_eq!(user_types.len(), enum_shape_index);
@@ -1820,7 +1818,6 @@ fn create_block_functions<'a>(
 			function_store_shapes.push(None);
 			drop(function_store_shapes);
 
-
 			let capacity = statement.generics.len()
 				+ enclosing_generic_parameters.parameters().len()
 				+ base_shape_generics.as_ref().map(|p| p.parameters().len()).unwrap_or(0);
@@ -1932,7 +1929,7 @@ fn create_block_functions<'a>(
 
 					let readable_index = readables.push("self", type_id, ReadableKind::Let);
 					assert_eq!(readable_index, 0);
-					parameters.push(ParameterShape { type_id, is_mutable: false, readable_index });
+					parameters.push(ParameterShape { type_id, readable_index });
 				}
 			}
 
@@ -1955,8 +1952,7 @@ fn create_block_functions<'a>(
 					None => type_store.any_collapse_type_id(),
 				};
 
-				let is_mutable = parameter.item.is_mutable;
-				let readable_kind = match is_mutable {
+				let readable_kind = match parameter.item.is_mutable {
 					false => ReadableKind::Let,
 					true => ReadableKind::Mut,
 				};
@@ -1965,7 +1961,7 @@ fn create_block_functions<'a>(
 				let readable_index = readables.push(name, type_id, readable_kind);
 				assert_eq!(readable_index, index + maybe_self);
 
-				parameters.push(ParameterShape { type_id, is_mutable, readable_index });
+				parameters.push(ParameterShape { type_id, readable_index });
 			}
 
 			drop(scope);
@@ -1998,7 +1994,6 @@ fn create_block_functions<'a>(
 			let shape = FunctionShape {
 				name,
 				module_path,
-				file_index: scope_id.file_index,
 				is_main,
 				generic_parameters,
 				extern_attribute: statement.extern_attribute,
@@ -2026,11 +2021,7 @@ fn create_block_functions<'a>(
 						let error = error!("Method must be defined in the same scope as the self type");
 						messages.message(error.span(statement.name.span));
 					} else {
-						let info = MethodInfo {
-							span: statement.name.span,
-							function_shape_index,
-							kind: method_attribute.item.kind,
-						};
+						let info = MethodInfo { function_shape_index, kind: method_attribute.item.kind };
 
 						let methods = &mut lock.write().methods;
 						assert!(methods.insert(statement.name.item, info).is_none()); // TODO: Detect duplicate methods
@@ -2599,10 +2590,10 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 		context.message(error.span(statement.span));
 	}
 
-	let name = statement.item.name.item;
 	let extern_attribute = statement.item.extern_attribute.map(|n| n.item);
-	let index = context.statics.write().push(name, type_id, extern_attribute);
+	let index = context.statics.write().push(type_id, extern_attribute);
 
+	let name = statement.item.name.item;
 	let kind = SymbolKind::Static { static_index: index };
 	let span = Some(statement.span);
 	context.push_symbol(Symbol { name, kind, span });
@@ -2648,15 +2639,14 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 		type_id = context.type_store.any_collapse_type_id();
 	}
 
-	let is_mutable = statement.item.is_mutable;
-	let kind = match is_mutable {
+	let kind = match statement.item.is_mutable {
 		true => ReadableKind::Mut,
 		false => ReadableKind::Let,
 	};
 	let readable_index = context.push_readable(statement.item.name, type_id, kind);
 
 	let name = statement.item.name.item;
-	Some(Binding { name, type_id, expression, readable_index, is_mutable })
+	Some(Binding { name, type_id, expression, readable_index })
 }
 
 pub fn validate_expression<'a>(
@@ -2837,7 +2827,7 @@ fn validate_if_else_chain_expression<'a>(
 
 	let type_id = type_id.unwrap();
 	let returns = (all_if_bodies_return && else_returns) || first_condition_returns;
-	let chain = IfElseChain { type_id, entries, else_body };
+	let chain = IfElseChain { _type_id: type_id, entries, else_body };
 	let kind = ExpressionKind::IfElseChain(Box::new(chain));
 	Expression { span, type_id, is_mutable: true, returns, kind }
 }
@@ -2978,7 +2968,7 @@ fn validate_match_expression<'a>(
 			};
 
 			let readable_index = scope.push_readable(binding_name, type_id, kind);
-			Some(CheckIsResultBinding { type_id, readable_index, is_mutable })
+			Some(CheckIsResultBinding { type_id, readable_index })
 		} else {
 			None
 		};
@@ -3663,14 +3653,7 @@ fn validate_method_call<'a>(
 	};
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
-	let method_call = MethodCall {
-		base,
-		mutable_self,
-		span,
-		name: method_call.name.item,
-		function_id,
-		arguments,
-	};
+	let method_call = MethodCall { base, function_id, arguments };
 
 	if return_type.is_noreturn(context.type_store) {
 		returns = true;
@@ -3866,11 +3849,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			disallow_type_arguments(context, read, span, "a static read");
 
 			let static_instance = &context.statics.read().statics[static_index];
-			let static_read = StaticRead {
-				name: static_instance.name,
-				type_id: static_instance.type_id,
-				static_index,
-			};
+			let static_read = StaticRead { static_index };
 
 			let type_id = static_instance.type_id;
 			let kind = ExpressionKind::StaticRead(static_read);
@@ -3921,11 +3900,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 	};
 
 	let is_mutable = readable.kind == ReadableKind::Mut;
-	let read = Read {
-		name: readable.name,
-		type_id: readable.type_id,
-		readable_index,
-	};
+	let read = Read { name: readable.name, readable_index };
 
 	let type_id = readable.type_id;
 	let kind = ExpressionKind::Read(read);
@@ -3989,7 +3964,6 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		let field_read = FieldRead {
 			base,
 			name: field.name,
-			type_id,
 			field_index,
 			immutable_reason: reason,
 		};
@@ -4942,7 +4916,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		};
 
 		let readable_index = context.push_readable(binding_name, type_id, kind);
-		Some(CheckIsResultBinding { type_id, readable_index, is_mutable })
+		Some(CheckIsResultBinding { type_id, readable_index })
 	} else {
 		None
 	};
