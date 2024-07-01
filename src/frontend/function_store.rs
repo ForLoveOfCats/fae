@@ -79,9 +79,7 @@ impl<'a> FunctionStore<'a> {
 					parameter.type_id,
 				);
 
-				let is_mutable = parameter.is_mutable;
-				let readable_index = parameter.readable_index;
-				Parameter { type_id, readable_index, is_mutable }
+				Parameter { type_id }
 			})
 			.collect::<Vec<_>>();
 
@@ -101,8 +99,6 @@ impl<'a> FunctionStore<'a> {
 			generic_poisoned,
 			parameters,
 			return_type,
-			been_queued: false,
-			been_generated: false,
 		};
 
 		shape.specializations.push(concrete);

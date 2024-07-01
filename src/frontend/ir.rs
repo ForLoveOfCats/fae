@@ -153,7 +153,6 @@ impl GenericUsage {
 pub struct FunctionShape<'a> {
 	pub name: Node<&'a str>,
 	pub module_path: &'a [String],
-	pub file_index: usize,
 	pub is_main: bool,
 
 	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
@@ -182,7 +181,6 @@ pub struct FunctionSpecializationResult {
 #[derive(Debug, Clone, Copy)]
 pub struct ParameterShape {
 	pub type_id: TypeId,
-	pub is_mutable: bool,
 	pub readable_index: usize,
 }
 
@@ -280,15 +278,11 @@ pub struct Function {
 	pub generic_poisoned: bool,
 	pub parameters: Vec<Parameter>,
 	pub return_type: TypeId,
-	pub been_queued: bool,
-	pub been_generated: bool, // TODO: Remove
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Parameter {
 	pub type_id: TypeId,
-	pub readable_index: usize,
-	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -318,7 +312,7 @@ pub struct IfElseChainEntry<'a> {
 
 #[derive(Debug, Clone)]
 pub struct IfElseChain<'a> {
-	pub type_id: TypeId,
+	pub _type_id: TypeId,
 	pub entries: Vec<IfElseChainEntry<'a>>,
 	pub else_body: Option<Block<'a>>,
 }
@@ -374,7 +368,6 @@ pub struct Binding<'a> {
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 	pub readable_index: usize,
-	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -447,7 +440,7 @@ pub enum ExpressionKind<'a> {
 	Call(Call<'a>),
 	MethodCall(Box<MethodCall<'a>>),
 	Read(Read<'a>),
-	StaticRead(StaticRead<'a>),
+	StaticRead(StaticRead),
 	FieldRead(Box<FieldRead<'a>>),
 
 	UnaryOperation(Box<UnaryOperation<'a>>),
@@ -801,9 +794,6 @@ pub struct Call<'a> {
 #[derive(Debug, Clone)]
 pub struct MethodCall<'a> {
 	pub base: Expression<'a>,
-	pub mutable_self: bool,
-	pub span: Span,
-	pub name: &'a str,
 	pub function_id: FunctionId,
 	pub arguments: Vec<Expression<'a>>,
 }
@@ -811,14 +801,11 @@ pub struct MethodCall<'a> {
 #[derive(Debug, Clone)]
 pub struct Read<'a> {
 	pub name: &'a str,
-	pub type_id: TypeId,
 	pub readable_index: usize,
 }
 
 #[derive(Debug, Clone)]
-pub struct StaticRead<'a> {
-	pub name: &'a str,
-	pub type_id: TypeId,
+pub struct StaticRead {
 	pub static_index: usize,
 }
 
@@ -832,7 +819,6 @@ pub enum FieldReadImmutableReason {
 pub struct FieldRead<'a> {
 	pub base: Expression<'a>,
 	pub name: &'a str,
-	pub type_id: TypeId,
 	pub field_index: usize,
 	pub immutable_reason: Option<FieldReadImmutableReason>,
 }
@@ -874,7 +860,6 @@ pub struct CheckIs<'a> {
 pub struct CheckIsResultBinding {
 	pub type_id: TypeId,
 	pub readable_index: usize,
-	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -885,6 +870,5 @@ pub struct EnumVariantToEnum<'a> {
 
 #[derive(Debug, Clone)]
 pub struct SliceMutableToImmutable<'a> {
-	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }

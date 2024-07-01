@@ -145,7 +145,6 @@ pub struct Enum<'a> {
 	pub name: Node<&'a str>,
 	pub shared_fields: &'a [Field<'a>],
 	pub variants: &'a [EnumVariant<'a>],
-	pub transparent_variant_count: usize,
 }
 
 #[derive(Debug)]

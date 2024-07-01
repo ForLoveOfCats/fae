@@ -1584,7 +1584,6 @@ fn parse_enum_declaration<'a>(
 
 	let mut shared_fields = BumpVec::new_in(bump);
 	let mut variants = BumpVec::new_in(bump);
-	let mut transparent_variant_count = 0;
 
 	if tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
 		tokens.consume_newlines();
@@ -1638,7 +1637,6 @@ fn parse_enum_declaration<'a>(
 					let transparent = TransparentVariant { name, parsed_type };
 					let variant = EnumVariant::Transparent(transparent);
 					variants.push(variant);
-					transparent_variant_count += 1;
 
 					tokens.expect(messages, TokenKind::Newline)?;
 					tokens.consume_newlines();
@@ -1667,7 +1665,6 @@ fn parse_enum_declaration<'a>(
 		name,
 		shared_fields: shared_fields.into_bump_slice(),
 		variants: variants.into_bump_slice(),
-		transparent_variant_count,
 	})
 }
 

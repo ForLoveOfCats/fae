@@ -32,7 +32,6 @@ use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, Typ
 
 pub struct AttributeKinds {
 	pub sret: u32,
-	pub byval: u32,
 }
 
 impl AttributeKinds {
@@ -43,7 +42,7 @@ impl AttributeKinds {
 			kind
 		}
 
-		AttributeKinds { sret: kind("sret"), byval: kind("byval") }
+		AttributeKinds { sret: kind("sret") }
 	}
 }
 
