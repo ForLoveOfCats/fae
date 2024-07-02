@@ -1,0 +1,16 @@
+import fae::stdout::print_bool, print_newline
+
+fn main() {
+	let slice = [true, false]
+
+	let a = slice[0]
+	let b = slice[1]
+
+	slice[0] = b
+	slice[1] = a
+
+	print_bool(slice[0])
+	print_newline()
+	print_bool(slice[1])
+	print_newline()
+}

@@ -1775,7 +1775,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				(alloca, llvm_type)
 			},
 
-			BindingKind::Pointer { pointer, pointed_type } => (pointer, pointed_type),
+			BindingKind::Pointer { pointer, pointed_type } => {
+				// This format hurts my soul
+				let alloca = self.build_alloca(pointed_type, CString::new(format!("generate_binding.{}", name)).unwrap());
+				unsafe {
+					let value = LLVMBuildLoad2(self.builder, pointed_type, pointer, c"generate_binding.pointer.load".as_ptr());
+					LLVMBuildStore(self.builder, value, alloca);
+				}
+				(alloca, pointed_type)
+			}
 		};
 
 		let kind = BindingKind::Pointer { pointer, pointed_type };

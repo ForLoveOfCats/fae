@@ -18,13 +18,30 @@ pub fn run_tests(mut cli_arguments: CliArguments) {
 			continue;
 		}
 
+		let test_name = match entry.file_name().into_string() {
+			Ok(name) => name,
+
+			Err(..) => {
+				eprintln!("\nTest {:?} has an invalid name", entry.file_name());
+				std::process::exit(-1);
+			}
+		};
+
+		let specified_names = &cli_arguments.compiler_test_names;
+		if !specified_names.is_empty() && !specified_names.iter().any(|n| test_name.contains(n)) {
+			continue;
+		}
+
 		if cli_arguments.optimize_artifacts {
-			run_test(&cli_arguments, &entry, &mut successes, &mut failures);
+			run_test(&cli_arguments, &test_name, &entry, &mut successes, &mut failures);
 		} else {
-			run_test(&cli_arguments, &entry, &mut successes, &mut failures);
-			cli_arguments.optimize_artifacts = true;
-			run_test(&cli_arguments, &entry, &mut successes, &mut failures);
-			cli_arguments.optimize_artifacts = false;
+			run_test(&cli_arguments, &test_name, &entry, &mut successes, &mut failures);
+
+			if specified_names.is_empty() {
+				cli_arguments.optimize_artifacts = true;
+				run_test(&cli_arguments, &test_name, &entry, &mut successes, &mut failures);
+				cli_arguments.optimize_artifacts = false;
+			}
 		}
 	}
 
@@ -47,21 +64,7 @@ pub fn run_tests(mut cli_arguments: CliArguments) {
 	eprintln!("└{line}┘");
 }
 
-fn run_test(cli_arguments: &CliArguments, entry: &DirEntry, successes: &mut u64, failures: &mut Vec<String>) {
-	let test_name = match entry.file_name().into_string() {
-		Ok(name) => name,
-
-		Err(..) => {
-			eprintln!("\nTest {:?} has an invalid name", entry.file_name());
-			std::process::exit(-1);
-		}
-	};
-
-	let specified_names = &cli_arguments.compiler_test_names;
-	if !specified_names.is_empty() && !specified_names.iter().any(|n| test_name.contains(n)) {
-		return;
-	}
-
+fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, successes: &mut u64, failures: &mut Vec<String>) {
 	let optimized = match cli_arguments.optimize_artifacts {
 		false => "unoptimized",
 		true => "optimized",
@@ -80,7 +83,7 @@ fn run_test(cli_arguments: &CliArguments, entry: &DirEntry, successes: &mut u64,
 	let mut error_output = String::new();
 
 	let test_config = ProjectConfig {
-		project_name: test_name.clone(),
+		project_name: test_name.to_string(),
 		source_directory: PathBuf::from(""),
 	};
 	let built_project = build_project(cli_arguments, &mut error_output, &entry.path(), Some(test_config));
