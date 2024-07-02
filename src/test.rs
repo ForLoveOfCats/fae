@@ -6,7 +6,7 @@ use crate::cli::CliArguments;
 use crate::color::*;
 use crate::frontend::project::{build_project, ProjectConfig};
 
-pub fn run_tests(mut cli_arguments: CliArguments) {
+pub fn run_tests(mut cli_arguments: CliArguments) -> ! {
 	let mut successes: u64 = 0;
 	let mut failures = Vec::new();
 
@@ -45,6 +45,8 @@ pub fn run_tests(mut cli_arguments: CliArguments) {
 		}
 	}
 
+	let failed = !failures.is_empty();
+
 	let cases = if successes > 1 { "cases" } else { "case" };
 	let success = format!("  Ran {successes} test {cases} successfully");
 	let cases = if failures.len() > 1 { "cases" } else { "case" };
@@ -62,6 +64,12 @@ pub fn run_tests(mut cli_arguments: CliArguments) {
 	}
 
 	eprintln!("└{line}┘");
+
+	if failed {
+		std::process::exit(-1);
+	} else {
+		std::process::exit(0);
+	}
 }
 
 fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, successes: &mut u64, failures: &mut Vec<String>) {

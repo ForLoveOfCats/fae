@@ -34,7 +34,6 @@ fn main() {
 	let cli_arguments = parse_arguments();
 	if cli_arguments.command == CompileCommand::CompilerTest {
 		test::run_tests(cli_arguments);
-		return;
 	}
 
 	let supports_color = cli_arguments.color_messages;
