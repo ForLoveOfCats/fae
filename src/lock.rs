@@ -21,6 +21,7 @@ type Locations = std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<std
 enum AccessKind {
 	Read,
 	Write,
+	Lock,
 }
 
 #[cfg(feature = "duplicate-lock-checking")]
@@ -166,5 +167,32 @@ impl<'a, T> Drop for WriteGuard<'a, T> {
 		let thread_id = std::thread::current().id();
 		let location = self.locations.lock().remove(&thread_id).unwrap();
 		assert_eq!(location.access_kind, AccessKind::Write);
+	}
+}
+
+#[derive(Debug)]
+pub struct ReentrantMutex<T> {
+	lock: parking_lot::ReentrantMutex<T>,
+}
+
+impl<T> ReentrantMutex<T> {
+	pub fn new(data: T) -> Self {
+		ReentrantMutex { lock: parking_lot::ReentrantMutex::new(data) }
+	}
+
+	pub fn lock<'a>(&'a self) -> ReentrantMutexGuard<'a, T> {
+		ReentrantMutexGuard { guard: self.lock.lock() }
+	}
+}
+
+pub struct ReentrantMutexGuard<'a, T> {
+	guard: parking_lot::ReentrantMutexGuard<'a, T>,
+}
+
+impl<'a, T> Deref for ReentrantMutexGuard<'a, T> {
+	type Target = T;
+
+	fn deref(&self) -> &T {
+		self.guard.deref()
 	}
 }

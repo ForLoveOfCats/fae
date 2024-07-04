@@ -1276,6 +1276,13 @@ fn fill_block_struct<'a>(
 ) {
 	let lock = type_store.user_types.read()[shape_index].clone();
 	let user_type = lock.read();
+
+	let filling_lock = match &user_type.kind {
+		UserTypeKind::Struct { shape } => shape.filling_lock.clone(),
+		UserTypeKind::Enum { .. } => unreachable!(),
+	};
+	let _filling_guard = filling_lock.lock();
+
 	let scope = symbols.child_scope();
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
@@ -1355,6 +1362,13 @@ fn fill_block_enum<'a>(
 ) {
 	let lock = type_store.user_types.read()[enum_shape_index].clone();
 	let user_type = lock.read();
+
+	let filling_lock = match &user_type.kind {
+		UserTypeKind::Enum { shape } => shape.filling_lock.clone(),
+		UserTypeKind::Struct { .. } => unreachable!(),
+	};
+	let _filling_guard = filling_lock.lock();
+
 	let scope = symbols.child_scope();
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {

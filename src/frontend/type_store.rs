@@ -10,7 +10,7 @@ use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
 use crate::frontend::tree::{self, FieldAttribute, Node};
-use crate::lock::RwLock;
+use crate::lock::{ReentrantMutex, RwLock};
 use crate::reference::{Ref, SliceRef};
 
 // TODO: This should probably be a u64
@@ -149,7 +149,18 @@ pub struct Layout {
 
 #[derive(Debug)]
 pub struct StructShape<'a> {
+	/* A race condition can occur if one thread attempts to create a new specialization while
+	another thread is filling the shape and pre-existing specializations where the newly
+	created specialization will not be filled.
+
+	We avoid that by preventing any threads from creating specializations while another thread
+	is actively filling the shape and pre-existing specializations. However it must still allow
+	that same thread to access the shape deeper in the callstack as it is valid in some cases
+	for a user type to be self-referential, eg via a pointer, so it must be able to add new
+	specializations mid-filling. */
+	pub filling_lock: Ref<ReentrantMutex<()>>,
 	pub been_filled: bool,
+
 	pub fields: Vec<Node<FieldShape<'a>>>,
 
 	pub parent_enum_shape_index: Option<usize>,
@@ -163,6 +174,7 @@ pub struct StructShape<'a> {
 impl<'a> StructShape<'a> {
 	pub fn new(parent_enum_shape_index: Option<usize>, variant_index: Option<usize>, is_transparent_variant: bool) -> Self {
 		StructShape {
+			filling_lock: Ref::new(ReentrantMutex::new(())),
 			been_filled: false,
 			fields: Vec::new(),
 			parent_enum_shape_index,
@@ -202,7 +214,10 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct EnumShape<'a> {
+	// See comment on `filling_lock` field of `StructShape` for details
+	pub filling_lock: Ref<ReentrantMutex<()>>,
 	pub been_filled: bool,
+
 	pub shared_fields: SliceRef<Node<FieldShape<'a>>>,
 
 	pub variant_shapes: Vec<EnumVariantShape<'a>>,
@@ -214,6 +229,7 @@ pub struct EnumShape<'a> {
 impl<'a> EnumShape<'a> {
 	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>) -> Self {
 		EnumShape {
+			filling_lock: Ref::new(ReentrantMutex::new(())),
 			been_filled: false,
 			shared_fields: SliceRef::new_empty(),
 			variant_shapes,
@@ -1654,11 +1670,24 @@ impl<'a> TypeStore<'a> {
 		let _zone = zone!("struct specialization");
 
 		let lock = self.user_types.read()[shape_index].clone();
-		let user_type = lock.read();
-		let shape = match &user_type.kind {
+		let mut user_type = lock.read();
+		let mut shape = match &user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
+
+		if !shape.been_filled {
+			let filling_lock = shape.filling_lock.clone();
+
+			drop(user_type);
+			filling_lock.lock();
+
+			user_type = lock.read();
+			shape = match &user_type.kind {
+				UserTypeKind::Struct { shape } => shape,
+				kind => unreachable!("{kind:?}"),
+			};
+		}
 
 		if type_arguments.explicit_len != user_type.generic_parameters.explicit_len() {
 			let error = error!(
@@ -1760,11 +1789,24 @@ impl<'a> TypeStore<'a> {
 		let _zone = zone!("enum specialization");
 
 		let lock = self.user_types.read()[enum_shape_index].clone();
-		let user_type = lock.read();
-		let shape = match &user_type.kind {
+		let mut user_type = lock.read();
+		let mut shape = match &user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
+
+		if !shape.been_filled {
+			let filling_lock = shape.filling_lock.clone();
+
+			drop(user_type);
+			filling_lock.lock();
+
+			user_type = lock.read();
+			shape = match &user_type.kind {
+				UserTypeKind::Enum { shape } => shape,
+				kind => unreachable!("{kind:?}"),
+			};
+		}
 
 		if type_arguments.explicit_len != user_type.generic_parameters.explicit_len() {
 			let error = error!(
