@@ -176,25 +176,32 @@ impl<'a, 'b> Drop for SymbolsScope<'a, 'b> {
 	}
 }
 
-#[derive(Debug)]
-pub struct Externs {
-	pub externs: FxHashMap<String, Span>,
+#[derive(Debug, Clone, Copy)]
+pub struct ExternLocation<'a> {
+	pub span: Span,
+	pub module_path: &'a [String],
 }
 
-impl Externs {
-	pub fn new() -> Externs {
+#[derive(Debug)]
+pub struct Externs<'a> {
+	pub externs: FxHashMap<String, Vec<ExternLocation<'a>>>,
+}
+
+impl<'a> Externs<'a> {
+	pub fn new() -> Self {
 		Externs { externs: FxHashMap::default() }
 	}
 
-	pub fn push(&mut self, messages: &mut Messages, name: &str, span: Span) {
+	pub fn push(&mut self, messages: &mut Messages<'a>, name: &str, span: Span) {
+		let location = ExternLocation { span, module_path: messages.module_path() };
+
 		match self.externs.entry(name.to_string()) {
-			hash_map::Entry::Occupied(occupied) => {
-				let error = error!("Duplicate extern declaration {name:?}").span(span);
-				messages.message(error.note(note!(*occupied.get(), "Other declaration here")));
+			hash_map::Entry::Occupied(mut occupied) => {
+				occupied.get_mut().push(location);
 			}
 
 			hash_map::Entry::Vacant(entry) => {
-				entry.insert(span);
+				entry.insert(vec![location]);
 			}
 		}
 	}

@@ -11,7 +11,7 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::parser::parse_file;
 use crate::frontend::root_layers::RootLayers;
-use crate::frontend::symbols::Statics;
+use crate::frontend::symbols::{Externs, Statics};
 use crate::frontend::tokenizer::Tokenizer;
 use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
@@ -141,6 +141,7 @@ pub fn build_project(
 	let mut root_layers = RootLayers::new(root_name);
 	let mut type_store = TypeStore::new(cli_arguments.debug_generics, cli_arguments.debug_type_ids);
 	let function_store = FunctionStore::new();
+	let externs = RwLock::new(Externs::new());
 	let statics = RwLock::new(Statics::new());
 	validate(
 		cli_arguments,
@@ -151,6 +152,7 @@ pub fn build_project(
 		&mut root_layers,
 		&mut type_store,
 		&function_store,
+		&externs,
 		&statics,
 		&parsed_files,
 	);
@@ -158,7 +160,11 @@ pub fn build_project(
 	any_errors |= root_messages.any_errors();
 	any_messages |= root_messages.any_messages();
 	root_messages.print_messages(message_output, "Validation");
+	let had_duplicate_externs = root_messages.print_duplicate_externs_messages(message_output, "Validation", &externs.read());
+	any_errors |= had_duplicate_externs;
+	any_messages |= had_duplicate_externs;
 	root_messages.reset();
+
 	if any_errors {
 		#[cfg(not(feature = "measure-lock-contention"))]
 		if !is_test {

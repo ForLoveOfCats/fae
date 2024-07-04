@@ -38,7 +38,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub root_layers: &'b RootLayers<'a>,
 
 	pub lang_items: &'b RwLock<LangItems>,
-	pub externs: &'b RwLock<Externs>,
+	pub externs: &'b RwLock<Externs<'a>>,
 	pub constants: &'b RwLock<Vec<ConstantValue<'a>>>,
 	pub statics: &'b RwLock<Statics<'a>>,
 	pub initial_readables_starting_index: usize,
@@ -259,6 +259,7 @@ pub fn validate<'a>(
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
+	externs: &RwLock<Externs<'a>>,
 	statics: &RwLock<Statics<'a>>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
@@ -284,7 +285,6 @@ pub fn validate<'a>(
 
 	const THREAD_COUNT: usize = 6;
 	let barrier = std::sync::Barrier::new(THREAD_COUNT);
-	let externs = RwLock::new(Externs::new());
 	let constants = RwLock::new(Vec::new());
 
 	std::thread::scope(|scope| {
@@ -410,7 +410,7 @@ fn deep_pass<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
-	externs: &RwLock<Externs>,
+	externs: &RwLock<Externs<'a>>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
@@ -453,7 +453,7 @@ fn deep_pass<'a>(
 			function_generic_usages,
 			root_layers,
 			lang_items,
-			externs: &externs,
+			externs,
 			constants: &constants,
 			statics,
 			initial_readables_starting_index: 0,
@@ -627,7 +627,7 @@ fn create_root_functions<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	externs: &RwLock<Externs>,
+	externs: &RwLock<Externs<'a>>,
 	readables: &mut Readables<'a>,
 	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	local_function_shape_indicies: &[RwLock<Vec<usize>>],
@@ -690,7 +690,7 @@ fn validate_root_consts<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
-	externs: &RwLock<Externs>,
+	externs: &RwLock<Externs<'a>>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
@@ -780,7 +780,7 @@ fn validate_root_statics<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	function_generic_usages: &mut Vec<GenericUsage>,
-	externs: &RwLock<Externs>,
+	externs: &RwLock<Externs<'a>>,
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
@@ -1809,7 +1809,7 @@ fn create_block_functions<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
-	externs: &RwLock<Externs>,
+	externs: &RwLock<Externs<'a>>,
 	readables: &mut Readables<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -2011,7 +2011,6 @@ fn create_block_functions<'a>(
 
 			let name = statement.name;
 			if let Some(Node { item: extern_attribute, .. }) = statement.extern_attribute {
-				// TODO: Detect duplicate externs
 				externs.write().push(messages, extern_attribute.name, name.span);
 			}
 
@@ -2602,7 +2601,6 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 
 fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Static<'a>>) -> Option<()> {
 	if let Some(extern_attribute) = statement.item.extern_attribute {
-		// TODO: Detect duplicate externs
 		let name = extern_attribute.item.name;
 		context.externs.write().push(context.messages, name, statement.span);
 	} else {

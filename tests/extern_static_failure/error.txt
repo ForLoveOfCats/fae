@@ -14,13 +14,6 @@ Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 13: A
   13| #lang "made_up_lang_item"
       ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 5: Duplicate extern declaration "made_up_symbol"
-  5| static DUPLICATE: i32
-     ^^^^^^^^^^^^^^^^^^^^^
-Note: ./tests/extern_static_failure/extern_static_failure.fae, line 2: Other declaration here
-  2| static EXTERNAL_STATIC: i32
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 7: Static definition must have extern attribute
   7| static MISSING_EXTERN: u8
      ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -28,3 +21,11 @@ Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 
 Validation error: ./tests/extern_static_failure/extern_static_failure.fae, line 18: A static definition is only allowed in a root scope
   18|     static NON_ROOT: f64
           ^^^^^^^^^^^^^^^^^^^^
+
+Validation error: Duplicate declarations for extern `made_up_symbol`
+Note: ./tests/extern_static_failure/extern_static_failure.fae, line 2: Declaration here
+  2| static EXTERNAL_STATIC: i32
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Note: ./tests/extern_static_failure/extern_static_failure.fae, line 5: Declaration here
+  5| static DUPLICATE: i32
+     ^^^^^^^^^^^^^^^^^^^^^

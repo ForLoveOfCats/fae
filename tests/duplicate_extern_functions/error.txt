@@ -1,6 +1,7 @@
-Validation error: ./tests/duplicate_extern_functions/other_file.fae, line 2: Duplicate extern declaration "made_up_function"
-  2| fn function_two()
-        ^^^^^^^^^^^^
-Note: ./tests/duplicate_extern_functions/duplicate_extern_functions.fae, line 4: Other declaration here
+Validation error: Duplicate declarations for extern `made_up_function`
+Note: ./tests/duplicate_extern_functions/duplicate_extern_functions.fae, line 4: Declaration here
   4| fn function_one()
+        ^^^^^^^^^^^^
+Note: ./tests/duplicate_extern_functions/other_file.fae, line 2: Declaration here
+  2| fn function_two()
         ^^^^^^^^^^^^

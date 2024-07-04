@@ -4,6 +4,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::frontend::file::SourceFile;
 use crate::frontend::span::Span;
+use crate::frontend::symbols::Externs;
 
 pub const TABULATOR_SIZE: usize = 4;
 
@@ -121,6 +122,10 @@ impl<'a> Messages<'a> {
 		Messages { messages: Vec::new(), any_errors: false, module_path }
 	}
 
+	pub fn module_path(&self) -> &'a [String] {
+		self.module_path
+	}
+
 	pub fn any_messages(&self) -> bool {
 		!self.messages.is_empty()
 	}
@@ -174,6 +179,25 @@ impl<'a> RootMessages<'a> {
 		}
 
 		self.file_messages.clear();
+	}
+
+	pub fn print_duplicate_externs_messages(&self, output: &mut impl WriteFmt, stage: &str, externs: &Externs) -> bool {
+		let mut has_duplicates: Vec<_> = externs.externs.iter().filter(|(_, externs)| externs.len() > 1).collect();
+		has_duplicates.sort_by_key(|(name, _)| *name);
+
+		for duplicates in &has_duplicates {
+			let mut externs = duplicates.1.clone();
+			externs.sort_by_key(|e| e.module_path);
+
+			let mut error = error!("Duplicate declarations for extern `{}`", duplicates.0);
+			for duplicate in externs {
+				error = error.note(note!(duplicate.span, "Declaration here"));
+			}
+
+			error.print(output, self.sources, stage);
+		}
+
+		!has_duplicates.is_empty()
 	}
 
 	pub fn reset(&mut self) {
