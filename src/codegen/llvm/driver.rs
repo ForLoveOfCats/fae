@@ -155,21 +155,42 @@ pub fn generate_code<'a>(
 
 	#[cfg(target_os = "macos")]
 	{
-		let path = PathBuf::from("./fae_target/fae_executable.aarch64");
+		let executable_path = PathBuf::from("./fae_target/fae_executable.aarch64");
+
+		let sdk_version = call_xcrun("--show-sdk-version");
+
+		let mut sdk_path = PathBuf::from(call_xcrun("--show-sdk-path"));
+		sdk_path.push("usr/lib/libSystem.tbd");
+
 		let mut lld = Command::new("ld64.lld")
 			.arg(object_path)
 			.arg("-dynamic")
-			.args(["-platform_version", "macos", "14.5.0", "14.5.0"])
+			// TODO: Allow targetting versions of macOS older than installed version
+			.args(["-platform_version", "macos", &sdk_version, &sdk_version])
 			.args(["-arch", "arm64"])
-			.arg("/Library/Developer/CommandLineTools/SDKs/MacOSX13.sdk/usr/lib/libSystem.tbd")
+			.arg(sdk_path)
 			.arg("-o")
-			.arg(&path)
+			.arg(&executable_path)
 			.spawn()
 			.unwrap();
 
 		let status = lld.wait().unwrap();
 		assert!(status.success());
 
-		return path;
+		return executable_path;
 	}
+}
+
+#[cfg(target_os = "macos")]
+fn call_xcrun(argument: &str) -> String {
+	let output = match Command::new("xcrun").arg(argument).output() {
+		Ok(output) => output,
+
+		Err(err) => {
+			eprintln!("Failed to run xcrun: {err:?}");
+			std::process::exit(-1);
+		}
+	};
+
+	String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
