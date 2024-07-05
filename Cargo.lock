@@ -69,8 +69,8 @@ dependencies = [
  "bumpalo",
  "bumpalo-herd",
  "llvm-sys",
- "parking_lot 0.12.3",
  "parking_lot 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parking_lot 0.12.3 (git+https://github.com/ForLoveOfCats/parking_lot.git?branch=contention-statistics)",
  "rustc-hash",
  "serde",
  "tikv-jemallocator",
@@ -138,6 +138,8 @@ dependencies = [
 [[package]]
 name = "lock_api"
 version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
 dependencies = [
  "autocfg",
  "scopeguard",
@@ -146,8 +148,7 @@ dependencies = [
 [[package]]
 name = "lock_api"
 version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
+source = "git+https://github.com/ForLoveOfCats/parking_lot.git?branch=contention-statistics#d4ae989b33446604e59d58a79a59bab91ac3a18f"
 dependencies = [
  "autocfg",
  "scopeguard",
@@ -212,14 +213,6 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "parking_lot"
 version = "0.12.3"
-dependencies = [
- "lock_api 0.4.12",
- "parking_lot_core 0.9.10",
-]
-
-[[package]]
-name = "parking_lot"
-version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
 dependencies = [
@@ -228,8 +221,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "parking_lot"
+version = "0.12.3"
+source = "git+https://github.com/ForLoveOfCats/parking_lot.git?branch=contention-statistics#d4ae989b33446604e59d58a79a59bab91ac3a18f"
+dependencies = [
+ "lock_api 0.4.12 (git+https://github.com/ForLoveOfCats/parking_lot.git?branch=contention-statistics)",
+ "parking_lot_core 0.9.10 (git+https://github.com/ForLoveOfCats/parking_lot.git?branch=contention-statistics)",
+]
+
+[[package]]
 name = "parking_lot_core"
 version = "0.9.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
 dependencies = [
  "cfg-if",
  "libc",
@@ -241,8 +245,7 @@ dependencies = [
 [[package]]
 name = "parking_lot_core"
 version = "0.9.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
+source = "git+https://github.com/ForLoveOfCats/parking_lot.git?branch=contention-statistics#d4ae989b33446604e59d58a79a59bab91ac3a18f"
 dependencies = [
  "cfg-if",
  "libc",
