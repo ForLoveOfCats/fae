@@ -1,0 +1,2 @@
+`b` shared_field is greater than 4
+`struct_field.shared_field` is true

@@ -1415,7 +1415,7 @@ fn fill_block_enum<'a>(
 	};
 
 	// Yuck
-	let mut variant_shapes = shape.variant_shapes.clone();
+	let mut variant_shapes = shape.variant_shapes.to_vec();
 	drop(user_type);
 
 	for variant_shape in &mut variant_shapes {
@@ -1440,7 +1440,7 @@ fn fill_block_enum<'a>(
 		UserTypeKind::Enum { shape } => {
 			assert!(shape.shared_fields.is_empty());
 			shape.shared_fields = SliceRef::from(shared_fields);
-			shape.variant_shapes = variant_shapes;
+			shape.variant_shapes = SliceRef::from(variant_shapes);
 			assert!(!shape.been_filled);
 			shape.been_filled = true;
 
@@ -1696,40 +1696,54 @@ fn fill_pre_existing_enum_specializations<'a>(
 		kind => unreachable!("{kind:?}"),
 	};
 
+	let shared_fields_shapes = shape.shared_fields.clone();
+	let variant_shapes = shape.variant_shapes.clone();
 	let mut specializations = shape.specializations.clone(); // Belch
 	drop(user_type);
 
+	for variant_shape in variant_shapes.iter() {
+		fill_pre_existing_struct_specializations(
+			messages,
+			type_store,
+			function_store,
+			generic_usages,
+			module_path,
+			variant_shape.struct_shape_index,
+		);
+	}
+
 	for specialization in &mut specializations {
 		assert!(!specialization.been_filled);
-		assert_eq!(specialization.variants_by_name.len(), 0);
 
-		let mut shared_fields = specialization.shared_fields.to_vec();
-		for field in &mut shared_fields {
-			field.type_id = type_store.specialize_with_user_type_generics(
+		assert_eq!(specialization.shared_fields.len(), 1); // The tag field
+		let mut shared_fields = Vec::with_capacity(shared_fields_shapes.len() + 1);
+		shared_fields.extend_from_slice(&specialization.shared_fields);
+
+		for field_shape_node in &mut shared_fields_shapes.iter() {
+			let field_shape = &field_shape_node.item;
+
+			let type_id = type_store.specialize_with_user_type_generics(
 				messages,
 				function_store,
 				module_path,
 				generic_usages,
 				shape_index,
 				specialization.type_arguments.clone(),
-				field.type_id,
+				field_shape.field_type,
 			);
+
+			let field = Field {
+				span: Some(field_shape_node.span),
+				name: field_shape.name,
+				type_id,
+				attribute: field_shape.attribute,
+				read_only: field_shape.read_only,
+			};
+
+			shared_fields.push(field);
 		}
+
 		specialization.shared_fields = SliceRef::from(shared_fields);
-
-		let mut variants = specialization.variants.to_vec();
-		for variant in &mut variants {
-			variant.type_id = type_store.specialize_with_user_type_generics(
-				messages,
-				function_store,
-				module_path,
-				generic_usages,
-				shape_index,
-				specialization.type_arguments.clone(),
-				variant.type_id,
-			);
-		}
-		specialization.variants = SliceRef::from(variants);
 	}
 
 	let mut user_type = lock.write();
@@ -1738,12 +1752,10 @@ fn fill_pre_existing_enum_specializations<'a>(
 			for (actual, updated) in shape.specializations.iter_mut().zip(specializations.into_iter()) {
 				assert!(!actual.been_filled);
 				actual.been_filled = true;
-				assert_eq!(actual.variants_by_name.len(), 0);
 
-				assert_eq!(actual.shared_fields.len(), 0);
+				assert!(actual.layout.is_none());
+
 				actual.shared_fields = updated.shared_fields;
-				assert_eq!(actual.variants.len(), 0);
-				actual.variants = updated.variants;
 			}
 		}
 

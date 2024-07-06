@@ -1,0 +1,27 @@
+import fae::stdout::print_string
+
+fn main() {
+	let instance = MyStruct.new()
+	if instance.struct_field.shared_field {
+		print_string("`struct_field.shared_field` is true\n")
+	}
+}
+
+struct MyStruct {
+	struct_field: MyEnum<bool>
+}
+
+method static MyStruct
+fn new(): MyStruct {
+	let a = MyEnum<bool>.Variant { shared_field: true,  field: 42 }
+	let b: MyEnum<f64> = .Variant { shared_field: 4.2,  field: 42 }
+	if b.shared_field > 4 => print_string("`b` shared_field is greater than 4\n")
+	return MyStruct { struct_field: a }
+}
+
+generic T
+enum MyEnum {
+	shared_field: T
+
+	Variant { field: i32 }
+}

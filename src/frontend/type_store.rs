@@ -220,7 +220,7 @@ pub struct EnumShape<'a> {
 
 	pub shared_fields: SliceRef<Node<FieldShape<'a>>>,
 
-	pub variant_shapes: Vec<EnumVariantShape<'a>>,
+	pub variant_shapes: SliceRef<EnumVariantShape<'a>>,
 
 	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Enum<'a>>,
@@ -232,7 +232,7 @@ impl<'a> EnumShape<'a> {
 			filling_lock: Ref::new(ReentrantMutex::new(())),
 			been_filled: false,
 			shared_fields: SliceRef::new_empty(),
-			variant_shapes,
+			variant_shapes: SliceRef::from(variant_shapes),
 			specializations_by_type_arguments: FxHashMap::default(),
 			specializations: Vec::new(),
 		}
