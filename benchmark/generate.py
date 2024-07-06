@@ -82,7 +82,7 @@ fn tick(current_time: f64) {{
 	self.elapsed += delta
 
 	mut index: isize = 0
-	while index < self.entities.length {{
+	while index < self.entities.items.length {{
 		self.entities.get_mut(index).tick(delta)
 		index += 1
 	}}
