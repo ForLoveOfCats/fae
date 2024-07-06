@@ -17,12 +17,12 @@ fn read_until_newline(buffer: &mut List<u8>) {
 	const ChunkSize = 20
 
 	while true {
-		let original_length = buffer.length
-		buffer.reserve_capacity(buffer.length + ChunkSize)
-		let pointer = offset_pointer_mut<u8>(buffer.items_pointer, original_length)
+		let original_length = buffer.items.length
+		buffer.reserve_capacity(buffer.items.length + ChunkSize)
+		let pointer = offset_pointer_mut<u8>(buffer.items.pointer, original_length)
 
 		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
-		buffer.length = original_length + bytes_read
+		buffer.set_length(original_length + bytes_read)
 
 		if buffer.last() is last: Some and last == b'\n' => return
 	}

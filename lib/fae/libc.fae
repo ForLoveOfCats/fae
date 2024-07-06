@@ -36,7 +36,7 @@ extern "fprintf"
 fn fprintf(stream: &FileHandle, pointer: &u8, ...)
 
 extern "free"
-fn free(ptr: &mut u8)
+fn free(ptr: &u8)
 
 extern "fwrite"
 fn fwrite(data: &u8, size: usize, count: usize, stream: &FileHandle): usize

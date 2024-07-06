@@ -1,3 +1,5 @@
+import fae::intrinsics::create_slice_mut
+
 #intrinsic
 generic T
 fn size_of(): isize
@@ -9,6 +11,12 @@ fn alignment_of(): isize
 generic T
 fn null_pointer(): &mut T {
 	return 0.(&mut T)
+}
+
+generic T
+fn null_slice(): []mut T {
+	let null = null_pointer<T>()
+	return create_slice_mut<T>(null, 0)
 }
 
 generic T

@@ -1,0 +1,36 @@
+import fae::intrinsics::create_slice_mut
+import fae::libc::malloc, memcpy
+
+generic T
+fn allocate_copied(source: &T): &mut T {
+    let size = size_of<T>().(usize)
+    let pointer = malloc(size)
+    memcpy(pointer, source.(&u8), size)
+    return pointer.(&mut T)
+}
+
+generic T
+fn allocate_moved(source: T): &mut T {
+    let size = size_of<T>().(usize)
+    let pointer = malloc(size)
+    memcpy(pointer, source.&.(&u8), size)
+    return pointer.(&mut T)
+}
+
+generic T
+fn free(pointer: &T) {
+    fae::libc::free(pointer.(&u8))
+}
+
+generic T
+fn allocate_slice_copied(source: []T): []mut T {
+    let size = (size_of<T>() * source.length).(usize)
+    let pointer = malloc(size)
+    memcpy(pointer, source.pointer.(&u8), size)
+    return create_slice_mut<T>(pointer.(&mut T), source.length)
+}
+
+generic T
+fn free_slice(slice: []T) {
+    free<T>(slice.pointer)
+}

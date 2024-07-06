@@ -26,7 +26,7 @@ fn play_round() {
 		stdin.read_until_newline(buffer.&mut)
 		buffer.push(0)
 
-		let guess = atol(buffer.items_pointer)
+		let guess = atol(buffer.items.pointer)
 		printf("You guessed %d\n".pointer, guess)
 
 		if guess < number => print_string("Too low\n")

@@ -4034,14 +4034,14 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				name: "pointer",
 				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
 				attribute: None,
-				read_only: true,
+				read_only: false,
 			},
 			Field {
 				span: None,
 				name: "length",
 				type_id: context.type_store.isize_type_id(),
 				attribute: None,
-				read_only: true,
+				read_only: false,
 			},
 		];
 		return handle_fields(context, dot_access, base, mutable, slice_fields, false, span);
