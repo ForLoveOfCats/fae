@@ -1949,21 +1949,24 @@ fn create_block_functions<'a>(
 					MethodKind::Static => None,
 				};
 
-				let method_base_shape_index = method_base_shape_index.unwrap();
-
 				if let Some(mutable) = mutable {
-					let base_type = type_store.get_or_add_shape_specialization(
-						messages,
-						&function_store,
-						module_path,
-						generic_usages,
-						method_base_shape_index,
-						Some(method_attribute.span),
-						Ref::new(base_type_arguments),
-					);
-					let type_id = match base_type {
-						Some(base_type) => type_store.pointer_to(base_type, mutable),
-						None => type_store.any_collapse_type_id(),
+					let type_id = if let Some(method_base_shape_index) = method_base_shape_index {
+						let base_type = type_store.get_or_add_shape_specialization(
+							messages,
+							&function_store,
+							module_path,
+							generic_usages,
+							method_base_shape_index,
+							Some(method_attribute.span),
+							Ref::new(base_type_arguments),
+						);
+
+						match base_type {
+							Some(base_type) => type_store.pointer_to(base_type, mutable),
+							None => type_store.any_collapse_type_id(),
+						}
+					} else {
+						type_store.any_collapse_type_id()
 					};
 
 					let readable_index = readables.push("self", type_id, ReadableKind::Let);
