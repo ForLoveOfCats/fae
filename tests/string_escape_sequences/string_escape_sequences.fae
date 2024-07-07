@@ -1,5 +1,5 @@
 fn main() {
-	print_cases([
+	print_cases([]{
 		"hello there"
 		"hello\nthere"
 		"\nthere"
@@ -17,7 +17,7 @@ fn main() {
 		"\thello\t"
 		"\\hel\\lo\\"
 		"hello\0there"
-	])
+	})
 }
 
 fn print_cases(cases: []str) {

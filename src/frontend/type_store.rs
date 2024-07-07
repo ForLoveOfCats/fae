@@ -1120,6 +1120,10 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn pointer_to(&mut self, type_id: TypeId, mutable: bool) -> TypeId {
+		if type_id.is_any_collapse(self) {
+			return type_id;
+		}
+
 		let reference_entries = self.get_or_create_reference_entries(type_id);
 		let entry = match mutable {
 			false => reference_entries,
@@ -1129,6 +1133,10 @@ impl<'a> TypeStore<'a> {
 	}
 
 	pub fn slice_of(&mut self, type_id: TypeId, mutable: bool) -> TypeId {
+		if type_id.is_any_collapse(self) {
+			return type_id;
+		}
+
 		let reference_entries = self.get_or_create_reference_entries(type_id);
 		let entry = match mutable {
 			false => reference_entries + 2,

@@ -557,32 +557,37 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::OpenBracket => {
-			let open_token = tokens.next()?;
+			let type_start_token = tokens.next()?;
+			tokens.expect(messages, TokenKind::CloseBracket)?;
 
-			let multi_line = tokens.peek_kind() == Ok(TokenKind::Newline);
-			if multi_line {
-				tokens.expect(messages, TokenKind::Newline)?;
-			}
+			let parsed_type = if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+				None
+			} else {
+				Some(parse_type(bump, messages, tokens)?)
+			};
+
+			tokens.expect(messages, TokenKind::OpenBrace)?;
+			tokens.consume_newlines();
 
 			let mut expressions = BumpVec::new_in(bump);
-			while tokens.peek_kind() != Ok(TokenKind::CloseBracket) {
+			while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
 				expressions.push(parse_expression(bump, messages, tokens, true)?);
 
-				if multi_line {
-					if tokens.peek_kind() == Ok(TokenKind::Comma) {
-						tokens.next()?;
-					}
+				if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+					break;
+				} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+					tokens.next()?;
+					tokens.consume_newlines();
+				} else {
 					tokens.expect(messages, TokenKind::Newline)?;
-				} else if tokens.peek_kind() != Ok(TokenKind::CloseBracket) {
-					tokens.expect(messages, TokenKind::Comma)?;
 				}
 			}
 
-			let close_token = tokens.expect(messages, TokenKind::CloseBracket)?;
+			let close_token = tokens.expect(messages, TokenKind::CloseBrace)?;
 
-			let literal = ArrayLiteral { expressions: expressions.into_bump_slice() };
+			let literal = ArrayLiteral { parsed_type, expressions: expressions.into_bump_slice() };
 			let expression = Expression::ArrayLiteral(literal);
-			let span = open_token.span + close_token.span;
+			let span = type_start_token.span + close_token.span;
 			Ok(Node::new(expression, span))
 		}
 

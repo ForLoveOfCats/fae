@@ -1,7 +1,7 @@
 import fae::libc::printf, fflush, fwrite, StdOutFile
 
 fn print_clear() {
-	let string = [27.(u8), 91, 50, 74, 0]
+	let string = []u8 { 27, 91, 50, 74, 0 }
 	fwrite(string.pointer, 1, string.length.(usize), StdOutFile.*)
 	fflush(StdOutFile.*)
 }

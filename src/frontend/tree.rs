@@ -256,6 +256,7 @@ pub struct StringLiteral<'a> {
 
 #[derive(Debug)]
 pub struct ArrayLiteral<'a> {
+	pub parsed_type: Option<Node<Type<'a>>>,
 	pub expressions: &'a [Node<Expression<'a>>],
 }
 

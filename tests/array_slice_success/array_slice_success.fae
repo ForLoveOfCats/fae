@@ -8,7 +8,7 @@ fn func(slice: []i32) {
 }
 
 fn main() {
-	let array: []mut i32 = [1.(i32), 2]
+	let array: []mut i32 = []i32 { 1, 2 }
 	func(array)
 	array[1] = 3
 	array[0] = 4

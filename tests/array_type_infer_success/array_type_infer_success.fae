@@ -1,0 +1,22 @@
+fn main() {
+	let _: []bool = []{ true, false }
+	let _ = []{ true, false }
+
+	let _: []void = []{ void, void }
+	let _ = []{ void, void }
+
+	let _: []i32 = []{ returns_int() }
+	let _ = []{ returns_int() }
+
+	let _: []f64 = []{ returns_generic<f64>(8) }
+	let _ = []{ returns_generic<f64>(8) }
+}
+
+fn returns_int(): i32 {
+	return 4
+}
+
+generic T
+fn returns_generic(value: T): T {
+	return value
+}

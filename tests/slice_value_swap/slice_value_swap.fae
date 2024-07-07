@@ -1,7 +1,7 @@
 import fae::stdout::print_bool, print_newline
 
 fn main() {
-	let slice = [true, false]
+	let slice = []{ true, false }
 
 	let a = slice[0]
 	let b = slice[1]

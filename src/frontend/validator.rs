@@ -3135,6 +3135,13 @@ fn validate_array_literal<'a>(
 	literal: &'a tree::ArrayLiteral<'a>,
 	span: Span,
 ) -> Expression<'a> {
+	let pointee_type_id = literal.parsed_type.as_ref().map(|parsed_type| {
+		context
+			.lookup_type(parsed_type)
+			.unwrap_or(context.type_store.any_collapse_type_id())
+	});
+	context.expected_type = pointee_type_id;
+
 	let mut returns = false;
 	let mut expressions = Vec::with_capacity(literal.expressions.len());
 	for expression in literal.expressions {
@@ -3143,10 +3150,28 @@ fn validate_array_literal<'a>(
 		expressions.push(expression);
 	}
 
-	let pointee_type_id = expressions.first().expect("TODO: Support item-less array literal").type_id;
+	let pointee_type_id = if let Some(pointee_type_id) = pointee_type_id {
+		pointee_type_id
+	} else if let Some(first) = expressions.first() {
+		if first.type_id.is_untyped_integer(context.type_store) {
+			let error = error!("Cannot infer array type from untyped integer first item");
+			context.message(error.span(first.span));
+			context.type_store.any_collapse_type_id()
+		} else if first.type_id.is_untyped_decimal(context.type_store) {
+			let error = error!("Cannot infer array type from untyped decimal first item");
+			context.message(error.span(first.span));
+			context.type_store.any_collapse_type_id()
+		} else {
+			first.type_id
+		}
+	} else {
+		context.message(error!("Cannot infer array type from empty array").span(span));
+		context.type_store.any_collapse_type_id()
+	};
+
 	for expression in &mut expressions {
 		let collapsed = context.collapse_to(pointee_type_id, expression);
-		if !collapsed.unwrap_or(true) {
+		if !collapsed.unwrap_or(true) && !pointee_type_id.is_any_collapse(context.type_store) {
 			let error = error!(
 				"Type mismatch for array entry, expected {} but got {}",
 				context.type_name(pointee_type_id),

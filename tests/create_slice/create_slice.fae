@@ -35,7 +35,7 @@ fn main() {
 
 	let pointer = malloc(10 * 4)
 	let slice = fae::intrinsics::create_slice_mut<i32>(pointer.(&mut i32), 10)
-	let source = [-800.(i32), -700, -600, -500, -400, -300, -200, -100, 0, 100]
+	let source = []i32 { -800, -700, -600, -500, -400, -300, -200, -100, 0, 100 }
 	memcpy(slice.pointer.(&mut u8), source.pointer.(&mut u8), 10 * 4)
 
 	mut index: isize = 0

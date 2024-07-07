@@ -7,7 +7,7 @@ fn func(slice: []void): bool {
 }
 
 fn main() {
-	let slice: []mut void = [void, void]
+	let slice: []mut void = []{ void, void }
 	slice[0] = void
 	print_bool(func(slice))
 	print_newline()
