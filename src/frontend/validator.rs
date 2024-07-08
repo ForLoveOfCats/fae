@@ -296,7 +296,15 @@ pub fn validate<'a>(
 				let herd_member = herd.get();
 				let mut function_generic_usages = Vec::new();
 
-				create_root_types(&root_messages, &mut type_store, root_layers, &parsed_files_iter_1, &type_shape_indicies);
+				create_root_types(
+					&root_messages,
+					lang_items,
+					&mut type_store,
+					function_store,
+					root_layers,
+					&parsed_files_iter_1,
+					&type_shape_indicies,
+				);
 
 				barrier.wait();
 
@@ -485,7 +493,9 @@ fn deep_pass<'a>(
 
 fn create_root_types<'a>(
 	root_messages: &RwLock<&mut RootMessages<'a>>,
+	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
 	root_layers: &RootLayers<'a>,
 	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
@@ -514,7 +524,9 @@ fn create_root_types<'a>(
 
 		create_block_types(
 			&mut messages,
+			lang_items,
 			type_store,
+			function_store,
 			&mut symbols,
 			0,
 			&blank_generic_parameters,
@@ -1009,8 +1021,10 @@ fn resolve_import_for_block_non_types<'a>(
 }
 
 fn create_block_types<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
+	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
@@ -1052,7 +1066,9 @@ fn create_block_types<'a>(
 		if let tree::Statement::Struct(statement) = statement {
 			let shape_index = create_block_struct(
 				messages,
+				lang_items,
 				type_store,
+				function_store,
 				symbols,
 				function_initial_scope_count,
 				enclosing_generic_parameters,
@@ -1076,8 +1092,10 @@ fn create_block_types<'a>(
 }
 
 fn create_block_struct<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
+	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
@@ -1114,6 +1132,22 @@ fn create_block_struct<'a>(
 	let span = statement.name.span;
 	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, scope_id, span);
 	drop(user_types);
+
+	if let Some(lang_attribute) = statement.lang_attribute {
+		let type_id = type_store
+			.get_or_add_shape_specialization(
+				messages,
+				function_store,
+				&[],
+				&mut Vec::new(),
+				shape_index,
+				None,
+				Ref::new(TypeArguments::new_from_explicit(Vec::new())),
+			)
+			.unwrap();
+		let lang_name = lang_attribute.item.name;
+		lang_items.write().register_lang_type(messages, type_id, lang_name, span);
+	}
 
 	let kind = SymbolKind::Type { shape_index };
 	let symbol = Symbol { name, kind, span: Some(span) };
@@ -2144,7 +2178,9 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	if !is_root {
 		create_block_types(
 			context.messages,
+			context.lang_items,
 			context.type_store,
+			context.function_store,
 			context.symbols_scope.symbols,
 			context.function_initial_scope_count,
 			context.generic_parameters,
@@ -4608,6 +4644,35 @@ fn validate_binary_operation<'a>(
 	let mut right = validate_expression(context, &operation.right);
 	context.can_is_bind = original_can_is_bind;
 
+	if let BinaryOperator::Range = op {
+		let isize_type_id = context.type_store.isize_type_id();
+		let mut had_error = false;
+
+		if !context.collapse_to(isize_type_id, &mut left).unwrap_or(true) {
+			let found = context.type_name(left.type_id);
+			let error = error!("Cannot create a range with a left value of type {found}, expected `isize`");
+			context.message(error.span(left.span));
+			had_error = true;
+		}
+
+		if !context.collapse_to(isize_type_id, &mut right).unwrap_or(true) {
+			let found = context.type_name(right.type_id);
+			let error = error!("Cannot create a range with a right value of type {found}, expected `isize`");
+			context.message(error.span(right.span));
+			had_error = true;
+		}
+
+		if had_error {
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		let type_id = context.lang_items.read().range_type.unwrap();
+		let returns = left.returns || right.returns;
+		let operation = Box::new(BinaryOperation { op, left, right, type_id });
+		let kind = ExpressionKind::BinaryOperation(operation);
+		return Expression { span, type_id, is_mutable: true, returns, kind };
+	}
+
 	let collapsed = context.collapse_fair(&mut left, &mut right);
 	let Ok(collapsed) = collapsed else {
 		let left = context.type_name(left.type_id);
@@ -4625,8 +4690,6 @@ fn validate_binary_operation<'a>(
 
 	if !left.type_id.is_any_collapse(context.type_store) {
 		match op {
-			BinaryOperator::Assign => {}
-
 			BinaryOperator::Modulo | BinaryOperator::ModuloAssign => {
 				if !left.type_id.is_integer(context.type_store) {
 					let found = context.type_name(left.type_id);
@@ -4708,6 +4771,8 @@ fn validate_binary_operation<'a>(
 					return Expression::any_collapse(context.type_store, span);
 				}
 			}
+
+			BinaryOperator::Assign | BinaryOperator::Range => {}
 		}
 	}
 
@@ -4772,6 +4837,8 @@ fn validate_binary_operation<'a>(
 		_ if matches!(left.kind, ExpressionKind::AnyCollapse) || matches!(right.kind, ExpressionKind::AnyCollapse) => {
 			context.type_store.any_collapse_type_id()
 		}
+
+		BinaryOperator::Range => unreachable!(),
 
 		_ => collapsed,
 	};

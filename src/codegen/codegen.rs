@@ -66,7 +66,9 @@ pub struct Context<'a, 'b> {
 	pub lang_items: &'b LangItems,
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b FunctionStore<'a>,
+
 	pub module_path: &'a [String],
+
 	pub function_type_arguments: &'b TypeArguments,
 	pub function_id: FunctionId,
 

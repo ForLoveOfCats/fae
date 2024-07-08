@@ -29,6 +29,12 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
 }
 
+#lang "range_type"
+struct Range {
+	start: isize
+	end: isize
+}
+
 // TODO: This is temporary intermediate tool until there is "blessed" optional semantics
 // baked into the language itself
 generic T

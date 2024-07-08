@@ -1,0 +1,34 @@
+fn main() {
+	print_range(0..4)
+	// TODO: Parse negative sign as part of numeric literal
+	// print_range(-1..2)
+	print_range(3..100)
+
+	let a = 6..9
+	print_range(a)
+
+	let b: Range = 8..14
+	print_range(b)
+
+	print_range(function()..function())
+	print_range(identity<isize>(5)..identity<isize>(7))
+}
+
+fn function(): isize {
+	return 20
+}
+
+generic T
+fn identity(value: T): T {
+	return value
+}
+
+fn print_range(range: Range) {
+	import fae::stdout::print_isize, print_string, print_newline
+
+	print_string("Range start: ")
+	print_isize(range.start)
+	print_string(", end: ")
+	print_isize(range.end)
+	print_newline()
+}

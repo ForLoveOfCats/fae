@@ -827,6 +827,8 @@ impl<'a> TypeStore<'a> {
 		Err(())
 	}
 
+	// `true` -> collapsed or was already the same type
+	// `false` -> was was a different type and could not collapse
 	pub fn collapse_to(
 		&mut self,
 		messages: &mut Messages<'a>,

@@ -91,6 +91,7 @@ struct UserTypeStruct {
 pub struct LLVMTypes {
 	pub opaque_pointer: LLVMTypeRef,
 	pub slice_struct: LLVMTypeRef,
+	pub range_struct: LLVMTypeRef,
 
 	user_type_structs: Vec<Vec<Option<UserTypeStruct>>>,
 }
@@ -100,9 +101,16 @@ impl LLVMTypes {
 		unsafe {
 			let opaque_pointer = LLVMPointerTypeInContext(context, 0);
 			let i64_type = LLVMInt64TypeInContext(context);
-			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
 
-			LLVMTypes { opaque_pointer, slice_struct, user_type_structs: Vec::new() }
+			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
+			let range_struct = LLVMStructTypeInContext(context, [i64_type, i64_type].as_mut_ptr(), 2, false as _);
+
+			LLVMTypes {
+				opaque_pointer,
+				slice_struct,
+				range_struct,
+				user_type_structs: Vec::new(),
+			}
 		}
 	}
 
@@ -1507,6 +1515,26 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let right = right_binding.to_value(self.builder);
 		unsafe { assert_eq!(LLVMTypeOf(left), LLVMTypeOf(right)) };
 
+		if let BinaryOperator::Range = op {
+			unsafe {
+				let llvm_type = self.llvm_types.range_struct;
+				let alloca = self.build_alloca(llvm_type, c"generate_binary_operation.range_alloca");
+
+				let start_name = c"generate_binary_operation.range_start_pointer".as_ptr();
+				let start_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, start_name);
+
+				let end_name = c"generate_binary_operation.range_start_pointer".as_ptr();
+				let end_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, end_name);
+
+				LLVMBuildStore(self.builder, left, start_pointer);
+				LLVMBuildStore(self.builder, right, end_pointer);
+
+				let type_id = context.lang_items.range_type.unwrap();
+				let kind = BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type };
+				return Some(Binding { type_id, kind });
+			}
+		}
+
 		let left_is_int = unsafe { LLVMGetTypeKind(LLVMTypeOf(left)) == LLVMIntegerTypeKind };
 		let value = if left_is_int {
 			let left = left;
@@ -1611,7 +1639,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::BitwiseOrAssign
 				| BinaryOperator::BitwiseXorAssign
 				| BinaryOperator::LogicalAnd
-				| BinaryOperator::LogicalOr => unreachable!(),
+				| BinaryOperator::LogicalOr
+				| BinaryOperator::Range => unreachable!(),
 			}
 		} else {
 			use LLVMRealPredicate::*;
@@ -1655,7 +1684,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::BitwiseXor
 				| BinaryOperator::BitwiseXorAssign
 				| BinaryOperator::LogicalAnd
-				| BinaryOperator::LogicalOr => unreachable!(),
+				| BinaryOperator::LogicalOr
+				| BinaryOperator::Range => unreachable!(),
 			}
 		};
 
@@ -1817,10 +1847,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			let llvm_type = self.llvm_types.slice_struct;
 			let alloca = self.build_alloca(llvm_type, c"generate_slice.slice_alloca");
-			let pointer_pointer =
-				LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, c"generate_slice.pointer_pointer".as_ptr());
-			let length_pointer =
-				LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, c"generate_slice.length_pointer".as_ptr());
+
+			let pointer_name = c"generate_slice.pointer_pointer".as_ptr();
+			let pointer_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, pointer_name);
+
+			let length_name = c"generate_slice.length_pointer".as_ptr();
+			let length_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, length_name);
 
 			LLVMBuildStore(self.builder, pointer, pointer_pointer);
 			LLVMBuildStore(self.builder, length, length_pointer);

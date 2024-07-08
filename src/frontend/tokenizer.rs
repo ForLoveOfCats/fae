@@ -57,6 +57,8 @@ pub enum TokenKind {
 	Colon,
 	DoubleColon,
 	Period,
+	DoublePeriod,
+	TriplePeriod,
 	Comma,
 	PoundSign,
 	FatArrow,
@@ -121,6 +123,8 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::Colon => "':'",
 			TokenKind::DoubleColon => "'::'",
 			TokenKind::Period => "'.'",
+			TokenKind::DoublePeriod => "'..'",
+			TokenKind::TriplePeriod => "'...'",
 			TokenKind::Comma => "','",
 			TokenKind::PoundSign => "'#'",
 			TokenKind::FatArrow => "'=>'",
@@ -259,6 +263,16 @@ impl<'a> Tokenizer<'a> {
 		}
 
 		let token = match self.bytes[self.offset..] {
+			[b'.', b'.', b'.', ..] => {
+				self.offset += 2;
+				Ok(Token::new("...", TriplePeriod, self.offset - 2, self.offset + 1, self.file_index))
+			}
+
+			[b'.', b'.', ..] => {
+				self.offset += 1;
+				Ok(Token::new("..", DoublePeriod, self.offset - 1, self.offset + 1, self.file_index))
+			}
+
 			[b'.', ..] => Ok(Token::new(".", Period, self.offset, self.offset + 1, self.file_index)),
 
 			[b'(', ..] => Ok(Token::new("(", OpenParen, self.offset, self.offset + 1, self.file_index)),

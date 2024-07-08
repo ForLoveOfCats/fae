@@ -151,6 +151,7 @@ fn parse_statement<'a>(
 				lang_attribute: false,
 			};
 			disallow_attributes(messages, &attributes, ALLOWED, "A static definition");
+
 			if let Ok(statement) = parse_static_statement(bump, messages, tokens, attributes, consume_newline) {
 				return Some(Statement::Static(bump.alloc(statement)));
 			} else {
@@ -179,6 +180,16 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "struct", .. } => {
+			const ALLOWED: AllowedAttributes = AllowedAttributes {
+				generic_attribute: true,
+				extern_attribute: false,
+				export_attribute: false,
+				method_attribute: false,
+				intrinsic_attribute: false,
+				lang_attribute: true,
+			};
+			disallow_attributes(messages, &attributes, ALLOWED, "A struct definition");
+
 			if let Ok(statement) = parse_struct_declaration(bump, messages, tokens, attributes, consume_newline) {
 				return Some(Statement::Struct(statement));
 			} else {
@@ -187,6 +198,16 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "enum", .. } => {
+			const ALLOWED: AllowedAttributes = AllowedAttributes {
+				generic_attribute: true,
+				extern_attribute: false,
+				export_attribute: false,
+				method_attribute: false,
+				intrinsic_attribute: false,
+				lang_attribute: true,
+			};
+			disallow_attributes(messages, &attributes, ALLOWED, "An enum definition");
+
 			if let Ok(statement) = parse_enum_declaration(bump, messages, tokens, attributes, consume_newline) {
 				return Some(Statement::Enum(statement));
 			} else {
@@ -396,6 +417,8 @@ fn token_to_operator(token: Token) -> Option<Node<BinaryOperator>> {
 		TokenKind::DivAssign => BinaryOperator::DivAssign,
 		TokenKind::Modulo => BinaryOperator::Modulo,
 		TokenKind::ModuloAssign => BinaryOperator::ModuloAssign,
+
+		TokenKind::DoublePeriod => BinaryOperator::Range,
 
 		TokenKind::BitshiftLeft => BinaryOperator::BitshiftLeft,
 		TokenKind::BitshiftLeftAssign => BinaryOperator::BitshiftLeftAssign,
@@ -1492,11 +1515,9 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 			_ => false,
 		};
 
-		if tokens.peek_kind() == Ok(TokenKind::Period) {
-			let a = tokens.next()?;
-			let b = tokens.expect(messages, TokenKind::Period)?;
-			let c = tokens.expect(messages, TokenKind::Period)?;
-			c_vararg = Some(a.span + b.span + c.span);
+		if tokens.peek_kind() == Ok(TokenKind::TriplePeriod) {
+			let triple_period = tokens.next()?;
+			c_vararg = Some(triple_period.span);
 			break;
 		}
 
@@ -1534,6 +1555,7 @@ fn parse_struct_declaration<'a>(
 	attributes: Attributes<'a>,
 	consume_newline: bool,
 ) -> ParseResult<Struct<'a>> {
+	let lang_attribute = attributes.lang_attribute;
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
 		None => &[],
@@ -1568,7 +1590,12 @@ fn parse_struct_declaration<'a>(
 		tokens.expect(messages, TokenKind::Newline)?;
 	}
 
-	Ok(Struct { generics, name, fields: fields.into_bump_slice() })
+	Ok(Struct {
+		lang_attribute,
+		generics,
+		name,
+		fields: fields.into_bump_slice(),
+	})
 }
 
 fn parse_enum_declaration<'a>(

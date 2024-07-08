@@ -134,6 +134,7 @@ pub enum Type<'a> {
 
 #[derive(Debug)]
 pub struct Struct<'a> {
+	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 	pub generics: &'a [Node<&'a str>],
 	pub name: Node<&'a str>,
 	pub fields: &'a [Field<'a>],
@@ -339,6 +340,8 @@ pub enum BinaryOperator {
 
 	LogicalAnd,
 	LogicalOr,
+
+	Range,
 }
 
 impl BinaryOperator {
@@ -379,6 +382,8 @@ impl BinaryOperator {
 
 			BinaryOperator::LogicalAnd => "Logical And",
 			BinaryOperator::LogicalOr => "Logical Or",
+
+			BinaryOperator::Range => "Range",
 		}
 	}
 }
@@ -390,17 +395,19 @@ impl BinaryOperator {
 			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign
 			| BitwiseAndAssign | BitwiseOrAssign | BitwiseXorAssign => 0,
 
-			LogicalAnd | LogicalOr => 1,
+			Range => 1,
 
-			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 2,
+			LogicalAnd | LogicalOr => 2,
 
-			BitwiseAnd | BitwiseOr | BitwiseXor => 3,
+			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 3,
 
-			BitshiftLeft | BitshiftRight => 4,
+			BitwiseAnd | BitwiseOr | BitwiseXor => 4,
 
-			Add | Sub => 5,
+			BitshiftLeft | BitshiftRight => 5,
 
-			Mul | Div | Modulo => 6,
+			Add | Sub => 6,
+
+			Mul | Div | Modulo => 7,
 		}
 	}
 
@@ -409,6 +416,8 @@ impl BinaryOperator {
 		match self {
 			Assign | AddAssign | SubAssign | MulAssign | DivAssign | ModuloAssign | BitshiftLeftAssign | BitshiftRightAssign
 			| BitwiseAndAssign | BitwiseOrAssign | BitwiseXorAssign => Associativity::Right,
+
+			Range => Associativity::Left,
 
 			Add | Sub | Mul | Div | Modulo | BitshiftLeft | BitshiftRight | BitwiseAnd | BitwiseOr | BitwiseXor => {
 				Associativity::Left

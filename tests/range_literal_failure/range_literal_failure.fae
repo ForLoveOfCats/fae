@@ -1,0 +1,42 @@
+fn main() {
+	print_range(1.1..4)
+	print_range(3..100.8)
+
+	let a = true..false
+	print_range(a)
+
+	let b: Range = void..void
+	print_range(b)
+
+	print_range(function()..function())
+	let x = MyStruct { field: 42 }
+	print_range(identity<MyStruct>(x)..identity<MyStruct>(x))
+
+	let int: i32 = 9
+	print_range(int..int)
+}
+
+struct EmptyStruct {}
+
+struct MyStruct {
+	field: i32
+}
+
+fn function(): EmptyStruct {
+	return EmptyStruct {}
+}
+
+generic T
+fn identity(value: T): T {
+	return value
+}
+
+fn print_range(range: Range) {
+	import fae::stdout::print_isize, print_string, print_newline
+
+	print_string("Range start: ")
+	print_isize(range.start)
+	print_string(", end: ")
+	print_isize(range.end)
+	print_newline()
+}
