@@ -4,16 +4,45 @@ fn fae_main(argc: i32, argv: &&u8): i32 {
 	return 0
 }
 
-#lang "slice_bound_check_failure"
-fn slice_bound_check_failure(length: isize, index: isize) {
+#lang "slice_index_out_of_bounds"
+fn slice_index_out_of_bounds(length: isize, index: isize) {
 	let stderr = fae::libc::StdErrFile.*
 
-	fae::libc::fprintf(
-		stderr
-		"Panic: Index %ld is out of range of slice with length %ld\n".pointer
-		index
-		length
-	)
+	let message = "Panic: Index %ld is out of range of slice with length %ld\n"
+	fae::libc::fprintf(stderr, message.pointer, index, length)
+	fae::libc::fflush(stderr)
+
+	fae::libc::exit(-1)
+}
+
+#lang "slice_range_inverted"
+fn slice_range_inverted(range: Range) {
+	let stderr = fae::libc::StdErrFile.*
+
+	let message = "Panic: Range start %ld is larger than end %ld\n"
+	fae::libc::fprintf(stderr, message.pointer, range.start, range.end)
+	fae::libc::fflush(stderr)
+
+	fae::libc::exit(-1)
+}
+
+#lang "slice_range_start_out_of_bounds"
+fn slice_range_start_out_of_bounds(length: isize, start: isize) {
+	let stderr = fae::libc::StdErrFile.*
+
+	let message = "Panic: Range start %ld is out of range of slice with length %ld\n"
+	fae::libc::fprintf(stderr, message.pointer, start, length)
+	fae::libc::fflush(stderr)
+
+	fae::libc::exit(-1)
+}
+
+#lang "slice_range_end_out_of_bounds"
+fn slice_range_end_out_of_bounds(length: isize, end: isize) {
+	let stderr = fae::libc::StdErrFile.*
+
+	let message = "Panic: Range end bound %ld is out of range of slice with length %ld\n"
+	fae::libc::fprintf(stderr, message.pointer, end, length)
 	fae::libc::fflush(stderr)
 
 	fae::libc::exit(-1)

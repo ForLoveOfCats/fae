@@ -832,6 +832,7 @@ pub enum UnaryOperator<'a> {
 	Dereference,
 	Cast { type_id: TypeId },
 	Index { index_expression: Expression<'a> },
+	RangeIndex { index_expression: Expression<'a> },
 }
 
 #[derive(Debug, Clone)]

@@ -2,7 +2,6 @@ use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
-use crate::frontend::span::Span;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeId, TypeStore};
@@ -119,7 +118,15 @@ pub trait Generator {
 		item_type: TypeId,
 		base: Self::Binding,
 		index: Self::Binding,
-		index_span: Span,
+	) -> Option<Self::Binding>;
+
+	fn generate_slice_slice(
+		&mut self,
+		lang_items: &LangItems,
+		type_store: &mut TypeStore,
+		item_type: TypeId,
+		base: Self::Binding,
+		range: Self::Binding,
 	) -> Option<Self::Binding>;
 
 	fn generate_binary_operation(

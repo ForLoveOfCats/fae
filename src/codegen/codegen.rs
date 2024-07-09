@@ -499,16 +499,8 @@ fn generate_unary_operation<G: Generator>(
 		// understand index of slice of zero sized type.
 		// TODO: Add a separate `generator.generate_bounds_check` to untangle this mess
 		if let UnaryOperator::Index { index_expression } = &operation.op {
-			let span = index_expression.span;
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			return generator.generate_slice_index(
-				context.lang_items,
-				context.type_store,
-				type_id,
-				expression,
-				index_expression,
-				span,
-			);
+			return generator.generate_slice_index(context.lang_items, context.type_store, type_id, expression, index_expression);
 		}
 
 		return None;
@@ -529,9 +521,18 @@ fn generate_unary_operation<G: Generator>(
 		}
 
 		UnaryOperator::Index { index_expression } => {
-			let span = index_expression.span;
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			generator.generate_slice_index(context.lang_items, context.type_store, type_id, expression, index_expression, span)
+			generator.generate_slice_index(context.lang_items, context.type_store, type_id, expression, index_expression)
+		}
+
+		UnaryOperator::RangeIndex { index_expression } => {
+			let index_expression = generate_expression(context, generator, index_expression).unwrap();
+			let item_type = if type_id.is_string(context.type_store) {
+				context.type_store.u8_type_id()
+			} else {
+				context.type_store.sliced_of(type_id).unwrap().0
+			};
+			generator.generate_slice_slice(context.lang_items, context.type_store, item_type, expression, index_expression)
 		}
 	}
 }

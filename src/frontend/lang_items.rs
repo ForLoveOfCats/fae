@@ -7,12 +7,21 @@ use crate::frontend::type_store::TypeId;
 pub struct LangItems {
 	pub range_type: Option<TypeId>,
 
-	pub slice_bound_check_failure: Option<FunctionId>,
+	pub slice_index_out_of_bounds: Option<FunctionId>,
+	pub slice_range_inverted: Option<FunctionId>,
+	pub slice_range_start_out_of_bounds: Option<FunctionId>,
+	pub slice_range_end_out_of_bounds: Option<FunctionId>,
 }
 
 impl LangItems {
 	pub fn new() -> LangItems {
-		LangItems { range_type: None, slice_bound_check_failure: None }
+		LangItems {
+			range_type: None,
+			slice_index_out_of_bounds: None,
+			slice_range_inverted: None,
+			slice_range_start_out_of_bounds: None,
+			slice_range_end_out_of_bounds: None,
+		}
 	}
 
 	pub fn register_lang_type(&mut self, messages: &mut Messages, type_id: TypeId, lang_name: &str, span: Span) {
@@ -28,7 +37,10 @@ impl LangItems {
 
 	pub fn register_lang_function(&mut self, messages: &mut Messages, function_id: FunctionId, lang_name: &str, span: Span) {
 		match lang_name {
-			"slice_bound_check_failure" => self.slice_bound_check_failure = Some(function_id),
+			"slice_index_out_of_bounds" => self.slice_index_out_of_bounds = Some(function_id),
+			"slice_range_inverted" => self.slice_range_inverted = Some(function_id),
+			"slice_range_start_out_of_bounds" => self.slice_range_start_out_of_bounds = Some(function_id),
+			"slice_range_end_out_of_bounds" => self.slice_range_end_out_of_bounds = Some(function_id),
 
 			_ => {
 				let error = error!("Unknown lang item function {lang_name:?}");

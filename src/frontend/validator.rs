@@ -4483,8 +4483,7 @@ fn validate_unary_operation<'a>(
 			return Expression { span, type_id, is_mutable, returns, kind };
 		}
 
-		UnaryOperator::Cast { .. } => unreachable!(),
-		UnaryOperator::Index { .. } => unreachable!(),
+		UnaryOperator::Cast { .. } | UnaryOperator::Index { .. } | UnaryOperator::RangeIndex { .. } => unreachable!(),
 	}
 }
 
@@ -4605,10 +4604,28 @@ fn validate_bracket_index<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut index_expression = validate_expression(context, index_expression);
+	let range_type_id = context.lang_items.read().range_type.unwrap();
+	let is_range = context.type_store.direct_match(index_expression.type_id, range_type_id);
 
-	let (type_id, is_mutable) = if let Some(sliced) = context.type_store.sliced_of(expression.type_id) {
-		sliced
+	let (type_id, is_mutable) = if let Some((sliced, is_mutable)) = context.type_store.sliced_of(expression.type_id) {
+		if is_range {
+			let type_id = context.type_store.slice_of(sliced, is_mutable);
+			let returns = expression.returns || index_expression.returns;
+			let op = UnaryOperator::RangeIndex { index_expression };
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, is_mutable, returns, kind };
+		}
+
+		(sliced, is_mutable)
 	} else if expression.type_id.is_string(context.type_store) {
+		if is_range {
+			let type_id = context.type_store.string_type_id();
+			let returns = expression.returns || index_expression.returns;
+			let op = UnaryOperator::RangeIndex { index_expression };
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression { span, type_id, is_mutable: false, returns, kind };
+		}
+
 		(context.type_store.u8_type_id(), false)
 	} else {
 		let error = error!("Cannot index on a value of type {}", context.type_name(expression.type_id));
