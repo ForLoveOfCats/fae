@@ -99,6 +99,16 @@ fn get_mut(index: isize): &mut T {
 }
 
 method List
-fn drop() {
+fn slice(range: Range): []T {
+	return self.items[range]
+}
+
+method mut List
+fn slice_mut(range: Range): []mut T {
+	return self.items[range]
+}
+
+method List
+fn free() {
 	free_slice<T>(self.items)
 }
