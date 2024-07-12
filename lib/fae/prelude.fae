@@ -29,6 +29,25 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
 }
 
+fn panic(): noreturn {
+	import fae::libc::exit, backtrace, backtrace_symbols_fd, StdErrDescription
+
+	let null = null_pointer<void>()
+	// 50 items
+	let buffer = []&void {
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+	}
+
+	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32))
+	backtrace_symbols_fd(buffer.pointer, symbol_count, StdErrDescription)
+
+	exit(-1)
+}
+
 #lang "range_type"
 struct Range {
 	start: isize

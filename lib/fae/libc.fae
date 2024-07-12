@@ -26,6 +26,15 @@ fn atoi(string: &u8): i32
 extern "atol"
 fn atol(string: &u8): i64
 
+extern "backtrace"
+fn backtrace(buffer: &mut &void, size: i32): i32
+
+extern "backtrace_symbols"
+fn backtrace_symbols(buffer: &&void, size: i32): &&u8
+
+extern "backtrace_symbols_fd"
+fn backtrace_symbols_fd(buffer: &&void, size: i32, int: i32)
+
 extern "exit"
 fn exit(code: i32): noreturn
 

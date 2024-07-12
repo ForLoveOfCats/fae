@@ -2,6 +2,7 @@ use llvm_sys::prelude::LLVMBasicBlockRef;
 
 use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
+use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
@@ -16,16 +17,18 @@ use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind
 use crate::lock::ReadGuard;
 
 pub fn generate<'a, G: Generator>(
+	source_files: &[SourceFile],
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	statics: &Statics,
 	generator: &mut G,
+	optimizing: bool,
 ) {
 	generator.register_type_descriptions(type_store);
 	generator.register_statics(type_store, statics);
-	generator.register_functions(type_store, function_store);
+	generator.register_functions(source_files, type_store, function_store, optimizing);
 
 	let function_count = function_store.shapes.read().len();
 	for function_shape_index in 0..function_count {
