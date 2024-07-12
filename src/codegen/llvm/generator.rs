@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
 	LLVMAddCase, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue,
@@ -16,12 +17,19 @@ use llvm_sys::core::{
 	LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility,
 	LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf,
 };
-use llvm_sys::prelude::{LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef};
+use llvm_sys::debuginfo::{
+	LLVMCreateDIBuilder, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction,
+	LLVMDIBuilderCreateSubroutineType, LLVMDIFlagPrototyped, LLVMDIFlagZero, LLVMSetSubprogram,
+};
+use llvm_sys::prelude::{
+	LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMDIBuilderRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef,
+};
 use llvm_sys::{LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr, LLVMVisibility};
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
+use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
@@ -178,6 +186,7 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
 	pub builder: LLVMBuilderRef,
+	pub di_builder: LLVMDIBuilderRef,
 
 	abi: Option<ABI>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
@@ -195,15 +204,45 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 }
 
 impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
-	pub fn new(context: LLVMContextRef) -> Self {
+	pub fn new(context: LLVMContextRef, optimize_artifacts: bool) -> Self {
 		let module = unsafe { LLVMModuleCreateWithNameInContext(c"fae_translation_unit_module".as_ptr(), context) };
 		let builder = unsafe { LLVMCreateBuilderInContext(context) };
 		let llvm_types = LLVMTypes::new(context);
+
+		let di_builder = unsafe {
+			let di_builder = LLVMCreateDIBuilder(module);
+
+			let fae_compiler = "Fae Compiler";
+			LLVMDIBuilderCreateCompileUnit(
+				di_builder,
+				llvm_sys::debuginfo::LLVMDWARFSourceLanguage::LLVMDWARFSourceLanguageC,
+				LLVMDIBuilderCreateFile(di_builder, c"fae".as_ptr(), 3, c".".as_ptr(), 3),
+				fae_compiler.as_ptr() as _,
+				fae_compiler.len() as _,
+				optimize_artifacts as _,
+				c"".as_ptr(),
+				0,
+				1,
+				c"".as_ptr(),
+				0,
+				llvm_sys::debuginfo::LLVMDWARFEmissionKind::LLVMDWARFEmissionKindFull,
+				0,
+				false as _,
+				false as _,
+				c"".as_ptr(),
+				0,
+				c"1".as_ptr(),
+				1,
+			);
+
+			di_builder
+		};
 
 		LLVMGenerator::<ABI> {
 			context,
 			module,
 			builder,
+			di_builder,
 
 			abi: Some(ABI::new()),
 			attribute_kinds: AttributeKinds::new(),
@@ -433,7 +472,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn register_functions(&mut self, type_store: &mut TypeStore, function_store: &FunctionStore) {
+	fn register_functions(
+		&mut self,
+		source_files: &[SourceFile],
+		type_store: &mut TypeStore,
+		function_store: &FunctionStore,
+		optimizing: bool,
+	) {
 		assert_eq!(self.functions.len(), 0);
 
 		let function_count = function_store.shapes.read().len();
@@ -471,6 +516,47 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					specialization,
 				);
 				self.abi = Some(abi);
+
+				let span = shape.name.span;
+				let file = &source_files[span.file_index];
+				let file_name = file.path.file_name().unwrap();
+				let directory = file.path.parent().unwrap();
+
+				let name = shape.name.item;
+				let is_definition = shape.extern_attribute.is_none();
+
+				unsafe {
+					let file = LLVMDIBuilderCreateFile(
+						self.di_builder,
+						file_name.as_bytes().as_ptr() as _,
+						file_name.len(),
+						directory.as_os_str().as_bytes().as_ptr() as _,
+						directory.as_os_str().len(),
+					);
+
+					// TODO: Add parameter types
+					let null = std::ptr::null_mut();
+					let di_function_type = LLVMDIBuilderCreateSubroutineType(self.di_builder, file, null, 0, LLVMDIFlagZero);
+
+					let di_function = LLVMDIBuilderCreateFunction(
+						self.di_builder,
+						file, // Scope, probably wrong?
+						name.as_ptr() as _,
+						name.len(),
+						name.as_ptr() as _,
+						name.len(),
+						file,
+						0, // TODO: Line number
+						di_function_type,
+						false as _, // Unit local
+						is_definition as _,
+						0, // TODO: Scope line
+						LLVMDIFlagPrototyped,
+						optimizing as _,
+					);
+
+					LLVMSetSubprogram(defined_function.llvm_function, di_function);
+				}
 
 				specializations.push(Some(defined_function));
 				self.state = State::InModule

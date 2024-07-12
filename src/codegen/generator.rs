@@ -1,4 +1,5 @@
 use crate::codegen::codegen;
+use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
@@ -15,7 +16,13 @@ pub trait Generator {
 
 	fn register_statics(&mut self, type_store: &mut TypeStore, statics: &Statics);
 
-	fn register_functions(&mut self, type_store: &mut TypeStore, function_store: &FunctionStore);
+	fn register_functions(
+		&mut self,
+		source_files: &[SourceFile],
+		type_store: &mut TypeStore,
+		function_store: &FunctionStore,
+		optimizing: bool,
+	);
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId);
 

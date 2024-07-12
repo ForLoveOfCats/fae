@@ -412,9 +412,9 @@ impl LLVMAbi for SysvAbi {
 		let (name, linkage) = if let Some(export_attribute) = function_shape.export_attribute {
 			(CString::new(export_attribute.item.name).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
 		} else if function_shape.is_main {
-			(CString::from(c"fae_user_main"), LLVMLinkage::LLVMPrivateLinkage)
+			(CString::from(c"fae_user_main"), LLVMLinkage::LLVMInternalLinkage)
 		} else {
-			(CString::new(function_shape.name.item).unwrap(), LLVMLinkage::LLVMPrivateLinkage)
+			(CString::new(function_shape.name.item).unwrap(), LLVMLinkage::LLVMInternalLinkage)
 		};
 
 		let llvm_function = unsafe {

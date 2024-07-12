@@ -6,6 +6,7 @@ use std::process::Command;
 
 use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
 use llvm_sys::core::{LLVMContextCreate, LLVMPrintModuleToFile};
+use llvm_sys::debuginfo::LLVMDIBuilderFinalize;
 use llvm_sys::target_machine::{
 	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode,
 	LLVMTargetMachineEmitToFile,
@@ -17,6 +18,7 @@ use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::LLVMGenerator;
 use crate::frontend::error::Messages;
+use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
@@ -24,6 +26,7 @@ use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
 	cli_arguments: &CliArguments,
+	source_files: &[SourceFile],
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
@@ -51,9 +54,20 @@ pub fn generate_code<'a>(
 	}
 
 	let context = unsafe { LLVMContextCreate() };
-	let mut generator = LLVMGenerator::<SysvAbi>::new(context);
+	let mut generator = LLVMGenerator::<SysvAbi>::new(context, cli_arguments.optimize_artifacts);
 
-	generate(messages, lang_items, type_store, function_store, statics, &mut generator);
+	generate(
+		source_files,
+		messages,
+		lang_items,
+		type_store,
+		function_store,
+		statics,
+		&mut generator,
+		cli_arguments.optimize_artifacts,
+	);
+
+	unsafe { LLVMDIBuilderFinalize(generator.di_builder) };
 
 	#[cfg(target_os = "linux")]
 	let triple = c"x86_64-pc-linux-gnu";
@@ -107,13 +121,15 @@ pub fn generate_code<'a>(
 		}
 	}
 
-	unsafe {
-		let mut error_string = MaybeUninit::uninit();
-		let action = LLVMVerifierFailureAction::LLVMReturnStatusAction;
-		if LLVMVerifyModule(generator.module, action, error_string.as_mut_ptr()) == 1 {
-			let error = CStr::from_ptr(error_string.assume_init());
-			stderr().lock().write_all(error.to_bytes()).unwrap();
-			std::process::exit(-1);
+	if cli_arguments.verify_llvm_module {
+		unsafe {
+			let mut error_string = MaybeUninit::uninit();
+			let action = LLVMVerifierFailureAction::LLVMReturnStatusAction;
+			if LLVMVerifyModule(generator.module, action, error_string.as_mut_ptr()) == 1 {
+				let error = CStr::from_ptr(error_string.assume_init());
+				stderr().lock().write_all(error.to_bytes()).unwrap();
+				std::process::exit(-1);
+			}
 		}
 	}
 

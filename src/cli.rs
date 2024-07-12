@@ -9,6 +9,7 @@ pub struct CliArguments {
 	pub std_enabled: bool,
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
+	pub verify_llvm_module: bool,
 	pub optimize_artifacts: bool,
 	pub debug_generics: bool,
 	pub debug_type_ids: bool,
@@ -48,6 +49,7 @@ pub fn parse_arguments() -> CliArguments {
 		std_enabled: true,
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LLVM,
+		verify_llvm_module: true,
 		optimize_artifacts: false,
 		debug_generics: false,
 		debug_type_ids: false,
@@ -135,6 +137,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			eprintln!("  --debug-generics: Include useful debug information when printing types");
 			eprintln!("  --debug-type-ids: Print types as their internal type id index value");
 			eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
+			eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
 			std::process::exit(0);
 		}
 
@@ -156,6 +159,10 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 
 		Some("--disable-std") => {
 			cli_arguments.std_enabled = false;
+		}
+
+		Some("--disable-llvm-verification") => {
+			cli_arguments.verify_llvm_module = false;
 		}
 
 		arg => {
