@@ -14,6 +14,14 @@ static StdOutFile: &&FileHandle
 extern "stderr"
 static StdErrFile: &&FileHandle
 
+struct DlInfo {
+	dli_fname: &u8
+	dli_fbase: &void
+
+	dli_sname: &u8
+	dli_saddr: &void
+}
+
 struct FileHandle {}
 
 struct TimeT {
@@ -27,13 +35,16 @@ extern "atol"
 fn atol(string: &u8): i64
 
 extern "backtrace"
-fn backtrace(buffer: &mut &void, size: i32): i32
+fn backtrace(address_buffer: &mut &void, size: i32): i32
 
 extern "backtrace_symbols"
-fn backtrace_symbols(buffer: &&void, size: i32): &&u8
+fn backtrace_symbols(addresses: &&void, address_count: i32): &&u8
 
 extern "backtrace_symbols_fd"
-fn backtrace_symbols_fd(buffer: &&void, size: i32, int: i32)
+fn backtrace_symbols_fd(addresses: &&void, address_count: i32, int: i32)
+
+extern "dladdr"
+fn dladdr(address: &void, info: &mut DlInfo): i32
 
 extern "exit"
 fn exit(code: i32): noreturn

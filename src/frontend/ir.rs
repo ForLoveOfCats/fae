@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::span::Span;
+use crate::frontend::span::{DebugLocation, Span};
 use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
 use crate::reference::{Ref, SliceRef};
@@ -293,7 +293,7 @@ pub struct FunctionId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId {
-	pub file_index: usize,
+	pub file_index: u32,
 	pub scope_index: usize,
 }
 
@@ -346,6 +346,7 @@ pub struct While<'a> {
 #[derive(Debug, Clone)]
 pub struct Statement<'a> {
 	pub kind: StatementKind<'a>,
+	pub debug_location: DebugLocation,
 }
 
 #[derive(Debug, Clone)]

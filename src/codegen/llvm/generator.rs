@@ -22,17 +22,20 @@ use llvm_sys::debuginfo::{
 	LLVMDIBuilderCreateSubroutineType, LLVMDIFlagPrototyped, LLVMDIFlagZero, LLVMSetSubprogram,
 };
 use llvm_sys::prelude::{
-	LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMDIBuilderRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef,
+	LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMDIBuilderRef, LLVMMetadataRef, LLVMModuleRef, LLVMTypeRef,
+	LLVMValueRef,
 };
 use llvm_sys::{LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr, LLVMVisibility};
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
+use crate::codegen::llvm::debug_scope::DebugScope;
 use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
+use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
@@ -182,6 +185,12 @@ struct BlockFrame {
 	intial_readables_len: usize,
 }
 
+#[derive(Clone, Copy)]
+struct DebugFile {
+	file: LLVMMetadataRef,
+	file_index: u32,
+}
+
 pub struct LLVMGenerator<ABI: LLVMAbi> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
@@ -191,6 +200,8 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	abi: Option<ABI>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
 	pub llvm_types: LLVMTypes,
+
+	file: Option<DebugFile>,
 
 	state: State,
 	block_frames: Vec<BlockFrame>,
@@ -248,6 +259,8 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			attribute_kinds: AttributeKinds::new(),
 			llvm_types,
 
+			file: None,
+
 			state: State::InModule,
 			block_frames: Vec::new(),
 			loop_condition_blocks: Vec::new(),
@@ -258,6 +271,12 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 
 			_marker: std::marker::PhantomData,
 		}
+	}
+
+	fn create_debug_scope(&self, debug_location: DebugLocation) -> DebugScope {
+		let file = self.file.unwrap();
+		assert_eq!(file.file_index, debug_location.file_index);
+		DebugScope::new(self.context, self.builder, file.file, debug_location)
 	}
 
 	fn finalize_function_if_in_function(&mut self) {
@@ -288,6 +307,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			}
 		}
 
+		self.file = None;
 		self.state = State::InModule;
 	}
 
@@ -499,6 +519,24 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					continue;
 				}
 
+				let span = shape.name.span;
+				let file = &source_files[span.file_index as usize];
+				let file_name = file.path.file_name().unwrap();
+				let directory = file.path.parent().unwrap();
+
+				let name = shape.name.item;
+				let is_definition = shape.extern_attribute.is_none();
+
+				let file = unsafe {
+					LLVMDIBuilderCreateFile(
+						self.di_builder,
+						file_name.as_bytes().as_ptr() as _,
+						file_name.len(),
+						directory.as_os_str().as_bytes().as_ptr() as _,
+						directory.as_os_str().len(),
+					)
+				};
+
 				assert_eq!(self.state, State::InModule);
 				let function_id = FunctionId { function_shape_index, specialization_index };
 				let void_returning = specialization.return_type.is_void(type_store);
@@ -514,26 +552,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					&self.llvm_types,
 					&shape,
 					specialization,
+					file,
 				);
 				self.abi = Some(abi);
 
-				let span = shape.name.span;
-				let file = &source_files[span.file_index];
-				let file_name = file.path.file_name().unwrap();
-				let directory = file.path.parent().unwrap();
-
-				let name = shape.name.item;
-				let is_definition = shape.extern_attribute.is_none();
+				let debug_location = shape.name.span.debug_location();
 
 				unsafe {
-					let file = LLVMDIBuilderCreateFile(
-						self.di_builder,
-						file_name.as_bytes().as_ptr() as _,
-						file_name.len(),
-						directory.as_os_str().as_bytes().as_ptr() as _,
-						directory.as_os_str().len(),
-					);
-
 					// TODO: Add parameter types
 					let null = std::ptr::null_mut();
 					let di_function_type = LLVMDIBuilderCreateSubroutineType(self.di_builder, file, null, 0, LLVMDIFlagZero);
@@ -546,11 +571,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 						name.as_ptr() as _,
 						name.len(),
 						file,
-						0, // TODO: Line number
+						debug_location.line, // Line number
 						di_function_type,
 						false as _, // Unit local
 						is_definition as _,
-						0, // TODO: Scope line
+						debug_location.line, // Scope line
 						LLVMDIFlagPrototyped,
 						optimizing as _,
 					);
@@ -588,6 +613,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		self.readables.clear();
 		self.readables.extend_from_slice(&defined_function.initial_values);
+
+		self.file = Some(DebugFile {
+			file: defined_function.file,
+			file_index: defined_function.file_index,
+		});
 
 		let void_returning = function.return_type.is_void(type_store);
 		self.state = State::InFunction { function_id, void_returning };
@@ -769,9 +799,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn generate_while(
 		&mut self,
 		context: &mut codegen::Context,
+		debug_location: DebugLocation,
 		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
 		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
 	) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
 		let condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while.condition".as_ptr()) };

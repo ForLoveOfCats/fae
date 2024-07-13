@@ -1,21 +1,23 @@
 use std::ops::{Add, AddAssign};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Span {
 	pub start: usize,
 	pub end: usize,
-	pub file_index: usize,
+	pub file_index: u32,
+	pub line_index: u32,
 }
 
 impl Add for Span {
 	type Output = Span;
 
-	fn add(self, rhs: Self) -> Span {
-		assert_eq!(self.file_index, rhs.file_index);
+	fn add(self, other: Self) -> Span {
+		assert_eq!(self.file_index, other.file_index);
 		Span {
-			start: self.start.min(rhs.start),
-			end: self.end.max(rhs.end),
+			start: self.start.min(other.start),
+			end: self.end.max(other.end),
 			file_index: self.file_index,
+			line_index: self.line_index.min(other.line_index),
 		}
 	}
 }
@@ -28,10 +30,15 @@ impl AddAssign for Span {
 
 impl Span {
 	pub fn unusable() -> Span {
-		Span { start: usize::MAX, end: usize::MAX, file_index: usize::MAX }
+		Span {
+			start: usize::MAX,
+			end: usize::MAX,
+			file_index: u32::MAX,
+			line_index: u32::MAX,
+		}
 	}
 
-	pub fn get_line_num(&self, source: &str) -> usize {
+	pub fn get_line_num(self, source: &str) -> usize {
 		let mut current_line_num = 1;
 
 		for &byte in &source.as_bytes()[..self.start] {
@@ -42,4 +49,19 @@ impl Span {
 
 		current_line_num
 	}
+
+	pub fn debug_location(self) -> DebugLocation {
+		DebugLocation {
+			file_index: self.file_index,
+			line: self.line_index + 1,
+			column: 0, // TODO
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DebugLocation {
+	pub file_index: u32,
+	pub line: u32,
+	pub column: u32,
 }

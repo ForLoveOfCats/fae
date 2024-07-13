@@ -313,7 +313,7 @@ impl Message {
 		text: &str,
 		stage: &str,
 	) {
-		let source_file = &sources[span.file_index];
+		let source_file = &sources[span.file_index as usize];
 		let path = &source_file.path;
 		let source = &source_file.source;
 

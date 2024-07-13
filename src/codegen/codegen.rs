@@ -11,6 +11,7 @@ use crate::frontend::ir::{
 	TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
+use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
@@ -143,6 +144,8 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 	generator.start_block();
 
 	for statement in &block.statements {
+		let debug_location = statement.debug_location;
+
 		match &statement.kind {
 			StatementKind::Expression(expression) => {
 				generate_expression(context, generator, expression);
@@ -150,7 +153,7 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 			StatementKind::Block(block) => generate_block(context, generator, block),
 
-			StatementKind::While(statement) => generate_while(context, generator, statement),
+			StatementKind::While(statement) => generate_while(context, generator, statement, debug_location),
 
 			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
 
@@ -288,9 +291,10 @@ fn generate_match<G: Generator>(context: &mut Context, generator: &mut G, match_
 	None
 }
 
-fn generate_while<G: Generator>(context: &mut Context, generator: &mut G, statement: &While) {
+fn generate_while<G: Generator>(context: &mut Context, generator: &mut G, statement: &While, debug_location: DebugLocation) {
 	generator.generate_while(
 		context,
+		debug_location,
 		|context, generator| generate_expression(context, generator, &statement.condition).unwrap(),
 		|context, generator| {
 			generate_block(context, generator, &statement.body);

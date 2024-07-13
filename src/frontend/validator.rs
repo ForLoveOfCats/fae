@@ -21,7 +21,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub cli_arguments: &'a CliArguments,
 	pub herd_member: &'b bumpalo_herd::Member<'a>,
 
-	pub file_index: usize,
+	pub file_index: u32,
 	pub module_path: &'a [String],
 
 	pub next_scope_index: &'b mut usize,
@@ -432,10 +432,11 @@ fn deep_pass<'a>(
 			return;
 		};
 		drop(guard);
-		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index].write();
-		let mut local_function_shape_indicies = local_function_shape_indicies[parsed_file.source_file.index].write();
 
-		let file_index = parsed_file.source_file.index;
+		let file_index = parsed_file.source_file.index as usize;
+		let mut type_shape_indicies = type_shape_indicies[file_index].write();
+		let mut local_function_shape_indicies = local_function_shape_indicies[file_index].write();
+
 		let module_path = parsed_file.module_path;
 
 		let layer = root_layers.lookup_module_path(module_path);
@@ -450,7 +451,7 @@ fn deep_pass<'a>(
 		let context = Context {
 			cli_arguments,
 			herd_member: &herd_member,
-			file_index,
+			file_index: parsed_file.source_file.index,
 			module_path,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
@@ -508,7 +509,7 @@ fn create_root_types<'a>(
 		drop(guard);
 
 		let file_index = parsed_file.source_file.index;
-		let mut type_shape_indicies = type_shape_indicies[file_index].write();
+		let mut type_shape_indicies = type_shape_indicies[file_index as usize].write();
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
 
@@ -605,7 +606,7 @@ fn fill_root_types<'a>(
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
-		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index].write();
+		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index as usize].write();
 
 		// TODO: This is definitely wrong
 		let mut generic_usages = Vec::new();
@@ -657,7 +658,7 @@ fn create_root_functions<'a>(
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
-		let mut local_function_shape_indicies = local_function_shape_indicies[parsed_file.source_file.index].write();
+		let mut local_function_shape_indicies = local_function_shape_indicies[file_index as usize].write();
 
 		let importable_functions_index = symbols.scopes.len();
 		assert_eq!(importable_functions_index, 1);
@@ -716,7 +717,7 @@ fn validate_root_consts<'a>(
 		};
 		drop(guard);
 
-		let file_index = parsed_file.source_file.index;
+		let file_index = parsed_file.source_file.index as usize;
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
@@ -735,7 +736,7 @@ fn validate_root_consts<'a>(
 		let mut context = Context {
 			cli_arguments,
 			herd_member,
-			file_index,
+			file_index: parsed_file.source_file.index,
 			module_path,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
@@ -806,7 +807,7 @@ fn validate_root_statics<'a>(
 		};
 		drop(guard);
 
-		let file_index = parsed_file.source_file.index;
+		let file_index = parsed_file.source_file.index as usize;
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
 
@@ -825,7 +826,7 @@ fn validate_root_statics<'a>(
 		let mut context = Context {
 			cli_arguments,
 			herd_member,
-			file_index,
+			file_index: parsed_file.source_file.index,
 			module_path,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
@@ -2272,7 +2273,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				returns |= expression.returns;
 
 				let kind = StatementKind::Expression(expression);
-				statements.push(Statement { kind });
+				statements.push(Statement { kind, debug_location: statement.span.debug_location() });
 			}
 
 			tree::Statement::Block(statement) => {
@@ -2280,13 +2281,14 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				let block = validate_block(scope, &statement.item, false);
 				returns |= block.returns;
 				let kind = StatementKind::Block(block);
-				statements.push(Statement { kind })
+				statements.push(Statement { kind, debug_location: statement.span.debug_location() })
 			}
 
 			tree::Statement::While(statement) => {
+				let debug_location = statement.span.debug_location();
 				let statement = validate_while_statement(&mut context, statement);
 				let kind = StatementKind::While(statement);
-				statements.push(Statement { kind })
+				statements.push(Statement { kind, debug_location })
 			}
 
 			tree::Statement::Import(..) => {}
@@ -2308,10 +2310,11 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				};
 
 				let kind = StatementKind::Binding(Box::new(validated));
-				statements.push(Statement { kind });
+				statements.push(Statement { kind, debug_location: statement.span.debug_location() });
 			}
 
 			tree::Statement::Break(statement) => {
+				let debug_location = statement.span.debug_location();
 				let statement = if let Some(loop_index) = context.current_loop_index {
 					Break { loop_index }
 				} else {
@@ -2321,10 +2324,11 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				};
 
 				let kind = StatementKind::Break(statement);
-				statements.push(Statement { kind });
+				statements.push(Statement { kind, debug_location });
 			}
 
 			tree::Statement::Continue(statement) => {
+				let debug_location = statement.span.debug_location();
 				let statement = if let Some(loop_index) = context.current_loop_index {
 					Continue { loop_index }
 				} else {
@@ -2334,7 +2338,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				};
 
 				let kind = StatementKind::Continue(statement);
-				statements.push(Statement { kind });
+				statements.push(Statement { kind, debug_location });
 			}
 
 			tree::Statement::Return(statement) => {
@@ -2359,7 +2363,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 				let boxed_return = Box::new(Return { expression });
 				let kind = StatementKind::Return(boxed_return);
-				statements.push(Statement { kind });
+				statements.push(Statement { kind, debug_location: statement.span.debug_location() });
 			}
 		}
 	}
