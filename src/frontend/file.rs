@@ -9,7 +9,7 @@ pub struct SourceFile {
 	pub source: String,
 	pub path: PathBuf,
 	pub module_path: Vec<String>,
-	pub index: usize,
+	pub index: u32,
 }
 
 impl std::fmt::Debug for SourceFile {
@@ -38,7 +38,7 @@ pub fn load_single_file(path: PathBuf, files: &mut Vec<SourceFile>) -> Result<St
 	let file_name = full_name[..full_name.len() - extension_len].to_owned();
 
 	let module_path = vec![file_name.clone()];
-	let index = files.len();
+	let index = files.len() as u32;
 	files.push(SourceFile { source, path, module_path, index });
 
 	Ok(file_name)
@@ -63,7 +63,7 @@ pub fn load_all_files(path: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
 		let mut source = String::with_capacity(capacity as usize);
 		file.read_to_string(&mut source)?;
 
-		let index = files.len();
+		let index = files.len() as u32;
 		files.push(SourceFile { source, path, module_path, index });
 	}
 

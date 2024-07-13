@@ -10,7 +10,7 @@ fn alignment_of(): isize
 
 generic T
 fn null_pointer(): &mut T {
-	return 0.(&mut T)
+	return 0.(&mut T)	
 }
 
 generic T
@@ -30,7 +30,9 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 }
 
 fn panic(): noreturn {
-	import fae::libc::exit, backtrace, backtrace_symbols_fd, StdErrDescription
+	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
+
+	fprintf(StdErrFile.*, "\nFae Panic!\n".pointer)
 
 	let null = null_pointer<void>()
 	// 50 items
@@ -42,8 +44,25 @@ fn panic(): noreturn {
 		null, null, null, null, null, null, null, null, null, null,
 	}
 
-	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32))
-	backtrace_symbols_fd(buffer.pointer, symbol_count, StdErrDescription)
+	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32)).(isize)
+
+	mut index: isize = 0
+	while index < symbol_count {
+		let address = buffer[index]
+		index += 1
+
+		mut info = DlInfo {
+			dli_fname: null_pointer<u8>()
+			dli_fbase: null_pointer<void>()
+			dli_sname: null_pointer<u8>()
+			dli_saddr: null_pointer<void>()
+		}
+
+		if dladdr(address, info.&mut) == 0 => continue
+		if info.dli_saddr.(usize) == 0 => continue
+
+		fprintf(StdErrFile.*, "%s\n".pointer, info.dli_sname)
+	}
 
 	exit(-1)
 }

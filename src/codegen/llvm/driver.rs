@@ -158,6 +158,7 @@ pub fn generate_code<'a>(
 			.arg("/usr/lib/libm.so")
 			.arg("-dynamic-linker")
 			.arg("/lib64/ld-linux-x86-64.so.2")
+			.arg("-export-dynamic")
 			.arg("-o")
 			.arg(&path)
 			.spawn()

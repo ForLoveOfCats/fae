@@ -3,6 +3,7 @@ use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
+use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::BinaryOperator;
 use crate::frontend::type_store::{TypeId, TypeStore};
@@ -53,6 +54,7 @@ pub trait Generator {
 	fn generate_while(
 		&mut self,
 		context: &mut codegen::Context,
+		debug_location: DebugLocation,
 		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
 		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
 	);
