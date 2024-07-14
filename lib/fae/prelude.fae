@@ -32,7 +32,7 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 fn panic(): noreturn {
 	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
 
-	fprintf(StdErrFile.*, "\nFae Panic!\n".pointer)
+	fprintf(StdErrFile.*, "\nFae thread panicked!\n".pointer)
 
 	let null = null_pointer<void>()
 	// 50 items
@@ -45,6 +45,8 @@ fn panic(): noreturn {
 	}
 
 	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32)).(isize)
+	if symbol_count == 0 => fprintf(StdErrFile.*, "Missing backtrace\n".pointer)
+	else => fprintf(StdErrFile.*, "Thread backtrace:\n".pointer)
 
 	mut index: isize = 0
 	while index < symbol_count {
@@ -61,7 +63,7 @@ fn panic(): noreturn {
 		if dladdr(address, info.&mut) == 0 => continue
 		if info.dli_saddr.(usize) == 0 => continue
 
-		fprintf(StdErrFile.*, "%s\n".pointer, info.dli_sname)
+		fprintf(StdErrFile.*, "  function \"%s\"\n".pointer, info.dli_sname)
 	}
 
 	fae::intrinsics::debugger_break()
