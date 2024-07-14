@@ -2056,7 +2056,16 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id: enum_type_id, kind }
 	}
 
-	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId, name: &str) {
+	fn generate_binding(
+		&mut self,
+		readable_index: usize,
+		value: Option<Self::Binding>,
+		type_id: TypeId,
+		name: &str,
+		debug_location: DebugLocation,
+	) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		assert_eq!(self.readables.len(), readable_index);
 		let Some(value) = value else {
 			self.readables.push(None);
@@ -2088,17 +2097,23 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.readables.push(Some(binding));
 	}
 
-	fn generate_break(&mut self, loop_index: usize) {
+	fn generate_break(&mut self, loop_index: usize, debug_location: DebugLocation) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let follow_block = self.loop_follow_blocks[loop_index];
 		unsafe { LLVMBuildBr(self.builder, follow_block) };
 	}
 
-	fn generate_continue(&mut self, loop_index: usize) {
+	fn generate_continue(&mut self, loop_index: usize, debug_location: DebugLocation) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let condition_block = self.loop_condition_blocks[loop_index];
 		unsafe { LLVMBuildBr(self.builder, condition_block) };
 	}
 
-	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>) {
+	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>, debug_location: DebugLocation) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 

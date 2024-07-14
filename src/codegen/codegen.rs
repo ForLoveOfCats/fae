@@ -155,20 +155,20 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 			StatementKind::While(statement) => generate_while(context, generator, statement, debug_location),
 
-			StatementKind::Binding(binding) => generate_binding(context, generator, binding),
+			StatementKind::Binding(binding) => generate_binding(context, generator, binding, debug_location),
 
 			StatementKind::Break(statement) => {
-				generate_break(generator, statement);
+				generate_break(generator, statement, debug_location);
 				break;
 			}
 
 			StatementKind::Continue(statement) => {
-				generate_continue(generator, statement);
+				generate_continue(generator, statement, debug_location);
 				break;
 			}
 
 			StatementKind::Return(statement) => {
-				generate_return(context, generator, statement);
+				generate_return(context, generator, statement, debug_location);
 				break;
 			}
 		};
@@ -641,28 +641,28 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	))
 }
 
-fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding) {
+fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding, debug_location: DebugLocation) {
 	let value = generate_expression(context, generator, &binding.expression);
 	let type_id = context.specialize_type_id(binding.type_id);
-	generator.generate_binding(binding.readable_index, value, type_id, binding.name);
+	generator.generate_binding(binding.readable_index, value, type_id, binding.name, debug_location);
 }
 
-fn generate_break<G: Generator>(generator: &mut G, statement: &Break) {
-	generator.generate_break(statement.loop_index);
+fn generate_break<G: Generator>(generator: &mut G, statement: &Break, debug_location: DebugLocation) {
+	generator.generate_break(statement.loop_index, debug_location);
 }
 
-fn generate_continue<G: Generator>(generator: &mut G, statement: &Continue) {
-	generator.generate_continue(statement.loop_index);
+fn generate_continue<G: Generator>(generator: &mut G, statement: &Continue, debug_location: DebugLocation) {
+	generator.generate_continue(statement.loop_index, debug_location);
 }
 
-fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return) {
+fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return, debug_location: DebugLocation) {
 	let Some(expression) = &statement.expression else {
-		generator.generate_return(context.function_id, None);
+		generator.generate_return(context.function_id, None, debug_location);
 		return;
 	};
 
 	let value = generate_expression(context, generator, expression);
-	generator.generate_return(context.function_id, value);
+	generator.generate_return(context.function_id, value, debug_location);
 }
 
 fn generate_intrinsic<G: Generator>(
