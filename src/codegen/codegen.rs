@@ -182,6 +182,8 @@ pub fn generate_expression<G: Generator>(
 	generator: &mut G,
 	expression: &Expression,
 ) -> Option<G::Binding> {
+	let debug_location = expression.debug_location;
+
 	match &expression.kind {
 		ExpressionKind::Block(block) => {
 			generate_block(context, generator, block);
@@ -208,7 +210,7 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal),
 
-		ExpressionKind::Call(call) => generate_call(context, generator, call),
+		ExpressionKind::Call(call) => generate_call(context, generator, call, debug_location),
 
 		ExpressionKind::MethodCall(method_call) => generate_method_call(context, generator, method_call),
 
@@ -218,7 +220,7 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::FieldRead(read) => generate_field_read(context, generator, read),
 
-		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation),
+		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation, debug_location),
 
 		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, generator, operation),
 
@@ -386,7 +388,12 @@ fn generate_struct_literal<G: Generator>(
 	}
 }
 
-fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &Call) -> Option<G::Binding> {
+fn generate_call<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	call: &Call,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
 	let function_id = context.function_store.specialize_function_with_function_generics(
 		context.messages,
 		context.type_store,
@@ -413,7 +420,7 @@ fn generate_call<G: Generator>(context: &mut Context, generator: &mut G, call: &
 		arguments.push(binding);
 	}
 
-	generator.generate_call(context.type_store, function_id, &arguments)
+	generator.generate_call(context.type_store, function_id, &arguments, debug_location)
 }
 
 fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, method_call: &MethodCall) -> Option<G::Binding> {
@@ -491,6 +498,7 @@ fn generate_unary_operation<G: Generator>(
 	context: &mut Context,
 	generator: &mut G,
 	operation: &UnaryOperation,
+	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let type_id = context.specialize_type_id(operation.type_id);
 	let Some(expression) = generate_expression(context, generator, &operation.expression) else {
@@ -507,7 +515,14 @@ fn generate_unary_operation<G: Generator>(
 		// TODO: Add a separate `generator.generate_bounds_check` to untangle this mess
 		if let UnaryOperator::Index { index_expression } = &operation.op {
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			return generator.generate_slice_index(context.lang_items, context.type_store, type_id, expression, index_expression);
+			return generator.generate_slice_index(
+				context.lang_items,
+				context.type_store,
+				type_id,
+				expression,
+				index_expression,
+				debug_location,
+			);
 		}
 
 		return None;
@@ -529,7 +544,14 @@ fn generate_unary_operation<G: Generator>(
 
 		UnaryOperator::Index { index_expression } => {
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			generator.generate_slice_index(context.lang_items, context.type_store, type_id, expression, index_expression)
+			generator.generate_slice_index(
+				context.lang_items,
+				context.type_store,
+				type_id,
+				expression,
+				index_expression,
+				debug_location,
+			)
 		}
 
 		UnaryOperator::RangeIndex { index_expression } => {
@@ -539,7 +561,14 @@ fn generate_unary_operation<G: Generator>(
 			} else {
 				context.type_store.sliced_of(type_id).unwrap().0
 			};
-			generator.generate_slice_slice(context.lang_items, context.type_store, item_type, expression, index_expression)
+			generator.generate_slice_slice(
+				context.lang_items,
+				context.type_store,
+				item_type,
+				expression,
+				index_expression,
+				debug_location,
+			)
 		}
 	}
 }
@@ -672,6 +701,7 @@ fn generate_intrinsic<G: Generator>(
 	call: &Call,
 ) -> Option<G::Binding> {
 	let span = call.span;
+	let debug_location = call.span.debug_location();
 
 	let lock = context.function_store.shapes.read()[function_id.function_shape_index]
 		.as_ref()
@@ -732,7 +762,7 @@ fn generate_intrinsic<G: Generator>(
 			assert_eq!(specialization.parameters.len(), 0);
 
 			if let Some(main) = *context.function_store.main.read() {
-				generator.generate_call(context.type_store, main, &[]);
+				generator.generate_call(context.type_store, main, &[], debug_location);
 			}
 			None
 		}

@@ -1014,7 +1014,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		type_store: &mut TypeStore,
 		function_id: FunctionId,
 		arguments: &[Option<Binding>],
+		debug_location: DebugLocation,
 	) -> Option<Binding> {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 
@@ -1347,6 +1350,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		item_type: TypeId,
 		base: Self::Binding,
 		index: Self::Binding,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding> {
 		unsafe {
 			let original_block = LLVMGetInsertBlock(self.builder);
@@ -1383,7 +1387,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let index = Some(Binding { type_id: type_store.isize_type_id(), kind });
 				[len, index]
 			};
-			self.generate_call(type_store, lang_items.slice_index_out_of_bounds.unwrap(), &failure_args);
+			self.generate_call(type_store, lang_items.slice_index_out_of_bounds.unwrap(), &failure_args, debug_location);
 			LLVMBuildUnreachable(self.builder);
 
 			LLVMPositionBuilderAtEnd(self.builder, success_block);
@@ -1416,6 +1420,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		item_type: TypeId,
 		base: Self::Binding,
 		range: Self::Binding,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding> {
 		let slice_type_id = base.type_id;
 
@@ -1457,7 +1462,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			LLVMPositionBuilderAtEnd(self.builder, range_inverted_failure_block);
 			let failure_args = [Some(range)];
-			self.generate_call(type_store, lang_items.slice_range_inverted.unwrap(), &failure_args);
+			self.generate_call(type_store, lang_items.slice_range_inverted.unwrap(), &failure_args, debug_location);
 			LLVMBuildUnreachable(self.builder);
 
 			LLVMPositionBuilderAtEnd(self.builder, range_not_inverted_block);
@@ -1492,7 +1497,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let start = Some(Binding { type_id: type_store.isize_type_id(), kind });
 				[len, start]
 			};
-			self.generate_call(type_store, lang_items.slice_range_start_out_of_bounds.unwrap(), &failure_args);
+			self.generate_call(
+				type_store,
+				lang_items.slice_range_start_out_of_bounds.unwrap(),
+				&failure_args,
+				debug_location,
+			);
 			LLVMBuildUnreachable(self.builder);
 
 			LLVMPositionBuilderAtEnd(self.builder, start_in_bounds_block);
@@ -1510,7 +1520,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let end = Some(Binding { type_id: type_store.isize_type_id(), kind });
 				[len, end]
 			};
-			self.generate_call(type_store, lang_items.slice_range_end_out_of_bounds.unwrap(), &failure_args);
+			self.generate_call(
+				type_store,
+				lang_items.slice_range_end_out_of_bounds.unwrap(),
+				&failure_args,
+				debug_location,
+			);
 			LLVMBuildUnreachable(self.builder);
 
 			LLVMPositionBuilderAtEnd(self.builder, end_in_bounds_block);

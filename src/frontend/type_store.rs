@@ -877,7 +877,14 @@ impl<'a> TypeStore<'a> {
 				let mutable = from.is_mutable;
 				let returns = from.returns;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
-				*from = Expression { span: from.span, type_id, is_mutable: mutable, returns, kind };
+				*from = Expression {
+					span: from.span,
+					type_id,
+					is_mutable: mutable,
+					returns,
+					kind,
+					debug_location: from.span.debug_location(),
+				};
 				return Ok(true);
 			}
 
@@ -1018,12 +1025,19 @@ impl<'a> TypeStore<'a> {
 					}
 
 					// TODO: This replace is a dumb solution
-					let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
+					let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
 					let returns = expression.returns;
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
 					let conversion = Box::new(SliceMutableToImmutable { expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
-					*from = Expression { span: from.span, type_id, is_mutable: false, returns, kind };
+					*from = Expression {
+						span: from.span,
+						type_id,
+						is_mutable: false,
+						returns,
+						kind,
+						debug_location: from.span.debug_location(),
+					};
 					return Ok(true);
 				}
 			}
@@ -1038,7 +1052,7 @@ impl<'a> TypeStore<'a> {
 					if let TypeEntryKind::UserType { shape_index, .. } = to_entry.kind {
 						if shape_index == parent_enum_shape_index {
 							// TODO: This replace is a dumb solution
-							let expression = std::mem::replace(from, Expression::any_collapse(self, Span::unusable()));
+							let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
 							let returns = expression.returns;
 							let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
 							let kind = ExpressionKind::EnumVariantToEnum(conversion);
@@ -1048,6 +1062,7 @@ impl<'a> TypeStore<'a> {
 								is_mutable: false,
 								returns,
 								kind,
+								debug_location: from.span.debug_location(),
 							};
 							return Ok(true);
 						}
