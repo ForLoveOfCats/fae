@@ -1034,7 +1034,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		function_id: FunctionId,
 		base_pointer_type_id: TypeId,
 		arguments: &mut [Option<Self::Binding>],
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding> {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 

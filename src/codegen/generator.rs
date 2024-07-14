@@ -97,6 +97,7 @@ pub trait Generator {
 		function_id: FunctionId,
 		base_pointer_type_id: TypeId,
 		arguments: &mut [Option<Self::Binding>],
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
 	fn generate_read(&mut self, readable_index: usize) -> Option<Self::Binding>;
