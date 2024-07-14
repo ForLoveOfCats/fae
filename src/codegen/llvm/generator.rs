@@ -2212,6 +2212,26 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
 				LLVMBuildCall2(self.builder, function_type, value, std::ptr::null_mut(), 0, c"".as_ptr());
 			}
+		} else if self.architecture == Architecture::Aarch64 {
+			unsafe {
+				let void = LLVMVoidTypeInContext(self.context);
+				let assembly = "brk 0";
+
+				let value = LLVMGetInlineAsm(
+					void,
+					assembly.as_ptr() as _,
+					assembly.len(),
+					"".as_ptr() as _,
+					0,
+					true as _,  // has side effects
+					false as _, // is align stack, TODO: understand this?
+					llvm_sys::LLVMInlineAsmDialect::LLVMInlineAsmDialectATT,
+					false as _, // can throw
+				);
+
+				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
+				LLVMBuildCall2(self.builder, function_type, value, std::ptr::null_mut(), 0, c"".as_ptr());
+			}
 		}
 	}
 
