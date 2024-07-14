@@ -47,7 +47,7 @@ pub fn generate_code<'a>(
 	};
 
 	#[cfg(target_os = "macos")]
-	unsafe {
+	let architecture = unsafe {
 		llvm_sys::target::LLVMInitializeAArch64Target();
 		llvm_sys::target::LLVMInitializeAArch64TargetInfo();
 		llvm_sys::target::LLVMInitializeAArch64AsmPrinter();
@@ -57,7 +57,7 @@ pub fn generate_code<'a>(
 
 		// TODO: Allow multiple architectures per OS
 		Architecture::Aarch64
-	}
+	};
 
 	let context = unsafe { LLVMContextCreate() };
 	let mut generator = LLVMGenerator::<SysvAbi>::new(context, architecture, cli_arguments.optimize_artifacts);
