@@ -16,7 +16,7 @@ use llvm_sys::transforms::pass_builder::{LLVMCreatePassBuilderOptions, LLVMRunPa
 use crate::cli::CliArguments;
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
-use crate::codegen::llvm::generator::LLVMGenerator;
+use crate::codegen::llvm::generator::{Architecture, LLVMGenerator};
 use crate::frontend::error::Messages;
 use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
@@ -34,14 +34,17 @@ pub fn generate_code<'a>(
 	statics: &Statics,
 ) -> PathBuf {
 	#[cfg(target_os = "linux")]
-	unsafe {
+	let architecture = unsafe {
 		llvm_sys::target::LLVMInitializeX86Target();
 		llvm_sys::target::LLVMInitializeX86TargetInfo();
 		llvm_sys::target::LLVMInitializeX86AsmPrinter();
 		llvm_sys::target::LLVMInitializeX86AsmParser();
 		llvm_sys::target::LLVMInitializeX86Disassembler();
 		llvm_sys::target::LLVMInitializeX86TargetMC();
-	}
+
+		// TODO: Allow multiple architectures per OS
+		Architecture::Amd64
+	};
 
 	#[cfg(target_os = "macos")]
 	unsafe {
@@ -51,10 +54,13 @@ pub fn generate_code<'a>(
 		llvm_sys::target::LLVMInitializeAArch64AsmParser();
 		llvm_sys::target::LLVMInitializeAArch64Disassembler();
 		llvm_sys::target::LLVMInitializeAArch64TargetMC();
+
+		// TODO: Allow multiple architectures per OS
+		Architecture::Aarch64
 	}
 
 	let context = unsafe { LLVMContextCreate() };
-	let mut generator = LLVMGenerator::<SysvAbi>::new(context, cli_arguments.optimize_artifacts);
+	let mut generator = LLVMGenerator::<SysvAbi>::new(context, architecture, cli_arguments.optimize_artifacts);
 
 	generate(
 		source_files,

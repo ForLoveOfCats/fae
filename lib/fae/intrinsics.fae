@@ -9,5 +9,11 @@ fn create_slice_mut(pointer: &mut T, length: isize): []mut T
 #intrinsic
 fn create_str(pointer: &u8, length: isize): str
 
+// May be a no-op on some platforms depending on implementation support
+// Currently implemented on
+//     - AMD64
+#intrinsic
+fn debugger_break()
+
 #intrinsic
 fn user_main_function()
