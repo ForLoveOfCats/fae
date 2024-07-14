@@ -393,6 +393,7 @@ pub struct Expression<'a> {
 	pub is_mutable: bool,
 	pub returns: bool,
 	pub kind: ExpressionKind<'a>,
+	pub debug_location: DebugLocation,
 }
 
 impl<'a> Expression<'a> {
@@ -403,6 +404,7 @@ impl<'a> Expression<'a> {
 			is_mutable: true,
 			returns: false, // TODO: This could cause erronious error messages?
 			kind: ExpressionKind::AnyCollapse,
+			debug_location: span.debug_location(),
 		}
 	}
 
@@ -413,6 +415,7 @@ impl<'a> Expression<'a> {
 			is_mutable: true, // TODO: Think about this harder?
 			returns: false,
 			kind: ExpressionKind::Void,
+			debug_location: span.debug_location(),
 		}
 	}
 }

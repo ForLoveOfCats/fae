@@ -88,6 +88,7 @@ pub trait Generator {
 		type_store: &mut TypeStore,
 		function_id: FunctionId,
 		arguments: &[Option<Self::Binding>],
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
 	fn generate_method_call(
@@ -127,6 +128,7 @@ pub trait Generator {
 		item_type: TypeId,
 		base: Self::Binding,
 		index: Self::Binding,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
 	fn generate_slice_slice(
@@ -136,6 +138,7 @@ pub trait Generator {
 		item_type: TypeId,
 		base: Self::Binding,
 		range: Self::Binding,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
 	fn generate_binary_operation(
