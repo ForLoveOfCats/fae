@@ -212,7 +212,7 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::Call(call) => generate_call(context, generator, call, debug_location),
 
-		ExpressionKind::MethodCall(method_call) => generate_method_call(context, generator, method_call),
+		ExpressionKind::MethodCall(method_call) => generate_method_call(context, generator, method_call, debug_location),
 
 		ExpressionKind::Read(read) => generate_read(generator, read),
 
@@ -423,7 +423,12 @@ fn generate_call<G: Generator>(
 	generator.generate_call(context.type_store, function_id, &arguments, debug_location)
 }
 
-fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, method_call: &MethodCall) -> Option<G::Binding> {
+fn generate_method_call<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	method_call: &MethodCall,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
 	let base_pointer_type_id = if method_call.base.type_id.is_pointer(context.type_store) {
 		method_call.base.type_id
 	} else {
@@ -451,7 +456,7 @@ fn generate_method_call<G: Generator>(context: &mut Context, generator: &mut G, 
 		arguments.push(binding);
 	}
 
-	generator.generate_method_call(context.type_store, function_id, base_pointer_type_id, &mut arguments)
+	generator.generate_method_call(context.type_store, function_id, base_pointer_type_id, &mut arguments, debug_location)
 }
 
 fn generate_read<G: Generator>(generator: &mut G, read: &Read) -> Option<G::Binding> {
