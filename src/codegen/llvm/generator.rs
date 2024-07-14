@@ -2210,14 +2210,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				);
 
 				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
-				LLVMBuildCall2(
-					self.builder,
-					function_type,
-					value,
-					std::ptr::null_mut(),
-					0,
-					c"generate_debugger_break".as_ptr(),
-				);
+				LLVMBuildCall2(self.builder, function_type, value, std::ptr::null_mut(), 0, c"".as_ptr());
 			}
 		}
 	}
