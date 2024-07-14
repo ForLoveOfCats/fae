@@ -187,7 +187,6 @@ struct BlockFrame {
 
 #[derive(Clone, Copy)]
 struct DebugFile {
-	file: LLVMMetadataRef,
 	file_index: u32,
 }
 
@@ -209,6 +208,7 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	pub attribute_kinds: AttributeKinds,
 	pub llvm_types: LLVMTypes,
 
+	scope_stack: Vec<LLVMMetadataRef>,
 	file: Option<DebugFile>,
 
 	state: State,
@@ -269,6 +269,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			llvm_types,
 
 			file: None,
+			scope_stack: Vec::new(),
 
 			state: State::InModule,
 			block_frames: Vec::new(),
@@ -285,7 +286,9 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 	fn create_debug_scope(&self, debug_location: DebugLocation) -> DebugScope {
 		let file = self.file.unwrap();
 		assert_eq!(file.file_index, debug_location.file_index);
-		DebugScope::new(self.context, self.builder, file.file, debug_location)
+
+		let scope = self.scope_stack.last().unwrap();
+		DebugScope::new(self.context, self.builder, *scope, debug_location)
 	}
 
 	fn finalize_function_if_in_function(&mut self) {
@@ -314,6 +317,8 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 				LLVMBuildBr(self.builder, logic_begin_block);
 				LLVMClearInsertionPosition(self.builder);
 			}
+
+			self.scope_stack.pop().unwrap();
 		}
 
 		self.file = None;
@@ -551,28 +556,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let void_returning = specialization.return_type.is_void(type_store);
 				self.state = State::InFunction { function_id, void_returning };
 
-				let mut abi = self.abi.take().unwrap();
-				let defined_function = abi.define_function(
-					type_store,
-					self.context,
-					self.module,
-					self.builder,
-					&self.attribute_kinds,
-					&self.llvm_types,
-					&shape,
-					specialization,
-					file,
-				);
-				self.abi = Some(abi);
-
 				let debug_location = shape.name.span.debug_location();
-
-				unsafe {
+				let subroutine = unsafe {
 					// TODO: Add parameter types
 					let null = std::ptr::null_mut();
 					let di_function_type = LLVMDIBuilderCreateSubroutineType(self.di_builder, file, null, 0, LLVMDIFlagZero);
 
-					let di_function = LLVMDIBuilderCreateFunction(
+					LLVMDIBuilderCreateFunction(
 						self.di_builder,
 						file, // Scope, probably wrong?
 						name.as_ptr() as _,
@@ -587,10 +577,24 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 						debug_location.line, // Scope line
 						LLVMDIFlagPrototyped,
 						optimizing as _,
-					);
+					)
+				};
 
-					LLVMSetSubprogram(defined_function.llvm_function, di_function);
-				}
+				let mut abi = self.abi.take().unwrap();
+				let defined_function = abi.define_function(
+					type_store,
+					self.context,
+					self.module,
+					self.builder,
+					&self.attribute_kinds,
+					&self.llvm_types,
+					&shape,
+					specialization,
+					subroutine,
+				);
+				self.abi = Some(abi);
+
+				unsafe { LLVMSetSubprogram(defined_function.llvm_function, subroutine) };
 
 				specializations.push(Some(defined_function));
 				self.state = State::InModule
@@ -623,10 +627,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.readables.clear();
 		self.readables.extend_from_slice(&defined_function.initial_values);
 
-		self.file = Some(DebugFile {
-			file: defined_function.file,
-			file_index: defined_function.file_index,
-		});
+		self.scope_stack.push(defined_function.subroutine);
+		self.file = Some(DebugFile { file_index: defined_function.file_index });
 
 		let void_returning = function.return_type.is_void(type_store);
 		self.state = State::InFunction { function_id, void_returning };

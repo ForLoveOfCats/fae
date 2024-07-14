@@ -30,7 +30,7 @@ pub trait LLVMAbi {
 		llvm_types: &LLVMTypes,
 		function_shape: &FunctionShape,
 		function: &Function,
-		file: LLVMMetadataRef,
+		subroutine: LLVMMetadataRef,
 	) -> DefinedFunction;
 
 	fn call_function(
@@ -70,7 +70,7 @@ pub struct DefinedFunction {
 	pub alloca_block: Option<LLVMBasicBlockRef>,      // None for extern functions
 	pub logic_begin_block: Option<LLVMBasicBlockRef>, // None for extern functions
 
-	pub file: LLVMMetadataRef,
+	pub subroutine: LLVMMetadataRef,
 	pub file_index: u32,
 }
 
@@ -320,7 +320,7 @@ impl LLVMAbi for SysvAbi {
 		llvm_types: &LLVMTypes,
 		function_shape: &FunctionShape,
 		function: &Function,
-		file: LLVMMetadataRef,
+		subroutine: LLVMMetadataRef,
 	) -> DefinedFunction {
 		self.return_type_buffer.clear();
 		self.parameter_type_buffer.clear();
@@ -413,7 +413,7 @@ impl LLVMAbi for SysvAbi {
 				initial_values: Vec::new(),
 				alloca_block: None,
 				logic_begin_block: None,
-				file,
+				subroutine,
 				file_index,
 			};
 		}
@@ -512,7 +512,7 @@ impl LLVMAbi for SysvAbi {
 			initial_values,
 			alloca_block: Some(alloca_block),
 			logic_begin_block: Some(logic_begin_block),
-			file,
+			subroutine,
 			file_index,
 		}
 	}
