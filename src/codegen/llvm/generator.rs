@@ -3,19 +3,19 @@ use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
 	LLVMAddCase, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue,
-	LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp,
-	LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2,
-	LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul,
-	LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP,
-	LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch,
-	LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor,
+	LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildFAdd,
+	LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub,
+	LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy,
+	LLVMBuildMul, LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv,
+	LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub,
+	LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor,
 	LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstStringInContext,
-	LLVMCreateBuilderInContext, LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMGetBasicBlockParent,
-	LLVMGetBasicBlockTerminator, LLVMGetEnumAttributeKindForName, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
-	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
-	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMRemoveBasicBlockFromParent,
-	LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility,
-	LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf,
+	LLVMCreateBuilderInContext, LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent,
+	LLVMGetBasicBlockTerminator, LLVMGetEnumAttributeKindForName, LLVMGetInlineAsm, LLVMGetInsertBlock, LLVMGetIntTypeWidth,
+	LLVMGetTypeKind, LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext,
+	LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
+	LLVMRemoveBasicBlockFromParent, LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress,
+	LLVMSetValueName2, LLVMSetVisibility, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVoidTypeInContext,
 };
 use llvm_sys::debuginfo::{
 	LLVMCreateDIBuilder, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction,
@@ -191,12 +191,20 @@ struct DebugFile {
 	file_index: u32,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Architecture {
+	Amd64,
+	Aarch64,
+}
+
 pub struct LLVMGenerator<ABI: LLVMAbi> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
 	pub builder: LLVMBuilderRef,
 	pub di_builder: LLVMDIBuilderRef,
 
+	architecture: Architecture,
 	abi: Option<ABI>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
 	pub llvm_types: LLVMTypes,
@@ -215,7 +223,7 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 }
 
 impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
-	pub fn new(context: LLVMContextRef, optimize_artifacts: bool) -> Self {
+	pub fn new(context: LLVMContextRef, architecture: Architecture, optimize_artifacts: bool) -> Self {
 		let module = unsafe { LLVMModuleCreateWithNameInContext(c"fae_translation_unit_module".as_ptr(), context) };
 		let builder = unsafe { LLVMCreateBuilderInContext(context) };
 		let llvm_types = LLVMTypes::new(context);
@@ -255,6 +263,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			builder,
 			di_builder,
 
+			architecture,
 			abi: Some(ABI::new()),
 			attribute_kinds: AttributeKinds::new(),
 			llvm_types,
@@ -2144,6 +2153,37 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			let kind = BindingKind::Value(slice);
 			Binding { type_id: slice_type_id, kind }
+		}
+	}
+
+	fn generate_debugger_break(&mut self) {
+		if self.architecture == Architecture::Amd64 {
+			unsafe {
+				let void = LLVMVoidTypeInContext(self.context);
+				let assembly = "int 3";
+
+				let value = LLVMGetInlineAsm(
+					void,
+					assembly.as_ptr() as _,
+					assembly.len(),
+					"".as_ptr() as _,
+					0,
+					false as _, // has side effects
+					false as _, // is align stack, TODO: understand this?
+					llvm_sys::LLVMInlineAsmDialect::LLVMInlineAsmDialectIntel,
+					false as _, // can throw
+				);
+
+				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
+				LLVMBuildCall2(
+					self.builder,
+					function_type,
+					value,
+					std::ptr::null_mut(),
+					0,
+					c"generate_debugger_break".as_ptr(),
+				);
+			}
 		}
 	}
 

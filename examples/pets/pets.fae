@@ -20,10 +20,6 @@ enum Pet {
 
 method Pet
 fn is_mammal(): bool {
-	while true {
-		panic()
-	}
-
 	match self {
 		Cat, Dog => return true
 		Snake => return false

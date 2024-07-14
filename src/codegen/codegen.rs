@@ -719,8 +719,18 @@ fn generate_intrinsic<G: Generator>(
 			Some(generator.generate_slice(specialization.return_type, pointer, length))
 		}
 
+		"debugger_break" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 0);
+
+			generator.generate_debugger_break();
+			None
+		}
+
 		"user_main_function" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 0);
+
 			if let Some(main) = *context.function_store.main.read() {
 				generator.generate_call(context.type_store, main, &[]);
 			}

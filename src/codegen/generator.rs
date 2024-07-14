@@ -181,6 +181,8 @@ pub trait Generator {
 
 	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, length: u64) -> Self::Binding;
 
+	fn generate_debugger_break(&mut self);
+
 	// TODO: Remove this in favor of a "end_function"
 	fn finalize_generator(&mut self);
 }
