@@ -167,13 +167,20 @@ pub trait Generator {
 		variant_binding: Option<Self::Binding>,
 	) -> Self::Binding;
 
-	fn generate_binding(&mut self, readable_index: usize, value: Option<Self::Binding>, type_id: TypeId, name: &str);
+	fn generate_binding(
+		&mut self,
+		readable_index: usize,
+		value: Option<Self::Binding>,
+		type_id: TypeId,
+		name: &str,
+		debug_location: DebugLocation,
+	);
 
-	fn generate_break(&mut self, loop_index: usize);
+	fn generate_break(&mut self, loop_index: usize, debug_location: DebugLocation);
 
-	fn generate_continue(&mut self, loop_index: usize);
+	fn generate_continue(&mut self, loop_index: usize, debug_location: DebugLocation);
 
-	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>);
+	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>, debug_location: DebugLocation);
 
 	fn generate_slice(&mut self, slice_type_id: TypeId, pointer: Self::Binding, length: Self::Binding) -> Self::Binding;
 
