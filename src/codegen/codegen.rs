@@ -206,9 +206,9 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
 
-		ExpressionKind::ArrayLiteral(literal) => generate_array_literal(context, generator, literal),
+		ExpressionKind::ArrayLiteral(literal) => generate_array_literal(context, generator, literal, debug_location),
 
-		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal),
+		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal, debug_location),
 
 		ExpressionKind::Call(call) => generate_call(context, generator, call, debug_location),
 
@@ -218,13 +218,13 @@ pub fn generate_expression<G: Generator>(
 
 		ExpressionKind::StaticRead(static_read) => generate_static_read(generator, static_read),
 
-		ExpressionKind::FieldRead(read) => generate_field_read(context, generator, read),
+		ExpressionKind::FieldRead(read) => generate_field_read(context, generator, read, debug_location),
 
 		ExpressionKind::UnaryOperation(operation) => generate_unary_operation(context, generator, operation, debug_location),
 
-		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, generator, operation),
+		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, generator, operation, debug_location),
 
-		ExpressionKind::CheckIs(check_is) => generate_check_is(context, generator, check_is),
+		ExpressionKind::CheckIs(check_is) => generate_check_is(context, generator, check_is, debug_location),
 
 		ExpressionKind::SliceMutableToImmutable(conversion) => {
 			generate_mutable_slice_to_immutable(context, generator, conversion)
@@ -338,7 +338,12 @@ fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, l
 	Some(generator.generate_string_literal(context.type_store, &literal.value))
 }
 
-fn generate_array_literal<G: Generator>(context: &mut Context, generator: &mut G, literal: &ArrayLiteral) -> Option<G::Binding> {
+fn generate_array_literal<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	literal: &ArrayLiteral,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
 	let mut elements = Vec::with_capacity(literal.expressions.len());
 	for expression in &literal.expressions {
 		if let Some(step) = generate_expression(context, generator, expression) {
@@ -351,16 +356,17 @@ fn generate_array_literal<G: Generator>(context: &mut Context, generator: &mut G
 
 	let pointee_layout = context.type_store.type_layout(pointee_type_id);
 	if pointee_layout.size <= 0 {
-		return Some(generator.generate_non_null_invalid_slice(type_id, literal.expressions.len() as u64));
+		return Some(generator.generate_non_null_invalid_slice(type_id, literal.expressions.len() as u64, debug_location));
 	}
 
-	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id))
+	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
 }
 
 fn generate_struct_literal<G: Generator>(
 	context: &mut Context,
 	generator: &mut G,
 	literal: &StructLiteral,
+	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	// TODO: Avoid this creating this vec every time
 	let mut fields = Vec::with_capacity(literal.field_initializers.len());
@@ -384,7 +390,7 @@ fn generate_struct_literal<G: Generator>(
 			_ => unreachable!("{:?}", entry.kind),
 		};
 
-		Some(generator.generate_struct_literal(type_id, shape_index, specialization_index, &fields))
+		Some(generator.generate_struct_literal(type_id, shape_index, specialization_index, &fields, debug_location))
 	}
 }
 
@@ -438,7 +444,7 @@ fn generate_method_call<G: Generator>(
 	};
 
 	let base = generate_expression(context, generator, &method_call.base)
-		.unwrap_or(generator.generate_non_null_invalid_pointer(base_pointer_type_id));
+		.unwrap_or(generator.generate_non_null_invalid_pointer(base_pointer_type_id, debug_location));
 
 	let function_id = context.function_store.specialize_function_with_function_generics(
 		context.messages,
@@ -467,7 +473,12 @@ fn generate_static_read<G: Generator>(generator: &mut G, static_read: &StaticRea
 	Some(generator.generate_static_read(static_read.static_index))
 }
 
-fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, read: &FieldRead) -> Option<G::Binding> {
+fn generate_field_read<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	read: &FieldRead,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
 	let base = generate_expression(context, generator, &read.base)?;
 
 	let type_id = context.specialize_type_id(read.base.type_id);
@@ -496,7 +507,7 @@ fn generate_field_read<G: Generator>(context: &mut Context, generator: &mut G, r
 		}
 	}
 
-	generator.generate_field_read(context.type_store, base, read.field_index)
+	generator.generate_field_read(context.type_store, base, read.field_index, debug_location)
 }
 
 fn generate_unary_operation<G: Generator>(
@@ -508,7 +519,7 @@ fn generate_unary_operation<G: Generator>(
 	let type_id = context.specialize_type_id(operation.type_id);
 	let Some(expression) = generate_expression(context, generator, &operation.expression) else {
 		if matches!(operation.op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
-			return Some(generator.generate_non_null_invalid_pointer(type_id));
+			return Some(generator.generate_non_null_invalid_pointer(type_id, debug_location));
 		}
 		return None;
 	};
@@ -534,17 +545,21 @@ fn generate_unary_operation<G: Generator>(
 	}
 
 	match &operation.op {
-		UnaryOperator::Negate => Some(generator.generate_negate(expression, type_id)),
+		UnaryOperator::Negate => Some(generator.generate_negate(expression, type_id, debug_location)),
 
-		UnaryOperator::Invert => Some(generator.generate_invert(expression)),
+		UnaryOperator::Invert => Some(generator.generate_invert(expression, debug_location)),
 
-		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => Some(generator.generate_address_of(expression, type_id)),
+		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => {
+			Some(generator.generate_address_of(expression, type_id, debug_location))
+		}
 
-		UnaryOperator::Dereference => Some(generator.generate_dereference(context.type_store, expression, type_id)),
+		UnaryOperator::Dereference => {
+			Some(generator.generate_dereference(context.type_store, expression, type_id, debug_location))
+		}
 
 		&UnaryOperator::Cast { type_id: to } => {
 			let to = context.specialize_type_id(to);
-			Some(generator.generate_cast(context.type_store, expression, to))
+			Some(generator.generate_cast(context.type_store, expression, to, debug_location))
 		}
 
 		UnaryOperator::Index { index_expression } => {
@@ -582,6 +597,7 @@ fn generate_binary_operation<G: Generator>(
 	context: &mut Context,
 	generator: &mut G,
 	operation: &BinaryOperation,
+	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let left_type_id = context.specialize_type_id(operation.left.type_id);
 	let result_type_id = context.specialize_type_id(operation.type_id);
@@ -608,10 +624,23 @@ fn generate_binary_operation<G: Generator>(
 		return Some(generator.generate_boolean_literal(context.type_store, value));
 	}
 
-	generator.generate_binary_operation(context, &operation.left, &operation.right, operation.op, left_type_id, result_type_id)
+	generator.generate_binary_operation(
+		context,
+		&operation.left,
+		&operation.right,
+		operation.op,
+		left_type_id,
+		result_type_id,
+		debug_location,
+	)
 }
 
-fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, check_is: &CheckIs) -> Option<G::Binding> {
+fn generate_check_is<G: Generator>(
+	context: &mut Context,
+	generator: &mut G,
+	check_is: &CheckIs,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &check_is.left).unwrap();
 	let left_type_id = context.specialize_type_id(check_is.left.type_id);
 	let value_type_id = match left_type_id.as_pointed(context.type_store) {
@@ -628,7 +657,7 @@ fn generate_check_is<G: Generator>(context: &mut Context, generator: &mut G, che
 		unreachable!("{:?}", entry.kind);
 	};
 
-	Some(generator.generate_check_is(context, value, enum_shape_index, enum_specialization_index, &check_is))
+	Some(generator.generate_check_is(context, value, enum_shape_index, enum_specialization_index, &check_is, debug_location))
 }
 
 fn generate_mutable_slice_to_immutable<G: Generator>(
@@ -740,7 +769,7 @@ fn generate_intrinsic<G: Generator>(
 			let pointer = generate_expression(context, generator, &call.arguments[0]).unwrap();
 			let length = generate_expression(context, generator, &call.arguments[1]).unwrap();
 
-			Some(generator.generate_slice(specialization.return_type, pointer, length))
+			Some(generator.generate_slice(specialization.return_type, pointer, length, debug_location))
 		}
 
 		"create_str" => {
@@ -751,7 +780,7 @@ fn generate_intrinsic<G: Generator>(
 			let pointer = generate_expression(context, generator, &call.arguments[0]).unwrap();
 			let length = generate_expression(context, generator, &call.arguments[1]).unwrap();
 
-			Some(generator.generate_slice(specialization.return_type, pointer, length))
+			Some(generator.generate_slice(specialization.return_type, pointer, length, debug_location))
 		}
 
 		"debugger_break" => {

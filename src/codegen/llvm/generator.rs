@@ -925,8 +925,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		elements: &[Self::Binding],
 		element_type_id: TypeId,
 		slice_type_id: TypeId,
+		debug_location: DebugLocation,
 	) -> Self::Binding {
 		assert!(!elements.is_empty());
+		let _debug_scope = self.create_debug_scope(debug_location);
 
 		let element_type = self.llvm_types.type_to_llvm_type(self.context, type_store, element_type_id);
 		let array_type = unsafe { LLVMArrayType2(element_type, elements.len() as u64) };
@@ -985,7 +987,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		shape_index: usize,
 		specialization_index: usize,
 		fields: &[Self::Binding],
+		debug_location: DebugLocation,
 	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index]
 			.unwrap()
 			.actual;
@@ -1092,7 +1097,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		type_store: &mut TypeStore,
 		base: Self::Binding,
 		field_index: usize,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding> {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let index = field_index as u32;
 		let ValuePointer { pointer, mut pointed_type, type_id } = self.value_auto_deref_pointer(type_store, base);
 
@@ -1197,7 +1205,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Some(Binding { type_id, kind })
 	}
 
-	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding {
+	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId, debug_location: DebugLocation) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let value = value.to_value(self.builder);
 
 		let negated = unsafe {
@@ -1215,7 +1225,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id, kind }
 	}
 
-	fn generate_invert(&mut self, value: Self::Binding) -> Self::Binding {
+	fn generate_invert(&mut self, value: Self::Binding, debug_location: DebugLocation) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let type_id = value.type_id;
 		let value = value.to_value(self.builder);
 		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"invert.inverted".as_ptr()) };
@@ -1223,7 +1235,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id, kind }
 	}
 
-	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding {
+	fn generate_address_of(
+		&mut self,
+		base: Self::Binding,
+		pointer_type_id: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let pointer = self.value_pointer(base);
 		let kind = BindingKind::Value(pointer);
 		Binding { type_id: pointer_type_id, kind }
@@ -1234,7 +1253,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		type_store: &mut TypeStore,
 		base: Self::Binding,
 		pointed_type_id: TypeId,
+		debug_location: DebugLocation,
 	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let pointer = match base.kind {
 			BindingKind::Value(value) => value,
 
@@ -1248,7 +1270,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id: pointed_type_id, kind }
 	}
 
-	fn generate_cast(&mut self, type_store: &mut TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding {
+	fn generate_cast(
+		&mut self,
+		type_store: &mut TypeStore,
+		base: Self::Binding,
+		to: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let from = base.to_value(self.builder);
 		let from_type_kind = unsafe { LLVMGetTypeKind(LLVMTypeOf(from)) };
 		let from_pointer = from_type_kind == LLVMPointerTypeKind;
@@ -1576,7 +1606,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		op: BinaryOperator,
 		source_type_id: TypeId,
 		result_type_id: TypeId,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding> {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		if let BinaryOperator::Assign = op {
 			let left = codegen::generate_expression(context, self, left).unwrap();
 			let right = codegen::generate_expression(context, self, right).unwrap();
@@ -1987,7 +2020,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
 		check_expression: &CheckIs,
+		debug_location: DebugLocation,
 	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
 
 		let result = unsafe {
@@ -2142,7 +2178,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.abi = Some(abi);
 	}
 
-	fn generate_slice(&mut self, slice_type_id: TypeId, pointer: Self::Binding, length: Self::Binding) -> Self::Binding {
+	fn generate_slice(
+		&mut self,
+		slice_type_id: TypeId,
+		pointer: Self::Binding,
+		length: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		unsafe {
 			let pointer = pointer.to_value(self.builder);
 			let length = length.to_value(self.builder);
@@ -2164,7 +2208,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding {
+	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId, debug_location: DebugLocation) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		unsafe {
 			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
 			let pointer_type = self.llvm_types.opaque_pointer;
@@ -2175,7 +2221,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, length: u64) -> Self::Binding {
+	fn generate_non_null_invalid_slice(
+		&mut self,
+		slice_type_id: TypeId,
+		length: u64,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		unsafe {
 			let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
 			let pointer_type = self.llvm_types.opaque_pointer;

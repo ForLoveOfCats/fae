@@ -73,6 +73,7 @@ pub trait Generator {
 		elements: &[Self::Binding],
 		element_type_id: TypeId,
 		slice_type_id: TypeId,
+		debug_location: DebugLocation,
 	) -> Self::Binding;
 
 	fn generate_struct_literal(
@@ -81,6 +82,7 @@ pub trait Generator {
 		shape_index: usize,
 		specialization_index: usize,
 		fields: &[Self::Binding],
+		debug_location: DebugLocation,
 	) -> Self::Binding;
 
 	fn generate_call(
@@ -109,18 +111,35 @@ pub trait Generator {
 		type_store: &mut TypeStore,
 		base: Self::Binding,
 		field_index: usize,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
-	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId) -> Self::Binding;
+	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId, debug_location: DebugLocation) -> Self::Binding;
 
-	fn generate_invert(&mut self, value: Self::Binding) -> Self::Binding;
+	fn generate_invert(&mut self, value: Self::Binding, debug_location: DebugLocation) -> Self::Binding;
 
-	fn generate_address_of(&mut self, base: Self::Binding, pointer_type_id: TypeId) -> Self::Binding;
+	fn generate_address_of(
+		&mut self,
+		base: Self::Binding,
+		pointer_type_id: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
-	fn generate_dereference(&mut self, type_store: &mut TypeStore, base: Self::Binding, pointed_type_id: TypeId)
-		-> Self::Binding;
+	fn generate_dereference(
+		&mut self,
+		type_store: &mut TypeStore,
+		base: Self::Binding,
+		pointed_type_id: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
-	fn generate_cast(&mut self, type_store: &mut TypeStore, base: Self::Binding, to: TypeId) -> Self::Binding;
+	fn generate_cast(
+		&mut self,
+		type_store: &mut TypeStore,
+		base: Self::Binding,
+		to: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
 	fn generate_slice_index(
 		&mut self,
@@ -150,6 +169,7 @@ pub trait Generator {
 		op: BinaryOperator,
 		source_type_id: TypeId,
 		result_type_id: TypeId,
+		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
 	fn generate_check_is(
@@ -159,6 +179,7 @@ pub trait Generator {
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
 		check_expression: &CheckIs,
+		debug_location: DebugLocation,
 	) -> Self::Binding;
 
 	fn generate_enum_variant_to_enum(
@@ -186,11 +207,22 @@ pub trait Generator {
 
 	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>, debug_location: DebugLocation);
 
-	fn generate_slice(&mut self, slice_type_id: TypeId, pointer: Self::Binding, length: Self::Binding) -> Self::Binding;
+	fn generate_slice(
+		&mut self,
+		slice_type_id: TypeId,
+		pointer: Self::Binding,
+		length: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
-	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId) -> Self::Binding;
+	fn generate_non_null_invalid_pointer(&mut self, pointer_type_id: TypeId, debug_location: DebugLocation) -> Self::Binding;
 
-	fn generate_non_null_invalid_slice(&mut self, slice_type_id: TypeId, length: u64) -> Self::Binding;
+	fn generate_non_null_invalid_slice(
+		&mut self,
+		slice_type_id: TypeId,
+		length: u64,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
 	fn generate_debugger_break(&mut self, debug_location: DebugLocation);
 
