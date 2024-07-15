@@ -758,7 +758,7 @@ fn generate_intrinsic<G: Generator>(
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
 			assert_eq!(specialization.parameters.len(), 0);
 
-			generator.generate_debugger_break();
+			generator.generate_debugger_break(debug_location);
 			None
 		}
 

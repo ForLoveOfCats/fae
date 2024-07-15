@@ -2191,19 +2191,25 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_debugger_break(&mut self) {
+	fn generate_debugger_break(&mut self, debug_location: DebugLocation) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
 		if self.architecture == Architecture::Amd64 {
 			unsafe {
-				let void = LLVMVoidTypeInContext(self.context);
-				let assembly = "int 3";
+				// This nop allows the cpu to execute the interupt, advance the program
+				// counter, and still be within the same debug location when the debugger
+				// comes in and inspects the execution state, rather than appearing to
+				// be "on" the line after the `debugger_break` invocation
+				let assembly = "int 3; nop";
 
+				let void = LLVMVoidTypeInContext(self.context);
 				let value = LLVMGetInlineAsm(
 					void,
 					assembly.as_ptr() as _,
 					assembly.len(),
 					"".as_ptr() as _,
 					0,
-					false as _, // has side effects
+					true as _,  // has side effects
 					false as _, // is align stack, TODO: understand this?
 					llvm_sys::LLVMInlineAsmDialect::LLVMInlineAsmDialectIntel,
 					false as _, // can throw
@@ -2214,9 +2220,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 		} else if self.architecture == Architecture::Aarch64 {
 			unsafe {
-				let void = LLVMVoidTypeInContext(self.context);
 				let assembly = "brk 0";
 
+				let void = LLVMVoidTypeInContext(self.context);
 				let value = LLVMGetInlineAsm(
 					void,
 					assembly.as_ptr() as _,
