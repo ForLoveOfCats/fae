@@ -2220,7 +2220,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 		} else if self.architecture == Architecture::Aarch64 {
 			unsafe {
-				let assembly = "brk 0";
+				// LLDB on macOS AArch64 doesn't *seem* to need the nop as GDB on
+				// AMD64 does, but let's err on the side of making sure
+				let assembly = "brk 0; nop";
 
 				let void = LLVMVoidTypeInContext(self.context);
 				let value = LLVMGetInlineAsm(
