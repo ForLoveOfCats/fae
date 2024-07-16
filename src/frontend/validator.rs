@@ -23,6 +23,7 @@ pub struct Context<'a, 'b, 'c> {
 
 	pub file_index: u32,
 	pub module_path: &'a [String],
+	pub parsed_files: &'b [tree::File<'a>],
 
 	pub next_scope_index: &'b mut usize,
 	pub scope_index: usize,
@@ -80,6 +81,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			file_index: self.file_index,
 			module_path: self.module_path,
+			parsed_files: self.parsed_files,
 
 			next_scope_index: self.next_scope_index,
 			scope_index,
@@ -137,6 +139,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			file_index: self.file_index,
 			module_path: self.module_path,
+			parsed_files: self.parsed_files,
 
 			next_scope_index: self.next_scope_index,
 			scope_index,
@@ -353,6 +356,7 @@ pub fn validate<'a>(
 					&constants,
 					statics,
 					&mut readables,
+					parsed_files,
 					&parsed_files_iter_5,
 					&type_shape_indicies,
 				);
@@ -372,6 +376,7 @@ pub fn validate<'a>(
 					&constants,
 					statics,
 					&mut readables,
+					parsed_files,
 					&parsed_files_iter_6,
 					&type_shape_indicies,
 				);
@@ -392,6 +397,7 @@ pub fn validate<'a>(
 					&constants,
 					statics,
 					&mut readables,
+					parsed_files,
 					&parsed_files_iter_7,
 					&type_shape_indicies,
 					&local_function_shape_indicies,
@@ -422,12 +428,13 @@ fn deep_pass<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
-	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	parsed_files: &'a [tree::File<'a>],
+	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
 	local_function_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
-		let mut guard = parsed_files.write();
+		let mut guard = parsed_files_iter.write();
 		let Some(parsed_file) = guard.next() else {
 			return;
 		};
@@ -453,6 +460,7 @@ fn deep_pass<'a>(
 			herd_member: &herd_member,
 			file_index: parsed_file.source_file.index,
 			module_path,
+			parsed_files,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
@@ -707,11 +715,12 @@ fn validate_root_consts<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
-	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	parsed_files: &'a [tree::File<'a>],
+	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
-		let mut guard = parsed_files.write();
+		let mut guard = parsed_files_iter.write();
 		let Some(parsed_file) = guard.next() else {
 			return;
 		};
@@ -738,6 +747,7 @@ fn validate_root_consts<'a>(
 			herd_member,
 			file_index: parsed_file.source_file.index,
 			module_path,
+			parsed_files,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
@@ -797,11 +807,12 @@ fn validate_root_statics<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
-	parsed_files: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
+	parsed_files: &'a [tree::File<'a>],
+	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
-		let mut guard = parsed_files.write();
+		let mut guard = parsed_files_iter.write();
 		let Some(parsed_file) = guard.next() else {
 			return;
 		};
@@ -828,6 +839,7 @@ fn validate_root_statics<'a>(
 			herd_member,
 			file_index: parsed_file.source_file.index,
 			module_path,
+			parsed_files,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
@@ -919,14 +931,6 @@ fn resolve_import_for_block_types<'a>(
 	let importable_types_index = layer_guard.importable_types_index;
 	let source_symbols = layer_guard.symbols.clone();
 	drop(layer_guard);
-
-	// let source_symbols_guard = source_symbols.read();
-
-	// let source_symbols = {
-	// 	let layer_guard = layer.read();
-	// 	let importable_types_index = layer_guard.importable_types_index;
-	// 	layer_guard.symbols.read().scopes[importable_types_index].clone()
-	// };
 
 	if let Some(names) = names {
 		let importable_types = &source_symbols.scopes[importable_types_index];
@@ -2273,7 +2277,10 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				returns |= expression.returns;
 
 				let kind = StatementKind::Expression(expression);
-				statements.push(Statement { kind, debug_location: statement.span.debug_location() });
+				statements.push(Statement {
+					kind,
+					debug_location: statement.span.debug_location(context.parsed_files),
+				});
 			}
 
 			tree::Statement::Block(statement) => {
@@ -2281,11 +2288,14 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				let block = validate_block(scope, &statement.item, false);
 				returns |= block.returns;
 				let kind = StatementKind::Block(block);
-				statements.push(Statement { kind, debug_location: statement.span.debug_location() })
+				statements.push(Statement {
+					kind,
+					debug_location: statement.span.debug_location(context.parsed_files),
+				})
 			}
 
 			tree::Statement::While(statement) => {
-				let debug_location = statement.span.debug_location();
+				let debug_location = statement.span.debug_location(context.parsed_files);
 				let statement = validate_while_statement(&mut context, statement);
 				let kind = StatementKind::While(statement);
 				statements.push(Statement { kind, debug_location })
@@ -2310,11 +2320,14 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				};
 
 				let kind = StatementKind::Binding(Box::new(validated));
-				statements.push(Statement { kind, debug_location: statement.span.debug_location() });
+				statements.push(Statement {
+					kind,
+					debug_location: statement.span.debug_location(context.parsed_files),
+				});
 			}
 
 			tree::Statement::Break(statement) => {
-				let debug_location = statement.span.debug_location();
+				let debug_location = statement.span.debug_location(context.parsed_files);
 				let statement = if let Some(loop_index) = context.current_loop_index {
 					Break { loop_index }
 				} else {
@@ -2328,7 +2341,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			}
 
 			tree::Statement::Continue(statement) => {
-				let debug_location = statement.span.debug_location();
+				let debug_location = statement.span.debug_location(context.parsed_files);
 				let statement = if let Some(loop_index) = context.current_loop_index {
 					Continue { loop_index }
 				} else {
@@ -2363,7 +2376,10 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 				let boxed_return = Box::new(Return { expression });
 				let kind = StatementKind::Return(boxed_return);
-				statements.push(Statement { kind, debug_location: statement.span.debug_location() });
+				statements.push(Statement {
+					kind,
+					debug_location: statement.span.debug_location(context.parsed_files),
+				});
 			}
 		}
 	}
@@ -2857,7 +2873,7 @@ fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a t
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -2922,7 +2938,7 @@ fn validate_if_else_chain_expression<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3128,7 +3144,7 @@ fn validate_match_expression<'a>(
 		is_mutable,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3151,7 +3167,7 @@ fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tre
 		is_mutable: true,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3165,7 +3181,7 @@ fn validate_float_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree:
 		is_mutable: true,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3178,7 +3194,7 @@ fn validate_bool_literal<'a>(context: &mut Context<'a, '_, '_>, literal: bool, s
 		is_mutable: true,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3195,7 +3211,7 @@ fn validate_codepoint_literal<'a>(
 		is_mutable: true,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3212,7 +3228,7 @@ fn validate_byte_codepoint_literal<'a>(
 		is_mutable: true,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3229,7 +3245,7 @@ fn validate_string_literal<'a>(
 		is_mutable: true,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3293,7 +3309,7 @@ fn validate_array_literal<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3356,7 +3372,7 @@ fn validate_struct_literal<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3602,7 +3618,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3855,7 +3871,7 @@ fn validate_method_call<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -3935,7 +3951,7 @@ fn validate_static_method_call<'a>(
 						is_mutable: true,
 						returns,
 						kind,
-						debug_location: span.debug_location(),
+						debug_location: span.debug_location(context.parsed_files),
 					};
 				}
 			} else {
@@ -4006,7 +4022,7 @@ fn validate_static_method_call<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -4058,7 +4074,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				is_mutable: false,
 				returns: false,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4076,7 +4092,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				is_mutable: false,
 				returns: false,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4084,7 +4100,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			disallow_type_arguments(context, read, span, "a builtin type");
 
 			if type_id.is_void(context.type_store) {
-				return Expression::void(context.type_store, span);
+				return Expression::void(context.type_store, context.parsed_files, span);
 			} else {
 				let kind = ExpressionKind::Type(type_id);
 				return Expression {
@@ -4093,7 +4109,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 					is_mutable: false,
 					returns: false,
 					kind,
-					debug_location: span.debug_location(),
+					debug_location: span.debug_location(context.parsed_files),
 				};
 			}
 		}
@@ -4122,7 +4138,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				is_mutable: false,
 				returns: false,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4148,7 +4164,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		is_mutable,
 		returns: false,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -4219,7 +4235,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			is_mutable,
 			returns: false,
 			kind,
-			debug_location: span.debug_location(),
+			debug_location: span.debug_location(context.parsed_files),
 		}
 	}
 
@@ -4360,7 +4376,7 @@ fn validate_inferred_enum<'a>(
 				is_mutable: true,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 	}
@@ -4400,7 +4416,7 @@ fn validate_dot_access_enum_literal<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -4603,7 +4619,7 @@ fn validate_unary_operation<'a>(
 				is_mutable: true,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4623,7 +4639,7 @@ fn validate_unary_operation<'a>(
 				is_mutable: true,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4636,7 +4652,7 @@ fn validate_unary_operation<'a>(
 				is_mutable: true,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4655,7 +4671,7 @@ fn validate_unary_operation<'a>(
 				is_mutable: true,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4673,7 +4689,7 @@ fn validate_unary_operation<'a>(
 				is_mutable,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4794,7 +4810,7 @@ fn validate_cast<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -4820,7 +4836,7 @@ fn validate_bracket_index<'a>(
 				is_mutable,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4837,7 +4853,7 @@ fn validate_bracket_index<'a>(
 				is_mutable: false,
 				returns,
 				kind,
-				debug_location: span.debug_location(),
+				debug_location: span.debug_location(context.parsed_files),
 			};
 		}
 
@@ -4864,7 +4880,7 @@ fn validate_bracket_index<'a>(
 		is_mutable,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -4915,7 +4931,7 @@ fn validate_binary_operation<'a>(
 			is_mutable: true,
 			returns,
 			kind,
-			debug_location: span.debug_location(),
+			debug_location: span.debug_location(context.parsed_files),
 		};
 	}
 
@@ -5098,7 +5114,7 @@ fn validate_binary_operation<'a>(
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }
 
@@ -5136,7 +5152,7 @@ fn perform_constant_binary_operation<'a>(
 			is_mutable: true,
 			returns: false,
 			kind,
-			debug_location: span.debug_location(),
+			debug_location: span.debug_location(context.parsed_files),
 		});
 	}
 
@@ -5164,7 +5180,7 @@ fn perform_constant_binary_operation<'a>(
 			is_mutable: true,
 			returns: false,
 			kind,
-			debug_location: span.debug_location(),
+			debug_location: span.debug_location(context.parsed_files),
 		});
 	}
 
@@ -5189,7 +5205,7 @@ fn perform_constant_binary_operation<'a>(
 			is_mutable: true,
 			returns: false,
 			kind,
-			debug_location: span.debug_location(),
+			debug_location: span.debug_location(context.parsed_files),
 		});
 	}
 
@@ -5337,6 +5353,6 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		is_mutable: true,
 		returns,
 		kind,
-		debug_location: span.debug_location(),
+		debug_location: span.debug_location(context.parsed_files),
 	}
 }

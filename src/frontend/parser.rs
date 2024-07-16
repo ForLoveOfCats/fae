@@ -13,8 +13,12 @@ use crate::frontend::tree::*;
 pub fn parse_file<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>, file: &'a SourceFile) -> File<'a> {
 	let block = parse_root_block(bump, messages, tokens);
 
-	let module_path = &file.module_path;
-	File { source_file: file, module_path, block }
+	File {
+		source_file: file,
+		line_starts: tokens.take_line_starts(),
+		module_path: &file.module_path,
+		block,
+	}
 }
 
 pub fn parse_root_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> Block<'a> {

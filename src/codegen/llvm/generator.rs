@@ -31,13 +31,12 @@ use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::codegen::llvm::debug_scope::DebugScope;
-use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
-use crate::frontend::tree::BinaryOperator;
+use crate::frontend::tree::{self, BinaryOperator};
 use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
@@ -508,7 +507,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn register_functions(
 		&mut self,
-		source_files: &[SourceFile],
+		parsed_files: &[tree::File],
 		type_store: &mut TypeStore,
 		function_store: &FunctionStore,
 		optimizing: bool,
@@ -534,9 +533,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 
 				let span = shape.name.span;
-				let file = &source_files[span.file_index as usize];
-				let file_name = file.path.file_name().unwrap();
-				let directory = file.path.parent().unwrap();
+				let file = &parsed_files[span.file_index as usize];
+				let file_name = file.source_file.path.file_name().unwrap();
+				let directory = file.source_file.path.parent().unwrap();
 
 				let name = shape.name.item;
 				let is_definition = shape.extern_attribute.is_none();
@@ -556,7 +555,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let void_returning = specialization.return_type.is_void(type_store);
 				self.state = State::InFunction { function_id, void_returning };
 
-				let debug_location = shape.name.span.debug_location();
+				let debug_location = shape.name.span.debug_location(parsed_files);
 				let subroutine = unsafe {
 					// TODO: Add parameter types
 					let null = std::ptr::null_mut();

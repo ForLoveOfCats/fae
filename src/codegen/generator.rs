@@ -1,11 +1,10 @@
 use crate::codegen::codegen;
-use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
-use crate::frontend::tree::BinaryOperator;
+use crate::frontend::tree::{self, BinaryOperator};
 use crate::frontend::type_store::{TypeId, TypeStore};
 
 // TODO: Rip out this abstraction, it's causing more touble than it's worth. It didn't end up moving
@@ -19,7 +18,7 @@ pub trait Generator {
 
 	fn register_functions(
 		&mut self,
-		source_files: &[SourceFile],
+		parsed_files: &[tree::File],
 		type_store: &mut TypeStore,
 		function_store: &FunctionStore,
 		optimizing: bool,
