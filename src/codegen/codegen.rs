@@ -2,7 +2,6 @@ use llvm_sys::prelude::LLVMBasicBlockRef;
 
 use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
-use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
@@ -13,12 +12,12 @@ use crate::frontend::ir::{
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
-use crate::frontend::tree::BinaryOperator;
+use crate::frontend::tree::{self, BinaryOperator};
 use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 use crate::lock::ReadGuard;
 
 pub fn generate<'a, G: Generator>(
-	source_files: &[SourceFile],
+	parsed_files: &[tree::File],
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
@@ -29,7 +28,7 @@ pub fn generate<'a, G: Generator>(
 ) {
 	generator.register_type_descriptions(type_store);
 	generator.register_statics(type_store, statics);
-	generator.register_functions(source_files, type_store, function_store, optimizing);
+	generator.register_functions(parsed_files, type_store, function_store, optimizing);
 
 	let function_count = function_store.shapes.read().len();
 	for function_shape_index in 0..function_count {
@@ -416,7 +415,7 @@ fn generate_call<G: Generator>(
 		.is_some();
 
 	if is_intrinsic {
-		return generate_intrinsic(context, generator, function_id, call);
+		return generate_intrinsic(context, generator, function_id, call, debug_location);
 	}
 
 	// TODO: Avoid this creating this vec every time
@@ -733,9 +732,9 @@ fn generate_intrinsic<G: Generator>(
 	generator: &mut G,
 	function_id: FunctionId,
 	call: &Call,
+	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let span = call.span;
-	let debug_location = call.span.debug_location();
 
 	let lock = context.function_store.shapes.read()[function_id.function_shape_index]
 		.as_ref()

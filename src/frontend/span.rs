@@ -1,5 +1,7 @@
 use std::ops::{Add, AddAssign};
 
+use crate::frontend::tree;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Span {
 	pub start: usize,
@@ -50,11 +52,15 @@ impl Span {
 		current_line_num
 	}
 
-	pub fn debug_location(self) -> DebugLocation {
+	pub fn debug_location(self, parsed_files: &[tree::File]) -> DebugLocation {
+		let file = &parsed_files[self.file_index as usize];
+		let line_start = file.line_starts[self.line_index as usize];
+		let offset_in_line = self.start - line_start + 1;
+
 		DebugLocation {
 			file_index: self.file_index,
 			line: self.line_index + 1,
-			column: 0, // TODO
+			offset_in_line: offset_in_line as u32,
 		}
 	}
 }
@@ -63,5 +69,15 @@ impl Span {
 pub struct DebugLocation {
 	pub file_index: u32,
 	pub line: u32,
-	pub column: u32,
+	pub offset_in_line: u32,
+}
+
+impl DebugLocation {
+	pub fn unusable() -> DebugLocation {
+		DebugLocation {
+			file_index: u32::MAX,
+			line: u32::MAX,
+			offset_in_line: u32::MAX,
+		}
+	}
 }

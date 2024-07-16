@@ -199,7 +199,7 @@ pub fn build_project(
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => llvm::driver::generate_code(
 			cli_arguments,
-			&files,
+			&parsed_files,
 			&mut codegen_messages,
 			&lang_items.read(),
 			&mut type_store,

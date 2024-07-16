@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::span::{DebugLocation, Span};
-use crate::frontend::tree::{BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
+use crate::frontend::tree::{self, BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
 use crate::reference::{Ref, SliceRef};
 
@@ -404,18 +404,18 @@ impl<'a> Expression<'a> {
 			is_mutable: true,
 			returns: false, // TODO: This could cause erronious error messages?
 			kind: ExpressionKind::AnyCollapse,
-			debug_location: span.debug_location(),
+			debug_location: DebugLocation::unusable(),
 		}
 	}
 
-	pub fn void(type_store: &TypeStore<'a>, span: Span) -> Self {
+	pub fn void(type_store: &TypeStore<'a>, parsed_files: &[tree::File], span: Span) -> Self {
 		Expression {
 			span,
 			type_id: type_store.void_type_id(),
 			is_mutable: true, // TODO: Think about this harder?
 			returns: false,
 			kind: ExpressionKind::Void,
-			debug_location: span.debug_location(),
+			debug_location: span.debug_location(parsed_files),
 		}
 	}
 }

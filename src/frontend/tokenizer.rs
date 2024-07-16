@@ -156,11 +156,16 @@ impl<'a> Token<'a> {
 pub struct Tokens<'a> {
 	index: usize,
 	tokens: Vec<Token<'a>>,
+	line_starts: Vec<usize>, // zero indexed line number -> line's starting byte offset
 }
 
 impl<'a> Tokens<'a> {
 	pub fn tear_down(self) -> Vec<Token<'a>> {
 		self.tokens
+	}
+
+	pub fn take_line_starts(&mut self) -> Vec<usize> {
+		std::mem::take(&mut self.line_starts)
 	}
 
 	#[inline]
@@ -253,11 +258,15 @@ impl<'a> Tokenizer<'a> {
 	pub fn tokenize(&mut self, mut tokens: Vec<Token<'a>>, messages: &mut Messages) -> Tokens<'a> {
 		tokens.clear();
 
+		let mut line_starts = vec![0];
 		while let Ok(token) = self.next(messages) {
+			if token.kind == TokenKind::Newline {
+				line_starts.push(token.span.end);
+			}
 			tokens.push(token);
 		}
 
-		Tokens { index: 0, tokens }
+		Tokens { index: 0, tokens, line_starts }
 	}
 
 	#[inline]

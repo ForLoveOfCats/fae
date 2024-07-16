@@ -19,8 +19,12 @@ impl DebugScope {
 		let previous_location = unsafe { LLVMGetCurrentDebugLocation2(builder) };
 
 		unsafe {
+			// LLVM and DWARF calls this the "column" but testing shows that it actually
+			// wants the byte offset into the line to avoid issues with tabulators. I'm very
+			// saddened by the continued use of this heavily overloaded term :(
+			let column = debug_location.offset_in_line;
+
 			let line = debug_location.line;
-			let column = debug_location.column;
 			let inlined_at = std::ptr::null_mut();
 			let location = LLVMDIBuilderCreateDebugLocation(context, line, column, scope, inlined_at);
 			LLVMSetCurrentDebugLocation2(builder, location);

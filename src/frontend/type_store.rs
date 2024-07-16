@@ -883,7 +883,7 @@ impl<'a> TypeStore<'a> {
 					is_mutable: mutable,
 					returns,
 					kind,
-					debug_location: from.span.debug_location(),
+					debug_location: from.debug_location,
 				};
 				return Ok(true);
 			}
@@ -1036,7 +1036,7 @@ impl<'a> TypeStore<'a> {
 						is_mutable: false,
 						returns,
 						kind,
-						debug_location: from.span.debug_location(),
+						debug_location: from.debug_location,
 					};
 					return Ok(true);
 				}
@@ -1062,7 +1062,7 @@ impl<'a> TypeStore<'a> {
 								is_mutable: false,
 								returns,
 								kind,
-								debug_location: from.span.debug_location(),
+								debug_location: from.debug_location,
 							};
 							return Ok(true);
 						}

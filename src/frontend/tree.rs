@@ -7,6 +7,7 @@ use crate::frontend::tokenizer::Token;
 #[derive(Debug)]
 pub struct File<'a> {
 	pub source_file: &'a SourceFile,
+	pub line_starts: Vec<usize>, // zero indexed line number -> line's starting byte offset
 	pub module_path: &'a [String],
 	pub block: Block<'a>,
 }

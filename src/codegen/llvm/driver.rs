@@ -18,15 +18,15 @@ use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::{Architecture, LLVMGenerator};
 use crate::frontend::error::Messages;
-use crate::frontend::file::SourceFile;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::symbols::Statics;
+use crate::frontend::tree;
 use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
 	cli_arguments: &CliArguments,
-	source_files: &[SourceFile],
+	parsed_files: &[tree::File],
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
 	type_store: &mut TypeStore<'a>,
@@ -63,7 +63,7 @@ pub fn generate_code<'a>(
 	let mut generator = LLVMGenerator::<SysvAbi>::new(context, architecture, cli_arguments.optimize_artifacts);
 
 	generate(
-		source_files,
+		parsed_files,
 		messages,
 		lang_items,
 		type_store,
