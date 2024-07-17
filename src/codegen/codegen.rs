@@ -25,6 +25,7 @@ pub fn generate<'a, G: Generator>(
 	statics: &Statics,
 	generator: &mut G,
 	optimizing: bool,
+	is_compiler_test: bool,
 ) {
 	generator.register_type_descriptions(type_store);
 	generator.register_statics(type_store, statics);
@@ -57,7 +58,16 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
+			generate_function(
+				messages,
+				lang_items,
+				type_store,
+				function_store,
+				generator,
+				shape,
+				function_id,
+				is_compiler_test,
+			);
 		}
 	}
 
@@ -65,6 +75,7 @@ pub fn generate<'a, G: Generator>(
 }
 
 pub struct Context<'a, 'b> {
+	pub is_compiler_test: bool,
 	pub messages: &'b mut Messages<'a>,
 	pub lang_items: &'b LangItems,
 	pub type_store: &'b mut TypeStore<'a>,
@@ -104,6 +115,7 @@ pub fn generate_function<'a, G: Generator>(
 	generator: &mut G,
 	shape: ReadGuard<FunctionShape<'a>>,
 	function_id: FunctionId,
+	is_compiler_test: bool,
 ) {
 	let specialization = &shape.specializations[function_id.specialization_index];
 
@@ -125,6 +137,7 @@ pub fn generate_function<'a, G: Generator>(
 	drop(shape);
 
 	let mut context = Context {
+		is_compiler_test,
 		messages,
 		lang_items,
 		type_store,
@@ -798,6 +811,13 @@ fn generate_intrinsic<G: Generator>(
 				generator.generate_call(context.type_store, main, &[], debug_location);
 			}
 			None
+		}
+
+		"is_compiler_test" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 0);
+
+			Some(generator.generate_boolean_literal(context.type_store, context.is_compiler_test))
 		}
 
 		_ => unreachable!(),

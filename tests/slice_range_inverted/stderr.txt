@@ -1,1 +1,3 @@
 Panic: Range start 6 is larger than end 4
+Fae thread panicked!
+Reason: Slice range failure
