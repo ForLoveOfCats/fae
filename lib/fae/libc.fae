@@ -88,5 +88,8 @@ fn srand(seed: u32)
 extern "sqrt"
 fn sqrt(arg: f64): f64
 
+extern "strlen"
+fn strlen(string: &u8): usize
+
 extern "time"
 fn time(tloc: &mut TimeT): TimeT
