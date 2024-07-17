@@ -32,7 +32,8 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 fn panic(): noreturn {
 	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
 
-	fprintf(StdErrFile.*, "\nFae thread panicked!\n".pointer)
+	fprintf(StdErrFile.*, "\n\nFae thread panicked!\n".pointer)
+	fprintf(StdErrFile.*, "Function backtrace:\n".pointer)
 
 	let null = null_pointer<void>()
 	// 50 items
@@ -45,12 +46,53 @@ fn panic(): noreturn {
 	}
 
 	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32)).(isize)
-	if symbol_count == 0 => fprintf(StdErrFile.*, "Missing backtrace\n".pointer)
-	else => fprintf(StdErrFile.*, "Thread backtrace:\n".pointer)
+	let symbols = buffer[0..symbol_count]
+
+	const Indentation = "  "
+	const Error = "<error>"
+	const Unknown = "<unknown>"
+	const Spacer = "  "
+
+	enum Symbol {
+		Error
+		Unknown { path: &u8 }
+		Found {
+			name: str
+			path: &u8
+		}
+	}
+
+	// 50 items
+	let buffer = []Symbol {
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+	}
+
+	mut longest_width: isize = 0
+	fn handle_width(longest_width: &mut isize, width: isize) {
+		if width > longest_width.* => longest_width.* = width
+	}
+
+	fn print_width(width: isize) {
+		mut index: isize = 0
+		while index < width { 
+			index += 1
+			fprintf(StdErrFile.*, " ".pointer)
+		}
+	}
 
 	mut index: isize = 0
-	while index < symbol_count {
-		let address = buffer[index]
+	while index < symbols.length {
+		let address = symbols[index]
+		let entry = buffer[index].&mut
 		index += 1
 
 		mut info = DlInfo {
@@ -60,11 +102,62 @@ fn panic(): noreturn {
 			dli_saddr: null_pointer<void>()
 		}
 
-		if dladdr(address, info.&mut) == 0 => continue
-		if info.dli_saddr.(usize) == 0 => continue
+		if dladdr(address, info.&mut) == 0 {
+			entry.* = Symbol.Error
+			handle_width(longest_width.&mut, Error.length)
+			continue
+		}
+		
+		let path = info.dli_fname
 
-		fprintf(StdErrFile.*, "  function \"%s\"\n".pointer, info.dli_sname)
+		if info.dli_saddr.(usize) == 0 {
+			entry.* = Symbol.Unknown { path }
+			handle_width(longest_width.&mut, Unknown.length)
+		} else {
+			let name_length = fae::libc::strlen(info.dli_sname).(isize)
+			let name = fae::intrinsics::create_str(info.dli_sname, name_length)
+			entry.* = Symbol.Found { name, path }
+			handle_width(longest_width.&mut, name_length)
+		}
 	}
+
+	let symbols = buffer[0..symbol_count]
+
+	mut index: isize = 0
+	while index < symbols.length {
+		let symbol = symbols[index]
+		index += 1
+
+		mut current_width: isize = 0
+		mut path: &u8 = "".pointer
+
+		match symbol {
+			Error {
+				fprintf(StdErrFile.*, "%s%s\n".pointer, Indentation.pointer, Error.pointer)
+				continue
+			}
+
+			Unknown {
+				fprintf(StdErrFile.*, "%s%s".pointer, Indentation.pointer, Unknown.pointer)
+				current_width = Unknown.length
+				path = symbol.path
+			}
+
+			Found {
+				fprintf(StdErrFile.*, "%s%s".pointer, Indentation.pointer, symbol.name.pointer)
+				current_width = symbol.name.length
+				path = symbol.path
+			}
+		}
+
+		print_width(longest_width - current_width)
+		fprintf(StdErrFile.*, "%s(%s)\n".pointer, Spacer.pointer, path	)
+	}
+
+	if symbol_count == 0 {
+		fprintf(StdErrFile.*, "%s<missing backtrace>\n".pointer, Indentation.pointer)
+	}
+	fprintf(StdErrFile.*, "\n".pointer)
 
 	fae::intrinsics::debugger_break()
 	exit(-1)
