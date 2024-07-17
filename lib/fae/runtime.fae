@@ -8,42 +8,191 @@ fn fae_main(argc: i32, argv: &&u8): i32 {
 fn slice_index_out_of_bounds(length: isize, index: isize) {
 	let stderr = fae::libc::StdErrFile.*
 
+	// TODO: String formatting for `panicf`
 	let message = "Panic: Index %ld is out of range of slice with length %ld\n"
 	fae::libc::fprintf(stderr, message.pointer, index, length)
 	fae::libc::fflush(stderr)
 
-	fae::libc::exit(-1)
+	panicf("Slice index failure")
 }
 
 #lang "slice_range_inverted"
 fn slice_range_inverted(range: Range) {
 	let stderr = fae::libc::StdErrFile.*
 
+	// TODO: String formatting for `panicf`
 	let message = "Panic: Range start %ld is larger than end %ld\n"
 	fae::libc::fprintf(stderr, message.pointer, range.start, range.end)
 	fae::libc::fflush(stderr)
 
-	fae::libc::exit(-1)
+	panicf("Slice range failure")
 }
 
 #lang "slice_range_start_out_of_bounds"
 fn slice_range_start_out_of_bounds(length: isize, start: isize) {
 	let stderr = fae::libc::StdErrFile.*
 
+	// TODO: String formatting for `panicf`
 	let message = "Panic: Range start %ld is out of range of slice with length %ld\n"
 	fae::libc::fprintf(stderr, message.pointer, start, length)
 	fae::libc::fflush(stderr)
 
-	fae::libc::exit(-1)
+	panicf("Slice range failure")
 }
 
 #lang "slice_range_end_out_of_bounds"
 fn slice_range_end_out_of_bounds(length: isize, end: isize) {
 	let stderr = fae::libc::StdErrFile.*
 
+	// TODO: String formatting for `panicf`
 	let message = "Panic: Range end bound %ld is out of range of slice with length %ld\n"
 	fae::libc::fprintf(stderr, message.pointer, end, length)
 	fae::libc::fflush(stderr)
 
-	fae::libc::exit(-1)
+	panicf("Slice range failure")
 }
+
+#intrinsic
+fn is_compiler_test(): bool
+
+fn panic_impl(message: str): noreturn {
+	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
+
+	fprintf(StdErrFile.*, "Fae thread panicked!\n".pointer)
+	fprintf(StdErrFile.*, "Reason: %s\n".pointer, message.pointer)
+
+	// Backtraces can differ between platforms, optimization level, and change
+	// when code is refactored. Therefore they should not be included in panic
+	// messages when in compiler tests
+	if is_compiler_test() => exit(-1)
+
+	fprintf(StdErrFile.*, "Function backtrace:\n".pointer)
+
+	let null = null_pointer<void>()
+	// 50 items
+	let buffer = []&void {
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+		null, null, null, null, null, null, null, null, null, null,
+	}
+
+	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32)).(isize)
+	let symbols = buffer[0..symbol_count]
+
+	const Indentation = "  "
+	const Error = "<error>"
+	const Unknown = "<unknown>"
+	const Spacer = "  "
+
+	enum Symbol {
+		Error
+		Unknown { path: &u8 }
+		Found {
+			name: str
+			path: &u8
+		}
+	}
+
+	// 50 items
+	let buffer = []Symbol {
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+	}
+
+	mut longest_width: isize = 0
+	fn handle_width(longest_width: &mut isize, width: isize) {
+		if width > longest_width.* => longest_width.* = width
+	}
+
+	fn print_width(width: isize) {
+		mut index: isize = 0
+		while index < width { 
+			index += 1
+			fprintf(StdErrFile.*, " ".pointer)
+		}
+	}
+
+	mut index: isize = 0
+	while index < symbols.length {
+		let address = symbols[index]
+		let entry = buffer[index].&mut
+		index += 1
+
+		mut info = DlInfo {
+			dli_fname: null_pointer<u8>()
+			dli_fbase: null_pointer<void>()
+			dli_sname: null_pointer<u8>()
+			dli_saddr: null_pointer<void>()
+		}
+
+		if dladdr(address, info.&mut) == 0 {
+			entry.* = Symbol.Error
+			handle_width(longest_width.&mut, Error.length)
+			continue
+		}
+		
+		let path = info.dli_fname
+
+		if info.dli_saddr.(usize) == 0 {
+			entry.* = Symbol.Unknown { path }
+			handle_width(longest_width.&mut, Unknown.length)
+		} else {
+			let name_length = fae::libc::strlen(info.dli_sname).(isize)
+			let name = fae::intrinsics::create_str(info.dli_sname, name_length)
+			entry.* = Symbol.Found { name, path }
+			handle_width(longest_width.&mut, name_length)
+		}
+	}
+
+	let symbols = buffer[0..symbol_count]
+
+	mut index: isize = 0
+	while index < symbols.length {
+		let symbol = symbols[index]
+		index += 1
+
+		mut current_width: isize = 0
+		mut path: &u8 = "".pointer
+
+		match symbol {
+			Error {
+				fprintf(StdErrFile.*, "%s%s\n".pointer, Indentation.pointer, Error.pointer)
+				continue
+			}
+
+			Unknown {
+				fprintf(StdErrFile.*, "%s%s".pointer, Indentation.pointer, Unknown.pointer)
+				current_width = Unknown.length
+				path = symbol.path
+			}
+
+			Found {
+				fprintf(StdErrFile.*, "%s%s".pointer, Indentation.pointer, symbol.name.pointer)
+				current_width = symbol.name.length
+				path = symbol.path
+			}
+		}
+
+		print_width(longest_width - current_width)
+		fprintf(StdErrFile.*, "%s(%s)\n".pointer, Spacer.pointer, path	)
+	}
+
+	if symbol_count == 0 {
+		fprintf(StdErrFile.*, "%s<missing backtrace>\n".pointer, Indentation.pointer)
+	}
+	fprintf(StdErrFile.*, "\n".pointer)
+
+	fae::intrinsics::debugger_break()
+	exit(-1)
+}
+

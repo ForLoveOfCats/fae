@@ -13,7 +13,7 @@ use llvm_sys::target_machine::{
 };
 use llvm_sys::transforms::pass_builder::{LLVMCreatePassBuilderOptions, LLVMRunPasses};
 
-use crate::cli::CliArguments;
+use crate::cli::{CliArguments, CompileCommand};
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::{Architecture, LLVMGenerator};
@@ -71,6 +71,7 @@ pub fn generate_code<'a>(
 		statics,
 		&mut generator,
 		cli_arguments.optimize_artifacts,
+		cli_arguments.command == CompileCommand::CompilerTest,
 	);
 
 	unsafe { LLVMDIBuilderFinalize(generator.di_builder) };

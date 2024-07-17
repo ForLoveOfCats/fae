@@ -1,1 +1,3 @@
 Panic: Range start -3 is out of range of slice with length 10
+Fae thread panicked!
+Reason: Slice range failure
