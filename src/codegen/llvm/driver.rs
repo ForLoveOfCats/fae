@@ -5,8 +5,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
-use llvm_sys::core::{LLVMContextCreate, LLVMPrintModuleToFile};
-use llvm_sys::debuginfo::LLVMDIBuilderFinalize;
+use llvm_sys::core::{
+	LLVMAddModuleFlag, LLVMConstInt, LLVMContextCreate, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMPrintModuleToFile,
+	LLVMValueAsMetadata,
+};
+use llvm_sys::debuginfo::{LLVMDIBuilderFinalize, LLVMDebugMetadataVersion};
 use llvm_sys::target_machine::{
 	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode,
 	LLVMTargetMachineEmitToFile,
@@ -74,12 +77,32 @@ pub fn generate_code<'a>(
 		cli_arguments.command == CompileCommand::CompilerTest,
 	);
 
-	unsafe { LLVMDIBuilderFinalize(generator.di_builder) };
+	unsafe {
+		let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
+		let key = "Debug Info Version";
+		let ty = LLVMInt32TypeInContext(generator.context);
+		let int = LLVMConstInt(ty, LLVMDebugMetadataVersion() as _, false as _);
+		let value = LLVMValueAsMetadata(int);
+		LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
+
+		LLVMDIBuilderFinalize(generator.di_builder);
+	}
 
 	#[cfg(target_os = "linux")]
 	let triple = c"x86_64-pc-linux-gnu";
 	#[cfg(target_os = "macos")]
-	let triple = c"aarch64-apple-darwin";
+	let triple = {
+		unsafe {
+			let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
+			let key = "Dwarf Version";
+			let ty = LLVMInt64TypeInContext(generator.context);
+			let int = LLVMConstInt(ty, 2, false as _);
+			let value = LLVMValueAsMetadata(int);
+			LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
+		}
+
+		c"arm64-apple-darwin23.5.0"
+	};
 
 	let target = unsafe {
 		let mut target = std::ptr::null_mut();

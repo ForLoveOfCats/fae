@@ -52,9 +52,6 @@ fn slice_range_end_out_of_bounds(length: isize, end: isize) {
 	panicf("Slice range failure")
 }
 
-#intrinsic
-fn is_compiler_test(): bool
-
 fn panic_impl(message: str): noreturn {
 	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
 
@@ -64,7 +61,7 @@ fn panic_impl(message: str): noreturn {
 	// Backtraces can differ between platforms, optimization level, and change
 	// when code is refactored. Therefore they should not be included in panic
 	// messages when in compiler tests
-	if is_compiler_test() => exit(-1)
+	if fae::intrinsics::is_compiler_test() => exit(-1)
 
 	fprintf(StdErrFile.*, "Function backtrace:\n".pointer)
 

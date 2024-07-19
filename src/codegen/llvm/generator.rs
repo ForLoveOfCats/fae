@@ -2,20 +2,21 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
-	LLVMAddCase, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue,
-	LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildFAdd,
-	LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub,
-	LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy,
-	LLVMBuildMul, LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv,
-	LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub,
-	LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor,
-	LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstStringInContext,
-	LLVMCreateBuilderInContext, LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent,
-	LLVMGetBasicBlockTerminator, LLVMGetEnumAttributeKindForName, LLVMGetInlineAsm, LLVMGetInsertBlock, LLVMGetIntTypeWidth,
-	LLVMGetTypeKind, LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext,
-	LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
-	LLVMRemoveBasicBlockFromParent, LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress,
-	LLVMSetValueName2, LLVMSetVisibility, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVoidTypeInContext,
+	LLVMAddAttributeAtIndex, LLVMAddCase, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2,
+	LLVMBasicBlockAsValue, LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCall2,
+	LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI,
+	LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr,
+	LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul, LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt,
+	LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore,
+	LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem,
+	LLVMBuildUnreachable, LLVMBuildXor, LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct, LLVMConstNull,
+	LLVMConstReal, LLVMConstStringInContext, LLVMCreateBuilderInContext, LLVMCreateEnumAttribute, LLVMDoubleTypeInContext,
+	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
+	LLVMGetEnumAttributeKindForName, LLVMGetInlineAsm, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
+	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
+	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMRemoveBasicBlockFromParent,
+	LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility,
+	LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVoidTypeInContext,
 };
 use llvm_sys::debuginfo::{
 	LLVMCreateDIBuilder, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction,
@@ -25,7 +26,10 @@ use llvm_sys::prelude::{
 	LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMDIBuilderRef, LLVMMetadataRef, LLVMModuleRef, LLVMTypeRef,
 	LLVMValueRef,
 };
-use llvm_sys::{LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr, LLVMVisibility};
+use llvm_sys::{
+	LLVMAttributeFunctionIndex, LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr,
+	LLVMVisibility,
+};
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
@@ -41,6 +45,7 @@ use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, Typ
 
 pub struct AttributeKinds {
 	pub sret: u32,
+	pub noinline: u32,
 }
 
 impl AttributeKinds {
@@ -51,7 +56,7 @@ impl AttributeKinds {
 			kind
 		}
 
-		AttributeKinds { sret: kind("sret") }
+		AttributeKinds { sret: kind("sret"), noinline: kind("noinline") }
 	}
 }
 
@@ -593,7 +598,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				);
 				self.abi = Some(abi);
 
-				unsafe { LLVMSetSubprogram(defined_function.llvm_function, subroutine) };
+				unsafe {
+					LLVMSetSubprogram(defined_function.llvm_function, subroutine);
+
+					if !optimizing {
+						let attribute = LLVMCreateEnumAttribute(self.context, self.attribute_kinds.noinline, 1);
+						LLVMAddAttributeAtIndex(defined_function.llvm_function, LLVMAttributeFunctionIndex, attribute);
+					}
+				}
 
 				specializations.push(Some(defined_function));
 				self.state = State::InModule

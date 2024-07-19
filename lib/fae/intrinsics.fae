@@ -11,9 +11,13 @@ fn create_str(pointer: &u8, length: isize): str
 
 // May be a no-op on some platforms depending on implementation support
 // Currently implemented on
-//     - AMD64
+//   - AMD64
+//   - AArch64
 #intrinsic
 fn debugger_break()
 
 #intrinsic
 fn user_main_function()
+
+#intrinsic
+fn is_compiler_test(): bool

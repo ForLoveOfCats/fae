@@ -41,7 +41,7 @@ extern "backtrace_symbols"
 fn backtrace_symbols(addresses: &&void, address_count: i32): &&u8
 
 extern "backtrace_symbols_fd"
-fn backtrace_symbols_fd(addresses: &&void, address_count: i32, int: i32)
+fn backtrace_symbols_fd(addresses: &&void, address_count: i32, fd: i32)
 
 extern "dladdr"
 fn dladdr(address: &void, info: &mut DlInfo): i32
