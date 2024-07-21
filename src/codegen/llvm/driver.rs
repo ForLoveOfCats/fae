@@ -6,8 +6,7 @@ use std::process::Command;
 
 use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyModule};
 use llvm_sys::core::{
-	LLVMAddModuleFlag, LLVMConstInt, LLVMContextCreate, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMPrintModuleToFile,
-	LLVMValueAsMetadata,
+	LLVMAddModuleFlag, LLVMConstInt, LLVMContextCreate, LLVMInt32TypeInContext, LLVMPrintModuleToFile, LLVMValueAsMetadata,
 };
 use llvm_sys::debuginfo::{LLVMDIBuilderFinalize, LLVMDebugMetadataVersion};
 use llvm_sys::target_machine::{
@@ -95,7 +94,7 @@ pub fn generate_code<'a>(
 		unsafe {
 			let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
 			let key = "Dwarf Version";
-			let ty = LLVMInt64TypeInContext(generator.context);
+			let ty = llvm_sys::core::LLVMInt64TypeInContext(generator.context);
 			let int = LLVMConstInt(ty, 2, false as _);
 			let value = LLVMValueAsMetadata(int);
 			LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
