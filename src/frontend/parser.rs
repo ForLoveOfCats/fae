@@ -163,6 +163,15 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "when", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A while statement");
+			if let Ok(statement) = parse_when_else_chain(bump, messages, tokens) {
+				return Some(Statement::WhenElseChain(statement));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A let statement");
 			if let Ok(statement) = parse_binding_statement(bump, messages, tokens, consume_newline) {
@@ -828,6 +837,45 @@ fn parse_string_contents(string: &str) -> Cow<str> {
 	}
 
 	Cow::Borrowed(string)
+}
+
+fn parse_when_else_chain<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+) -> ParseResult<Node<WhenElseChain<'a>>> {
+	let mut entries = BumpVec::new_in(bump);
+	let mut else_body = None;
+
+	let when_token = tokens.expect_word(messages, "when")?;
+	let mut span = when_token.span;
+
+	let condition_token = tokens.expect(messages, TokenKind::Word)?;
+	let condition = Node::from_token(condition_token.text, condition_token);
+	let body = parse_block(bump, messages, tokens, true, false)?;
+	span += body.span;
+	entries.push(WhenElseChainEntry { condition, body });
+
+	while let Ok(Token { text: "else", .. }) = tokens.peek() {
+		tokens.next()?;
+
+		if let Ok(Token { text: "when", .. }) = tokens.peek() {
+			tokens.next()?;
+			let condition_token = tokens.expect(messages, TokenKind::Word)?;
+			let condition = Node::from_token(condition_token.text, condition_token);
+			let body = parse_block(bump, messages, tokens, true, false)?;
+			span += body.span;
+			entries.push(WhenElseChainEntry { condition, body });
+		} else {
+			let body = parse_block(bump, messages, tokens, true, false)?;
+			span += body.span;
+			else_body = Some(body);
+			break;
+		}
+	}
+
+	let value = WhenElseChain { entries: entries.into_bump_slice(), else_body };
+	Ok(Node::new(value, span))
 }
 
 fn parse_if_else_chain<'a>(

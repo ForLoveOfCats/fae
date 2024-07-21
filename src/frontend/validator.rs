@@ -8,11 +8,12 @@ use crate::frontend::ir::*;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
-use crate::frontend::symbols::SymbolsScope;
-use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols};
-use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribute, MethodKind, PathSegments};
-use crate::frontend::tree::{MethodAttribute, Node};
+use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols, SymbolsScope};
+use crate::frontend::tree::{
+	self, BinaryOperator, EnumInitializer, FieldAttribute, MethodAttribute, MethodKind, Node, PathSegments,
+};
 use crate::frontend::type_store::*;
+use crate::frontend::when::WhenContext;
 use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
@@ -24,6 +25,8 @@ pub struct Context<'a, 'b, 'c> {
 	pub file_index: u32,
 	pub module_path: &'a [String],
 	pub parsed_files: &'b [tree::File<'a>],
+
+	pub when_context: &'b WhenContext,
 
 	pub next_scope_index: &'b mut usize,
 	pub scope_index: usize,
@@ -83,6 +86,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			module_path: self.module_path,
 			parsed_files: self.parsed_files,
 
+			when_context: self.when_context,
+
 			next_scope_index: self.next_scope_index,
 			scope_index,
 
@@ -140,6 +145,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			file_index: self.file_index,
 			module_path: self.module_path,
 			parsed_files: self.parsed_files,
+
+			when_context: self.when_context,
 
 			next_scope_index: self.next_scope_index,
 			scope_index,
@@ -255,8 +262,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 pub fn validate<'a>(
 	cli_arguments: &'a CliArguments,
-	is_test: bool,
 	herd: &'a Herd,
+	when_context: &WhenContext,
 	root_messages: &mut RootMessages<'a>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
@@ -286,7 +293,7 @@ pub fn validate<'a>(
 	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
 	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
 
-	const THREAD_COUNT: usize = 6;
+	const THREAD_COUNT: usize = 1;
 	let barrier = std::sync::Barrier::new(THREAD_COUNT);
 	let constants = RwLock::new(Vec::new());
 
@@ -300,6 +307,7 @@ pub fn validate<'a>(
 				let mut function_generic_usages = Vec::new();
 
 				create_root_types(
+					when_context,
 					&root_messages,
 					lang_items,
 					&mut type_store,
@@ -311,11 +319,19 @@ pub fn validate<'a>(
 
 				barrier.wait();
 
-				resolve_root_type_imports(cli_arguments, &herd_member, &root_messages, root_layers, &parsed_files_iter_2);
+				resolve_root_type_imports(
+					cli_arguments,
+					&herd_member,
+					when_context,
+					&root_messages,
+					root_layers,
+					&parsed_files_iter_2,
+				);
 
 				barrier.wait();
 
 				fill_root_types(
+					when_context,
 					&root_messages,
 					&mut type_store,
 					function_store,
@@ -328,6 +344,7 @@ pub fn validate<'a>(
 
 				let mut readables = Readables::new();
 				create_root_functions(
+					when_context,
 					&root_messages,
 					lang_items,
 					root_layers,
@@ -346,6 +363,7 @@ pub fn validate<'a>(
 				validate_root_consts(
 					cli_arguments,
 					&herd_member,
+					when_context,
 					&root_messages,
 					lang_items,
 					root_layers,
@@ -366,6 +384,7 @@ pub fn validate<'a>(
 				validate_root_statics(
 					cli_arguments,
 					&herd_member,
+					when_context,
 					&root_messages,
 					lang_items,
 					root_layers,
@@ -387,6 +406,7 @@ pub fn validate<'a>(
 				deep_pass(
 					cli_arguments,
 					&herd_member,
+					when_context,
 					&root_messages,
 					lang_items,
 					root_layers,
@@ -403,7 +423,7 @@ pub fn validate<'a>(
 					&local_function_shape_indicies,
 				);
 
-				if !is_test && !cfg!(feature = "measure-lock-contention") {
+				if !when_context.in_compiler_test && !cfg!(feature = "measure-lock-contention") {
 					std::mem::forget(type_store);
 				}
 			});
@@ -418,6 +438,7 @@ pub fn validate<'a>(
 fn deep_pass<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
@@ -461,6 +482,7 @@ fn deep_pass<'a>(
 			file_index: parsed_file.source_file.index,
 			module_path,
 			parsed_files,
+			when_context,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
@@ -501,6 +523,7 @@ fn deep_pass<'a>(
 }
 
 fn create_root_types<'a>(
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
@@ -532,6 +555,7 @@ fn create_root_types<'a>(
 		let mut messages = Messages::new(parsed_file.module_path);
 
 		create_block_types(
+			when_context,
 			&mut messages,
 			lang_items,
 			type_store,
@@ -559,6 +583,7 @@ fn create_root_types<'a>(
 fn resolve_root_type_imports<'a>(
 	cli_arguments: &CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	root_layers: &RootLayers<'a>,
 	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
@@ -578,15 +603,15 @@ fn resolve_root_type_imports<'a>(
 		let block = &parsed_file.block;
 
 		resolve_block_type_imports(
-			cli_arguments,
 			herd_member,
+			when_context,
 			&mut messages,
 			root_layers,
 			&mut symbols,
 			module_path,
 			0,
 			block,
-			true,
+			cli_arguments.std_enabled,
 		);
 
 		layer.write().symbols = symbols;
@@ -598,6 +623,7 @@ fn resolve_root_type_imports<'a>(
 }
 
 fn fill_root_types<'a>(
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
@@ -621,6 +647,7 @@ fn fill_root_types<'a>(
 		let mut messages = Messages::new(parsed_file.module_path);
 
 		fill_block_types(
+			when_context,
 			&mut messages,
 			type_store,
 			function_store,
@@ -630,8 +657,9 @@ fn fill_root_types<'a>(
 			parsed_file.module_path,
 			0,
 			&parsed_file.block,
-			&mut type_shape_indicies,
+			&mut type_shape_indicies.iter(),
 		);
+		type_shape_indicies.clear();
 
 		layer.write().symbols = symbols;
 
@@ -642,6 +670,7 @@ fn fill_root_types<'a>(
 }
 
 fn create_root_functions<'a>(
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
@@ -675,6 +704,7 @@ fn create_root_functions<'a>(
 		let mut messages = Messages::new(parsed_file.module_path);
 
 		create_block_functions(
+			when_context,
 			&mut messages,
 			lang_items,
 			root_layers,
@@ -705,6 +735,7 @@ fn create_root_functions<'a>(
 fn validate_root_consts<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
@@ -748,6 +779,7 @@ fn validate_root_consts<'a>(
 			file_index: parsed_file.source_file.index,
 			module_path,
 			parsed_files,
+			when_context,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
@@ -797,6 +829,7 @@ fn validate_root_consts<'a>(
 fn validate_root_statics<'a>(
 	cli_arguments: &'a CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
@@ -840,6 +873,7 @@ fn validate_root_statics<'a>(
 			file_index: parsed_file.source_file.index,
 			module_path,
 			parsed_files,
+			when_context,
 			next_scope_index: &mut next_scope_index,
 			scope_index: 0,
 			messages: &mut messages,
@@ -887,17 +921,17 @@ fn validate_root_statics<'a>(
 }
 
 fn resolve_block_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
 	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
-	is_root: bool,
+	should_import_prelude: bool,
 ) {
-	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
 		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
@@ -906,6 +940,24 @@ fn resolve_block_type_imports<'a>(
 	for statement in block.statements {
 		let import_statement = match statement {
 			tree::Statement::Import(import_statement) => import_statement,
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+					resolve_block_type_imports(
+						herd_member,
+						when_context,
+						messages,
+						root_layers,
+						symbols,
+						module_path,
+						function_initial_scope_count,
+						&body.item,
+						false,
+					)
+				}
+				continue;
+			}
+
 			_ => continue,
 		};
 
@@ -947,7 +999,6 @@ fn resolve_import_for_block_types<'a>(
 }
 
 fn resolve_block_non_type_imports<'a>(
-	cli_arguments: &CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
@@ -955,9 +1006,9 @@ fn resolve_block_non_type_imports<'a>(
 	module_path: &'a [String],
 	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
-	is_root: bool,
+	should_import_prelude: bool,
 ) {
-	if is_root && cli_arguments.std_enabled && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
 		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
@@ -1026,6 +1077,7 @@ fn resolve_import_for_block_non_types<'a>(
 }
 
 fn create_block_types<'a>(
+	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
@@ -1054,6 +1106,7 @@ fn create_block_types<'a>(
 				}
 
 				tree::Statement::Import(..)
+				| tree::Statement::WhenElseChain(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Enum(..)
 				| tree::Statement::Function(..)
@@ -1092,6 +1145,23 @@ fn create_block_types<'a>(
 				statement,
 			);
 			type_shape_indicies.push(shape_index);
+		} else if let tree::Statement::WhenElseChain(statement) = statement {
+			if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+				create_block_types(
+					when_context,
+					messages,
+					lang_items,
+					type_store,
+					function_store,
+					symbols,
+					function_initial_scope_count,
+					enclosing_generic_parameters,
+					&body.item,
+					scope_id,
+					is_root,
+					type_shape_indicies,
+				);
+			};
 		}
 	}
 }
@@ -1253,6 +1323,7 @@ fn create_block_enum<'a>(
 }
 
 fn fill_block_types<'a>(
+	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
@@ -1262,43 +1333,61 @@ fn fill_block_types<'a>(
 	module_path: &'a [String],
 	function_initial_scope_count: usize,
 	block: &tree::Block<'a>,
-	type_shape_indicies: &mut Vec<usize>,
+	shape_index_iter: &mut std::slice::Iter<usize>,
 ) {
-	let mut shape_index_iter = type_shape_indicies.iter();
-
 	for statement in block.statements {
-		if let tree::Statement::Struct(statement) = statement {
-			fill_block_struct(
-				messages,
-				type_store,
-				function_store,
-				generic_usages,
-				root_layers,
-				symbols,
-				module_path,
-				function_initial_scope_count,
-				statement,
-				*shape_index_iter.next().unwrap(),
-			);
-		}
+		match statement {
+			tree::Statement::Struct(statement) => {
+				fill_block_struct(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					root_layers,
+					symbols,
+					module_path,
+					function_initial_scope_count,
+					statement,
+					*shape_index_iter.next().unwrap(),
+				);
+			}
 
-		if let tree::Statement::Enum(statement) = statement {
-			fill_block_enum(
-				messages,
-				type_store,
-				function_store,
-				generic_usages,
-				root_layers,
-				symbols,
-				module_path,
-				function_initial_scope_count,
-				statement,
-				*shape_index_iter.next().unwrap(),
-			);
+			tree::Statement::Enum(statement) => {
+				fill_block_enum(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					root_layers,
+					symbols,
+					module_path,
+					function_initial_scope_count,
+					statement,
+					*shape_index_iter.next().unwrap(),
+				);
+			}
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+					fill_block_types(
+						when_context,
+						messages,
+						type_store,
+						function_store,
+						generic_usages,
+						root_layers,
+						symbols,
+						module_path,
+						function_initial_scope_count,
+						&body.item,
+						shape_index_iter,
+					);
+				}
+			}
+
+			_ => {}
 		}
 	}
-
-	type_shape_indicies.clear();
 }
 
 fn fill_block_struct<'a>(
@@ -1854,6 +1943,7 @@ fn report_cyclic_user_type<'a>(
 }
 
 fn create_block_functions<'a>(
+	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
 	root_layers: &RootLayers<'a>,
@@ -2125,6 +2215,26 @@ fn create_block_functions<'a>(
 
 			readables.readables.truncate(original_readables_overall_len);
 			readables.starting_index = original_readables_starting_index;
+		} else if let tree::Statement::WhenElseChain(statement) = statement {
+			if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+				create_block_functions(
+					when_context,
+					messages,
+					lang_items,
+					root_layers,
+					type_store,
+					function_store,
+					generic_usages,
+					externs,
+					readables,
+					symbols,
+					module_path,
+					enclosing_generic_parameters,
+					&body.item,
+					local_function_shape_indicies,
+					scope_id,
+				);
+			}
 		}
 	}
 
@@ -2160,16 +2270,36 @@ fn method_base_shape_index<'a>(
 
 fn validate_block_consts<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {
 	for statement in block.statements {
-		if let tree::Statement::Const(statement) = statement {
-			validate_const(context, statement);
+		match statement {
+			tree::Statement::Const(statement) => {
+				validate_const(context, statement);
+			}
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
+					validate_block_consts(context, &body.item);
+				}
+			}
+
+			_ => {}
 		}
 	}
 }
 
 fn validate_block_statics<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {
 	for statement in block.statements {
-		if let tree::Statement::Static(statement) = statement {
-			validate_static(context, statement);
+		match statement {
+			tree::Statement::Static(statement) => {
+				validate_static(context, statement);
+			}
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
+					validate_block_statics(context, &body.item);
+				}
+			}
+
+			_ => {}
 		}
 	}
 }
@@ -2180,8 +2310,20 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		scope_index: context.scope_index,
 	};
 
+	let should_import_prelude = is_root && context.cli_arguments.std_enabled;
+	validate_block_in_context(&mut context, block, scope_id, is_root, should_import_prelude)
+}
+
+fn validate_block_in_context<'a>(
+	context: &mut Context<'a, '_, '_>,
+	block: &'a tree::Block<'a>,
+	scope_id: ScopeId,
+	is_root: bool,
+	should_import_prelude: bool,
+) -> Block<'a> {
 	if !is_root {
 		create_block_types(
+			context.when_context,
 			context.messages,
 			context.lang_items,
 			context.type_store,
@@ -2196,18 +2338,19 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		);
 
 		resolve_block_type_imports(
-			context.cli_arguments,
 			context.herd_member,
+			context.when_context,
 			context.messages,
 			context.root_layers,
 			context.symbols_scope.symbols,
 			context.module_path,
 			context.function_initial_scope_count,
 			block,
-			is_root,
+			should_import_prelude,
 		);
 
 		fill_block_types(
+			context.when_context,
 			context.messages,
 			context.type_store,
 			context.function_store,
@@ -2217,12 +2360,12 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 			context.module_path,
 			context.function_initial_scope_count,
 			block,
-			context.type_shape_indicies,
+			&mut context.type_shape_indicies.iter(),
 		);
+		context.type_shape_indicies.clear();
 	}
 
 	resolve_block_non_type_imports(
-		context.cli_arguments,
 		context.herd_member,
 		context.messages,
 		context.root_layers,
@@ -2230,11 +2373,12 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 		context.module_path,
 		context.function_initial_scope_count,
 		block,
-		is_root,
+		should_import_prelude,
 	);
 
 	if !is_root {
 		create_block_functions(
+			context.when_context,
 			context.messages,
 			context.lang_items,
 			context.root_layers,
@@ -2253,7 +2397,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	}
 
 	if !is_root {
-		validate_block_consts(&mut context, block);
+		validate_block_consts(context, block);
 	}
 
 	let mut returns = false;
@@ -2273,7 +2417,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
 			tree::Statement::Expression(statement) => {
-				let expression = validate_expression(&mut context, statement);
+				let expression = validate_expression(context, statement);
 				returns |= expression.returns;
 
 				let kind = StatementKind::Expression(expression);
@@ -2294,9 +2438,13 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 				})
 			}
 
+			tree::Statement::WhenElseChain(statement) => {
+				validate_when(context, statement, scope_id, is_root);
+			}
+
 			tree::Statement::While(statement) => {
 				let debug_location = statement.span.debug_location(context.parsed_files);
-				let statement = validate_while_statement(&mut context, statement);
+				let statement = validate_while_statement(context, statement);
 				let kind = StatementKind::While(statement);
 				statements.push(Statement { kind, debug_location })
 			}
@@ -2307,14 +2455,14 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 
 			tree::Statement::Enum(..) => {}
 
-			tree::Statement::Function(statement) => validate_function(&mut context, statement),
+			tree::Statement::Function(statement) => validate_function(context, statement),
 
 			tree::Statement::Const(..) => {}
 
 			tree::Statement::Static(..) => {}
 
 			tree::Statement::Binding(statement) => {
-				let validated = match validate_binding(&mut context, statement) {
+				let validated = match validate_binding(context, statement) {
 					Some(validated) => validated,
 					None => continue,
 				};
@@ -2388,6 +2536,17 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	// Make sure to disallow in root of function
 	let type_id = context.type_store.void_type_id();
 	Block { type_id, returns, statements }
+}
+
+fn validate_when<'a>(
+	context: &mut Context<'a, '_, '_>,
+	statement: &'a Node<tree::WhenElseChain<'a>>,
+	scope_id: ScopeId,
+	is_root: bool,
+) {
+	if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
+		validate_block_in_context(context, &body.item, scope_id, is_root, false);
+	}
 }
 
 fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>) {

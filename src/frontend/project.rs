@@ -15,6 +15,7 @@ use crate::frontend::symbols::{Externs, Statics};
 use crate::frontend::tokenizer::Tokenizer;
 use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
+use crate::frontend::when::WhenContext;
 use crate::lock::RwLock;
 
 pub struct BuiltProject {
@@ -28,13 +29,19 @@ pub struct ProjectConfig {
 	pub source_directory: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetPlatform {
+	Linux,
+	Darwin,
+}
+
 pub fn build_project(
 	cli_arguments: &CliArguments,
 	message_output: &mut impl WriteFmt,
 	project_path: &Path,
 	test_config: Option<ProjectConfig>,
 ) -> BuiltProject {
-	let is_test = test_config.is_some();
+	let in_compiler_test = test_config.is_some();
 	let mut files = Vec::new();
 
 	if cli_arguments.std_enabled {
@@ -121,7 +128,7 @@ pub fn build_project(
 
 	if cli_arguments.command == CompileCommand::Parse {
 		#[cfg(not(feature = "measure-lock-contention"))]
-		if !is_test {
+		if !in_compiler_test {
 			std::mem::forget(parsed_files);
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
@@ -134,6 +141,14 @@ pub fn build_project(
 	root_messages.print_messages(message_output, "Parse");
 	root_messages.reset();
 
+	// TODO: Cross compilation support
+	#[cfg(target_os = "linux")]
+	let target_platform = TargetPlatform::Linux;
+	#[cfg(target_os = "macos")]
+	let target_platform = TargetPlatform::Darwin;
+
+	let when_context = WhenContext { target_platform, in_compiler_test };
+
 	//Partially parallelizable
 	let validate_start = Instant::now();
 	let herd = bumpalo_herd::Herd::new();
@@ -145,8 +160,8 @@ pub fn build_project(
 	let statics = RwLock::new(Statics::new());
 	validate(
 		cli_arguments,
-		is_test,
 		&herd,
+		&when_context,
 		&mut root_messages,
 		&lang_items,
 		&mut root_layers,
@@ -167,7 +182,7 @@ pub fn build_project(
 
 	if any_errors {
 		#[cfg(not(feature = "measure-lock-contention"))]
-		if !is_test {
+		if !in_compiler_test {
 			std::mem::forget(function_store);
 			std::mem::forget(type_store);
 			std::mem::forget(parsed_files);
@@ -183,7 +198,7 @@ pub fn build_project(
 
 	if cli_arguments.command == CompileCommand::Check {
 		#[cfg(not(feature = "measure-lock-contention"))]
-		if !is_test {
+		if !in_compiler_test {
 			std::mem::forget(function_store);
 			std::mem::forget(type_store);
 			std::mem::forget(parsed_files);
@@ -218,7 +233,7 @@ pub fn build_project(
 	}
 
 	#[cfg(not(feature = "measure-lock-contention"))]
-	if !is_test {
+	if !in_compiler_test {
 		std::mem::forget(function_store);
 		std::mem::forget(type_store);
 		std::mem::forget(parsed_files);

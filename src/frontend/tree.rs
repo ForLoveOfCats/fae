@@ -501,6 +501,7 @@ pub enum Statement<'a> {
 	Expression(Node<Expression<'a>>),
 
 	Block(Node<Block<'a>>),
+	WhenElseChain(Node<WhenElseChain<'a>>),
 	While(Node<While<'a>>),
 
 	Import(Node<Import<'a>>),
@@ -526,6 +527,7 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(statement) => statement.span,
 			Block(statement) => statement.span,
+			WhenElseChain(statement) => statement.span,
 			While(statement) => statement.span,
 			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
@@ -547,6 +549,7 @@ impl<'a> Statement<'a> {
 			Expression(..) => "An expression",
 			Block(..) => "A block",
 			While(..) => "A while loop",
+			WhenElseChain(..) => "A when statement",
 			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
 			Enum(..) => "An enum definition",
@@ -567,8 +570,14 @@ pub struct Block<'a> {
 }
 
 #[derive(Debug)]
-pub struct IfElseChainEntry<'a> {
-	pub condition: Node<Expression<'a>>,
+pub struct WhenElseChain<'a> {
+	pub entries: &'a [WhenElseChainEntry<'a>],
+	pub else_body: Option<Node<Block<'a>>>,
+}
+
+#[derive(Debug)]
+pub struct WhenElseChainEntry<'a> {
+	pub condition: Node<&'a str>,
 	pub body: Node<Block<'a>>,
 }
 
@@ -576,6 +585,12 @@ pub struct IfElseChainEntry<'a> {
 pub struct IfElseChain<'a> {
 	pub entries: &'a [IfElseChainEntry<'a>],
 	pub else_body: Option<Node<Block<'a>>>,
+}
+
+#[derive(Debug)]
+pub struct IfElseChainEntry<'a> {
+	pub condition: Node<Expression<'a>>,
+	pub body: Node<Block<'a>>,
 }
 
 #[derive(Debug)]
