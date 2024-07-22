@@ -416,7 +416,10 @@ impl<'a> Tokenizer<'a> {
 				))
 			}
 
-			[b'-', ..] => Ok(Token::new("-", Sub, self.offset, self.offset + 1, self.file_index, self.line_index)),
+			// What a hack
+			[b'-', ..] if !(self.offset + 1 < self.bytes.len() && self.bytes[self.offset + 1].is_ascii_digit()) => {
+				Ok(Token::new("-", Sub, self.offset, self.offset + 1, self.file_index, self.line_index))
+			}
 
 			[b'*', b'=', ..] => {
 				self.offset += 1;
@@ -733,6 +736,13 @@ impl<'a> Tokenizer<'a> {
 
 			_ => {
 				let start_index = self.offset;
+				let is_numeral = if self.bytes[start_index] == b'-' {
+					self.offset += 1;
+					self.offset < self.bytes.len() && self.bytes[self.offset].is_ascii_digit()
+				} else {
+					self.bytes[start_index].is_ascii_digit()
+				};
+
 				loop {
 					self.offset += 1;
 
@@ -749,7 +759,6 @@ impl<'a> Tokenizer<'a> {
 							| b'<' | b':' | b';' | b'.' | b','
 							| b'\'' | b'"' | b'!' | b'&' | b'|'
 					) {
-						let is_numeral = self.bytes[start_index].is_ascii_digit();
 						let on_period = self.bytes[self.offset] == b'.';
 						let has_next = self.offset + 1 < self.source.len();
 						if is_numeral && on_period && has_next && self.bytes[self.offset + 1].is_ascii_digit() {
