@@ -358,6 +358,8 @@ pub enum StatementKind<'a> {
 
 	Binding(Box<Binding<'a>>),
 
+	Defer(Defer<'a>),
+
 	Break(Break),
 	Continue(Continue),
 	Return(Box<Return<'a>>),
@@ -369,6 +371,11 @@ pub struct Binding<'a> {
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 	pub readable_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Defer<'a> {
+	pub expression: Expression<'a>,
 }
 
 #[derive(Debug, Clone)]

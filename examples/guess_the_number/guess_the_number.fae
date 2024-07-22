@@ -20,6 +20,7 @@ fn play_round() {
 
 	mut stdin = File.from_fd(StdInDescription)
 	mut buffer = List<u8>.new()
+	defer buffer.free()
 
 	while true {
 		print_string(">>> ")

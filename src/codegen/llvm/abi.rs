@@ -423,7 +423,8 @@ impl LLVMAbi for SysvAbi {
 		} else if function_shape.is_main {
 			(CString::from(c"fae_user_main"), LLVMLinkage::LLVMDLLExportLinkage)
 		} else {
-			(CString::new(function_shape.name.item).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
+			let name = format!("fae_function_{}", function_shape.name.item);
+			(CString::new(name).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
 		};
 
 		let llvm_function = unsafe {

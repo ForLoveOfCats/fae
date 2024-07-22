@@ -237,6 +237,15 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "defer", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A defer statement");
+			if let Ok(statement) = parse_defer_statement(bump, messages, tokens, consume_newline) {
+				return Some(Statement::Defer(statement));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "break", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A break statement");
 			if let Ok(statement) = parse_break_statement(messages, tokens, consume_newline) {
@@ -1896,6 +1905,25 @@ fn parse_binding_statement<'a>(
 	let span = keyword_token.span + expression.span;
 	let item = Binding { name, parsed_type, expression, is_mutable };
 	Ok(Node { item, span })
+}
+
+fn parse_defer_statement<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Defer<'a>>> {
+	let defer_token = tokens.expect_word(messages, "defer")?;
+
+	let expression = parse_expression(bump, messages, tokens, true)?;
+
+	if consume_newline {
+		tokens.expect(messages, TokenKind::Newline)?;
+	}
+
+	let span = defer_token.span + expression.span;
+	let statement = Defer { expression };
+	Ok(Node::new(statement, span))
 }
 
 fn parse_break_statement<'a>(

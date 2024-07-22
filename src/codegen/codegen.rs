@@ -74,6 +74,15 @@ pub fn generate<'a, G: Generator>(
 	generator.finalize_generator();
 }
 
+// `break` and `continue` in a loop need to inject defer expressions but only
+// those defined *within* the loop they are controlling, whereas a `return`
+// must inject *all* defer expressions in the stack. This struct marks the start
+// of each loop in the stack, so every defer at `start_index..` have been
+// defined in the loop the marker corresponds to
+struct LoopMarker {
+	start_index: usize,
+}
+
 pub struct Context<'a, 'b> {
 	pub is_compiler_test: bool,
 	pub messages: &'b mut Messages<'a>,
@@ -85,6 +94,9 @@ pub struct Context<'a, 'b> {
 
 	pub function_type_arguments: &'b TypeArguments,
 	pub function_id: FunctionId,
+
+	defer_stack: Vec<&'b Expression<'a>>,
+	loop_stack: Vec<LoopMarker>,
 
 	// TODO: Merge codegen and llvm/generator ASAP, way too many details have leaked
 	pub if_condition_binding_block: Option<LLVMBasicBlockRef>,
@@ -145,6 +157,8 @@ pub fn generate_function<'a, G: Generator>(
 		module_path,
 		function_type_arguments: &type_arguments,
 		function_id,
+		defer_stack: Vec::new(),
+		loop_stack: Vec::new(),
 		if_condition_binding_block: None,
 	};
 
@@ -152,8 +166,9 @@ pub fn generate_function<'a, G: Generator>(
 }
 
 // TODO: Handle scope alloc lifetime
-fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block: &Block) {
+fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator: &mut G, block: &'b Block<'a>) {
 	generator.start_block();
+	let block_start_defer_len = context.defer_stack.len();
 
 	for statement in &block.statements {
 		let debug_location = statement.debug_location;
@@ -165,34 +180,71 @@ fn generate_block<G: Generator>(context: &mut Context, generator: &mut G, block:
 
 			StatementKind::Block(block) => generate_block(context, generator, block),
 
-			StatementKind::While(statement) => generate_while(context, generator, statement, debug_location),
+			StatementKind::While(statement) => {
+				let start_index = context.defer_stack.len();
+				context.loop_stack.push(LoopMarker { start_index });
+				generate_while(context, generator, statement, debug_location);
+				context.loop_stack.pop();
+			}
 
 			StatementKind::Binding(binding) => generate_binding(context, generator, binding, debug_location),
 
+			StatementKind::Defer(statement) => {
+				context.defer_stack.push(&statement.expression);
+			}
+
 			StatementKind::Break(statement) => {
+				let marker = context.loop_stack.last().unwrap();
+				let defer_stack = std::mem::take(&mut context.defer_stack);
+				for expression in defer_stack[marker.start_index..].iter().rev() {
+					generate_expression(context, generator, expression);
+				}
+				context.defer_stack = defer_stack;
+
 				generate_break(generator, statement, debug_location);
 				break;
 			}
 
 			StatementKind::Continue(statement) => {
+				let marker = context.loop_stack.last().unwrap();
+				let defer_stack = std::mem::take(&mut context.defer_stack);
+				for expression in defer_stack[marker.start_index..].iter().rev() {
+					generate_expression(context, generator, expression);
+				}
+				context.defer_stack = defer_stack;
+
 				generate_continue(generator, statement, debug_location);
 				break;
 			}
 
 			StatementKind::Return(statement) => {
+				let defer_stack = std::mem::take(&mut context.defer_stack);
+				for expression in defer_stack.iter().rev() {
+					generate_expression(context, generator, expression);
+				}
+				context.defer_stack = defer_stack;
+
 				generate_return(context, generator, statement, debug_location);
 				break;
 			}
 		};
 	}
 
+	let mut defer_stack = std::mem::take(&mut context.defer_stack);
+	for expression in defer_stack[block_start_defer_len..].iter().rev() {
+		generate_expression(context, generator, expression);
+	}
+
+	defer_stack.truncate(block_start_defer_len);
+	context.defer_stack = defer_stack;
+
 	generator.end_block();
 }
 
-pub fn generate_expression<G: Generator>(
-	context: &mut Context,
+pub fn generate_expression<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	expression: &Expression,
+	expression: &'b Expression<'a>,
 ) -> Option<G::Binding> {
 	let debug_location = expression.debug_location;
 
@@ -250,10 +302,10 @@ pub fn generate_expression<G: Generator>(
 	}
 }
 
-fn generate_if_else_chain<G: Generator>(
-	context: &mut Context,
+fn generate_if_else_chain<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	chain_expression: &IfElseChain,
+	chain_expression: &'b IfElseChain<'a>,
 ) -> Option<G::Binding> {
 	generator.generate_if_else_chain(
 		context,
@@ -274,7 +326,11 @@ fn generate_if_else_chain<G: Generator>(
 	None
 }
 
-fn generate_match<G: Generator>(context: &mut Context, generator: &mut G, match_expression: &Match) -> Option<G::Binding> {
+fn generate_match<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	match_expression: &'b Match<'a>,
+) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &match_expression.expression).unwrap();
 	let expression_type_id = context.specialize_type_id(match_expression.expression.type_id);
 	let value_type_id = match expression_type_id.as_pointed(context.type_store) {
@@ -305,7 +361,12 @@ fn generate_match<G: Generator>(context: &mut Context, generator: &mut G, match_
 	None
 }
 
-fn generate_while<G: Generator>(context: &mut Context, generator: &mut G, statement: &While, debug_location: DebugLocation) {
+fn generate_while<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	statement: &'b While<'a>,
+	debug_location: DebugLocation,
+) {
 	generator.generate_while(
 		context,
 		debug_location,
@@ -350,10 +411,10 @@ fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, l
 	Some(generator.generate_string_literal(context.type_store, &literal.value))
 }
 
-fn generate_array_literal<G: Generator>(
-	context: &mut Context,
+fn generate_array_literal<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	literal: &ArrayLiteral,
+	literal: &'b ArrayLiteral<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let mut elements = Vec::with_capacity(literal.expressions.len());
@@ -374,10 +435,10 @@ fn generate_array_literal<G: Generator>(
 	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
 }
 
-fn generate_struct_literal<G: Generator>(
-	context: &mut Context,
+fn generate_struct_literal<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	literal: &StructLiteral,
+	literal: &'b StructLiteral<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	// TODO: Avoid this creating this vec every time
@@ -406,10 +467,10 @@ fn generate_struct_literal<G: Generator>(
 	}
 }
 
-fn generate_call<G: Generator>(
-	context: &mut Context,
+fn generate_call<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	call: &Call,
+	call: &'b Call<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let function_id = context.function_store.specialize_function_with_function_generics(
@@ -441,10 +502,10 @@ fn generate_call<G: Generator>(
 	generator.generate_call(context.type_store, function_id, &arguments, debug_location)
 }
 
-fn generate_method_call<G: Generator>(
-	context: &mut Context,
+fn generate_method_call<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	method_call: &MethodCall,
+	method_call: &'b MethodCall<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let base_pointer_type_id = if method_call.base.type_id.is_pointer(context.type_store) {
@@ -485,10 +546,10 @@ fn generate_static_read<G: Generator>(generator: &mut G, static_read: &StaticRea
 	Some(generator.generate_static_read(static_read.static_index))
 }
 
-fn generate_field_read<G: Generator>(
-	context: &mut Context,
+fn generate_field_read<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	read: &FieldRead,
+	read: &'b FieldRead<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let base = generate_expression(context, generator, &read.base)?;
@@ -522,10 +583,10 @@ fn generate_field_read<G: Generator>(
 	generator.generate_field_read(context.type_store, base, read.field_index, debug_location)
 }
 
-fn generate_unary_operation<G: Generator>(
-	context: &mut Context,
+fn generate_unary_operation<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	operation: &UnaryOperation,
+	operation: &'b UnaryOperation<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let type_id = context.specialize_type_id(operation.type_id);
@@ -605,10 +666,10 @@ fn generate_unary_operation<G: Generator>(
 	}
 }
 
-fn generate_binary_operation<G: Generator>(
-	context: &mut Context,
+fn generate_binary_operation<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	operation: &BinaryOperation,
+	operation: &'b BinaryOperation<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let left_type_id = context.specialize_type_id(operation.left.type_id);
@@ -647,10 +708,10 @@ fn generate_binary_operation<G: Generator>(
 	)
 }
 
-fn generate_check_is<G: Generator>(
-	context: &mut Context,
+fn generate_check_is<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	check_is: &CheckIs,
+	check_is: &'b CheckIs<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let value = generate_expression(context, generator, &check_is.left).unwrap();
@@ -672,18 +733,18 @@ fn generate_check_is<G: Generator>(
 	Some(generator.generate_check_is(context, value, enum_shape_index, enum_specialization_index, &check_is, debug_location))
 }
 
-fn generate_mutable_slice_to_immutable<G: Generator>(
-	context: &mut Context,
+fn generate_mutable_slice_to_immutable<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	conversion: &SliceMutableToImmutable,
+	conversion: &'b SliceMutableToImmutable<'a>,
 ) -> Option<G::Binding> {
 	Some(generate_expression(context, generator, &conversion.expression).unwrap())
 }
 
-fn generate_enum_variant_to_enum<G: Generator>(
-	context: &mut Context,
+fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
-	conversion: &EnumVariantToEnum,
+	conversion: &'b EnumVariantToEnum<'a>,
 ) -> Option<G::Binding> {
 	let expression_type_id = context.specialize_type_id(conversion.expression.type_id);
 	let entry = context.type_store.type_entries.get(expression_type_id);
@@ -716,7 +777,12 @@ fn generate_enum_variant_to_enum<G: Generator>(
 	))
 }
 
-fn generate_binding<G: Generator>(context: &mut Context, generator: &mut G, binding: &Binding, debug_location: DebugLocation) {
+fn generate_binding<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	binding: &'b Binding<'a>,
+	debug_location: DebugLocation,
+) {
 	let value = generate_expression(context, generator, &binding.expression);
 	let type_id = context.specialize_type_id(binding.type_id);
 	generator.generate_binding(binding.readable_index, value, type_id, binding.name, debug_location);
@@ -730,7 +796,12 @@ fn generate_continue<G: Generator>(generator: &mut G, statement: &Continue, debu
 	generator.generate_continue(statement.loop_index, debug_location);
 }
 
-fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, statement: &Return, debug_location: DebugLocation) {
+fn generate_return<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	statement: &'b Return<'a>,
+	debug_location: DebugLocation,
+) {
 	let Some(expression) = &statement.expression else {
 		generator.generate_return(context.function_id, None, debug_location);
 		return;
@@ -740,11 +811,11 @@ fn generate_return<G: Generator>(context: &mut Context, generator: &mut G, state
 	generator.generate_return(context.function_id, value, debug_location);
 }
 
-fn generate_intrinsic<G: Generator>(
-	context: &mut Context,
+fn generate_intrinsic<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
 	generator: &mut G,
 	function_id: FunctionId,
-	call: &Call,
+	call: &'b Call<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
 	let span = call.span;

@@ -486,6 +486,11 @@ pub enum EnumInitializer<'a> {
 }
 
 #[derive(Debug)]
+pub struct Defer<'a> {
+	pub expression: Node<Expression<'a>>,
+}
+
+#[derive(Debug)]
 pub struct Break;
 
 #[derive(Debug)]
@@ -514,6 +519,8 @@ pub enum Statement<'a> {
 	Static(&'a Node<Static<'a>>),
 	Binding(&'a Node<Binding<'a>>),
 
+	Defer(Node<Defer<'a>>),
+
 	Break(Node<Break>),
 	Continue(Node<Continue>),
 	Return(&'a Node<Return<'a>>),
@@ -536,6 +543,7 @@ impl<'a> Statement<'a> {
 			Const(statement) => statement.span,
 			Static(statement) => statement.span,
 			Binding(statement) => statement.span,
+			Defer(statement) => statement.span,
 			Break(statement) => statement.span,
 			Continue(statement) => statement.span,
 			Return(statement) => statement.span,
@@ -557,6 +565,7 @@ impl<'a> Statement<'a> {
 			Const(..) => "A const definition",
 			Static(..) => "A static definition",
 			Binding(..) => "A binding definition",
+			Defer(..) => "A defer statement",
 			Break(..) => "A break statement",
 			Continue(..) => "A continue statement",
 			Return(..) => "A return statement",

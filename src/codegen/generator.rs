@@ -30,32 +30,32 @@ pub trait Generator {
 
 	fn end_block(&mut self);
 
-	fn generate_if_else_chain(
+	fn generate_if_else_chain<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
-		chain_expression: &IfElseChain,
-		condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
-		body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block, bool),
+		context: &mut codegen::Context<'a, 'b>,
+		chain_expression: &'b IfElseChain<'a>,
+		condition_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Expression<'a>) -> Self::Binding,
+		body_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Block<'a>, bool),
 	);
 
-	fn generate_match<'a>(
+	fn generate_match<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
+		context: &mut codegen::Context<'a, 'b>,
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
-		match_expression: &Match,
-		body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+		match_expression: &'b Match<'a>,
+		body_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Block<'a>),
 	);
 
 	// I hate this API but it has to pass the context back through to avoid having both closures
 	// have to capture a mutable reference at the same time
-	fn generate_while(
+	fn generate_while<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
+		context: &mut codegen::Context<'a, 'b>,
 		debug_location: DebugLocation,
-		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
-		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
+		condition_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self) -> Self::Binding,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	);
 
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding;
@@ -160,11 +160,11 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
-	fn generate_binary_operation(
+	fn generate_binary_operation<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
-		left: &Expression,
-		right: &Expression,
+		context: &mut codegen::Context<'a, 'b>,
+		left: &'b Expression<'a>,
+		right: &'b Expression<'a>,
 		op: BinaryOperator,
 		source_type_id: TypeId,
 		result_type_id: TypeId,

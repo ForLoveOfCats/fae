@@ -36,7 +36,7 @@ use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::codegen::llvm::debug_scope::DebugScope;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain};
+use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
@@ -645,12 +645,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.state = State::InFunction { function_id, void_returning };
 	}
 
-	fn generate_if_else_chain(
+	fn generate_if_else_chain<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
-		chain_expression: &IfElseChain,
-		mut condition_callback: impl FnMut(&mut codegen::Context, &mut Self, &Expression) -> Self::Binding,
-		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block, bool),
+		context: &mut codegen::Context<'a, 'b>,
+		chain_expression: &'b IfElseChain<'a>,
+		mut condition_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Expression<'a>) -> Self::Binding,
+		mut body_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Block<'a>, bool),
 	) {
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
@@ -732,14 +732,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 	}
 
-	fn generate_match<'a>(
+	fn generate_match<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
+		context: &mut codegen::Context<'a, 'b>,
 		value: Self::Binding,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
-		match_expression: &crate::frontend::ir::Match,
-		mut body_callback: impl FnMut(&mut codegen::Context, &mut Self, &Block),
+		match_expression: &'b Match<'a>,
+		mut body_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Block<'a>),
 	) {
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
 		let i8_type = unsafe { LLVMInt8TypeInContext(self.context) };
@@ -818,12 +818,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 	}
 
-	fn generate_while(
+	fn generate_while<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
+		context: &mut codegen::Context<'a, 'b>,
 		debug_location: DebugLocation,
-		condition_callback: impl FnOnce(&mut codegen::Context, &mut Self) -> Self::Binding,
-		body_callback: impl FnOnce(&mut codegen::Context, &mut Self),
+		condition_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self) -> Self::Binding,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	) {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
@@ -1609,11 +1609,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_binary_operation(
+	fn generate_binary_operation<'a, 'b>(
 		&mut self,
-		context: &mut codegen::Context,
-		left: &Expression,
-		right: &Expression,
+		context: &mut codegen::Context<'a, 'b>,
+		left: &'b Expression<'a>,
+		right: &'b Expression<'a>,
 		op: BinaryOperator,
 		source_type_id: TypeId,
 		result_type_id: TypeId,

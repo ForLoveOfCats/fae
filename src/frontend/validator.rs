@@ -1097,6 +1097,7 @@ fn create_block_types<'a>(
 				| tree::Statement::Block(..)
 				| tree::Statement::While(..)
 				| tree::Statement::Binding(..)
+				| tree::Statement::Defer(..)
 				| tree::Statement::Break(..)
 				| tree::Statement::Continue(..)
 				| tree::Statement::Return(..) => {
@@ -2404,131 +2405,8 @@ fn validate_block_in_context<'a>(
 	let mut statements = Vec::with_capacity(block.statements.len());
 
 	for statement in block.statements {
-		context.expected_type = None;
-
-		match statement {
-			tree::Statement::Expression(..)
-			| tree::Statement::Block(..)
-			| tree::Statement::While(..)
-			| tree::Statement::Binding(..)
-			| tree::Statement::Break(..)
-			| tree::Statement::Continue(..)
-			| tree::Statement::Return(..)
-				if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
-
-			tree::Statement::Expression(statement) => {
-				let expression = validate_expression(context, statement);
-				returns |= expression.returns;
-
-				let kind = StatementKind::Expression(expression);
-				statements.push(Statement {
-					kind,
-					debug_location: statement.span.debug_location(context.parsed_files),
-				});
-			}
-
-			tree::Statement::Block(statement) => {
-				let scope = context.child_scope();
-				let block = validate_block(scope, &statement.item, false);
-				returns |= block.returns;
-				let kind = StatementKind::Block(block);
-				statements.push(Statement {
-					kind,
-					debug_location: statement.span.debug_location(context.parsed_files),
-				})
-			}
-
-			tree::Statement::WhenElseChain(statement) => {
-				validate_when(context, statement, scope_id, is_root);
-			}
-
-			tree::Statement::While(statement) => {
-				let debug_location = statement.span.debug_location(context.parsed_files);
-				let statement = validate_while_statement(context, statement);
-				let kind = StatementKind::While(statement);
-				statements.push(Statement { kind, debug_location })
-			}
-
-			tree::Statement::Import(..) => {}
-
-			tree::Statement::Struct(..) => {}
-
-			tree::Statement::Enum(..) => {}
-
-			tree::Statement::Function(statement) => validate_function(context, statement),
-
-			tree::Statement::Const(..) => {}
-
-			tree::Statement::Static(..) => {}
-
-			tree::Statement::Binding(statement) => {
-				let validated = match validate_binding(context, statement) {
-					Some(validated) => validated,
-					None => continue,
-				};
-
-				let kind = StatementKind::Binding(Box::new(validated));
-				statements.push(Statement {
-					kind,
-					debug_location: statement.span.debug_location(context.parsed_files),
-				});
-			}
-
-			tree::Statement::Break(statement) => {
-				let debug_location = statement.span.debug_location(context.parsed_files);
-				let statement = if let Some(loop_index) = context.current_loop_index {
-					Break { loop_index }
-				} else {
-					let error = error!("Cannot break when outside a loop");
-					context.message(error.span(statement.span));
-					Break { loop_index: 0 }
-				};
-
-				let kind = StatementKind::Break(statement);
-				statements.push(Statement { kind, debug_location });
-			}
-
-			tree::Statement::Continue(statement) => {
-				let debug_location = statement.span.debug_location(context.parsed_files);
-				let statement = if let Some(loop_index) = context.current_loop_index {
-					Continue { loop_index }
-				} else {
-					let error = error!("Cannot continue when outside a loop");
-					context.message(error.span(statement.span));
-					Continue { loop_index: 0 }
-				};
-
-				let kind = StatementKind::Continue(statement);
-				statements.push(Statement { kind, debug_location });
-			}
-
-			tree::Statement::Return(statement) => {
-				returns |= true;
-
-				let expression = statement.item.expression.as_ref();
-				let mut expression = expression.map(|expression| {
-					let mut scope = context.child_scope();
-					scope.expected_type = scope.return_type;
-					validate_expression(&mut scope, expression)
-				});
-
-				if let Some(expression) = &mut expression {
-					let return_type = context.return_type.unwrap();
-					if let Ok(false) = context.collapse_to(return_type, expression) {
-						let expected = context.type_name(return_type);
-						let got = context.type_name(expression.type_id);
-						let error = error!("Expected return type of {expected}, got {got}");
-						context.message(error.span(statement.span));
-					}
-				}
-
-				let boxed_return = Box::new(Return { expression });
-				let kind = StatementKind::Return(boxed_return);
-				statements.push(Statement {
-					kind,
-					debug_location: statement.span.debug_location(context.parsed_files),
-				});
-			}
+		if let Some(statement) = validate_statement(context, scope_id, statement, &mut returns, is_root) {
+			statements.push(statement);
 		}
 	}
 
@@ -2536,6 +2414,151 @@ fn validate_block_in_context<'a>(
 	// Make sure to disallow in root of function
 	let type_id = context.type_store.void_type_id();
 	Block { type_id, returns, statements }
+}
+
+fn validate_statement<'a>(
+	context: &mut Context<'a, '_, '_>,
+	scope_id: ScopeId,
+	statement: &'a tree::Statement<'a>,
+	returns: &mut bool,
+	is_root: bool,
+) -> Option<Statement<'a>> {
+	context.expected_type = None;
+
+	match statement {
+		tree::Statement::Expression(..)
+		| tree::Statement::Block(..)
+		| tree::Statement::While(..)
+		| tree::Statement::Binding(..)
+		| tree::Statement::Defer(..)
+		| tree::Statement::Break(..)
+		| tree::Statement::Continue(..)
+		| tree::Statement::Return(..)
+			if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
+
+		tree::Statement::Expression(statement) => {
+			let expression = validate_expression(context, statement);
+			*returns |= expression.returns;
+
+			let kind = StatementKind::Expression(expression);
+			return Some(Statement {
+				kind,
+				debug_location: statement.span.debug_location(context.parsed_files),
+			});
+		}
+
+		tree::Statement::Block(statement) => {
+			let scope = context.child_scope();
+			let block = validate_block(scope, &statement.item, false);
+			*returns |= block.returns;
+			let kind = StatementKind::Block(block);
+			return Some(Statement {
+				kind,
+				debug_location: statement.span.debug_location(context.parsed_files),
+			});
+		}
+
+		tree::Statement::WhenElseChain(statement) => {
+			validate_when(context, statement, scope_id, is_root);
+		}
+
+		tree::Statement::While(statement) => {
+			let debug_location = statement.span.debug_location(context.parsed_files);
+			let statement = validate_while_statement(context, statement);
+			let kind = StatementKind::While(statement);
+			return Some(Statement { kind, debug_location });
+		}
+
+		tree::Statement::Import(..) => {}
+
+		tree::Statement::Struct(..) => {}
+
+		tree::Statement::Enum(..) => {}
+
+		tree::Statement::Function(statement) => validate_function(context, statement),
+
+		tree::Statement::Const(..) => {}
+
+		tree::Statement::Static(..) => {}
+
+		tree::Statement::Binding(statement) => {
+			let validated = match validate_binding(context, statement) {
+				Some(validated) => validated,
+				None => return None,
+			};
+
+			let kind = StatementKind::Binding(Box::new(validated));
+			return Some(Statement {
+				kind,
+				debug_location: statement.span.debug_location(context.parsed_files),
+			});
+		}
+
+		tree::Statement::Defer(statement) => {
+			let expression = validate_expression(context, &statement.item.expression);
+			let kind = StatementKind::Defer(Defer { expression });
+			let debug_location = statement.span.debug_location(context.parsed_files);
+			return Some(Statement { kind, debug_location });
+		}
+
+		tree::Statement::Break(statement) => {
+			let debug_location = statement.span.debug_location(context.parsed_files);
+			let statement = if let Some(loop_index) = context.current_loop_index {
+				Break { loop_index }
+			} else {
+				let error = error!("Cannot break when outside a loop");
+				context.message(error.span(statement.span));
+				Break { loop_index: 0 }
+			};
+
+			let kind = StatementKind::Break(statement);
+			return Some(Statement { kind, debug_location });
+		}
+
+		tree::Statement::Continue(statement) => {
+			let debug_location = statement.span.debug_location(context.parsed_files);
+			let statement = if let Some(loop_index) = context.current_loop_index {
+				Continue { loop_index }
+			} else {
+				let error = error!("Cannot continue when outside a loop");
+				context.message(error.span(statement.span));
+				Continue { loop_index: 0 }
+			};
+
+			let kind = StatementKind::Continue(statement);
+			return Some(Statement { kind, debug_location });
+		}
+
+		tree::Statement::Return(statement) => {
+			*returns |= true;
+
+			let expression = statement.item.expression.as_ref();
+			let mut expression = expression.map(|expression| {
+				let mut scope = context.child_scope();
+				scope.expected_type = scope.return_type;
+				validate_expression(&mut scope, expression)
+			});
+
+			if let Some(expression) = &mut expression {
+				let return_type = context.return_type.unwrap();
+				if let Ok(false) = context.collapse_to(return_type, expression) {
+					let expected = context.type_name(return_type);
+					let got = context.type_name(expression.type_id);
+					let error = error!("Expected return type of {expected}, got {got}");
+					context.message(error.span(statement.span));
+				}
+			}
+
+			let boxed_return = Box::new(Return { expression });
+			let kind = StatementKind::Return(boxed_return);
+			return Some(Statement {
+				kind,
+				debug_location: statement.span.debug_location(context.parsed_files),
+			});
+		}
+	}
+
+	None
 }
 
 fn validate_when<'a>(

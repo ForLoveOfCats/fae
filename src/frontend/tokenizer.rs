@@ -174,8 +174,7 @@ impl<'a> Tokens<'a> {
 			return Err(());
 		}
 
-		let index = self.index;
-		Ok(self.tokens[index])
+		Ok(self.tokens[self.index])
 	}
 
 	#[inline]
