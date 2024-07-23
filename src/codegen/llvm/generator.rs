@@ -36,7 +36,7 @@ use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
 use crate::codegen::llvm::debug_scope::DebugScope;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
+use crate::frontend::ir::{Block, CheckIs, Expression, ForKind, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
@@ -827,6 +827,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	) {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
+		self.start_block();
+
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
 		let condition_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while.condition".as_ptr()) };
@@ -862,6 +864,169 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
 		self.loop_condition_blocks.pop();
 		self.loop_follow_blocks.pop();
+
+		self.end_block();
+	}
+
+	fn generate_for_slice<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		statement: &'b crate::frontend::ir::For<'a>,
+		initializer: Self::Binding,
+		debug_location: DebugLocation,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	) {
+		let is_slice_kind = matches!(statement.kind, ForKind::InSlice | ForKind::OfSlice);
+		assert!(is_slice_kind, "{:?}", statement.kind);
+		let by_pointer = statement.kind == ForKind::OfSlice;
+
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		self.start_block();
+
+		let sliced_type_id = statement
+			.initializer
+			.type_id
+			.as_slice(&mut context.type_store.type_entries)
+			.unwrap()
+			.type_id;
+		let sliced_type = self
+			.llvm_types
+			.type_to_llvm_type(self.context, context.type_store, sliced_type_id);
+
+		unsafe {
+			let original_block = LLVMGetInsertBlock(self.builder);
+			let function = LLVMGetBasicBlockParent(original_block);
+
+			let condition_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_slice.condition_block".as_ptr());
+
+			let iterate_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_slice.iterate_block".as_ptr());
+			self.loop_condition_blocks.push(iterate_block);
+
+			let body_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let following_block = LLVMAppendBasicBlockInContext(self.context, function, c"for.following".as_ptr());
+			self.loop_follow_blocks.push(following_block);
+
+			let i64_type = LLVMInt64TypeInContext(self.context);
+			let i1_type = LLVMInt1TypeInContext(self.context);
+			let opaque_pointer_type = self.llvm_types.opaque_pointer;
+
+			let slice_pointer = self.value_pointer(initializer);
+			let pointer_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.slice_struct, slice_pointer, 0, c"".as_ptr());
+			let pointer = LLVMBuildLoad2(self.builder, opaque_pointer_type, pointer_pointer, c"for_slice.slice_pointer".as_ptr());
+			let len_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.slice_struct, slice_pointer, 1, c"".as_ptr());
+			let len = LLVMBuildLoad2(self.builder, i64_type, len_pointer, c"for_slice.slice_len".as_ptr());
+
+			let zero = LLVMConstNull(i64_type);
+			let iteration_alloca = self.build_alloca(i64_type, c"for_slice.iteration_alloca");
+			LLVMBuildStore(self.builder, zero, iteration_alloca);
+
+			let item_type = self
+				.llvm_types
+				.type_to_llvm_type(self.context, context.type_store, statement.item.type_id);
+
+			let item_alloca = self.build_alloca(item_type, c"for_slice.item");
+			let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
+			let binding = Binding { type_id: statement.item.type_id, kind };
+			assert_eq!(self.readables.len(), statement.item.readable_index);
+			self.readables.push(Some(binding));
+
+			let index_alloca = if let Some(index) = statement.index {
+				let index_alloca = self.build_alloca(i64_type, c"for_slice.index_alloca");
+				LLVMBuildStore(self.builder, zero, index_alloca);
+
+				let kind = BindingKind::Pointer { pointer: index_alloca, pointed_type: i64_type };
+				let binding = Binding { type_id: index.type_id, kind };
+				assert_eq!(self.readables.len(), index.readable_index);
+				self.readables.push(Some(binding));
+
+				Some(index_alloca)
+			} else {
+				None
+			};
+
+			let is_last_alloca = if let Some(is_last) = statement.is_last {
+				let false_value = LLVMConstInt(i1_type, 0, false as _);
+				let is_last_alloca = self.build_alloca(i64_type, c"for_slice.is_last_alloca");
+				LLVMBuildStore(self.builder, false_value, is_last_alloca);
+
+				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i1_type };
+				let binding = Binding { type_id: is_last.type_id, kind };
+				assert_eq!(self.readables.len(), is_last.readable_index);
+				self.readables.push(Some(binding));
+
+				Some(is_last_alloca)
+			} else {
+				None
+			};
+
+			LLVMBuildBr(self.builder, condition_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, iterate_block);
+
+			let one = LLVMConstInt(i64_type, 1, false as _);
+			let original = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let added = LLVMBuildAdd(self.builder, original, one, c"".as_ptr());
+			LLVMBuildStore(self.builder, added, iteration_alloca);
+
+			if let Some(index_alloca) = index_alloca {
+				let original = LLVMBuildLoad2(self.builder, i64_type, index_alloca, c"".as_ptr());
+				let added = LLVMBuildAdd(self.builder, original, one, c"".as_ptr());
+				LLVMBuildStore(self.builder, added, index_alloca);
+			}
+
+			LLVMBuildBr(self.builder, condition_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, condition_block);
+
+			let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let reached_end = LLVMBuildICmp(self.builder, LLVMIntSGE, iteration, len, c"".as_ptr());
+
+			if let Some(is_last_alloca) = is_last_alloca {
+				// It's fine if this overflows as we won't use the result unless we are still iterating and we can only
+				// possibly overflow if we've reached the end at which point we won't observe this value
+				let next = LLVMBuildAdd(self.builder, iteration, one, c"".as_ptr());
+				let reached_last = LLVMBuildICmp(self.builder, LLVMIntSGE, next, len, c"".as_ptr());
+				LLVMBuildStore(self.builder, reached_last, is_last_alloca);
+			}
+
+			LLVMBuildCondBr(self.builder, reached_end, following_block, body_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, body_block);
+
+			let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let indicies = &mut [iteration];
+			let adjusted = LLVMBuildGEP2(
+				self.builder,
+				sliced_type,
+				pointer,
+				indicies.as_mut_ptr(),
+				indicies.len() as u32,
+				c"".as_ptr(),
+			);
+
+			if by_pointer {
+				LLVMBuildStore(self.builder, adjusted, item_alloca);
+			} else {
+				let value = LLVMBuildLoad2(self.builder, item_type, adjusted, c"".as_ptr());
+				LLVMBuildStore(self.builder, value, item_alloca);
+			}
+
+			body_callback(context, self);
+
+			let current_block = LLVMGetInsertBlock(self.builder);
+			if LLVMGetBasicBlockTerminator(current_block).is_null() {
+				LLVMBuildBr(self.builder, iterate_block);
+			}
+
+			LLVMPositionBuilderAtEnd(self.builder, following_block);
+		}
+
+		self.loop_condition_blocks.pop();
+		self.loop_follow_blocks.pop();
+
+		self.end_block();
 	}
 
 	fn generate_for_range<'a, 'b>(
@@ -872,6 +1037,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		debug_location: DebugLocation,
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	) {
+		assert_eq!(statement.kind, ForKind::Range);
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		self.start_block();
+
 		unsafe {
 			let original_block = LLVMGetInsertBlock(self.builder);
 			let function = LLVMGetBasicBlockParent(original_block);
@@ -909,7 +1079,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				context.type_store,
 				context.lang_items.for_range_inverted.unwrap(),
 				&failure_args,
-				debug_location,
+				statement.initializer.debug_location,
 			);
 			LLVMBuildUnreachable(self.builder);
 
@@ -998,6 +1168,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		self.loop_condition_blocks.pop();
 		self.loop_follow_blocks.pop();
+
+		self.end_block();
 	}
 
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding {

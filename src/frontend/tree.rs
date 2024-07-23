@@ -631,11 +631,19 @@ pub struct While<'a> {
 	pub body: Node<Block<'a>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IterationKind {
+	In,
+	Of,
+}
+
+// TODO: Store much of this out-of-band
 #[derive(Debug)]
 pub struct For<'a> {
 	pub item: Node<&'a str>,
 	pub index: Option<Node<&'a str>>,
 	pub is_last: Option<Node<&'a str>>,
+	pub iteration_kind: Node<IterationKind>,
 	pub initializer: Node<Expression<'a>>,
 	pub body: Node<Block<'a>>,
 }

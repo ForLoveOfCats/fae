@@ -391,7 +391,12 @@ fn generate_for<'a, 'b, G: Generator>(
 	debug_location: DebugLocation,
 ) {
 	match statement.kind {
-		ForKind::Slice => todo!(),
+		ForKind::InSlice | ForKind::OfSlice => {
+			let initializer = generate_expression(context, generator, &statement.initializer).unwrap();
+			generator.generate_for_slice(context, statement, initializer, debug_location, |context, generator| {
+				generate_block(context, generator, &statement.body);
+			});
+		}
 
 		ForKind::Range => {
 			let initializer = generate_expression(context, generator, &statement.initializer).unwrap();

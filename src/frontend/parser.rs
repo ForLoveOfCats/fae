@@ -1050,14 +1050,22 @@ fn parse_for_statement<'a>(
 		None
 	};
 
-	tokens.expect_word(messages, "in")?;
+	// Intentionally peek for `of` first so if we have an unexpected token it falls through to the `in` expect
+	// for a better "default" parse error message
+	let iteration_kind = if let Ok(Token { text: "of", kind: TokenKind::Word, .. }) = tokens.peek() {
+		let of_token = tokens.next()?;
+		Node::from_token(IterationKind::Of, of_token)
+	} else {
+		let in_token = tokens.expect_word(messages, "in")?;
+		Node::from_token(IterationKind::In, in_token)
+	};
 
 	let initializer = parse_expression(bump, messages, tokens, false)?;
 
 	let body = parse_block(bump, messages, tokens, true, consume_newline)?;
 
 	let span = for_token.span + body.span;
-	let value = For { item, index, is_last, initializer, body };
+	let value = For { item, index, is_last, iteration_kind, initializer, body };
 	Ok(Node::new(value, span))
 }
 

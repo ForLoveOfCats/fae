@@ -293,7 +293,7 @@ pub fn validate<'a>(
 	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
 	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
 
-	const THREAD_COUNT: usize = 1;
+	const THREAD_COUNT: usize = 6;
 	let barrier = std::sync::Barrier::new(THREAD_COUNT);
 	let constants = RwLock::new(Vec::new());
 
@@ -3369,10 +3369,18 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 	let initializer = validate_expression(&mut scope, &statement.item.initializer);
 	let slice = initializer.type_id.as_slice(&mut scope.type_store.type_entries);
 	let kind = if slice.is_some() {
-		ForKind::Slice
+		match statement.item.iteration_kind.item {
+			tree::IterationKind::In => ForKind::InSlice,
+			tree::IterationKind::Of => ForKind::OfSlice,
+		}
 	} else {
 		let range_type_id = scope.lang_items.read().range_type.unwrap();
 		if scope.type_store.direct_match(initializer.type_id, range_type_id) {
+			if statement.item.iteration_kind.item == tree::IterationKind::Of {
+				let error = error!("Cannot iterate over `Range` by pointer, use `in` instead");
+				scope.message(error.span(statement.item.iteration_kind.span));
+			}
+
 			ForKind::Range
 		} else {
 			if !initializer.type_id.is_any_collapse(scope.type_store) {
@@ -3385,7 +3393,14 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 	};
 
 	let item = match kind {
-		ForKind::Slice => {
+		ForKind::InSlice => {
+			let slice = slice.unwrap();
+			let type_id = slice.type_id;
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);
+			ResultBinding { type_id, readable_index }
+		}
+
+		ForKind::OfSlice => {
 			let slice = slice.unwrap();
 			let type_id = scope.type_store.pointer_to(slice.type_id, slice.mutable);
 			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);

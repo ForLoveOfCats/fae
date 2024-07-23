@@ -58,6 +58,15 @@ pub trait Generator {
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	);
 
+	fn generate_for_slice<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		statement: &'b For<'a>,
+		initializer: Self::Binding,
+		debug_location: DebugLocation,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	);
+
 	fn generate_for_range<'a, 'b>(
 		&mut self,
 		context: &mut codegen::Context<'a, 'b>,

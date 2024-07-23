@@ -345,7 +345,8 @@ pub struct While<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForKind {
-	Slice,
+	InSlice,
+	OfSlice,
 	Range,
 	AnyCollapse,
 }
