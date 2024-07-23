@@ -237,6 +237,15 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "for", .. } => {
+			disallow_all_attributes(messages, attributes, token.span, "A for loop");
+			if let Ok(statement) = parse_for_statement(bump, messages, tokens, consume_newline) {
+				return Some(Statement::For(statement));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "defer", .. } => {
 			disallow_all_attributes(messages, attributes, token.span, "A defer statement");
 			if let Ok(statement) = parse_defer_statement(bump, messages, tokens, consume_newline) {
@@ -1011,6 +1020,44 @@ fn parse_while_statement<'a>(
 
 	let span = while_token.span + body.span;
 	let value = While { condition, body };
+	Ok(Node::new(value, span))
+}
+
+fn parse_for_statement<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<For<'a>>> {
+	let for_token = tokens.expect_word(messages, "for")?;
+
+	let item_token = tokens.expect(messages, TokenKind::Word)?;
+	let item = Node::from_token(item_token.text, item_token);
+
+	let index = if tokens.peek_kind() == Ok(TokenKind::Comma) {
+		tokens.next()?;
+		let index_token = tokens.expect(messages, TokenKind::Word)?;
+		Some(Node::from_token(index_token.text, index_token))
+	} else {
+		None
+	};
+
+	let is_last = if tokens.peek_kind() == Ok(TokenKind::Comma) {
+		tokens.next()?;
+		let is_last_token = tokens.expect(messages, TokenKind::Word)?;
+		Some(Node::from_token(is_last_token.text, is_last_token))
+	} else {
+		None
+	};
+
+	tokens.expect_word(messages, "in")?;
+
+	let initializer = parse_expression(bump, messages, tokens, false)?;
+
+	let body = parse_block(bump, messages, tokens, true, consume_newline)?;
+
+	let span = for_token.span + body.span;
+	let value = For { item, index, is_last, initializer, body };
 	Ok(Node::new(value, span))
 }
 

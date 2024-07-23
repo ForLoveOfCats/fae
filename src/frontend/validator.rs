@@ -1096,6 +1096,7 @@ fn create_block_types<'a>(
 				tree::Statement::Expression(..)
 				| tree::Statement::Block(..)
 				| tree::Statement::While(..)
+				| tree::Statement::For(..)
 				| tree::Statement::Binding(..)
 				| tree::Statement::Defer(..)
 				| tree::Statement::Break(..)
@@ -2429,6 +2430,7 @@ fn validate_statement<'a>(
 		tree::Statement::Expression(..)
 		| tree::Statement::Block(..)
 		| tree::Statement::While(..)
+		| tree::Statement::For(..)
 		| tree::Statement::Binding(..)
 		| tree::Statement::Defer(..)
 		| tree::Statement::Break(..)
@@ -2466,6 +2468,13 @@ fn validate_statement<'a>(
 			let debug_location = statement.span.debug_location(context.parsed_files);
 			let statement = validate_while_statement(context, statement);
 			let kind = StatementKind::While(statement);
+			return Some(Statement { kind, debug_location });
+		}
+
+		tree::Statement::For(statement) => {
+			let debug_location = statement.span.debug_location(context.parsed_files);
+			let statement = validate_for_statement(context, statement);
+			let kind = StatementKind::For(statement);
 			return Some(Statement { kind, debug_location });
 		}
 
@@ -3092,6 +3101,12 @@ fn validate_if_else_chain_expression<'a>(
 			first_condition_returns = true;
 		}
 
+		if !condition.type_id.is_bool(scope.type_store) && !condition.type_id.is_any_collapse(scope.type_store) {
+			let found = scope.type_name(condition.type_id);
+			let error = error!("Expected `if` condition of type `bool`, found {found}");
+			scope.message(error.span(condition.span));
+		}
+
 		let body = validate_block(scope, &entry.body.item, false);
 		all_if_bodies_return &= body.returns;
 		check_body_type_id(context, &body, entry.body.span);
@@ -3260,7 +3275,7 @@ fn validate_match_expression<'a>(
 			};
 
 			let readable_index = scope.push_readable(binding_name, type_id, kind);
-			Some(CheckIsResultBinding { type_id, readable_index })
+			Some(ResultBinding { type_id, readable_index })
 		} else {
 			None
 		};
@@ -3332,11 +3347,90 @@ fn validate_match_expression<'a>(
 
 fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a Node<tree::While<'a>>) -> While<'a> {
 	let mut scope = context.child_scope();
+
 	let condition = validate_expression(&mut scope, &statement.item.condition);
+	if !condition.type_id.is_bool(scope.type_store) && !condition.type_id.is_any_collapse(scope.type_store) {
+		let found = scope.type_name(condition.type_id);
+		let error = error!("Expected `while` condition of type `bool`, found {found}");
+		scope.message(error.span(condition.span));
+	}
+
 	scope.current_loop_index = Some(scope.next_loop_index);
 	scope.next_loop_index += 1;
 	let body = validate_block(scope, &statement.item.body.item, false);
+
 	While { condition, body }
+}
+
+fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a Node<tree::For<'a>>) -> For<'a> {
+	let mut scope = context.child_scope();
+	let any_collapse = scope.type_store.any_collapse_type_id();
+
+	let initializer = validate_expression(&mut scope, &statement.item.initializer);
+	let slice = initializer.type_id.as_slice(&mut scope.type_store.type_entries);
+	let kind = if slice.is_some() {
+		ForKind::Slice
+	} else {
+		let range_type_id = scope.lang_items.read().range_type.unwrap();
+		if scope.type_store.direct_match(initializer.type_id, range_type_id) {
+			ForKind::Range
+		} else {
+			if !initializer.type_id.is_any_collapse(scope.type_store) {
+				let found = scope.type_name(initializer.type_id);
+				let error = error!("Cannot iterate over type {found}, expected a slice or `Range`");
+				scope.message(error.span(initializer.span));
+			}
+			ForKind::AnyCollapse
+		}
+	};
+
+	let item = match kind {
+		ForKind::Slice => {
+			let slice = slice.unwrap();
+			let type_id = scope.type_store.pointer_to(slice.type_id, slice.mutable);
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);
+			ResultBinding { type_id, readable_index }
+		}
+
+		ForKind::Range => {
+			let type_id = scope.type_store.isize_type_id();
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);
+			ResultBinding { type_id, readable_index }
+		}
+
+		ForKind::AnyCollapse => {
+			let readable_index = scope.push_readable(statement.item.item, any_collapse, ReadableKind::Mut);
+			ResultBinding { type_id: any_collapse, readable_index }
+		}
+	};
+
+	let index = if let Some(index) = statement.item.index {
+		let type_id = scope.type_store.isize_type_id();
+		let readable_index = scope.push_readable(index, type_id, ReadableKind::Let);
+		Some(ResultBinding { type_id, readable_index })
+	} else {
+		None
+	};
+
+	let is_last = if let Some(is_last) = statement.item.is_last {
+		if is_last.item == "_" {
+			// TODO: This warning is weirdly worded, we can probably do better
+			let warning = warning!("Unnecessary `for` \"is last\" binding");
+			scope.message(warning.span(is_last.span));
+		}
+
+		let type_id = scope.type_store.bool_type_id();
+		let readable_index = scope.push_readable(is_last, type_id, ReadableKind::Let);
+		Some(ResultBinding { type_id, readable_index })
+	} else {
+		None
+	};
+
+	scope.current_loop_index = Some(scope.next_loop_index);
+	scope.next_loop_index += 1;
+	let body = validate_block(scope, &statement.item.body.item, false);
+
+	For { kind, item, index, is_last, initializer, body }
 }
 
 fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::IntegerLiteral, span: Span) -> Expression<'a> {
@@ -5520,7 +5614,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		};
 
 		let readable_index = context.push_readable(binding_name, type_id, kind);
-		Some(CheckIsResultBinding { type_id, readable_index })
+		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None
 	};

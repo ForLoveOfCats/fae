@@ -52,6 +52,18 @@ fn slice_range_end_out_of_bounds(length: isize, end: isize) {
 	panicf("Slice range failure")
 }
 
+#lang "for_range_inverted"
+fn for_range_inverted(range: Range) {
+	let stderr = fae::libc::StdErrFile.*
+
+	// TODO: String formatting for `panicf`
+	let message = "Panic: Range start %ld is larger than end %ld\n"
+	fae::libc::fprintf(stderr, message.pointer, range.start, range.end)
+	fae::libc::fflush(stderr)
+
+	panicf("For loop range failure")
+}
+
 fn panic_impl(message: str): noreturn {
 	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
 

@@ -1,6 +1,6 @@
 use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIs, Expression, Function, FunctionId, IfElseChain, Match};
+use crate::frontend::ir::{Block, CheckIs, Expression, For, Function, FunctionId, IfElseChain, Match};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
@@ -55,6 +55,15 @@ pub trait Generator {
 		context: &mut codegen::Context<'a, 'b>,
 		debug_location: DebugLocation,
 		condition_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self) -> Self::Binding,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	);
+
+	fn generate_for_range<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		statement: &'b For<'a>,
+		initializer: Self::Binding,
+		debug_location: DebugLocation,
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	);
 

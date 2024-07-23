@@ -326,7 +326,7 @@ pub struct Match<'a> {
 
 #[derive(Debug, Clone)]
 pub struct MatchArm<'a> {
-	pub binding: Option<CheckIsResultBinding>,
+	pub binding: Option<ResultBinding>,
 	pub block: Block<'a>,
 	pub variant_infos: Vec<VariantInfo>,
 }
@@ -343,6 +343,23 @@ pub struct While<'a> {
 	pub body: Block<'a>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForKind {
+	Slice,
+	Range,
+	AnyCollapse,
+}
+
+#[derive(Debug, Clone)]
+pub struct For<'a> {
+	pub kind: ForKind,
+	pub item: ResultBinding,
+	pub index: Option<ResultBinding>,
+	pub is_last: Option<ResultBinding>,
+	pub initializer: Expression<'a>,
+	pub body: Block<'a>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Statement<'a> {
 	pub kind: StatementKind<'a>,
@@ -355,6 +372,7 @@ pub enum StatementKind<'a> {
 
 	Block(Block<'a>),
 	While(While<'a>),
+	For(For<'a>),
 
 	Binding(Box<Binding<'a>>),
 
@@ -864,12 +882,12 @@ pub struct BinaryOperation<'a> {
 #[derive(Debug, Clone)]
 pub struct CheckIs<'a> {
 	pub left: Expression<'a>,
-	pub binding: Option<CheckIsResultBinding>,
+	pub binding: Option<ResultBinding>,
 	pub variant_infos: Vec<VariantInfo>,
 }
 
-#[derive(Debug, Clone)]
-pub struct CheckIsResultBinding {
+#[derive(Debug, Clone, Copy)]
+pub struct ResultBinding {
 	pub type_id: TypeId,
 	pub readable_index: usize,
 }

@@ -5,9 +5,9 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
-	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, FunctionId, FunctionShape, IfElseChain, IntegerValue,
-	Match, MethodCall, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral, StructLiteral,
-	TypeArguments, UnaryOperation, UnaryOperator, While,
+	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FunctionId, FunctionShape, IfElseChain,
+	IntegerValue, Match, MethodCall, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
+	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -184,6 +184,13 @@ fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator
 				let start_index = context.defer_stack.len();
 				context.loop_stack.push(LoopMarker { start_index });
 				generate_while(context, generator, statement, debug_location);
+				context.loop_stack.pop();
+			}
+
+			StatementKind::For(statement) => {
+				let start_index = context.defer_stack.len();
+				context.loop_stack.push(LoopMarker { start_index });
+				generate_for(context, generator, statement, debug_location);
 				context.loop_stack.pop();
 			}
 
@@ -375,6 +382,26 @@ fn generate_while<'a, 'b, G: Generator>(
 			generate_block(context, generator, &statement.body);
 		},
 	);
+}
+
+fn generate_for<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	statement: &'b For<'a>,
+	debug_location: DebugLocation,
+) {
+	match statement.kind {
+		ForKind::Slice => todo!(),
+
+		ForKind::Range => {
+			let initializer = generate_expression(context, generator, &statement.initializer).unwrap();
+			generator.generate_for_range(context, statement, initializer, debug_location, |context, generator| {
+				generate_block(context, generator, &statement.body);
+			});
+		}
+
+		ForKind::AnyCollapse => unreachable!(),
+	}
 }
 
 fn generate_integer_value<G: Generator>(context: &Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {

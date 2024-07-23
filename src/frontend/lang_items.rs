@@ -11,6 +11,8 @@ pub struct LangItems {
 	pub slice_range_inverted: Option<FunctionId>,
 	pub slice_range_start_out_of_bounds: Option<FunctionId>,
 	pub slice_range_end_out_of_bounds: Option<FunctionId>,
+
+	pub for_range_inverted: Option<FunctionId>,
 }
 
 impl LangItems {
@@ -21,6 +23,7 @@ impl LangItems {
 			slice_range_inverted: None,
 			slice_range_start_out_of_bounds: None,
 			slice_range_end_out_of_bounds: None,
+			for_range_inverted: None,
 		}
 	}
 
@@ -41,6 +44,8 @@ impl LangItems {
 			"slice_range_inverted" => self.slice_range_inverted = Some(function_id),
 			"slice_range_start_out_of_bounds" => self.slice_range_start_out_of_bounds = Some(function_id),
 			"slice_range_end_out_of_bounds" => self.slice_range_end_out_of_bounds = Some(function_id),
+
+			"for_range_inverted" => self.for_range_inverted = Some(function_id),
 
 			_ => {
 				let error = error!("Unknown lang item function {lang_name:?}");

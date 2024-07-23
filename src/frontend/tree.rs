@@ -508,6 +508,7 @@ pub enum Statement<'a> {
 	Block(Node<Block<'a>>),
 	WhenElseChain(Node<WhenElseChain<'a>>),
 	While(Node<While<'a>>),
+	For(Node<For<'a>>),
 
 	Import(Node<Import<'a>>),
 
@@ -536,6 +537,7 @@ impl<'a> Statement<'a> {
 			Block(statement) => statement.span,
 			WhenElseChain(statement) => statement.span,
 			While(statement) => statement.span,
+			For(statement) => statement.span,
 			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
 			Enum(statement) => statement.name.span,
@@ -557,6 +559,7 @@ impl<'a> Statement<'a> {
 			Expression(..) => "An expression",
 			Block(..) => "A block",
 			While(..) => "A while loop",
+			For(..) => "A for loop",
 			WhenElseChain(..) => "A when statement",
 			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
@@ -625,6 +628,15 @@ pub struct ElseArm<'a> {
 #[derive(Debug)]
 pub struct While<'a> {
 	pub condition: Node<Expression<'a>>,
+	pub body: Node<Block<'a>>,
+}
+
+#[derive(Debug)]
+pub struct For<'a> {
+	pub item: Node<&'a str>,
+	pub index: Option<Node<&'a str>>,
+	pub is_last: Option<Node<&'a str>>,
+	pub initializer: Node<Expression<'a>>,
 	pub body: Node<Block<'a>>,
 }
 

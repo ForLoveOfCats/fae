@@ -864,6 +864,142 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.loop_follow_blocks.pop();
 	}
 
+	fn generate_for_range<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		statement: &'b crate::frontend::ir::For<'a>,
+		initializer: Self::Binding,
+		debug_location: DebugLocation,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	) {
+		unsafe {
+			let original_block = LLVMGetInsertBlock(self.builder);
+			let function = LLVMGetBasicBlockParent(original_block);
+
+			let range_inverted_failure_block =
+				LLVMAppendBasicBlockInContext(self.context, function, c"for_range.range_inverted_failure_block".as_ptr());
+
+			let setup_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_range.setup_block".as_ptr());
+
+			let condition_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_range.condition_block".as_ptr());
+
+			let iterate_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_range.iterate_block".as_ptr());
+			self.loop_condition_blocks.push(iterate_block);
+
+			let body_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let following_block = LLVMAppendBasicBlockInContext(self.context, function, c"for.following".as_ptr());
+			self.loop_follow_blocks.push(following_block);
+
+			let i64_type = LLVMInt64TypeInContext(self.context);
+			let i1_type = LLVMInt1TypeInContext(self.context);
+
+			let range_pointer = self.value_pointer(initializer);
+			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"for_range.range_start".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"for_range.range_end".as_ptr());
+
+			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
+			LLVMBuildCondBr(self.builder, inverted, range_inverted_failure_block, setup_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, range_inverted_failure_block);
+			let failure_args = [Some(initializer)];
+			self.generate_call(
+				context.type_store,
+				context.lang_items.for_range_inverted.unwrap(),
+				&failure_args,
+				debug_location,
+			);
+			LLVMBuildUnreachable(self.builder);
+
+			LLVMPositionBuilderAtEnd(self.builder, setup_block);
+
+			let iteration_alloca = self.build_alloca(i64_type, c"for_range.iteration_alloca");
+			LLVMBuildStore(self.builder, start, iteration_alloca);
+
+			let kind = BindingKind::Pointer { pointer: iteration_alloca, pointed_type: i64_type };
+			let binding = Binding { type_id: statement.item.type_id, kind };
+			assert_eq!(self.readables.len(), statement.item.readable_index);
+			self.readables.push(Some(binding));
+
+			let index_alloca = if let Some(index) = statement.index {
+				let zero = LLVMConstNull(i64_type);
+				let index_alloca = self.build_alloca(i64_type, c"for_range.index_alloca");
+				LLVMBuildStore(self.builder, zero, index_alloca);
+
+				let kind = BindingKind::Pointer { pointer: index_alloca, pointed_type: i64_type };
+				let binding = Binding { type_id: index.type_id, kind };
+				assert_eq!(self.readables.len(), index.readable_index);
+				self.readables.push(Some(binding));
+
+				Some(index_alloca)
+			} else {
+				None
+			};
+
+			let is_last_alloca = if let Some(is_last) = statement.is_last {
+				let false_value = LLVMConstInt(i1_type, 0, false as _);
+				let is_last_alloca = self.build_alloca(i64_type, c"for_range.is_last_alloca");
+				LLVMBuildStore(self.builder, false_value, is_last_alloca);
+
+				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i1_type };
+				let binding = Binding { type_id: is_last.type_id, kind };
+				assert_eq!(self.readables.len(), is_last.readable_index);
+				self.readables.push(Some(binding));
+
+				Some(is_last_alloca)
+			} else {
+				None
+			};
+
+			LLVMBuildBr(self.builder, condition_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, iterate_block);
+
+			let one = LLVMConstInt(i64_type, 1, false as _);
+			let original = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let added = LLVMBuildAdd(self.builder, original, one, c"".as_ptr());
+			LLVMBuildStore(self.builder, added, iteration_alloca);
+
+			if let Some(index_alloca) = index_alloca {
+				let original = LLVMBuildLoad2(self.builder, i64_type, index_alloca, c"".as_ptr());
+				let added = LLVMBuildAdd(self.builder, original, one, c"".as_ptr());
+				LLVMBuildStore(self.builder, added, index_alloca);
+			}
+
+			LLVMBuildBr(self.builder, condition_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, condition_block);
+
+			let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let reached_end = LLVMBuildICmp(self.builder, LLVMIntSGE, iteration, end, c"".as_ptr());
+
+			if let Some(is_last_alloca) = is_last_alloca {
+				// It's fine if this overflows as we won't use the result unless we are still iterating and we can only
+				// possibly overflow if we've reached the end at which point we won't observe this value
+				let next = LLVMBuildAdd(self.builder, iteration, one, c"".as_ptr());
+				let reached_last = LLVMBuildICmp(self.builder, LLVMIntSGE, next, end, c"".as_ptr());
+				LLVMBuildStore(self.builder, reached_last, is_last_alloca);
+			}
+
+			LLVMBuildCondBr(self.builder, reached_end, following_block, body_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, body_block);
+			body_callback(context, self);
+
+			let current_block = LLVMGetInsertBlock(self.builder);
+			if LLVMGetBasicBlockTerminator(current_block).is_null() {
+				LLVMBuildBr(self.builder, iterate_block);
+			}
+
+			LLVMPositionBuilderAtEnd(self.builder, following_block);
+		}
+
+		self.loop_condition_blocks.pop();
+		self.loop_follow_blocks.pop();
+	}
+
 	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding {
 		let value = unsafe {
 			match type_id.numeric_kind(type_store).unwrap() {
