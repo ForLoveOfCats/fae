@@ -1,0 +1,11 @@
+fn main() {
+	if void {
+	} else if void {
+	} else {}
+
+	while void {}
+
+	for _ in void {}
+	for _ of void {}
+}
+

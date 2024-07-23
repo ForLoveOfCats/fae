@@ -1,0 +1,3 @@
+Validation error: ./tests/for_of_range_failure/for_of_range_failure.fae, line 2: Cannot iterate over `Range` by pointer, use `in` instead
+  2|     for _ of 0..4 {}
+               ^^

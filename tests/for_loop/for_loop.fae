@@ -1,0 +1,45 @@
+import fae::stdout::print_i32, print_isize, print_bool, print_string, print_newline
+
+fn main() {
+	for x, index, is_last in 10..15 {
+		print_string("x: ")
+		print_isize(x)
+		print_string(", index: ")
+		print_isize(index)
+		print_string(", is_last: ")
+		print_bool(is_last)
+		print_newline()
+	}
+
+	print_newline()
+
+	let words = []{ "Hello", "World" }
+	for word, index, is_last in words {
+		print_isize(index)
+		print_string(": ")
+		print_string(word)
+
+		if is_last => print_newline()
+		else => print_string(", ")
+	}
+
+	print_newline()
+
+	let numbers = []i32 { 2, 3, 4, 5, 6 }
+	print_numbers(numbers)
+
+	for number, index of numbers {
+		number.* += 1
+		number.* += numbers[index]
+	}
+	print_numbers(numbers)
+}
+
+fn print_numbers(numbers: []i32) {
+	print_string("[")
+	for number, _, is_last in numbers {
+		print_i32(number)
+		if is_last.! => print_string(", ")
+	}
+	print_string("]\n")
+}

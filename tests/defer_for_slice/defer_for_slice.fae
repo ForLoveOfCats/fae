@@ -1,0 +1,59 @@
+import fae::stdout::print_isize, print_string, print_newline
+
+fn main() {
+	let slice = []{ "Hello", "Fae", "world" }
+
+	breaks(slice, false)
+	print_newline()
+	breaks(slice, true)
+
+	print_newline()
+	print_newline()
+	print_newline()
+
+	continues(slice, false)
+	print_newline()
+	continues(slice, true)
+}
+
+fn breaks(slice: []str, early_break: bool) {
+	print_string("A\n")
+	defer print_string("1\n")
+
+	for index in 0..3 {
+		defer print_string("2\n")
+
+		if early_break => break
+
+		print_string("iteration ")
+		print_isize(index)
+		print_newline()
+
+		defer print_string("3\n")
+	}
+
+	print_string("B\n")
+	defer print_string("4\n")
+	print_string("C\n")
+}
+
+fn continues(slice: []str, early_continue: bool) {
+	print_string("A\n")
+	defer print_string("1\n")
+
+	for index in 0..3 {
+		defer print_string("2\n")
+
+		if early_continue and index == 1 => break
+
+		print_string("iteration ")
+		print_isize(index)
+		print_newline()
+
+		defer print_string("3\n")
+	}
+
+	print_string("B\n")
+	defer print_string("4\n")
+	print_string("C\n")
+}

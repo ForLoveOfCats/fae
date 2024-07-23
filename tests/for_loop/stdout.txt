@@ -1,0 +1,10 @@
+x: 10, index: 0, is_last: false
+x: 11, index: 1, is_last: false
+x: 12, index: 2, is_last: false
+x: 13, index: 3, is_last: false
+x: 14, index: 4, is_last: true
+
+0: Hello, 1: World
+
+[2, 3, 4, 5, 6]
+[6, 8, 10, 12, 14]
