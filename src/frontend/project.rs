@@ -95,13 +95,15 @@ pub fn build_project(
 		usage_error!("Input path is neither directory nor file");
 	};
 
-	match cli_arguments.command {
-		CompileCommand::Parse => message_output.alertln("    Parsing project", format_args!("{root_name}")),
-		CompileCommand::Check => message_output.alertln("    Checking project", format_args!("{root_name}")),
-		CompileCommand::Build | CompileCommand::Run => {
-			message_output.alertln("    Building project", format_args!("{root_name}"))
+	if cli_arguments.loud {
+		match cli_arguments.command {
+			CompileCommand::Parse => message_output.alertln("    Parsing project", format_args!("{root_name}")),
+			CompileCommand::Check => message_output.alertln("    Checking project", format_args!("{root_name}")),
+			CompileCommand::Build | CompileCommand::Run => {
+				message_output.alertln("    Building project", format_args!("{root_name}"))
+			}
+			CompileCommand::CompilerTest => {}
 		}
-		CompileCommand::CompilerTest => {}
 	}
 
 	let mut any_errors = false;
@@ -122,7 +124,7 @@ pub fn build_project(
 		tokens_vec = tokens.tear_down();
 	}
 
-	if cli_arguments.command != CompileCommand::CompilerTest {
+	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Parsed all files", format_args!("took {} ms", parse_start.elapsed().as_millis()));
 	}
 
@@ -192,7 +194,7 @@ pub fn build_project(
 		return BuiltProject { binary_path: None, any_messages };
 	}
 
-	if cli_arguments.command != CompileCommand::CompilerTest {
+	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("   Validated project", format_args!("took {} ms", validate_start.elapsed().as_millis()));
 	}
 
@@ -222,13 +224,13 @@ pub fn build_project(
 			&statics.read(),
 		),
 	};
-	if cli_arguments.command != CompileCommand::CompilerTest {
+	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Finished codegen", format_args!("took {} ms", codegen_start.elapsed().as_millis()));
 	}
 
 	assert!(!codegen_messages.any_messages());
 
-	if cli_arguments.command != CompileCommand::CompilerTest {
+	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("        Built binary", format_args!("{}", binary_path.display()));
 	}
 

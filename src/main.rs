@@ -61,7 +61,9 @@ fn main() {
 	};
 
 	if cli_arguments.command == CompileCommand::Run {
-		eprintln!("  {BOLD_GREEN}Running executable{RESET}");
+		if cli_arguments.loud {
+			eprintln!("  {BOLD_GREEN}Running executable{RESET}");
+		}
 
 		let mut command = Command::new(binary_path);
 		let mut child = command.spawn().unwrap();

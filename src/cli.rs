@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub struct CliArguments {
 	pub project_path: Option<PathBuf>,
 	pub command: CompileCommand,
+	pub loud: bool,
 	pub color_messages: bool,
 	pub std_enabled: bool,
 	pub compiler_test_names: Vec<String>,
@@ -45,6 +46,7 @@ pub fn parse_arguments() -> CliArguments {
 	let mut cli_arguments = CliArguments {
 		project_path: None,
 		command: CompileCommand::Build,
+		loud: true,
 		color_messages: true,
 		std_enabled: true,
 		compiler_test_names: Vec::new(),
@@ -132,6 +134,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			eprintln!();
 			eprintln!("Options:");
 			eprintln!("  --help: Print this help message");
+			eprintln!("  --quiet: Silence compilation progress messages");
 			eprintln!("  --release: Build artifacts with optimizations enabled");
 			eprintln!("  --disable-message-color: Avoid printing messages with color highlights");
 			eprintln!("  --debug-generics: Include useful debug information when printing types");
@@ -141,29 +144,19 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			std::process::exit(0);
 		}
 
-		Some("--release") => {
-			cli_arguments.optimize_artifacts = true;
-		}
+		Some("--quiet") => cli_arguments.loud = false,
 
-		Some("--disable-message-color") => {
-			cli_arguments.color_messages = false;
-		}
+		Some("--release") => cli_arguments.optimize_artifacts = true,
 
-		Some("--debug-generics") => {
-			cli_arguments.debug_generics = true;
-		}
+		Some("--disable-message-color") => cli_arguments.color_messages = false,
 
-		Some("--debug-type-ids") => {
-			cli_arguments.debug_type_ids = true;
-		}
+		Some("--debug-generics") => cli_arguments.debug_generics = true,
 
-		Some("--disable-std") => {
-			cli_arguments.std_enabled = false;
-		}
+		Some("--debug-type-ids") => cli_arguments.debug_type_ids = true,
 
-		Some("--disable-llvm-verification") => {
-			cli_arguments.verify_llvm_module = false;
-		}
+		Some("--disable-std") => cli_arguments.std_enabled = false,
+
+		Some("--disable-llvm-verification") => cli_arguments.verify_llvm_module = false,
 
 		arg => {
 			eprintln!("Unknown cli option {arg:?}");
