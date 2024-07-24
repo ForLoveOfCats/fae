@@ -79,7 +79,7 @@ fn panic_impl(message: str): noreturn {
 
 	let null = null_pointer<void>()
 	// 50 items
-	let buffer = []&void {
+	let addresses = []&void {
 		null, null, null, null, null, null, null, null, null, null,
 		null, null, null, null, null, null, null, null, null, null,
 		null, null, null, null, null, null, null, null, null, null,
@@ -87,8 +87,8 @@ fn panic_impl(message: str): noreturn {
 		null, null, null, null, null, null, null, null, null, null,
 	}
 
-	let symbol_count = backtrace(buffer.pointer, buffer.length.(i32)).(isize)
-	let symbols = buffer[0..symbol_count]
+	let symbol_count = backtrace(addresses.pointer, addresses.length.(i32)).(isize)
+	let addresses = addresses[0..symbol_count]
 
 	const Indentation = "  "
 	const Error = "<error>"
@@ -105,7 +105,7 @@ fn panic_impl(message: str): noreturn {
 	}
 
 	// 50 items
-	let buffer = []Symbol {
+	let symbols = []Symbol {
 		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
 		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
 		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
@@ -117,6 +117,7 @@ fn panic_impl(message: str): noreturn {
 		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
 		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
 	}
+	let symbols = symbols[0..symbol_count]
 
 	mut longest_width: isize = 0
 	fn handle_width(longest_width: &mut isize, width: isize) {
@@ -124,19 +125,12 @@ fn panic_impl(message: str): noreturn {
 	}
 
 	fn print_width(width: isize) {
-		mut index: isize = 0
-		while index < width { 
-			index += 1
+		for _ in 0..width {
 			fprintf(StdErrFile.*, " ".pointer)
 		}
 	}
 
-	mut index: isize = 0
-	while index < symbols.length {
-		let address = symbols[index]
-		let entry = buffer[index].&mut
-		index += 1
-
+	for address, index in addresses {
 		mut info = DlInfo {
 			dli_fname: null_pointer<u8>()
 			dli_fbase: null_pointer<void>()
@@ -145,7 +139,7 @@ fn panic_impl(message: str): noreturn {
 		}
 
 		if dladdr(address, info.&mut) == 0 {
-			entry.* = Symbol.Error
+			symbols[index] = Symbol.Error
 			handle_width(longest_width.&mut, Error.length)
 			continue
 		}
@@ -153,23 +147,17 @@ fn panic_impl(message: str): noreturn {
 		let path = info.dli_fname
 
 		if info.dli_saddr.(usize) == 0 {
-			entry.* = Symbol.Unknown { path }
+			symbols[index] = Symbol.Unknown { path }
 			handle_width(longest_width.&mut, Unknown.length)
 		} else {
 			let name_length = fae::libc::strlen(info.dli_sname).(isize)
 			let name = fae::intrinsics::create_str(info.dli_sname, name_length)
-			entry.* = Symbol.Found { name, path }
+			symbols[index] = Symbol.Found { name, path }
 			handle_width(longest_width.&mut, name_length)
 		}
 	}
 
-	let symbols = buffer[0..symbol_count]
-
-	mut index: isize = 0
-	while index < symbols.length {
-		let symbol = symbols[index]
-		index += 1
-
+	for symbol in symbols {
 		mut current_width: isize = 0
 		mut path: &u8 = "".pointer
 

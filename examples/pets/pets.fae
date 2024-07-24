@@ -136,9 +136,7 @@ fn main() {
 	print_string(morty.unwrap().name)
 	print_newline()
 
-/*
-	let morty = adopt(17)
-	print_string(morty.unwrap().name)
-	print_newline()
-*/
+	// let morty = adopt(17)
+	// print_string(morty.unwrap().name)
+	// print_newline()
 }
