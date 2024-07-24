@@ -3,12 +3,17 @@
   "displayName": "Fae Language",
   "description": "Support extension for the Fae programming language",
   "version": "0.0.1",
+  "publisher": "fae-lang",
   "engines": {
     "vscode": "^1.89.0"
   },
   "categories": [
     "Programming Languages"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ForLoveOfCats/fae"
+  },
   "contributes": {
     "languages": [{
       "id": "fae",
