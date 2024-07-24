@@ -2045,9 +2045,12 @@ fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> Pa
 				| "enum" | "import"
 				| "generic" | "extern"
 				| "export" | "method"
-				| "if" | "else" | "while"
-				| "match" | "or" | "and"
-				| "is" | "break" | "continue"
+				| "static" | "if"
+				| "else" | "while"
+				| "for" | "match"
+				| "or" | "and" | "is"
+				| "in" | "of" | "defer"
+				| "break" | "continue"
 				| "true" | "false"
 		);
 

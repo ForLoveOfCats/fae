@@ -13,6 +13,9 @@
 		},
 		{
 			"include": "#strings"
+		},
+		{
+			"include": "#codepoints"
 		}
 	],
 	"repository": {
@@ -20,11 +23,11 @@
 			"patterns": [
 				{
 					"name": "keyword.control.fae",
-					"match": "\\b(if|else|while|match|continue|break|return)\\b"
+					"match": "\\b(if|else|while|for|match|defer|continue|break|return)\\b"
 				},
 				{
 					"name": "keyword.default.fae",
-					"match": "\\b(const|let|mut|fn|import|and|or|is)\\b"
+					"match": "\\b(const|let|mut|fn|import|and|or|is|in|of)\\b"
 				},
 				{
 					"name": "keyword.structure.fae",
@@ -32,7 +35,7 @@
 				},
 				{
 					"name": "keyword.tag.fae",
-					"match": "\\b(generic|extern|export|method)\\b"
+					"match": "\\b(generic|extern|export|method|static)\\b"
 				},
 				{
 					"name": "keyword.constant.bool.fae",
@@ -76,6 +79,11 @@
 					"match": "\\\\."
 				}
 			]
+		},
+		"codepoints": {
+			"name": "string.quoted.single.char.fae",
+			"begin": "b'|'",
+			"end": "'"
 		}
 	},
 	"scopeName": "source.fae"
