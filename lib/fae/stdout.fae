@@ -1,5 +1,7 @@
 import fae::libc::printf, fflush, fwrite, StdOutFile
 
+// TODO: Remove this file entirely
+
 fn print_clear() {
 	let string = []u8 { 27, 91, 50, 74, 0 }
 	fwrite(string.pointer, 1, string.length.(usize), StdOutFile.*)

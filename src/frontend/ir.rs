@@ -297,34 +297,34 @@ pub struct ScopeId {
 	pub scope_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Block<'a> {
 	pub type_id: TypeId,
 	pub returns: bool,
 	pub statements: Vec<Statement<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct IfElseChainEntry<'a> {
 	pub condition: Expression<'a>,
 	pub body: Block<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct IfElseChain<'a> {
 	pub _type_id: TypeId,
 	pub entries: Vec<IfElseChainEntry<'a>>,
 	pub else_body: Option<Block<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Match<'a> {
 	pub expression: Expression<'a>,
 	pub arms: Vec<MatchArm<'a>>,
 	pub else_arm: Option<Block<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MatchArm<'a> {
 	pub binding: Option<ResultBinding>,
 	pub block: Block<'a>,
@@ -337,7 +337,7 @@ pub struct VariantInfo {
 	pub variant_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct While<'a> {
 	pub condition: Expression<'a>,
 	pub body: Block<'a>,
@@ -351,7 +351,7 @@ pub enum ForKind {
 	AnyCollapse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct For<'a> {
 	pub kind: ForKind,
 	pub item: ResultBinding,
@@ -361,13 +361,13 @@ pub struct For<'a> {
 	pub body: Block<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Statement<'a> {
 	pub kind: StatementKind<'a>,
 	pub debug_location: DebugLocation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum StatementKind<'a> {
 	Expression(Expression<'a>),
 
@@ -384,7 +384,7 @@ pub enum StatementKind<'a> {
 	Return(Box<Return<'a>>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Binding<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
@@ -392,27 +392,27 @@ pub struct Binding<'a> {
 	pub readable_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Defer<'a> {
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Break {
 	pub loop_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Continue {
 	pub loop_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Return<'a> {
 	pub expression: Option<Expression<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
@@ -446,7 +446,7 @@ impl<'a> Expression<'a> {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ExpressionKind<'a> {
 	AnyCollapse,
 	Void,
@@ -463,6 +463,7 @@ pub enum ExpressionKind<'a> {
 	CodepointLiteral(CodepointLiteral),
 	ByteCodepointLiteral(ByteCodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
+	FormatStringLiteral(FormatStringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),
@@ -479,6 +480,7 @@ pub enum ExpressionKind<'a> {
 
 	EnumVariantToEnum(Box<EnumVariantToEnum<'a>>),
 	SliceMutableToImmutable(Box<SliceMutableToImmutable<'a>>),
+	StringToFormatString(Box<StringToFormatString<'a>>),
 }
 
 impl<'a> ExpressionKind<'a> {
@@ -496,6 +498,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::CodepointLiteral(_) => "codepoint literal",
 			ExpressionKind::ByteCodepointLiteral(_) => "byte codepoint literal",
 			ExpressionKind::StringLiteral(_) => "string literal",
+			ExpressionKind::FormatStringLiteral(_) => "format string literal",
 			ExpressionKind::ArrayLiteral(_) => "array literal",
 			ExpressionKind::StructLiteral(_) => "struct literal",
 			ExpressionKind::Call(_) => "function call",
@@ -508,6 +511,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::CheckIs(_) => "check is operation",
 			ExpressionKind::EnumVariantToEnum(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
+			ExpressionKind::StringToFormatString(inner) => inner.expression.kind.name_with_article(),
 		}
 	}
 
@@ -525,6 +529,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::CodepointLiteral(_) => "a codepoint literal",
 			ExpressionKind::ByteCodepointLiteral(_) => "a byte codepoint literal",
 			ExpressionKind::StringLiteral(_) => "a string literal",
+			ExpressionKind::FormatStringLiteral(_) => "a format string literal",
 			ExpressionKind::ArrayLiteral(_) => "an array literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::Call(_) => "a function call",
@@ -537,6 +542,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::CheckIs(_) => "a check is operation",
 			ExpressionKind::EnumVariantToEnum(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
+			ExpressionKind::StringToFormatString(inner) => inner.expression.kind.name_with_article(),
 		}
 	}
 }
@@ -795,25 +801,36 @@ pub struct StringLiteral<'a> {
 	pub value: Cow<'a, str>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub enum FormatStringItem<'a> {
+	Text(Cow<'a, str>),
+	Expression(Expression<'a>),
+}
+
+#[derive(Debug)]
+pub struct FormatStringLiteral<'a> {
+	pub items: Vec<FormatStringItem<'a>>,
+}
+
+#[derive(Debug)]
 pub struct ArrayLiteral<'a> {
 	pub type_id: TypeId,
 	pub pointee_type_id: TypeId,
 	pub expressions: Vec<Expression<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct StructLiteral<'a> {
 	pub type_id: TypeId,
 	pub field_initializers: Vec<FieldInitializer<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FieldInitializer<'a> {
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Call<'a> {
 	pub span: Span,
 	pub name: &'a str,
@@ -821,14 +838,14 @@ pub struct Call<'a> {
 	pub arguments: Vec<Expression<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MethodCall<'a> {
 	pub base: Expression<'a>,
 	pub function_id: FunctionId,
 	pub arguments: Vec<Expression<'a>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Read<'a> {
 	pub name: &'a str,
 	pub readable_index: usize,
@@ -845,7 +862,7 @@ pub enum FieldReadImmutableReason {
 	ReadOnly,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FieldRead<'a> {
 	pub base: Expression<'a>,
 	pub name: &'a str,
@@ -853,7 +870,7 @@ pub struct FieldRead<'a> {
 	pub immutable_reason: Option<FieldReadImmutableReason>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum UnaryOperator<'a> {
 	Negate,
 	Invert,
@@ -865,14 +882,14 @@ pub enum UnaryOperator<'a> {
 	RangeIndex { index_expression: Expression<'a> },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct UnaryOperation<'a> {
 	pub op: UnaryOperator<'a>,
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BinaryOperation<'a> {
 	pub op: BinaryOperator,
 	pub left: Expression<'a>,
@@ -880,7 +897,7 @@ pub struct BinaryOperation<'a> {
 	pub type_id: TypeId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CheckIs<'a> {
 	pub left: Expression<'a>,
 	pub binding: Option<ResultBinding>,
@@ -893,13 +910,18 @@ pub struct ResultBinding {
 	pub readable_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EnumVariantToEnum<'a> {
 	pub type_id: TypeId,
 	pub expression: Expression<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SliceMutableToImmutable<'a> {
+	pub expression: Expression<'a>,
+}
+
+#[derive(Debug)]
+pub struct StringToFormatString<'a> {
 	pub expression: Expression<'a>,
 }

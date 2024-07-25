@@ -1,4 +1,3 @@
-import fae::stdout::print_string
 import fae::libc::StdInDescription, atol, printf, rand
 import fae::collections::list::List
 import fae::io::file::File
@@ -16,24 +15,24 @@ fn seed_rand() {
 fn play_round() {
 	seed_rand()
 	let number = rand().(i64) % 100
-	print_string("Guess the random number between 1 and 100\n")
+	println("Guess the random number between 1 and 100")
 
 	mut stdin = File.from_fd(StdInDescription)
 	mut buffer = List<u8>.new()
 	defer buffer.free()
 
 	while true {
-		print_string(">>> ")
+		print(">>> ")
 		stdin.read_until_newline(buffer.&mut)
 		buffer.push(0)
 
 		let guess = atol(buffer.items.pointer)
 		printf("You guessed %d\n".pointer, guess)
 
-		if guess < number => print_string("Too low\n")
-		else if guess > number  => print_string("Too high\n")
+		if guess < number => println("Too low")
+		else if guess > number  => println("Too high")
 		else {
-			print_string("That was the number!\n")
+			println("That was the number!")
 			break
 		}
 	}

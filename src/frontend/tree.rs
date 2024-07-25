@@ -143,6 +143,7 @@ pub struct Struct<'a> {
 
 #[derive(Debug)]
 pub struct Enum<'a> {
+	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 	pub generics: &'a [Node<&'a str>],
 	pub name: Node<&'a str>,
 	pub shared_fields: &'a [Field<'a>],
@@ -253,7 +254,18 @@ pub struct ByteCodepointLiteral {
 
 #[derive(Debug)]
 pub struct StringLiteral<'a> {
-	pub value: Node<Cow<'a, str>>,
+	pub value: Cow<'a, str>,
+}
+
+#[derive(Debug)]
+pub enum FormatStringItem<'a> {
+	Text(Cow<'a, str>),
+	Expression(Node<Expression<'a>>),
+}
+
+#[derive(Debug)]
+pub struct FormatStringLiteral<'a> {
+	pub items: &'a [FormatStringItem<'a>],
 }
 
 #[derive(Debug)]
@@ -661,6 +673,7 @@ pub enum Expression<'a> {
 	CodepointLiteral(CodepointLiteral),
 	ByteCodepointLiteral(ByteCodepointLiteral),
 	StringLiteral(StringLiteral<'a>),
+	FormatStringLiteral(FormatStringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),

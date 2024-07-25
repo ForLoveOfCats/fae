@@ -29,6 +29,15 @@ fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
 	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
 }
 
+fn print(message: fstr) {
+	fae::format_string::print_to_stdout(message)
+}
+
+fn println(message: fstr) {
+	fae::format_string::print_to_stdout(message)
+	fae::stdout::print_newline()
+}
+
 fn panic(): noreturn {
 	fae::runtime::panic_impl("Explicit panic")
 }

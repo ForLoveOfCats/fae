@@ -5,9 +5,10 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
-	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FunctionId, FunctionShape, IfElseChain,
-	IntegerValue, Match, MethodCall, Read, Return, SliceMutableToImmutable, StatementKind, StaticRead, StringLiteral,
-	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral,
+	FunctionId, FunctionShape, IfElseChain, IntegerValue, Match, MethodCall, Read, Return, SliceMutableToImmutable,
+	StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
+	While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -277,6 +278,10 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 
 		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
 
+		ExpressionKind::FormatStringLiteral(literal) => {
+			generate_format_string_literal(context, generator, literal, debug_location)
+		}
+
 		ExpressionKind::ArrayLiteral(literal) => generate_array_literal(context, generator, literal, debug_location),
 
 		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal, debug_location),
@@ -299,6 +304,10 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 
 		ExpressionKind::SliceMutableToImmutable(conversion) => {
 			generate_mutable_slice_to_immutable(context, generator, conversion)
+		}
+
+		ExpressionKind::StringToFormatString(conversion) => {
+			generate_string_to_format_string(context, generator, conversion, debug_location)
 		}
 
 		ExpressionKind::EnumVariantToEnum(conversion) => generate_enum_variant_to_enum(context, generator, conversion),
@@ -441,6 +450,64 @@ fn generate_byte_codepoint_literal<G: Generator>(
 
 fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, literal: &StringLiteral) -> Option<G::Binding> {
 	Some(generator.generate_string_literal(context.type_store, &literal.value))
+}
+
+fn generate_format_string_literal<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	literal: &'b FormatStringLiteral<'a>,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
+	let pointee_type_id = context.lang_items.format_string_item_type.unwrap();
+	let type_id = context.type_store.format_string_type_id();
+
+	let enum_entry = context.type_store.type_entries.get(pointee_type_id);
+	let (enum_shape_index, enum_specialization_index) = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		_ => unreachable!("{:?}", enum_entry.kind),
+	};
+
+	let mut elements = Vec::with_capacity(literal.items.len());
+	for item in &literal.items {
+		match item {
+			FormatStringItem::Text(text) => {
+				let variant_type_id = context.type_store.string_type_id();
+				let variant_index = variant_type_id.format_item_variant_index(context.type_store);
+
+				let variant_binding = generator.generate_string_literal(context.type_store, text);
+
+				let wrapped = generator.generate_enum_variant_to_enum(
+					context.type_store,
+					pointee_type_id,
+					enum_shape_index,
+					enum_specialization_index,
+					variant_index,
+					Some(variant_binding),
+				);
+
+				elements.push(wrapped);
+			}
+
+			FormatStringItem::Expression(expression) => {
+				let variant_type_id = context.specialize_type_id(expression.type_id);
+				let variant_index = variant_type_id.format_item_variant_index(context.type_store);
+
+				let variant_binding = generate_expression(context, generator, expression);
+				let wrapped = generator.generate_enum_variant_to_enum(
+					context.type_store,
+					pointee_type_id,
+					enum_shape_index,
+					enum_specialization_index,
+					variant_index,
+					variant_binding,
+				);
+
+				elements.push(wrapped);
+			}
+		}
+	}
+
+	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
 }
 
 fn generate_array_literal<'a, 'b, G: Generator>(
@@ -612,7 +679,7 @@ fn generate_field_read<'a, 'b, G: Generator>(
 		}
 	}
 
-	generator.generate_field_read(context.type_store, base, read.field_index, debug_location)
+	generator.generate_field_read(context.lang_items, context.type_store, base, read.field_index, debug_location)
 }
 
 fn generate_unary_operation<'a, 'b, G: Generator>(
@@ -773,6 +840,39 @@ fn generate_mutable_slice_to_immutable<'a, 'b, G: Generator>(
 	Some(generate_expression(context, generator, &conversion.expression).unwrap())
 }
 
+fn generate_string_to_format_string<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	conversion: &'b StringToFormatString<'a>,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
+	let string_binding = generate_expression(context, generator, &conversion.expression).unwrap();
+
+	let pointee_type_id = context.lang_items.format_string_item_type.unwrap();
+	let type_id = context.type_store.format_string_type_id();
+
+	let enum_entry = context.type_store.type_entries.get(pointee_type_id);
+	let (enum_shape_index, enum_specialization_index) = match enum_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		_ => unreachable!("{:?}", enum_entry.kind),
+	};
+
+	let variant_type_id = context.type_store.string_type_id();
+	let variant_index = variant_type_id.format_item_variant_index(context.type_store);
+
+	let wrapped = generator.generate_enum_variant_to_enum(
+		context.type_store,
+		pointee_type_id,
+		enum_shape_index,
+		enum_specialization_index,
+		variant_index,
+		Some(string_binding),
+	);
+
+	let elements = vec![wrapped];
+	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
+}
+
 fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
 	context: &mut Context<'a, 'b>,
 	generator: &mut G,
@@ -791,8 +891,7 @@ fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
 
 	let variant_binding = generate_expression(context, generator, &conversion.expression);
 
-	let conversion_type_id = context.specialize_type_id(conversion.type_id);
-	let type_id = context.specialize_type_id(conversion_type_id);
+	let type_id = context.specialize_type_id(conversion.type_id);
 	let entry = context.type_store.type_entries.get(type_id);
 	let (shape_index, specialization_index) = match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),

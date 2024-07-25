@@ -125,6 +125,7 @@ pub trait Generator {
 
 	fn generate_field_read(
 		&mut self,
+		lang_items: &LangItems,
 		type_store: &mut TypeStore,
 		base: Self::Binding,
 		field_index: usize,

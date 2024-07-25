@@ -1,24 +1,24 @@
-	import fae::stdout::print_i32, print_newline
+import fae::stdout::print_i32, print_newline
 
 fn main() {
-	print("A")
+	print_case("A")
 	while true {
-		print("B")
+		print_case("B")
 		break
-		print("C")
+		print_case("C")
 	}
-	print("D")
+	print_case("D")
 
 	while true {
-		print("E")
+		print_case("E")
 		while true {
-			print("F")
+			print_case("F")
 			break
-			print("G")			
+			print_case("G")			
 		}
-		print("H")
+		print_case("H")
 		break
-		print("I")
+		print_case("I")
 	}
 
 	mut index: i32 = 0
@@ -32,7 +32,7 @@ fn main() {
 	}
 }
 
-fn print(string: str) {
+fn print_case(string: str) {
 	import fae::stdout::print_string
 	print_string(string)
 	print_newline()

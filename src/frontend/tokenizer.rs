@@ -8,6 +8,7 @@ pub enum TokenKind {
 	Word,
 	Number,
 	String,
+	FormatString,
 	Codepoint,
 	ByteCodepoint,
 
@@ -74,6 +75,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::Word => "word",
 			TokenKind::Number => "number",
 			TokenKind::String => "string literal",
+			TokenKind::FormatString => "format string literal",
 			TokenKind::Codepoint => "codepoint literal",
 			TokenKind::ByteCodepoint => "byte codepoint literal",
 
@@ -155,8 +157,9 @@ impl<'a> Token<'a> {
 
 pub struct Tokens<'a> {
 	index: usize,
-	tokens: Vec<Token<'a>>,
+	pub tokens: Vec<Token<'a>>,
 	line_starts: Vec<usize>, // zero indexed line number -> line's starting byte offset
+	source: &'a str,
 }
 
 impl<'a> Tokens<'a> {
@@ -166,6 +169,10 @@ impl<'a> Tokens<'a> {
 
 	pub fn take_line_starts(&mut self) -> Vec<usize> {
 		std::mem::take(&mut self.line_starts)
+	}
+
+	pub fn source(&self) -> &'a str {
+		self.source
 	}
 
 	#[inline]
@@ -254,6 +261,24 @@ impl<'a> Tokenizer<'a> {
 		}
 	}
 
+	pub fn new_substring(
+		file_index: u32,
+		source: &'a str,
+		starting_offset: usize,
+		substring_length: usize,
+		line_index: u32,
+	) -> Tokenizer<'a> {
+		let source = &source[..starting_offset + substring_length];
+
+		Tokenizer {
+			file_index,
+			source,
+			bytes: source.as_bytes(),
+			offset: starting_offset,
+			line_index,
+		}
+	}
+
 	pub fn tokenize(&mut self, mut tokens: Vec<Token<'a>>, messages: &mut Messages) -> Tokens<'a> {
 		tokens.clear();
 
@@ -265,7 +290,7 @@ impl<'a> Tokenizer<'a> {
 			tokens.push(token);
 		}
 
-		Tokens { index: 0, tokens, line_starts }
+		Tokens { index: 0, tokens, line_starts, source: self.source }
 	}
 
 	#[inline]
@@ -708,6 +733,34 @@ impl<'a> Tokenizer<'a> {
 				))
 			}
 
+			[b'f', b'\"', ..] => {
+				let start_index = self.offset;
+				self.offset += 1;
+
+				loop {
+					self.offset += 1;
+					self.verify_not_eof(messages)?;
+
+					if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
+						self.offset += 1;
+						continue;
+					}
+
+					if self.bytes[self.offset] == b'\"' {
+						break;
+					}
+				}
+
+				Ok(Token::new(
+					&self.source[start_index + 2..self.offset],
+					FormatString,
+					start_index,
+					self.offset + 1,
+					self.file_index,
+					self.line_index,
+				))
+			}
+
 			[b'\"', ..] => {
 				let start_index = self.offset;
 				loop {
@@ -738,7 +791,8 @@ impl<'a> Tokenizer<'a> {
 				let start_index = self.offset;
 				let is_numeral = if self.bytes[start_index] == b'-' {
 					self.offset += 1;
-					self.offset < self.bytes.len() && self.bytes[self.offset].is_ascii_digit()
+					assert!(self.offset < self.bytes.len() && self.bytes[self.offset].is_ascii_digit());
+					true
 				} else {
 					self.bytes[start_index].is_ascii_digit()
 				};
@@ -792,16 +846,26 @@ impl<'a> Tokenizer<'a> {
 					}
 				}
 
-				self.offset -= 1;
-
-				Ok(Token::new(
-					&self.source[start_index..self.offset + 1],
-					Word,
-					start_index,
-					self.offset + 1,
-					self.file_index,
-					self.line_index,
-				))
+				if is_numeral {
+					return Ok(Token::new(
+						&self.source[start_index..self.offset],
+						Number,
+						start_index,
+						self.offset,
+						self.file_index,
+						self.line_index,
+					));
+				} else {
+					self.offset -= 1;
+					Ok(Token::new(
+						&self.source[start_index..self.offset + 1],
+						Word,
+						start_index,
+						self.offset + 1,
+						self.file_index,
+						self.line_index,
+					))
+				}
 			}
 		};
 

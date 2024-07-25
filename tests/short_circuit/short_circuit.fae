@@ -12,7 +12,7 @@ fn returns_false(string: str): bool {
 	return false
 }
 
-fn print(value: bool) {
+fn print_case(value: bool) {
 	print_bool(value)
 	print_newline()
 	print_newline()
@@ -20,16 +20,16 @@ fn print(value: bool) {
 
 fn main() {
 	print_string("And:\n")
-	print(returns_true("A") and returns_true("B"))
-	print(returns_true("A") and returns_false("B"))
-	print(returns_false("A") and returns_true("B"))
-	print(returns_false("A") and returns_false("B"))
+	print_case(returns_true("A") and returns_true("B"))
+	print_case(returns_true("A") and returns_false("B"))
+	print_case(returns_false("A") and returns_true("B"))
+	print_case(returns_false("A") and returns_false("B"))
 
 	print_newline()
 
 	print_string("Or:\n")
-	print(returns_true("A") or returns_true("B"))
-	print(returns_true("A") or returns_false("B"))
-	print(returns_false("A") or returns_true("B"))
-	print(returns_false("A") or returns_false("B"))
+	print_case(returns_true("A") or returns_true("B"))
+	print_case(returns_true("A") or returns_false("B"))
+	print_case(returns_false("A") or returns_true("B"))
+	print_case(returns_false("A") or returns_false("B"))
 }

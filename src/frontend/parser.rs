@@ -7,7 +7,7 @@ use bumpalo::Bump;
 use crate::frontend::error::{Messages, ParseResult};
 use crate::frontend::file::SourceFile;
 use crate::frontend::span::Span;
-use crate::frontend::tokenizer::{Token, TokenKind, Tokens};
+use crate::frontend::tokenizer::{Token, TokenKind, Tokenizer, Tokens};
 use crate::frontend::tree::*;
 
 pub fn parse_file<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>, file: &'a SourceFile) -> File<'a> {
@@ -504,9 +504,14 @@ fn parse_expression_atom<'a>(
 
 		TokenKind::String => {
 			let string_token = tokens.next()?;
-			let text = parse_string_contents(string_token.text);
-			let value = Node::from_token(text, string_token);
+			let value = parse_string_contents(string_token.text);
 			Ok(Node::from_token(Expression::StringLiteral(StringLiteral { value }), string_token))
+		}
+
+		TokenKind::FormatString => {
+			let string_token = tokens.next()?;
+			let value = parse_format_string_contents(bump, messages, tokens, string_token);
+			Ok(Node::from_token(Expression::FormatStringLiteral(value), string_token))
 		}
 
 		TokenKind::Codepoint => {
@@ -822,7 +827,7 @@ fn parse_codepoint_contents(messages: &mut Messages, token: Token) -> ParseResul
 	Ok(token.text.chars().next().unwrap())
 }
 
-fn parse_string_contents(string: &str) -> Cow<str> {
+fn parse_string_contents<'a>(string: &'a str) -> Cow<'a, str> {
 	let mut allocated = String::new();
 
 	let mut index = 0;
@@ -855,6 +860,89 @@ fn parse_string_contents(string: &str) -> Cow<str> {
 	}
 
 	Cow::Borrowed(string)
+}
+
+fn parse_format_string_contents<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &Tokens<'a>,
+	token: Token<'a>,
+) -> FormatStringLiteral<'a> {
+	let string = token.text;
+	let file_index = token.span.file_index;
+	let source = tokens.source();
+
+	let mut items = BumpVec::new_in(bump);
+	let mut allocated = String::new();
+
+	let mut index = 0;
+	let mut last_extend_index = 0;
+	while index < string.len() {
+		let mut escape = "";
+		match string[index..].as_bytes() {
+			[b'\\', b'n', ..] => escape = "\n",
+			[b'\\', b'r', ..] => escape = "\r",
+			[b'\\', b't', ..] => escape = "\t",
+			[b'\\', b'\\', ..] => escape = "\\",
+			[b'\\', b'"', ..] => escape = "\"",
+			[b'\\', b'0', ..] => escape = "\0",
+
+			[b'\\', b'{', ..] => escape = "{",
+
+			_ => {}
+		}
+
+		if !escape.is_empty() {
+			allocated.push_str(&string[last_extend_index..index]);
+			last_extend_index = index + 2;
+			index += 1;
+			allocated.push_str(escape);
+		} else if string.as_bytes()[index] == b'{' {
+			if (last_extend_index..index).len() > 0 {
+				allocated.push_str(&string[last_extend_index..index]);
+				let cow = Cow::Owned(allocated);
+				allocated = String::new();
+				items.push(FormatStringItem::Text(cow));
+			}
+
+			index += 1;
+			let start_index = index;
+			let substring_start = token.span.start + 2 + index;
+
+			while index < string.len() {
+				if string.as_bytes()[index] == b'}' {
+					break;
+				}
+				index += 1;
+			}
+
+			if string.as_bytes()[index] != b'}' {
+				panic!();
+			}
+
+			let substring_length = index - start_index;
+			let lines_up_to_point = string.as_bytes()[..start_index].iter().filter(|&&byte| byte == b'\n').count() as u32;
+			let line_index = token.span.line_index + lines_up_to_point;
+			let mut tokenizer = Tokenizer::new_substring(file_index, source, substring_start, substring_length, line_index);
+			let mut tokens = tokenizer.tokenize(Vec::new(), messages);
+
+			if let Ok(expression) = parse_expression(bump, messages, &mut tokens, true) {
+				items.push(FormatStringItem::Expression(expression));
+			}
+
+			last_extend_index = index + 1;
+		}
+
+		index += 1;
+	}
+
+	if last_extend_index < string.len() {
+		allocated.push_str(&string[last_extend_index..]);
+		let cow = Cow::Owned(allocated);
+		items.push(FormatStringItem::Text(cow));
+	}
+
+	FormatStringLiteral { items: items.into_bump_slice() }
 }
 
 fn parse_when_else_chain<'a>(
@@ -1721,6 +1809,7 @@ fn parse_enum_declaration<'a>(
 	attributes: Attributes<'a>,
 	consume_newline: bool,
 ) -> ParseResult<Enum<'a>> {
+	let lang_attribute = attributes.lang_attribute;
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
 		None => &[],
@@ -1813,6 +1902,7 @@ fn parse_enum_declaration<'a>(
 	}
 
 	Ok(Enum {
+		lang_attribute,
 		generics,
 		name,
 		shared_fields: shared_fields.into_bump_slice(),

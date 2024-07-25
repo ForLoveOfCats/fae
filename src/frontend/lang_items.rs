@@ -6,6 +6,7 @@ use crate::frontend::type_store::TypeId;
 #[derive(Debug)]
 pub struct LangItems {
 	pub range_type: Option<TypeId>,
+	pub format_string_item_type: Option<TypeId>,
 
 	pub slice_index_out_of_bounds: Option<FunctionId>,
 	pub slice_range_inverted: Option<FunctionId>,
@@ -19,10 +20,13 @@ impl LangItems {
 	pub fn new() -> LangItems {
 		LangItems {
 			range_type: None,
+			format_string_item_type: None,
+
 			slice_index_out_of_bounds: None,
 			slice_range_inverted: None,
 			slice_range_start_out_of_bounds: None,
 			slice_range_end_out_of_bounds: None,
+
 			for_range_inverted: None,
 		}
 	}
@@ -30,6 +34,8 @@ impl LangItems {
 	pub fn register_lang_type(&mut self, messages: &mut Messages, type_id: TypeId, lang_name: &str, span: Span) {
 		match lang_name {
 			"range_type" => self.range_type = Some(type_id),
+
+			"format_string_item_type" => self.format_string_item_type = Some(type_id),
 
 			_ => {
 				let error = error!("Unknown lang item type {lang_name:?}");

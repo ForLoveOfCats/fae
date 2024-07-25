@@ -1,6 +1,6 @@
 import fae::stdout::print_string, print_newline
 
-fn print(string: str) {
+fn print_case(string: str) {
 	print_string(string)
 	print_newline()
 }
@@ -8,48 +8,48 @@ fn print(string: str) {
 fn main() {
 	if true {
 		if false {
-			print("a")
+			print_case("a")
 		} else {
-			print("1")
+			print_case("1")
 		}
 
 		if true {
-			print("b")
+			print_case("b")
 		} else {
-			print("2")
+			print_case("2")
 		}
 	}
 
-	print("c")
+	print_case("c")
 
 	if false {
-		print("d")
+		print_case("d")
 		if true {
-			print("e")
+			print_case("e")
 		}
 	} else if true {
-		print("3")
+		print_case("3")
 	} else{
-		print("4")
+		print_case("4")
 	}
 
 	if true {
-		print("f")
+		print_case("f")
 		if true {
-			print("g")
+			print_case("g")
 			if false {
-				print("5")
+				print_case("5")
 			} else if true {
-				print("h")
+				print_case("h")
 			} else {
-				print("6")
+				print_case("6")
 			}
-			print("i")
+			print_case("i")
 		} else {
-			print("7")
+			print_case("7")
 		}
-		print("j")
+		print_case("j")
 	}
 
-	print("k")
+	print_case("k")
 }

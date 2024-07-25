@@ -162,7 +162,7 @@ impl LLVMTypes {
 
 				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
 
-				PrimativeKind::String => self.slice_struct,
+				PrimativeKind::String | PrimativeKind::FormatString => self.slice_struct,
 
 				PrimativeKind::AnyCollapse
 				| PrimativeKind::NoReturn
@@ -1413,6 +1413,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_field_read(
 		&mut self,
+		lang_items: &LangItems,
 		type_store: &mut TypeStore,
 		base: Self::Binding,
 		field_index: usize,
@@ -1500,6 +1501,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 					type_store.usize_type_id()
 				}
+			}
+
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::FormatString } => {
+				assert_eq!(index, 0);
+				field_type = self.llvm_types.slice_struct;
+				field_pointer = pointer;
+				type_store.slice_of(lang_items.format_string_item_type.unwrap(), false)
 			}
 
 			TypeEntryKind::Slice(_) => {

@@ -1139,7 +1139,9 @@ fn create_block_types<'a>(
 		} else if let tree::Statement::Enum(statement) = statement {
 			let shape_index = create_block_enum(
 				messages,
+				lang_items,
 				type_store,
+				function_store,
 				symbols,
 				function_initial_scope_count,
 				enclosing_generic_parameters,
@@ -1233,8 +1235,10 @@ fn create_block_struct<'a>(
 }
 
 fn create_block_enum<'a>(
-	messages: &mut Messages,
+	messages: &mut Messages<'a>,
+	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
@@ -1317,6 +1321,22 @@ fn create_block_enum<'a>(
 	assert_eq!(user_types.len(), enum_shape_index);
 	let shape_index = TypeStore::register_type(&mut user_types, name, generic_parameters, kind, scope_id, span);
 	drop(user_types);
+
+	if let Some(lang_attribute) = statement.lang_attribute {
+		let type_id = type_store
+			.get_or_add_shape_specialization(
+				messages,
+				function_store,
+				&[],
+				&mut Vec::new(),
+				shape_index,
+				None,
+				Ref::new(TypeArguments::new_from_explicit(Vec::new())),
+			)
+			.unwrap();
+		let lang_name = lang_attribute.item.name;
+		lang_items.write().register_lang_type(messages, type_id, lang_name, span);
+	}
 
 	let kind = SymbolKind::Type { shape_index };
 	let symbol = Symbol { name, kind, span: Some(span) };
@@ -2983,6 +3003,8 @@ pub fn validate_expression<'a>(
 
 		tree::Expression::StringLiteral(literal) => validate_string_literal(context, literal, span),
 
+		tree::Expression::FormatStringLiteral(literal) => validate_format_string_literal(context, literal, span),
+
 		tree::Expression::ArrayLiteral(literal) => {
 			context.expected_type = None;
 			context.can_is_bind = false;
@@ -3528,12 +3550,52 @@ fn validate_string_literal<'a>(
 	literal: &tree::StringLiteral<'a>,
 	span: Span,
 ) -> Expression<'a> {
-	let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.item.clone() });
+	let kind = ExpressionKind::StringLiteral(StringLiteral { value: literal.value.clone() });
 	let type_id = context.type_store.string_type_id();
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_mutable: false,
+		returns: false,
+		kind,
+		debug_location: span.debug_location(context.parsed_files),
+	}
+}
+
+fn validate_format_string_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &tree::FormatStringLiteral<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let mut items = Vec::with_capacity(literal.items.len());
+
+	for item in literal.items {
+		let item = match item {
+			tree::FormatStringItem::Text(text) => FormatStringItem::Text(text.clone()),
+
+			tree::FormatStringItem::Expression(expression) => {
+				let expression = validate_expression(context, expression);
+				if !expression.type_id.is_formattable(context.type_store) {
+					let found = context.type_name(expression.type_id);
+					let error = error!("Cannot format expression of type {found}");
+					// TODO: Add hint system
+					// let hint = hint!("Allowed types: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`, `f32`, `f64`, `bool`, `str`, and `fstr`");
+					context.message(error.span(expression.span));
+				}
+
+				FormatStringItem::Expression(expression)
+			}
+		};
+
+		items.push(item);
+	}
+
+	let kind = ExpressionKind::FormatStringLiteral(FormatStringLiteral { items });
+	let type_id = context.type_store.format_string_type_id();
+	Expression {
+		span,
+		type_id,
+		is_mutable: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -4605,6 +4667,16 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			},
 		];
 		return handle_fields(context, dot_access, base, mutable, str_fields, false, span);
+	} else if type_id.is_format_string(context.type_store) {
+		let item_type_id = context.lang_items.read().format_string_item_type.unwrap();
+		let fstr_fields = &[Field {
+			span: None,
+			name: "items",
+			type_id: context.type_store.slice_of(item_type_id, false),
+			attribute: None,
+			read_only: true,
+		}];
+		return handle_fields(context, dot_access, base, mutable, fstr_fields, false, span);
 	} else {
 		let on = base.kind.name_with_article();
 		let found = context.type_name(base.type_id);

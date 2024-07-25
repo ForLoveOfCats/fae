@@ -4,7 +4,7 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId,
-	SliceMutableToImmutable, TypeArguments,
+	SliceMutableToImmutable, StringToFormatString, TypeArguments,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
@@ -60,6 +60,21 @@ impl TypeId {
 
 	pub fn is_string(self, type_store: &TypeStore) -> bool {
 		type_store.direct_match(self, type_store.string_type_id)
+	}
+
+	pub fn is_format_string(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.format_string_type_id)
+	}
+
+	pub fn is_formattable(self, type_store: &TypeStore) -> bool {
+		let range = type_store.i8_type_id.entry..=type_store.format_string_type_id.entry;
+		range.contains(&self.entry) || self.is_any_collapse(type_store)
+	}
+
+	pub fn format_item_variant_index(self, type_store: &TypeStore) -> usize {
+		let range = type_store.i8_type_id.entry..=type_store.format_string_type_id.entry;
+		assert!(range.contains(&self.entry), "{range:?}, {}", self.entry);
+		(self.entry - type_store.i8_type_id.entry) as usize
 	}
 
 	pub fn numeric_kind(self, type_store: &TypeStore) -> Option<NumericKind> {
@@ -377,6 +392,7 @@ pub enum PrimativeKind {
 	Bool,
 	Numeric(NumericKind),
 	String,
+	FormatString,
 }
 
 impl PrimativeKind {
@@ -390,6 +406,7 @@ impl PrimativeKind {
 			PrimativeKind::Bool => "bool",
 			PrimativeKind::Numeric(numeric) => numeric.name(),
 			PrimativeKind::String => "str",
+			PrimativeKind::FormatString => "fstr",
 		}
 	}
 
@@ -402,7 +419,7 @@ impl PrimativeKind {
 			PrimativeKind::UntypedDecimal => unreachable!(),
 			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
 			PrimativeKind::Numeric(numeric) => numeric.layout(),
-			PrimativeKind::String => Layout { size: 8 * 2, alignment: 8 },
+			PrimativeKind::String | PrimativeKind::FormatString => Layout { size: 8 * 2, alignment: 8 },
 		}
 	}
 }
@@ -596,6 +613,7 @@ pub struct TypeStore<'a> {
 
 	bool_type_id: TypeId,
 	string_type_id: TypeId,
+	format_string_type_id: TypeId,
 
 	u8_slice_type_id: TypeId,
 }
@@ -645,6 +663,7 @@ impl<'a> TypeStore<'a> {
 
 		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
 		let string_type_id = push_primative(Some("str"), PrimativeKind::String);
+		let format_string_type_id = push_primative(Some("fstr"), PrimativeKind::FormatString);
 
 		let mut type_store = TypeStore {
 			debug_generics,
@@ -672,6 +691,7 @@ impl<'a> TypeStore<'a> {
 			f32_type_id,
 			f64_type_id,
 			string_type_id,
+			format_string_type_id,
 			u8_slice_type_id: TypeId { entry: u32::MAX },
 		};
 
@@ -728,6 +748,10 @@ impl<'a> TypeStore<'a> {
 
 	pub fn string_type_id(&self) -> TypeId {
 		self.string_type_id
+	}
+
+	pub fn format_string_type_id(&self) -> TypeId {
+		self.format_string_type_id
 	}
 
 	pub fn u8_slice_type_id(&self) -> TypeId {
@@ -845,6 +869,7 @@ impl<'a> TypeStore<'a> {
 		// untyped decimal -> float of large enough
 		// mutable reference -> immutable reference
 		// mutable slice -> immutable slice
+		// str -> fstr
 		// enum variant -> enum
 
 		if from.type_id.entry == self.any_collapse_type_id.entry {
@@ -1026,21 +1051,43 @@ impl<'a> TypeStore<'a> {
 
 					// TODO: This replace is a dumb solution
 					let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
+					let span = expression.span;
 					let returns = expression.returns;
+					let debug_location = expression.debug_location;
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
 					let conversion = Box::new(SliceMutableToImmutable { expression });
 					let kind = ExpressionKind::SliceMutableToImmutable(conversion);
 					*from = Expression {
-						span: from.span,
+						span,
 						type_id,
 						is_mutable: false,
 						returns,
 						kind,
-						debug_location: from.debug_location,
+						debug_location,
 					};
 					return Ok(true);
 				}
 			}
+		}
+
+		// str -> fstr
+		if from.type_id.is_string(self) && to.is_format_string(self) {
+			// TODO: This replace is a dumb solution
+			let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
+			let span = expression.span;
+			let returns = expression.returns;
+			let debug_location = expression.debug_location;
+			let conversion = Box::new(StringToFormatString { expression });
+			let kind = ExpressionKind::StringToFormatString(conversion);
+			*from = Expression {
+				span,
+				type_id: to,
+				is_mutable: false,
+				returns,
+				kind,
+				debug_location,
+			};
+			return Ok(true);
 		}
 
 		// enum variant -> enum

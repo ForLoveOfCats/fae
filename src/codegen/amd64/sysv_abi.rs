@@ -70,7 +70,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 				return &mut buffer[..1];
 			}
 
-			PrimativeKind::String => {
+			PrimativeKind::String | PrimativeKind::FormatString => {
 				buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
 				buffer[1] = Class { kind: ClassKind::Integer, size: 8 };
 				return &mut buffer[..2];
