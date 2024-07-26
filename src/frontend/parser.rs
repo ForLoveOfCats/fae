@@ -938,6 +938,9 @@ fn parse_format_string_contents<'a>(
 
 	if last_extend_index < string.len() {
 		allocated.push_str(&string[last_extend_index..]);
+	}
+
+	if !allocated.is_empty() {
 		let cow = Cow::Owned(allocated);
 		items.push(FormatStringItem::Text(cow));
 	}

@@ -1,5 +1,3 @@
-import fae::stdout::print_i32, print_string, print_newline
-
 enum VetSpecialty {
 	Mammal
 	Reptile
@@ -28,19 +26,17 @@ fn is_mammal(): bool {
 
 method Pet
 fn print_is_mammal() {
-	print_string(self.name)
-	if self.is_mammal() => print_string(" is a mammal\n")
-	else => print_string(" is not a mammal\n")
+	if self.is_mammal() => println(f"{self.name} is a mammal")
+	else => println(f"{self.name} is not a mammal")
 }
 
 method mut Pet
 fn visit_vet(specialty: VetSpecialty): BeenTreated {
-	print_string(self.name)
-	print_string(" is visiting the vet\n")
+	println(f"{self.name} is visiting the vet")
 
 	match self {
 		Cat => if specialty is Mammal {
-			print_string("The mammal vet is treating the cat\n")
+			println("The mammal vet is treating the cat")
 			return .Treated
 		}
 
@@ -48,7 +44,7 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 			// Let's say the vet visit was two hours
 			self.hours_since_last_walk += 2
 
-			print_string("The mammal vet is treating the dog\n")
+			println("The mammal vet is treating the dog")
 			return .Treated
 		}
 
@@ -56,7 +52,7 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 			// Pretend the vet decided to feed the snake
 			self.days_since_last_feeding = 0
 
-			print_string("The reptile vet is treating the snake\n")
+			println("The reptile vet is treating the snake")
 			return .Treated
 		}
 	}
@@ -67,9 +63,7 @@ fn visit_vet(specialty: VetSpecialty): BeenTreated {
 method mut Pet
 fn take_on_walk() {
 	if self is Dog and self.hours_since_last_walk >= 2 {
-		print_string("Walking a dog, it has not been walked in ")
-		print_i32(self.hours_since_last_walk)
-		print_string(" hours\n")
+		println(f"Walking a dog, it has not been walked in {self.hours_since_last_walk} hours")
 		self.hours_since_last_walk = 0
 	}
 }
@@ -88,55 +82,53 @@ fn main() {
 	dog.take_on_walk()
 	snake.take_on_walk()
 
-	print_newline()
+	println("")
 
 	if cat.visit_vet(.Mammal) is NotTreated {
-		print_string("The cat has not been treated\n")
+		println("The cat has not been treated")
 	}
 
-	print_newline()
+	println("")
 
 	if dog.visit_vet(.Mammal) is NotTreated {
-		print_string("The dog has not been treated\n")
+		println("The dog has not been treated")
 	}
 
-	print_newline()
+	println("")
 
 	if snake.visit_vet(.Mammal) is NotTreated {
-		print_string("The snake has not been treated\n")
+		println("The snake has not been treated")
 	}
 
-	print_newline()
+	println("")
 
 	cat.take_on_walk()
 	dog.take_on_walk()
 	snake.take_on_walk()
 
-	print_newline()
+	println("")
 
 	cat.print_is_mammal()
 	dog.print_is_mammal()
 	snake.print_is_mammal()
 
-	print_newline()
+	println("")
 
-	if cat is Dog, Snake => print_string("This is a dog or a snake\n")
-	else => print_string("This is not a dog nor a snake\n")
+	if cat is Dog, Snake => println("This is a dog or a snake")
+	else => println("This is not a dog nor a snake")
 
-	print_newline()
+	println("")
 
 	match snake {
-		Dog => print_string("This is a dog\n")
-		else => print_string("This is something other than a dog\n")
+		Dog => println("This is a dog")
+		else => println("This is something other than a dog")
 	}
 
-	print_newline()
+	println("")
 
 	let morty = adopt(25)
-	print_string(morty.unwrap().name)
-	print_newline()
+	println(morty.unwrap().name)
 
 	// let morty = adopt(17)
-	// print_string(morty.unwrap().name)
-	// print_newline()
+	// println(morty.unwrap().name)
 }

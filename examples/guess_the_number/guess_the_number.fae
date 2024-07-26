@@ -1,4 +1,4 @@
-import fae::libc::StdInDescription, atol, printf, rand
+import fae::libc::StdInDescriptor, atol, printf, rand
 import fae::collections::list::List
 import fae::io::file::File
 
@@ -17,7 +17,7 @@ fn play_round() {
 	let number = rand().(i64) % 100
 	println("Guess the random number between 1 and 100")
 
-	mut stdin = File.from_fd(StdInDescription)
+	mut stdin = File.from_fd(StdInDescriptor)
 	mut buffer = List<u8>.new()
 	defer buffer.free()
 
@@ -27,7 +27,7 @@ fn play_round() {
 		buffer.push(0)
 
 		let guess = atol(buffer.items.pointer)
-		printf("You guessed %d\n".pointer, guess)
+		println(f"You guessed {guess}")
 
 		if guess < number => println("Too low")
 		else if guess > number  => println("Too high")

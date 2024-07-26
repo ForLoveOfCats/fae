@@ -1,6 +1,6 @@
-const StdInDescription: i32 = 0
-const StdOutDescription: i32 = 1
-const StdErrDescription: i32 = 2
+const StdInDescriptor: i32 = 0
+const StdOutDescriptor: i32 = 1
+const StdErrDescriptor: i32 = 2
 
 when PlatformLinux {
 	extern "stdin"
