@@ -159,73 +159,55 @@ fn logic_{index}(addend: i32): i32 {{
 	let e: i64 = the_struct.fifth
 	let f = the_struct.sixth.!
 
-	print_i32(a)
-	print_newline()
+	println(f"{{a}}")
+	println(f"{{b}}")
+	println(f"{{c}}")
+	println(f"{{d}}")
+	println(f"{{e}}")
+	println(f"{{f}}")
 
-	print_f64(b)
-	print_newline()
-
-	print_u8(c)
-	print_newline()
-
-	print_u16(d)
-	print_newline()
-
-	print_i64(e)
-	print_newline()
-
-	print_bool(f)
-	print_newline()
-
-	match do_failable_thing<str>("Hello world\\n", 1) {{
-		result: Okay => print_string(result)
-		else => print_string("Error 1\\n")
+	match do_failable_thing<str>("Hello world", 1) {{
+		result: Okay => println(result)
+		else => println("Error 1")
 	}}
 
 	if do_failable_thing<u32>('E', 12) is error: Error {{
-		print_i32(error.index)
-		print_newline()
-	}} else => print_string("Error 2\\n")
+		println(f"{{error.index}}")
+	}} else => println("Error 2")
 
-	print_newline()
+	println("")
 
 	mut store = EntityStore<i16>.new()
 	store.entities.push(Entity{index + 1}<i16> {{ health: 100, payload: -500 }})
 	function<i16>(store.entities.&)
-	print_i16(store.entities.get(0).payload)
-	print_newline()
+	println(f"{{store.entities.get(0).payload}}")
 
-	print_newline()
+	println("")
 
 	mut enum_store: EnumEntityStore<f64> = EnumEntityStore<f64>.new_variant()
 	enum_store.shared_entities.push(Entity{index + 1}<f64> {{ health: 100, payload: 42.9 }})
 	function<f64>(enum_store.shared_entities.&)
-	print_f64(enum_store.shared_entities.get(0).payload)
-	print_newline()
+	println(f"{{enum_store.shared_entities.get(0).payload}}")
 
 	if enum_store is Variant {{
 		enum_store.shared_entities.push(Entity{index + 1}<f64> {{ health: 100, payload: 43.8 }})
 		function<f64>(enum_store.shared_entities.&)
-		print_f64(enum_store.shared_entities.get(1).payload)
-		print_newline()
+		println(f"{{enum_store.shared_entities.get(1).payload}}")
 
 		enum_store.variant_entities.push(Entity{index + 1}<f64> {{ health: 100, payload: 44.7 }})
 		function<f64>(enum_store.variant_entities.&)
-		print_f64(enum_store.variant_entities.get(0).payload)
-		print_newline()
+		println(f"{{enum_store.variant_entities.get(0).payload}}")
 	}}
 
-	print_newline()
+	println("")
 
 	mut variant_store: EnumEntityStore<i32>.Variant = EnumEntityStore<i32>.new_variant()
 	variant_store.shared_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -600 }})
 	variant_store.variant_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -700 }})
 	function<i32>(variant_store.shared_entities.&)
 	function<i32>(variant_store.variant_entities.&)
-	print_i32(variant_store.shared_entities.get(0).payload)
-	print_newline()
-	print_i32(variant_store.variant_entities.get(0).payload)
-	print_newline()
+	println(f"{{variant_store.shared_entities.get(0).payload}}")
+	println(f"{{variant_store.variant_entities.get(0).payload}}")
 
 	return file_{index + 1}::logic_{index + 1}(addend) + addend
 }}
@@ -243,7 +225,6 @@ fn do_failable_thing(arg: T, index: i32): Result<T, ErrorStruct> {{
 
 def generate_normal_file(index):
 	return f"""
-import fae::stdout::print_i16, print_i32, print_f64, print_u8, print_u16, print_i64, print_bool, print_newline, print_string
 import fae::collections::list::List
 
 {generate_normal_types(index)}
