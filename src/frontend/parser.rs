@@ -639,6 +639,7 @@ fn parse_expression_atom<'a>(
 					tokens.consume_newlines();
 				} else {
 					tokens.expect(messages, TokenKind::Newline)?;
+					tokens.consume_newlines();
 				}
 			}
 
