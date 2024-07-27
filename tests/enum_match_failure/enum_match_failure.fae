@@ -1,5 +1,3 @@
-import fae::stdout::print_u8, print_f64, print_string
-
 fn main() {
 	function(Enum.A)
 	function(Enum.B { field: 99.2 })
@@ -9,16 +7,15 @@ fn main() {
 
 fn function(arg: Enum) {
 	match arg {
-		C => print_string("C\n")
+		C => println("C")
 
 		B, A {
-			print_f64(arg.field)
-			print_string(" is B\n")
+			println(f"{arg.field} is B")
 		}
 
 		A {}
 
-		C => print_string("other C\n")
+		C => println("other C")
 	}
 }
 

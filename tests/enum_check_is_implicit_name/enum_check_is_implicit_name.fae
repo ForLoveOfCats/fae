@@ -1,19 +1,15 @@
-import fae::stdout::print_f64, print_string, print_newline
-
 fn main() {
 	let first: Enum = Enum.A
 	let second: Enum = Enum.C { field: 42 }
 
 	if first is C {
-		print_string("First is C\n")
+		println("First is C")
 	} else {
-		print_string("First is not C\n")
+		println("First is not C")
 	}
 
 	if second is C {
-		print_string("Second is C: ")
-		print_f64(second.field)
-		print_newline()
+		println(f"Second is C: {second.field}")
 	}
 
 	first.check_c()
@@ -29,8 +25,6 @@ enum Enum {
 method Enum
 fn check_c() {
 	if self is C {
-		print_string("Self is C, divided: ")
-		print_f64(self.field / 2)
-		print_newline()
+		println(f"Self is C, divided: {self.field / 2}")
 	}
 }

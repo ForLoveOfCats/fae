@@ -1,10 +1,6 @@
-import fae::stdout::print_i32, print_newline
-
 fn func(slice: []mut i32) {
-	print_i32(slice[0])
-	print_newline()
-	print_i32(slice[1])
-	print_newline()
+	println(f"{slice[0]}")
+	println(f"{slice[1]}")
 }
 
 fn main() {

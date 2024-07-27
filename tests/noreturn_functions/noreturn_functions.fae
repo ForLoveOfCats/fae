@@ -1,11 +1,6 @@
-import fae::stdout::print_i32, print_newline
-
 fn main() {
-	print_i32(must_return(true))
-	print_newline()
-
-	print_i32(must_return(false))
-	print_newline()
+	println(f"{must_return(true)}")
+	println(f"{must_return(false)}")
 }
 
 fn must_return(arg: bool): i32 {

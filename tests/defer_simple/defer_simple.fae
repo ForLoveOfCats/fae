@@ -1,26 +1,24 @@
-import fae::stdout::print_string
-
 fn main() {
-	print_string("A\n")
+	println("A")
 
-	defer print_string("1\n")
-	defer print_string("2\n")
+	defer println("1")
+	defer println("2")
 
-	print_string("B\n")
+	println("B")
 
 	{
-		print_string("C\n")
+		println("C")
 
-		defer print_string("3\n")
-		defer print_string("4\n")
+		defer println("3")
+		defer println("4")
 
-		print_string("D\n")
+		println("D")
 	}
 
-	print_string("E\n")
+	println("E")
 
-	defer print_string("5\n")
-	defer print_string("6\n")
+	defer println("5")
+	defer println("6")
 
-	print_string("F\n")
+	println("F")
 }

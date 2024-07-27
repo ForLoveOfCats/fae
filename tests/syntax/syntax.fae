@@ -1,5 +1,3 @@
-import fae::stdout::print_u32, print_u8, print_string, print_newline
-
 struct MyType {
 	a: i32
 	//commented_a: T
@@ -43,39 +41,35 @@ fn main() {
 		c.b = 55
 	}
 
-	print_u32('A')
-	print_newline()
-	print_u32('ℒ')
-	print_newline()
-	print_u8(b'D')
-	print_newline()
+	println(f"{'A'}")
+	println(f"{'ℒ'}")
+	println(f"{b'D'}")
 
 	if true {
-		print_string("In true if\n")
+		println("In true if")
 	}
 
 	if false {
-		print_string("In false if\n")
+		println("In false if")
 	}
 
 	if (HasBool { field: true }.field) {
-		print_string("In struct true if\n")
+		println("In struct true if")
 	}
 	
 	if (HasBool { field: false }.field) {
-		print_string("In struct false if\n")
+		println("In struct false if")
 	}
 
 	if takes_empty(EmptyA {}) {
-		print_string("In function if\n")
+		println("In function if")
 	}
 
 	let d: u64 = generic_function<u64>(54)
 
 	let ptr: &u8 = STRING.pointer
 	let len: isize = STRING.length
-	print_string(STRING)
-	print_newline()
+	println(STRING)
 }
 
 generic T

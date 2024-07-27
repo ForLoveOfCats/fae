@@ -1,8 +1,0 @@
-import fae::stdout::print_bool, print_newline
-
-fn main() {
-	print_bool(true)
-	print_newline()
-	print_bool(false)
-	print_newline()
-}

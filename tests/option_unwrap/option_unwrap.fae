@@ -7,6 +7,5 @@ fn main() {
 }
 
 fn print_case(arg: u8) {
-	fae::stdout::print_u8(arg)
-	fae::stdout::print_newline()
+	println(f"{arg}")
 }

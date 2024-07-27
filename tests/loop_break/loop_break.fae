@@ -1,39 +1,30 @@
-import fae::stdout::print_i32, print_newline
-
 fn main() {
-	print_case("A")
+	println("A")
 	while true {
-		print_case("B")
+		println("B")
 		break
-		print_case("C")
+		println("C")
 	}
-	print_case("D")
+	println("D")
 
 	while true {
-		print_case("E")
+		println("E")
 		while true {
-			print_case("F")
+			println("F")
 			break
-			print_case("G")			
+			println("G")			
 		}
-		print_case("H")
+		println("H")
 		break
-		print_case("I")
+		println("I")
 	}
 
 	mut index: i32 = 0
 	while true {
-		print_i32(index)
-		print_newline()
+		println(f"{index}")
 		index += 1
 		if index >= 5 {
 			break
 		}
 	}
-}
-
-fn print_case(string: str) {
-	import fae::stdout::print_string
-	print_string(string)
-	print_newline()
 }

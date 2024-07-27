@@ -1,5 +1,3 @@
-import fae::stdout::print_i8, print_f32, print_f64, print_newline
-
 struct Struct {
 	field: f64
 	other: i8
@@ -19,15 +17,11 @@ fn main() {
 	let s = Struct { field, other }
 	let e = Enum.A { shared, field }
 
-	print_f64(s.field)
-	print_newline()
-	print_i8(s.other)
-	print_newline()
+	println(f"{s.field}")
+	println(f"{s.other}")
 
-	print_newline()
+	println("")
 
-	print_f32(e.shared)
-	print_newline()
-	print_f64(e.field)
-	print_newline()
+	println(f"{e.shared}")
+	println(f"{e.field}")
 }

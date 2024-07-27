@@ -1,5 +1,3 @@
-import fae::stdout::print_i32, print_newline
-
 struct MyStruct {
 	readable_field: i32 readable
 	private_field: i32 private

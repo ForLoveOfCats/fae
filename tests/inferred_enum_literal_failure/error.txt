@@ -1,31 +1,31 @@
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 4: Expected enum `Enum` has no variant named `Something`
-  4|     let a: Enum = .Something
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 2: Expected enum `Enum` has no variant named `Something`
+  2|     let a: Enum = .Something
                         ^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 5: Cannot infer enum type for variant, there is no specific expected type in this context
-  5|     let b = .WhoKnows
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 3: Cannot infer enum type for variant, there is no specific expected type in this context
+  3|     let b = .WhoKnows
                  ^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 7: Expected enum `Enum` has no variant named `Blah`
-  7|     dump_enum(.Blah)
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 5: Expected enum `Enum` has no variant named `Blah`
+  5|     dump_enum(.Blah)
                     ^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 10: Expected enum `Enum` has no variant named `Nope`
-  10|         first: .Nope
-                      ^^^^
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 8: Expected enum `Enum` has no variant named `Nope`
+  8|         first: .Nope
+                     ^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 12: Expected enum `Enum` has no variant named `Another`
-  12|         third: .Another
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 10: Expected enum `Enum` has no variant named `Another`
+  10|         third: .Another
                       ^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 15: Expected enum `Enum` has no variant named `NonExistant`
-  15|     value.update_enum(.NonExistant)
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 13: Expected enum `Enum` has no variant named `NonExistant`
+  13|     value.update_enum(.NonExistant)
                              ^^^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 17: Expected enum `Enum` has no variant named `Abc`
-  17|     value = Struct.new(.Abc { another: 6.4 }, -8)
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 15: Expected enum `Enum` has no variant named `Abc`
+  15|     value = Struct.new(.Abc { another: 6.4 }, -8)
                               ^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 19: Expected enum `Enum` has no variant named `Nope`
-  19|     let other: OtherEnum = .Variant { shared: .A, unshared: .Nope }
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 17: Expected enum `Enum` has no variant named `Nope`
+  17|     let other: OtherEnum = .Variant { shared: .A, unshared: .Nope }
                                                                    ^^^^

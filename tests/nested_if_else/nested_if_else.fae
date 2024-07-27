@@ -1,55 +1,48 @@
-import fae::stdout::print_string, print_newline
-
-fn print_case(string: str) {
-	print_string(string)
-	print_newline()
-}
-
 fn main() {
 	if true {
 		if false {
-			print_case("a")
+			println("a")
 		} else {
-			print_case("1")
+			println("1")
 		}
 
 		if true {
-			print_case("b")
+			println("b")
 		} else {
-			print_case("2")
+			println("2")
 		}
 	}
 
-	print_case("c")
+	println("c")
 
 	if false {
-		print_case("d")
+		println("d")
 		if true {
-			print_case("e")
+			println("e")
 		}
 	} else if true {
-		print_case("3")
+		println("3")
 	} else{
-		print_case("4")
+		println("4")
 	}
 
 	if true {
-		print_case("f")
+		println("f")
 		if true {
-			print_case("g")
+			println("g")
 			if false {
-				print_case("5")
+				println("5")
 			} else if true {
-				print_case("h")
+				println("h")
 			} else {
-				print_case("6")
+				println("6")
 			}
-			print_case("i")
+			println("i")
 		} else {
-			print_case("7")
+			println("7")
 		}
-		print_case("j")
+		println("j")
 	}
 
-	print_case("k")
+	println("k")
 }

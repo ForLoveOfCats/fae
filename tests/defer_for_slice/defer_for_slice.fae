@@ -1,59 +1,51 @@
-import fae::stdout::print_isize, print_string, print_newline
-
 fn main() {
 	let slice = []{ "Hello", "Fae", "world" }
 
 	breaks(slice, false)
-	print_newline()
+	println("")
 	breaks(slice, true)
 
-	print_newline()
-	print_newline()
-	print_newline()
+	println("")
+	println("")
+	println("")
 
 	continues(slice, false)
-	print_newline()
+	println("")
 	continues(slice, true)
 }
 
 fn breaks(slice: []str, early_break: bool) {
-	print_string("A\n")
-	defer print_string("1\n")
+	println("A")
+	defer println("1")
 
 	for index in 0..3 {
-		defer print_string("2\n")
+		defer println("2")
 
 		if early_break => break
 
-		print_string("iteration ")
-		print_isize(index)
-		print_newline()
-
-		defer print_string("3\n")
+		println(f"iteration {index}")
+		defer println("3")
 	}
 
-	print_string("B\n")
-	defer print_string("4\n")
-	print_string("C\n")
+	println("B")
+	defer println("4")
+	println("C")
 }
 
 fn continues(slice: []str, early_continue: bool) {
-	print_string("A\n")
-	defer print_string("1\n")
+	println("A")
+	defer println("1")
 
 	for index in 0..3 {
-		defer print_string("2\n")
+		defer println("2")
 
 		if early_continue and index == 1 => break
 
-		print_string("iteration ")
-		print_isize(index)
-		print_newline()
-
-		defer print_string("3\n")
+		println(f"iteration {index}")
+		defer println("3")
 	}
 
-	print_string("B\n")
-	defer print_string("4\n")
-	print_string("C\n")
+	println("B")
+	defer println("4")
+	println("C")
 }

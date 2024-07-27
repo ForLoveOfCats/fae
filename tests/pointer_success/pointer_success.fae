@@ -1,5 +1,3 @@
-import fae::stdout::print_u32, print_i64, print_f64, print_bool, print_newline
-
 fn add_pointers(a: &u32, b: &u32): u32 {
 	return a.* + b.*
 }
@@ -7,18 +5,15 @@ fn add_pointers(a: &u32, b: &u32): u32 {
 fn main() {
 	let a: u32 = 5
 	let b: u32 = 12
-	print_u32(add_pointers(a.&, b.&)) // 17
-	print_newline()
+	println(f"{add_pointers(a.&, b.&)}") // 17
 
 	mut c: f64 = 16
 	add_to_pointer(c.&mut, 0.3)
-	print_f64(c) // 16.3
-	print_newline()
+	println(f"{c}") // 16.3
 
 	let d: i64 = -42
 	let ptr = d.&
-	print_i64(dereference<i64>(ptr)) // -42
-	print_newline()
+	println(f"{dereference<i64>(ptr)}") // -42
 }
 
 fn add_to_pointer(a: &mut f64, b: f64) {

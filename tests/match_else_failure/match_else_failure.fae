@@ -1,5 +1,3 @@
-import fae::stdout::print_string
-
 fn main() {
 	func(Enum.A)
 	func(Enum.B)
@@ -9,12 +7,12 @@ fn main() {
 
 fn func(arg: Enum) {
 	match arg {
-		A => print_string("A\n")
-		else => print_string("else 1\n")
-		C => print_string("C\n")
-		B => print_string("B\n")
-		D => print_string("D\n")
-		else => print_string("else 2\n")
+		A => println("A")
+		else => println("else 1")
+		C => println("C")
+		B => println("B")
+		D => println("D")
+		else => println("else 2")
 	}
 }
 

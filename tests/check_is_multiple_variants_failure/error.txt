@@ -1,10 +1,10 @@
-Validation warning: ./tests/check_is_multiple_variants_failure/check_is_multiple_variants_failure.fae, line 11: Duplicate enum variant `Enum.A` in list to check is
-  11|     if arg is A, D, A {
-                          ^
-Note: ./tests/check_is_multiple_variants_failure/check_is_multiple_variants_failure.fae, line 11: Existing variant entry here
-  11|     if arg is A, D, A {
-                    ^
+Validation warning: ./tests/check_is_multiple_variants_failure/check_is_multiple_variants_failure.fae, line 9: Duplicate enum variant `Enum.A` in list to check is
+  9|     if arg is A, D, A {
+                         ^
+Note: ./tests/check_is_multiple_variants_failure/check_is_multiple_variants_failure.fae, line 9: Existing variant entry here
+  9|     if arg is A, D, A {
+                   ^
 
-Validation error: ./tests/check_is_multiple_variants_failure/check_is_multiple_variants_failure.fae, line 12: No field `other` on `Enum`
-  12|         print_u8(arg.other)
-                           ^^^^^
+Validation error: ./tests/check_is_multiple_variants_failure/check_is_multiple_variants_failure.fae, line 10: No field `other` on `Enum`
+  10|         println(f"{arg.other}")
+                             ^^^^^

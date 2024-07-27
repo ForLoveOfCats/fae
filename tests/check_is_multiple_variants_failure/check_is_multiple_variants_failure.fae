@@ -1,5 +1,3 @@
-import fae::stdout::print_u8, print_f64, print_string, print_newline
-
 fn main() {
 	func(Enum.A)
 	func(Enum.B { field: 99.2 })
@@ -9,11 +7,10 @@ fn main() {
 
 fn func(arg: Enum) {
 	if arg is A, D, A {
-		print_u8(arg.other)
-		print_newline()
-		print_string("Is either A or D\n")
+		println(f"{arg.other}")
+		println("Is either A or D")
 	} else {
-		print_string("Is something other than A or D\n")
+		println("Is something other than A or D")
 	}
 }
 

@@ -1,61 +1,53 @@
-import fae::stdout::print_isize, print_string, print_newline
-
 fn main() {
 	breaks(false)
-	print_newline()
+	println("")
 	breaks(true)
 
-	print_newline()
-	print_newline()
-	print_newline()
+	println("")
+	println("")
+	println("")
 
 	continues(false)
-	print_newline()
+	println("")
 	continues(true)
 }
 
 fn breaks(early_break: bool) {
-	print_string("A\n")
-	defer print_string("1\n")
+	println("A")
+	defer println("1")
 
 	mut index: isize = 0
 	while index < 3 {
 		defer index += 1
-		defer print_string("2\n")
+		defer println("2")
 
 		if early_break => break
 
-		print_string("iteration ")
-		print_isize(index)
-		print_newline()
-
-		defer print_string("3\n")
+		println(f"iteration {index}")
+		defer println("3")
 	}
 
-	print_string("B\n")
-	defer print_string("4\n")
-	print_string("C\n")
+	println("B")
+	defer println("4")
+	println("C")
 }
 
 fn continues(early_continue: bool) {
-	print_string("A\n")
-	defer print_string("1\n")
+	println("A")
+	defer println("1")
 
 	mut index: isize = 0
 	while index < 3 {
 		defer index += 1
-		defer print_string("2\n")
+		defer println("2")
 
 		if early_continue and index == 1 => break
 
-		print_string("iteration ")
-		print_isize(index)
-		print_newline()
-
-		defer print_string("3\n")
+		println(f"iteration {index}")
+		defer println("3")
 	}
 
-	print_string("B\n")
-	defer print_string("4\n")
-	print_string("C\n")
+	println("B")
+	defer println("4")
+	println("C")
 }

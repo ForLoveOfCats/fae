@@ -1,59 +1,46 @@
-import fae::stdout::print_i32, print_isize, print_string, print_newline
-
 fn print_integers(integers: []i32) {
-	print_string("Integer slice:\n")
+	println("Integer slice:")
 
 	mut index: isize = 0
 	while index < integers.length {
-		print_string("  ")
-		print_i32(integers[index])
-		print_newline()
+		println(f"  {integers[index]}")
 		index += 1
 	}
 
-	print_newline()
+	println("")
 }	
 
 fn print_range(range: Range) {
-	print_string("Range start: ")
-	print_isize(range.start)
-	print_string(", end: ")
-	print_isize(range.end)
-	print_newline()
-}
-
-fn println_string(string: str) {
-	print_string(string)
-	print_newline()
+	println(f"Range start: {range.start}, end: {range.end}")
 }
 
 fn main() {
-	println_string("Verbatim")
+	println("Verbatim")
 	let array = []i32 { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }
 	print_integers(array)
 
-	print_newline()
+	println("")
 	
-	println_string("Full")
+	println("Full")
 	print_integers(array[0..array.length])
-	println_string("Full 2")
+	println("Full 2")
 	print_integers(array[0..10])
-	println_string("Half")
+	println("Half")
 	print_integers(array[5..10])
-	println_string("Nothing")
+	println("Nothing")
 	print_integers(array[5..5])
-	println_string("One")
+	println("One")
 	print_integers(array[5..6])
-	println_string("Two")
+	println("Two")
 	print_integers(array[5..7])
 
-	print_newline()
-	print_newline()
+	println("")
+	println("")
 
 	let message = "Hello there world"
-	println_string(message)
-	println_string(message[0..message.length])
-	println_string(message[12..message.length])
-	println_string(message[12..12])
-	println_string(message[12..13])
+	println(message)
+	println(message[0..message.length])
+	println(message[12..message.length])
+	println(message[12..12])
+	println(message[12..13])
 }

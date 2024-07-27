@@ -1,33 +1,28 @@
-import fae::stdout::print_string, print_bool, print_newline
-
 fn returns_true(string: str): bool {
-	print_string(string)
-	print_newline()
+	println(string)
 	return true
 }
 
 fn returns_false(string: str): bool {
-	print_string(string)
-	print_newline()
+	println(string)
 	return false
 }
 
 fn print_case(value: bool) {
-	print_bool(value)
-	print_newline()
-	print_newline()
+	println(f"{value}")
+	println("")
 }
 
 fn main() {
-	print_string("And:\n")
+	println("And:")
 	print_case(returns_true("A") and returns_true("B"))
 	print_case(returns_true("A") and returns_false("B"))
 	print_case(returns_false("A") and returns_true("B"))
 	print_case(returns_false("A") and returns_false("B"))
 
-	print_newline()
+	println("")
 
-	print_string("Or:\n")
+	println("Or:")
 	print_case(returns_true("A") or returns_true("B"))
 	print_case(returns_true("A") or returns_false("B"))
 	print_case(returns_false("A") or returns_true("B"))

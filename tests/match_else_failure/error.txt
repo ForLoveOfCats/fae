@@ -1,17 +1,17 @@
-Parse warning: ./tests/match_else_failure/match_else_failure.fae, line 14: Match expression arm should not follow else arm
-  14|         C => print_string("C\n")
+Parse warning: ./tests/match_else_failure/match_else_failure.fae, line 12: Match expression arm should not follow else arm
+  12|         C => println("C")
               ^
-Note: ./tests/match_else_failure/match_else_failure.fae, line 13: Match else arm here, it should be the last arm
-  13|         else => print_string("else 1\n")
+Note: ./tests/match_else_failure/match_else_failure.fae, line 11: Match else arm here, it should be the last arm
+  11|         else => println("else 1")
               ^^^^
 
-Parse error: ./tests/match_else_failure/match_else_failure.fae, line 17: Match expression may not have multiple else arms
-  17|         else => print_string("else 2\n")
+Parse error: ./tests/match_else_failure/match_else_failure.fae, line 15: Match expression may not have multiple else arms
+  15|         else => println("else 2")
               ^^^^
-Note: ./tests/match_else_failure/match_else_failure.fae, line 13: Previous else arm here
-  13|         else => print_string("else 1\n")
+Note: ./tests/match_else_failure/match_else_failure.fae, line 11: Previous else arm here
+  11|         else => println("else 1")
               ^^^^
 
-Validation warning: ./tests/match_else_failure/match_else_failure.fae, line 17: Match expression else arm will never execute, all enum variants are already covered
-  17|         else => print_string("else 2\n")
+Validation warning: ./tests/match_else_failure/match_else_failure.fae, line 15: Match expression else arm will never execute, all enum variants are already covered
+  15|         else => println("else 2")
               ^^^^

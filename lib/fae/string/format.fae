@@ -43,7 +43,7 @@ fn print_to_file_handle(handle: &FileHandle, message: fstr) {
 
 		Bool {
 			if item => fprintf(handle, "true".pointer)
-			else => fprintf(handle, "true".pointer)
+			else => fprintf(handle, "false".pointer)
 		}
 
 		String => fwrite(item.pointer, 1, item.length.(usize), handle)

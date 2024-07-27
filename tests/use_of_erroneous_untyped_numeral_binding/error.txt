@@ -1,3 +1,3 @@
-Validation error: ./tests/use_of_erroneous_untyped_numeral_binding/use_of_erroneous_untyped_numeral_binding.fae, line 4: Cannot create binding of untyped integer
-  4|     let a = 3
+Validation error: ./tests/use_of_erroneous_untyped_numeral_binding/use_of_erroneous_untyped_numeral_binding.fae, line 2: Cannot create binding of untyped integer
+  2|     let a = 3
          ^^^^^^^^^

@@ -1,15 +1,11 @@
-import fae::stdout::print_u64, print_newline
-
 fn fib(to: u64) {
-	print_u64(0)
-	print_newline()
+	println("0")
 
 	if to == 0 {
 		return
 	}
 
-	print_u64(1)
-	print_newline()
+	println("1")
 
 	if to == 1 {
 		return
@@ -17,9 +13,7 @@ fn fib(to: u64) {
 
 	fn recurse(a: u64, b: u64, to: u64, depth: u64) {
 		let sum = a + b
-
-		print_u64(sum)
-		print_newline()
+		println(f"{sum}")
 
 		if depth + 1 >= to {
 			return

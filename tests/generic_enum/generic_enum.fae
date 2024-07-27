@@ -1,8 +1,6 @@
 // Important note: This is not how error handling is intended to be done in Fae
 // This is a contrived program intended to test generic enums
 
-import fae::stdout::print_i32, print_newline
-
 fn divide(value: i32, by: i32): Enum<i32, str> {
 	if by == 0 => return .Error { value: "Divide by zero" }
 	return .Ok { value: value / by }
@@ -11,8 +9,7 @@ fn divide(value: i32, by: i32): Enum<i32, str> {
 fn main() {
 	match divide(4, 0) {
 		result: Ok {
-			print_i32(result.value)
-			print_newline()
+			println(f"{result.value}")
 		}
 
 		error: Error => print_error<i32>(error)
@@ -20,16 +17,14 @@ fn main() {
 
 	let result = divide(4, 0)
 	if result is Ok {
-		print_i32(result.value)
-		print_newline()
+		println(f"{result.value}")
 	} else if result is error: Error {
 		print_error<i32>(error)
 	}
 
 	match divide(4, 2) {
 		result: Ok {
-			print_i32(result.value)
-			print_newline()
+			println(f"{result.value}")
 		}
 
 		error: Error => print_error<i32>(error)
@@ -37,8 +32,7 @@ fn main() {
 
 	let result = divide(4, 2)
 	if result is Ok {
-		print_i32(result.value)
-		print_newline()
+		println(f"{result.value}")
 	} else if result is error: Error {
 		print_error<i32>(error)
 	}
@@ -52,9 +46,5 @@ enum Enum {
 
 generic T
 fn print_error(arg: Enum<T, str>.Error) {
-	import fae::stdout::print_string
-
-	print_string("Error: ")
-	print_string(arg.value)
-	print_newline()
+	println(f"Error: {arg.value}")
 }

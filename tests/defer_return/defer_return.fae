@@ -1,21 +1,19 @@
-import fae::stdout::print_string, print_newline
-
 fn main() {
 	function(false)
 
-	print_newline()
+	println("")
 
 	function(true)
 }
 
 fn function(early_return: bool) {
-	print_string("A\n")
-	defer print_string("1\n")
-	print_string("B\n")
+	println("A")
+	defer println("1")
+	println("B")
 
 	if early_return => return
 
-	print_string("C\n")
-	defer print_string("2\n")
-	print_string("D\n")
+	println("C")
+	defer println("2")
+	println("D")
 }

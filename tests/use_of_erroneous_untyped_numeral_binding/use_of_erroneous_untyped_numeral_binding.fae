@@ -1,6 +1,4 @@
-import fae::stdout::print_i32
-
 fn main() {
 	let a = 3
-	print_i32(a)
+	println(f"{a}")
 }

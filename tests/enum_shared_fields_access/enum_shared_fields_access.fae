@@ -1,5 +1,3 @@
-import fae::stdout::print_u8, print_u16, print_i32, print_i64, print_f32, print_f64, print_string, print_newline, print_isize
-
 fn main() {
 	let first: HasShared = HasShared.VariantA {
 		a: 2
@@ -17,86 +15,56 @@ fn main() {
 		e: -300
 	}
 
-	print_string("Sizes:\n")
-	print_isize(size_of<HasShared>())
-	print_newline()
-	print_isize(size_of<HasShared.VariantA>())
-	print_newline()
-	print_isize(size_of<HasShared.VariantB>())
-	print_newline()
-	print_newline()
+	println("Sizes:")
+	println(f"{size_of<HasShared>()}")
+	println(f"{size_of<HasShared.VariantA>()}")
+	println(f"{size_of<HasShared.VariantB>()}")
 
-	print_string("Tags:\n")
-	print_u8(first.tag)
-	print_newline()
-	print_u8(second.tag)
-	print_newline()
+	println("")
 
-	print_newline()
+	println("Tags:")
+	println(f"{first.tag}")
+	println(f"{second.tag}")
 
-	print_string("a:\n")
-	print_i32(first.a)
-	print_newline()
-	print_i32(second.a)
-	print_newline()
+	println("")
 
-	print_newline()
+	println("a:")
+	println(f"{first.a}")
+	println(f"{second.a}")
 
-	print_string("b:\n")
-	print_f64(first.b)
-	print_newline()
-	print_f64(second.b)
-	print_newline()
+	println("")
 
-	print_newline()
+	println("b:")
+	println(f"{first.b}")
+	println(f"{second.b}")
 
-	print_string("c:\n")
-	print_string(first.c)
-	print_newline()
-	print_string(second.c)
-	print_newline()
+	println("")
 
-	print_newline()
+	println("c:")
+	println(first.c)
+	println(second.c)
+
+	println("")
 	function(first.&)
-	print_newline()
+	println("")
 	function(second.&)
 }
 
 fn function(arg: &HasShared) {
 	if arg is VariantA {
-		print_string("Variant A fields:\n")
-
-		print_i32(arg.a)
-		print_newline()
-
-		print_f64(arg.b)
-		print_newline()
-
-		print_string(arg.c)
-		print_newline()
-
-		print_u8(arg.d)
-		print_newline()
-
-		print_u16(arg.e)
-		print_newline()
+		println("Variant A fields:")
+		println(f"{arg.a}")
+		println(f"{arg.b}")
+		println(arg.c)
+		println(f"{arg.d}")
+		println(f"{arg.e}")
 	} else if arg is VariantB {
-		print_string("Variant B fields:\n")
-
-		print_i32(arg.a)
-		print_newline()
-
-		print_f64(arg.b)
-		print_newline()
-
-		print_string(arg.c)
-		print_newline()
-
-		print_f32(arg.d)
-		print_newline()
-
-		print_i64(arg.e)
-		print_newline()
+		println("Variant B fields:")
+		println(f"{arg.a}")
+		println(f"{arg.b}")
+		println(arg.c)
+		println(f"{arg.d}")
+		println(f"{arg.e}")
 	}
 }
 

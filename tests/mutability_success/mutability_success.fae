@@ -1,7 +1,5 @@
-import fae::stdout::print_i32
-
 fn main() {
 	mut a: i32 = 5
 	a = 6
-	print_i32(a)
+	println(f"{a}")
 }

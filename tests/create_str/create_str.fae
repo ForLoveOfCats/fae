@@ -1,4 +1,3 @@
-import fae::stdout::print_u8, print_string, print_newline
 import fae::libc::malloc, memcpy
 
 fn main() {
@@ -7,13 +6,13 @@ fn main() {
 
 	mut index: isize = 0
 	while index < string.length {
-		print_u8(string[index])
+		print(f"{string[index]}")
 		index += 1
-		if index < string.length =>print_string(", ")
-		else => print_newline()
+		if index < string.length =>print(", ")
+		else => println("")
 	}
 
-	print_newline()
+	println("")
 
 	let pointer = malloc(5)
 	let slice = fae::intrinsics::create_slice_mut<u8>(pointer, 5)
@@ -24,6 +23,5 @@ fn main() {
 	slice[4] = 69
 
 	let string = fae::intrinsics::create_str(slice.pointer, slice.length)
-	print_string(string)
-	print_newline()
+	println(string)
 }

@@ -1,51 +1,47 @@
-import fae::stdout::print_string, print_newline
-
 fn logical_and(a: bool, b: bool, letter: str) {
 	if a and b {
-		print_string(letter)
-		print_newline()
+		println(letter)
 	}
 }
 
 fn logical_or(a: bool, b: bool, letter: str) {
 	if a or b {
-		print_string(letter)
-		print_newline()
+		println(letter)
 	}
 }
 
 fn main() {
 	if true and false {
-		print_string("A\n")
+		println("A")
 	}
 
 	if true and true {
-		print_string("B\n")
+		println("B")
 	}
 
 	if false and true {
-		print_string("C\n")
+		println("C")
 	}
 
 	if false and false {
-		print_string("D\n")
+		println("D")
 	}
 
 
 	if true or false {
-		print_string("E\n")
+		println("E")
 	}
 
 	if true or true {
-		print_string("F\n")
+		println("F")
 	}
 
 	if false or true {
-		print_string("G\n")
+		println("G")
 	}
 
 	if false or false {
-		print_string("H\n")
+		println("H")
 	}
 
 	logical_and(true, false, "I")

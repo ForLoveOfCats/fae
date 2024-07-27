@@ -1,5 +1,3 @@
-import fae::stdout::print_string
-
 fn main() {
 	func(.None)
 	func(.Some(.None))
@@ -8,8 +6,8 @@ fn main() {
 }
 
 fn func(val: Option<Option<Enum>>) {
-	if val is Some and val is Some and val is B => print_string("It is B!\n")
-	else => print_string("It is not B\n")
+	if val is Some and val is Some and val is B => println("It is B!")
+	else => println("It is not B")
 }
 
 enum Enum {

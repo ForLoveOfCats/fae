@@ -1,21 +1,21 @@
-Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 15: No field `field` on `Enum`
-  15|             print_f64(arg.field)
-                                ^^^^^
+Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 13: No field `field` on `Enum`
+  13|             println(f"{arg.field} is B")
+                                 ^^^^^
 
-Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 19: Duplicate match arm for enum variant `Enum.A`
-  19|         A {}
-              ^
-Note: ./tests/enum_match_failure/enum_match_failure.fae, line 14: Existing arm here
-  14|         B, A {
-                 ^
-
-Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 21: Duplicate match arm for enum variant `Enum.C`
-  21|         C => print_string("other C\n")
+Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 16: Duplicate match arm for enum variant `Enum.A`
+  16|         A {}
               ^
 Note: ./tests/enum_match_failure/enum_match_failure.fae, line 12: Existing arm here
-  12|         C => print_string("C\n")
+  12|         B, A {
+                 ^
+
+Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 18: Duplicate match arm for enum variant `Enum.C`
+  18|         C => println("other C")
+              ^
+Note: ./tests/enum_match_failure/enum_match_failure.fae, line 10: Existing arm here
+  10|         C => println("C")
               ^
 
-Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 11: Missing match arm for enum variant `Enum.D`
-  11|     match arg {
-          ^^^^^^^^^^^^
+Validation error: ./tests/enum_match_failure/enum_match_failure.fae, line 9: Missing match arm for enum variant `Enum.D`
+  9|     match arg {
+         ^^^^^^^^^^^^

@@ -32,11 +32,5 @@ fn identity(value: T): T {
 }
 
 fn print_range(range: Range) {
-	import fae::stdout::print_isize, print_string, print_newline
-
-	print_string("Range start: ")
-	print_isize(range.start)
-	print_string(", end: ")
-	print_isize(range.end)
-	print_newline()
+	println(f"Range start: {range.start}, end: {range.end}")
 }

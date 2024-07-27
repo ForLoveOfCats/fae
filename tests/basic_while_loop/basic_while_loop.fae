@@ -1,10 +1,7 @@
-import fae::stdout::print_i32, print_newline
-
 fn main() {
 	mut index: i32 = -5
 	while index < 5 {
-		print_i32(index)
-		print_newline()
+		println(f"{index}")
 		index = index + 1
 	}
 }
