@@ -1,0 +1,7 @@
+import fae::libc::StdOutFile, fflush, fwrite
+
+fn clear() {
+	let string = []u8 { 27, 91, 50, 74, 0 }
+	fwrite(string.pointer, 1, string.length.(usize), StdOutFile.*)
+	fflush(StdOutFile.*)
+}
