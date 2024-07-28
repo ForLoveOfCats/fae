@@ -1,0 +1,119 @@
+fn main() {
+	structs()
+	println("")
+	enums()
+}
+
+fn structs() {
+	let value = A {}
+
+	let value = B {}
+
+	let value = C { a: 1, b: 2 }
+	println(f"{value.a}, {value.b}")
+
+	let value = D { a: 3, b: 4 }
+	println(f"{value.a}, {value.b}")
+
+	let value = E { a: 5, b: 6 }
+	println(f"{value.a}, {value.b}")
+
+	let value = F { a: 7, b: 8 }
+	println(f"{value.a}, {value.b}")
+}
+
+struct A {}
+
+struct B {
+
+}
+
+struct C {
+	a: i32
+	b: i32
+}
+
+struct D {
+	a: i32
+
+	b: i32
+}
+
+struct E {
+	a: i32,
+
+	b: i32,
+}
+
+struct F { a: i32, b: i32, }
+
+fn enums() {
+	let value = I.V { a: 1, b: 2 }
+	println(f"{value.a}, {value.b}")
+
+	let value = J.V { a: 3, b: 4, c: 5, d: 6 }
+	println(f"{value.a}, {value.b}, {value.c}, {value.d}")
+
+	let value = K.V { a: 7, b: 8, c: 9, d: 10 }
+	println(f"{value.a}, {value.b}, {value.c}, {value.d}")
+
+	let value = L.V { a: 11, b: 12, c: 13, d: 14 }
+	println(f"{value.a}, {value.b}, {value.c}, {value.d}")
+
+	let value: M = M.A(15)
+	if value is A => print(f"{value}, ")
+	let value: M = M.B(16.1)
+	if value is B => println(f"{value}")
+
+	let value: N = N.A(17)
+	if value is A => print(f"{value}, ")
+	let value: N = N.B(18.2)
+	if value is B => println(f"{value}")
+
+	let value: O = O.A(19)
+	if value is A => print(f"{value}, ")
+	let value: O = O.B(20.3)
+	if value is B => println(f"{value}")
+
+	let value: P = P.A(21)
+	if value is A => print(f"{value}, ")
+	let value: P = P.B(22.4)
+	if value is B => println(f"{value}")
+}
+
+enum G {}
+
+enum H { a: i32, b: i32 }
+
+enum I { a: i32, b: i32, V {} }
+
+enum J { a: i32, b: i32, V { c: i32, d: i32 } }
+
+enum K { a: i32
+	b: i32, V { c: i32
+	d: i32 } }
+
+enum L {
+	a: i32,
+	b: i32,
+	V {
+		c: i32,
+		d: i32,
+	},
+}
+
+enum M { A(i32), B(f64) }
+
+enum N { A(i32), B(f64), }
+
+enum O {
+	A(i32)
+	B(f64)
+}
+
+enum P {
+	A(i32)
+
+
+	B(f64),
+}

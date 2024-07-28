@@ -1189,7 +1189,6 @@ fn parse_type_arguments<'a>(
 
 	let span = open_token.span + close_token.span;
 	if types.is_empty() {
-		// Should this be a validation error instead?
 		messages.message(error!("Empty type argument list").span(span));
 	}
 
@@ -1772,17 +1771,20 @@ fn parse_struct_declaration<'a>(
 	let name = Node::from_token(struct_name_token.text, struct_name_token);
 
 	tokens.expect(messages, TokenKind::OpenBrace)?;
+	tokens.consume_newlines();
 
 	let mut fields = BumpVec::new_in(bump);
+	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+		let field_name_token = tokens.expect(messages, TokenKind::Word)?;
+		let field = parse_field(bump, messages, tokens, field_name_token, "struct field")?;
+		fields.push(field);
 
-	if tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-		tokens.consume_newlines();
-
-		while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-			let field_name_token = tokens.expect(messages, TokenKind::Word)?;
-			let field = parse_field(bump, messages, tokens, field_name_token, "struct field")?;
-			fields.push(field);
-
+		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+			break;
+		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+			tokens.next()?;
+			tokens.consume_newlines();
+		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
 			tokens.consume_newlines();
 		}
@@ -1822,74 +1824,81 @@ fn parse_enum_declaration<'a>(
 	let name = Node::from_token(enum_name_token.text, enum_name_token);
 
 	tokens.expect(messages, TokenKind::OpenBrace)?;
+	tokens.consume_newlines();
 
 	let mut shared_fields = BumpVec::new_in(bump);
 	let mut variants = BumpVec::new_in(bump);
 
-	if tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-		tokens.consume_newlines();
-
-		while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-			let field_name_token = tokens.expect(messages, TokenKind::Word)?;
-			if tokens.peek_kind() == Ok(TokenKind::Colon) {
-				if !variants.is_empty() {
-					let warning = warning!("Enum shared fields should proceed all variants, consider moving this field up");
-					messages.message(warning.span(field_name_token.span));
-				}
-
-				let field = parse_field(bump, messages, tokens, field_name_token, "enum shared field")?;
-				shared_fields.push(field);
-			} else {
-				check_not_reserved(messages, field_name_token, "enum variant")?;
-				let mut variant_fields = BumpVec::new_in(bump);
-
-				if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-					tokens.next()?;
-					let multi_line = if tokens.peek_kind() == Ok(TokenKind::Newline) {
-						tokens.next()?;
-						true
-					} else {
-						false
-					};
-
-					while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-						while tokens.peek_kind() == Ok(TokenKind::Newline) {
-							tokens.next()?;
-						}
-
-						let field_name_token = tokens.expect(messages, TokenKind::Word)?;
-						let field = parse_field(bump, messages, tokens, field_name_token, "enum variant field")?;
-						variant_fields.push(field);
-
-						if !multi_line {
-							break;
-						}
-
-						tokens.expect(messages, TokenKind::Newline)?;
-					}
-
-					tokens.expect(messages, TokenKind::CloseBrace)?;
-				} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
-					tokens.next()?;
-					let parsed_type = parse_type(bump, messages, tokens)?;
-					tokens.expect(messages, TokenKind::CloseParen)?;
-
-					let name = Node::from_token(field_name_token.text, field_name_token);
-					let transparent = TransparentVariant { name, parsed_type };
-					let variant = EnumVariant::Transparent(transparent);
-					variants.push(variant);
-
-					tokens.expect(messages, TokenKind::Newline)?;
-					tokens.consume_newlines();
-					continue;
-				}
-
-				let name = Node::from_token(field_name_token.text, field_name_token);
-				let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
-				let variant = EnumVariant::StructLike(struct_like);
-				variants.push(variant);
+	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+		let field_name_token = tokens.expect(messages, TokenKind::Word)?;
+		if tokens.peek_kind() == Ok(TokenKind::Colon) {
+			if !variants.is_empty() {
+				let warning = warning!("Enum shared fields should proceed all variants, consider moving this field up");
+				messages.message(warning.span(field_name_token.span));
 			}
 
+			let field = parse_field(bump, messages, tokens, field_name_token, "enum shared field")?;
+			shared_fields.push(field);
+		} else {
+			check_not_reserved(messages, field_name_token, "enum variant")?;
+			let mut variant_fields = BumpVec::new_in(bump);
+
+			if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+				tokens.next()?;
+				tokens.consume_newlines();
+
+				while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+					let field_name_token = tokens.expect(messages, TokenKind::Word)?;
+					let field = parse_field(bump, messages, tokens, field_name_token, "enum variant field")?;
+					variant_fields.push(field);
+
+					if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+						break;
+					} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+						tokens.next()?;
+						tokens.consume_newlines();
+					} else {
+						tokens.expect(messages, TokenKind::Newline)?;
+						tokens.consume_newlines();
+					}
+				}
+
+				tokens.expect(messages, TokenKind::CloseBrace)?;
+			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
+				tokens.next()?;
+				let parsed_type = parse_type(bump, messages, tokens)?;
+				tokens.expect(messages, TokenKind::CloseParen)?;
+
+				let name = Node::from_token(field_name_token.text, field_name_token);
+				let transparent = TransparentVariant { name, parsed_type };
+				let variant = EnumVariant::Transparent(transparent);
+				variants.push(variant);
+
+				if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+					break;
+				} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+					tokens.next()?;
+					tokens.consume_newlines();
+				} else {
+					tokens.expect(messages, TokenKind::Newline)?;
+					tokens.consume_newlines();
+				}
+
+				continue;
+			}
+
+			let name = Node::from_token(field_name_token.text, field_name_token);
+			let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
+			let variant = EnumVariant::StructLike(struct_like);
+			variants.push(variant);
+		}
+
+		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+			break;
+		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+			tokens.next()?;
+			tokens.consume_newlines();
+		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
 			tokens.consume_newlines();
 		}
