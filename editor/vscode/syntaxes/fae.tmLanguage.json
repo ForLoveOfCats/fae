@@ -71,7 +71,7 @@
 		},
 		"strings": {
 			"name": "string.quoted.double.fae",
-			"begin": "\"",
+			"begin": "f\"|\"",
 			"end": "\"",
 			"patterns": [
 				{
