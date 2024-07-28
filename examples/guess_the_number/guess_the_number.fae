@@ -1,4 +1,4 @@
-import fae::libc::StdInDescriptor, atol, printf, rand
+import fae::libc::StdInDescriptor, atol, rand
 import fae::collections::list::List
 import fae::io::file::File
 
