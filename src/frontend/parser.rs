@@ -1202,11 +1202,7 @@ fn parse_arguments<'a>(
 	tokens: &mut Tokens<'a>,
 ) -> ParseResult<Node<&'a [Node<Expression<'a>>]>> {
 	let open_paren_token = tokens.expect(messages, TokenKind::OpenParen)?;
-
-	let multi_line = tokens.peek_kind() == Ok(TokenKind::Newline);
-	if multi_line {
-		tokens.expect(messages, TokenKind::Newline)?;
-	}
+	tokens.consume_newlines();
 
 	let mut expressions = BumpVec::new_in(bump);
 	while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
@@ -1214,17 +1210,12 @@ fn parse_arguments<'a>(
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
-		}
-
-		if multi_line {
-			if tokens.peek_kind() == Ok(TokenKind::Comma) {
-				tokens.next()?;
-			}
-			if tokens.peek_kind() == Ok(TokenKind::Newline) {
-				tokens.next()?;
-			}
-		} else if tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
 			tokens.next()?;
+			tokens.consume_newlines();
+		} else {
+			tokens.expect(messages, TokenKind::Newline)?;
+			tokens.consume_newlines();
 		}
 	}
 
@@ -1709,6 +1700,7 @@ fn parse_function_declaration<'a>(
 
 fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Parameters<'a>> {
 	tokens.expect(messages, TokenKind::OpenParen)?;
+	tokens.consume_newlines();
 
 	let mut parameters = BumpVec::new_in(bump);
 	let mut c_vararg = None;
@@ -1743,9 +1735,13 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
+		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+			tokens.next()?;
+			tokens.consume_newlines();
+		} else {
+			tokens.expect(messages, TokenKind::Newline)?;
+			tokens.consume_newlines();
 		}
-
-		tokens.expect(messages, TokenKind::Comma)?;
 	}
 
 	tokens.expect(messages, TokenKind::CloseParen)?;
