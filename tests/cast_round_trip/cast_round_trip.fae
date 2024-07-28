@@ -1,23 +1,21 @@
-import fae::libc::printf
-
 fn main() {
 	let pointer = 999.(i64).(&void)
 	let other = pointer.(&i32)
-	printf("%lu\n".pointer, other.(u64))
+	println(f"{other.(u64)}")
 
 
 	let a: i32 = -42
 	let b = a.(u64)
-	printf("%lu\n".pointer, b)
-	printf("%d\n".pointer, b.(i32))
+	println(f"{b}")
+	println(f"{b.(i32)}")
 
 	let c = a.(f32)
-	printf("%f\n".pointer, c)
-	printf("%f\n".pointer, a.(f64))
+	println(f"{c}")
+	println(f"{a.(f64)}")
 
-	printf("%d\n".pointer, c.(i32))
-	printf("%ld\n".pointer, c.(i64))
+	println(f"{c.(i32)}")
+	println(f"{c.(i64)}")
 
-	printf("%f\n".pointer, c.(f64))
-	printf("%f\n".pointer, 4.9.(f64).(f32))
+	println(f"{c.(f64)}")
+	println(f"{4.9.(f64).(f32)}")
 }
