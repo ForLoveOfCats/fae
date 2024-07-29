@@ -1,3 +1,1 @@
-Panic: Index 2 is out of range of slice with length 2
-Fae thread panicked!
-Reason: Slice index failure
+Fae thread panicked: Slice index 2 is out of range of slice with length 2

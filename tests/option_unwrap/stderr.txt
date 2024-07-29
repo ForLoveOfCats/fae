@@ -1,2 +1,1 @@
-Fae thread panicked!
-Reason: Attempted to unwrap an empty Option
+Fae thread panicked: Attempted to unwrap an empty Option

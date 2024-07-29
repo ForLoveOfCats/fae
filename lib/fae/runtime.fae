@@ -6,76 +6,40 @@ fn fae_main(argc: i32, argv: &&u8): i32 {
 
 #lang "slice_index_out_of_bounds"
 fn slice_index_out_of_bounds(length: isize, index: isize) {
-	let stderr = fae::libc::StdErrFile.*
-
-	// TODO: String formatting for `panicf`
-	let message = "Panic: Index %ld is out of range of slice with length %ld\n"
-	fae::libc::fprintf(stderr, message.pointer, index, length)
-	fae::libc::fflush(stderr)
-
-	panicf("Slice index failure")
+	panicf(f"Slice index {index} is out of range of slice with length {length}")
 }
 
 #lang "slice_range_inverted"
 fn slice_range_inverted(range: Range) {
-	let stderr = fae::libc::StdErrFile.*
-
-	// TODO: String formatting for `panicf`
-	let message = "Panic: Range start %ld is larger than end %ld\n"
-	fae::libc::fprintf(stderr, message.pointer, range.start, range.end)
-	fae::libc::fflush(stderr)
-
-	panicf("Slice range failure")
+	panicf(f"Slice range start {range.start} is larger than end {range.end}")
 }
 
 #lang "slice_range_start_out_of_bounds"
 fn slice_range_start_out_of_bounds(length: isize, start: isize) {
-	let stderr = fae::libc::StdErrFile.*
-
-	// TODO: String formatting for `panicf`
-	let message = "Panic: Range start %ld is out of range of slice with length %ld\n"
-	fae::libc::fprintf(stderr, message.pointer, start, length)
-	fae::libc::fflush(stderr)
-
-	panicf("Slice range failure")
+	panicf(f"Slice range start {start} is out of range of slice with length {length}")
 }
 
 #lang "slice_range_end_out_of_bounds"
 fn slice_range_end_out_of_bounds(length: isize, end: isize) {
-	let stderr = fae::libc::StdErrFile.*
-
-	// TODO: String formatting for `panicf`
-	let message = "Panic: Range end bound %ld is out of range of slice with length %ld\n"
-	fae::libc::fprintf(stderr, message.pointer, end, length)
-	fae::libc::fflush(stderr)
-
-	panicf("Slice range failure")
+	panicf(f"Slice range end {end} is out of range of slice with length {length}")
 }
 
 #lang "for_range_inverted"
 fn for_range_inverted(range: Range) {
-	let stderr = fae::libc::StdErrFile.*
-
-	// TODO: String formatting for `panicf`
-	let message = "Panic: Range start %ld is larger than end %ld\n"
-	fae::libc::fprintf(stderr, message.pointer, range.start, range.end)
-	fae::libc::fflush(stderr)
-
-	panicf("For loop range failure")
+	panicf(f"For loop range start {range.start} is larger than end {range.end}")
 }
 
-fn panic_impl(message: str): noreturn {
-	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, fprintf
+fn panic_impl(message: fstr): noreturn {
+	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, strlen
 
-	fprintf(StdErrFile.*, "Fae thread panicked!\n".pointer)
-	fprintf(StdErrFile.*, "Reason: %s\n".pointer, message.pointer)
+	eprintln(f"Fae thread panicked: {message}")	
 
 	// Backtraces can differ between platforms, optimization level, and change
 	// when code is refactored. Therefore they should not be included in panic
 	// messages when in compiler tests
 	if fae::intrinsics::is_compiler_test() => exit(-1)
 
-	fprintf(StdErrFile.*, "Function backtrace:\n".pointer)
+	eprintln("Function backtrace:")
 
 	let null = null_pointer<void>()
 	// 50 items
@@ -97,11 +61,8 @@ fn panic_impl(message: str): noreturn {
 
 	enum Symbol {
 		Error
-		Unknown { path: &u8 }
-		Found {
-			name: str
-			path: &u8
-		}
+		Unknown { path: str }
+		Found { name: str,  path: str }
 	}
 
 	// 50 items
@@ -125,9 +86,7 @@ fn panic_impl(message: str): noreturn {
 	}
 
 	fn print_width(width: isize) {
-		for _ in 0..width {
-			fprintf(StdErrFile.*, " ".pointer)
-		}
+		for _ in 0..width => eprint(" ")
 	}
 
 	for address, index in addresses {
@@ -143,14 +102,15 @@ fn panic_impl(message: str): noreturn {
 			handle_width(longest_width.&mut, Error.length)
 			continue
 		}
-		
-		let path = info.dli_fname
+
+		let path_length = strlen(info.dli_fname).(isize)
+		let path = fae::intrinsics::create_str(info.dli_fname, path_length)
 
 		if info.dli_saddr.(usize) == 0 {
 			symbols[index] = Symbol.Unknown { path }
 			handle_width(longest_width.&mut, Unknown.length)
 		} else {
-			let name_length = fae::libc::strlen(info.dli_sname).(isize)
+			let name_length = strlen(info.dli_sname).(isize)
 			let name = fae::intrinsics::create_str(info.dli_sname, name_length)
 			symbols[index] = Symbol.Found { name, path }
 			handle_width(longest_width.&mut, name_length)
@@ -159,35 +119,35 @@ fn panic_impl(message: str): noreturn {
 
 	for symbol in symbols {
 		mut current_width: isize = 0
-		mut path: &u8 = "".pointer
+		mut path = ""
 
 		match symbol {
 			Error {
-				fprintf(StdErrFile.*, "%s%s\n".pointer, Indentation.pointer, Error.pointer)
+				eprintln(f"{Indentation}{Error}")
 				continue
 			}
 
 			Unknown {
-				fprintf(StdErrFile.*, "%s%s".pointer, Indentation.pointer, Unknown.pointer)
+				eprint(f"{Indentation}{Unknown}")
 				current_width = Unknown.length
 				path = symbol.path
 			}
 
 			Found {
-				fprintf(StdErrFile.*, "%s%s".pointer, Indentation.pointer, symbol.name.pointer)
+				eprint(f"{Indentation}{symbol.name}")
 				current_width = symbol.name.length
 				path = symbol.path
 			}
 		}
 
 		print_width(longest_width - current_width)
-		fprintf(StdErrFile.*, "%s(%s)\n".pointer, Spacer.pointer, path	)
+		eprintln(f"{Spacer}({path})")
 	}
 
 	if symbol_count == 0 {
-		fprintf(StdErrFile.*, "%s<missing backtrace>\n".pointer, Indentation.pointer)
+		eprintln(f"{Indentation}<missing backtrace>")
 	}
-	fprintf(StdErrFile.*, "\n".pointer)
+	eprintln("")
 
 	fae::intrinsics::debugger_break()
 	exit(-1)

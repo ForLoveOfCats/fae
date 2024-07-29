@@ -55,7 +55,7 @@ fn panic(): noreturn {
 	fae::runtime::panic_impl("Explicit panic")
 }
 
-fn panicf(message: str): noreturn {
+fn panicf(message: fstr): noreturn {
 	fae::runtime::panic_impl(message)
 }
 
@@ -63,8 +63,8 @@ fn assert(value: bool) {
 	if value.! => panicf("Assertion failed")
 }
 
-fn assertf(value: bool, message: str) {
-	if value.! => panicf(message)
+fn assertf(value: bool, message: fstr) {
+	if value.! => panicf(f"Assertion failed: {message}")
 }
 
 #lang "range_type"
