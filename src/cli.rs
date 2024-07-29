@@ -10,6 +10,7 @@ pub struct CliArguments {
 	pub std_enabled: bool,
 	pub compiler_test_names: Vec<String>,
 	pub codegen_backend: CodegenBackend,
+	pub parallel_validator: bool,
 	pub verify_llvm_module: bool,
 	pub optimize_artifacts: bool,
 	pub debug_generics: bool,
@@ -51,6 +52,7 @@ pub fn parse_arguments() -> CliArguments {
 		std_enabled: true,
 		compiler_test_names: Vec::new(),
 		codegen_backend: CodegenBackend::LLVM,
+		parallel_validator: false,
 		verify_llvm_module: true,
 		optimize_artifacts: false,
 		debug_generics: false,
@@ -142,6 +144,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 			eprintln!("  --help: Print this help message");
 			eprintln!("  --quiet: Silence compilation progress messages");
 			eprintln!("  --release: Build artifacts with optimizations enabled");
+			eprintln!("  --parallel-validator: Enable experimential parallelized validator");
 			eprintln!("  --disable-message-color: Avoid printing messages with color highlights");
 			eprintln!("  --debug-generics: Include useful debug information when printing types");
 			eprintln!("  --debug-type-ids: Print types as their internal type id index value");
@@ -153,6 +156,8 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 		Some("--quiet") => cli_arguments.loud = false,
 
 		Some("--release") => cli_arguments.optimize_artifacts = true,
+
+		Some("--parallel-validator") => cli_arguments.parallel_validator = true,
 
 		Some("--disable-message-color") => cli_arguments.color_messages = false,
 

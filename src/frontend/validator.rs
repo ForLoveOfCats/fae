@@ -293,12 +293,12 @@ pub fn validate<'a>(
 	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
 	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
 
-	const THREAD_COUNT: usize = 6;
-	let barrier = std::sync::Barrier::new(THREAD_COUNT);
+	let thread_count = if cli_arguments.parallel_validator { 6 } else { 1 };
+	let barrier = std::sync::Barrier::new(thread_count);
 	let constants = RwLock::new(Vec::new());
 
 	std::thread::scope(|scope| {
-		for _ in 0..THREAD_COUNT {
+		for _ in 0..thread_count {
 			scope.spawn(|| {
 				set_thread_name!("validator thread");
 
