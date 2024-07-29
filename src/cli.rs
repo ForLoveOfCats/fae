@@ -82,6 +82,12 @@ fn parse_command(
 	arg: &OsStr,
 	iterator: &mut impl Iterator<Item = OsString>,
 ) -> bool {
+	#[cfg(feature = "bundled")]
+	{
+		_ = any_errors;
+		_ = iterator;
+	}
+
 	let Some(arg) = arg.to_str() else {
 		return false;
 	};
@@ -165,6 +171,7 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 	}
 }
 
+#[cfg(not(feature = "bundled"))]
 fn parse_test_names(cli_arguments: &mut CliArguments, any_errors: &mut bool, iterator: &mut impl Iterator<Item = OsString>) {
 	for arg in iterator {
 		if arg.to_str().map(|a| a.starts_with('-')).unwrap_or(false) {
