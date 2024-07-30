@@ -100,7 +100,7 @@ pub fn generate_code<'a>(
 			LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
 		}
 
-		c"arm64-apple-darwin23.5.0"
+		c"arm64-apple-darwin20.1.0"
 	};
 
 	let target = unsafe {

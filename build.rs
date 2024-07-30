@@ -46,6 +46,15 @@ fn linux_link() {
 
 #[cfg(target_os = "macos")]
 fn link_macos() {
+	let libcxx_libs = std::env::current_dir()
+		.unwrap()
+		.join("./llvm/libcxx/build/lib")
+		.canonicalize()
+		.unwrap();
+
+	println!("cargo::rerun-if-changed={}", libcxx_libs.display());
+	println!("cargo::rustc-link-search=native={}", libcxx_libs.display());
+
 	let llvm_libs = std::env::current_dir()
 		.unwrap()
 		.join("./llvm/llvm/build/lib")
@@ -59,8 +68,8 @@ fn link_macos() {
 		println!("cargo::rustc-link-lib=static={}", name);
 	}
 
-	println!("cargo::rustc-link-lib=static=c++");
-	println!("cargo::rustc-link-lib=static=c++abi");
+	println!("cargo::rustc-link-lib=static:+whole-archive=c++");
+	println!("cargo::rustc-link-lib=static:+whole-archive=c++abi");
 }
 
 #[cfg(target_os = "linux")]

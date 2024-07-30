@@ -177,10 +177,10 @@ def macos_main():
 	clone_llvm()
 
 	print()
-	print("LLVM source files fetched")
+	print("LLVM source files fetched, preparing to build libc++")
 	print()
 
-	os.chdir("./llvm/llvm")
+	os.chdir("./llvm/libcxx")
 	os.makedirs("./build", exist_ok=True)
 	os.chdir("./build")
 
@@ -188,8 +188,58 @@ def macos_main():
 		"cmake",
 		"-G",
 		"Ninja",
+		"-S",
+		"../../runtimes",
+		"-DLIBCXXABI_USE_LLVM_UNWINDER=OFF",
+		"-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi",
+		"-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
+		"-DCMAKE_C_COMPILER_TARGET=arm64-apple-darwin20.1.0",
 		"-DCMAKE_C_COMPILER=clang",
+		f"-DCMAKE_C_FLAGS=-D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -DLIBCXX_BUILDING_LIBCXXABI",
+		"-DCMAKE_CXX_COMPILER_TARGET=arm64-apple-darwin20.1.0",
 		"-DCMAKE_CXX_COMPILER=clang++",
+		"-DCMAKE_CXX_COMPILER_TARGET=arm64-apple-darwin20.1.0",
+		f"-DCMAKE_CXX_FLAGS=-nostdinc++ -D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -DLIBCXX_BUILDING_LIBCXXABI",
+		f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
+	])
+
+	print()
+	print("libc++ build files written")
+	print()
+
+	subprocess.run([
+		"cmake",
+		"--build",
+		".",
+	])
+
+	print()
+	print("libc++ has been built!")
+	print("Preparing to build LLVM itself")
+	print()
+
+	os.chdir("../../llvm")
+	os.makedirs("./build", exist_ok=True)
+	os.chdir("./build")
+
+	include_dir = os.path.realpath("../../libcxx/build/include/c++/v1")
+	libcxx = os.path.realpath("../../libcxx/build/lib/libc++.a")
+	libcxx_abi = os.path.realpath("../../libcxx/build/lib/libc++abi.a")
+
+	subprocess.run([
+		"cmake",
+		"-G",
+		"Ninja",
+		"-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
+		"-DCMAKE_C_COMPILER=clang",
+		"-DCMAKE_C_COMPILER_TARGET=arm64-apple-darwin20.1.0",
+		"-DCMAKE_CXX_COMPILER=clang++",
+		"-DCMAKE_CXX_COMPILER_TARGET=arm64-apple-darwin20.1.0",
+		f"-DCMAKE_CXX_FLAGS=-nostdinc++ -nostdlib++ -I{include_dir}",
+		f"-DCMAKE_EXE_LINKER_FLAGS={libcxx} {libcxx_abi}",
+		f"-DCMAKE_MODULE_LINKER_FLAGS={libcxx} {libcxx_abi}",
+		f"-DCMAKE_SHARED_LINKER_FLAGS={libcxx} {libcxx_abi}",
+		f"-DCMAKE_STATIC_LINKER_FLAGS={libcxx} {libcxx_abi}",
 		"-DLLVM_ENABLE_LLD=ON",
 		"-DCMAKE_BUILD_TYPE=Release",
 		f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
@@ -235,7 +285,7 @@ def clone_llvm():
 		"--depth",
 		"1",
 		"--branch",
-		"llvmorg-18.1.4",
+		"llvmorg-18.1.8",
 		"https://github.com/llvm/llvm-project.git",
 		"llvm",
 	])
