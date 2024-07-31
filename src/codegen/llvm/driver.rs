@@ -22,12 +22,15 @@ use crate::codegen::llvm::generator::{Architecture, LLVMGenerator};
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
+use crate::frontend::project::ProjectConfig;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree;
 use crate::frontend::type_store::TypeStore;
 
 pub fn generate_code<'a>(
 	cli_arguments: &CliArguments,
+	project_config: &ProjectConfig,
+	project_path: &Path,
 	parsed_files: &[tree::File],
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
@@ -177,8 +180,23 @@ pub fn generate_code<'a>(
 
 	#[cfg(target_os = "linux")]
 	{
-		let path = PathBuf::from("./fae_target/fae_executable.x64");
-		let mut lld = Command::new("ld.lld")
+		let linker = project_config.linux_linker.as_deref().unwrap_or("ld");
+		let additional_objects = if let Some(objects) = &project_config.linux_additional_linker_objects {
+			let mut additional_objects = Vec::with_capacity(objects.len());
+			for object in objects {
+				let path = project_path.join(object);
+				additional_objects.push(path);
+			}
+			additional_objects
+		} else {
+			Vec::new()
+		};
+
+		dbg!(&additional_objects);
+
+		let executable_path = PathBuf::from("./fae_target/fae_executable.x64");
+
+		let mut command = Command::new(linker)
 			.arg("-export-dynamic")
 			.arg("--hash-style=gnu")
 			.arg("--build-id")
@@ -194,18 +212,31 @@ pub fn generate_code<'a>(
 			.arg("-dynamic-linker")
 			.arg("/lib64/ld-linux-x86-64.so.2")
 			.arg("-o")
-			.arg(&path)
+			.arg(&executable_path)
+			.args(additional_objects)
 			.spawn()
 			.unwrap();
 
-		let status = lld.wait().unwrap();
+		let status = command.wait().unwrap();
 		assert!(status.success());
 
-		return path;
+		return executable_path;
 	}
 
 	#[cfg(target_os = "macos")]
 	{
+		let linker = project_config.darwin_linker.as_deref().unwrap_or("ld");
+		let additional_objects = if let Some(objects) = &project_config.linux_additional_linker_objects {
+			let mut additional_objects = Vec::with_capacity(objects.len());
+			for object in objects {
+				let path = project_path.join(object);
+				additional_objects.push(path);
+			}
+			additional_objects
+		} else {
+			Vec::new()
+		};
+
 		let executable_path = PathBuf::from("./fae_target/fae_executable.aarch64");
 
 		let sdk_version = call_xcrun("--show-sdk-version");
@@ -213,7 +244,7 @@ pub fn generate_code<'a>(
 		let mut sdk_path = PathBuf::from(call_xcrun("--show-sdk-path"));
 		sdk_path.push("usr/lib/libSystem.tbd");
 
-		let mut lld = Command::new("ld64.lld")
+		let mut command = Command::new(linker)
 			.arg(object_path)
 			.arg("-dynamic")
 			// TODO: Allow targetting versions of macOS older than installed version
@@ -222,10 +253,11 @@ pub fn generate_code<'a>(
 			.arg(sdk_path)
 			.arg("-o")
 			.arg(&executable_path)
+			.args(additional_objects)
 			.spawn()
 			.unwrap();
 
-		let status = lld.wait().unwrap();
+		let status = command.wait().unwrap();
 		assert!(status.success());
 
 		return executable_path;

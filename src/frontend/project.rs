@@ -24,9 +24,20 @@ pub struct BuiltProject {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
 	pub project_name: String,
 	pub source_directory: PathBuf,
+
+	#[allow(dead_code)]
+	pub linux_linker: Option<String>,
+	#[allow(dead_code)]
+	pub linux_additional_linker_objects: Option<Vec<String>>,
+
+	#[allow(dead_code)]
+	pub darwin_linker: Option<String>,
+	#[allow(dead_code)]
+	pub darwin_additional_linker_objects: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,22 +62,22 @@ pub fn build_project(
 		}
 	}
 
-	let root_name = if project_path.is_dir() {
-		let config = if let Some(test_config) = test_config {
-			test_config
-		} else {
-			let config_path = project_path.join("fae.toml");
-			let Ok(config_file) = std::fs::read_to_string(&config_path) else {
-				usage_error!("Input directory does not contain a `fae.toml` file");
-			};
-
-			match toml::from_str::<ProjectConfig>(&config_file) {
-				Ok(config) => config,
-				Err(err) => usage_error!("Project config parse error {config_path:?}\n{err}"),
-			}
+	let project_config = if let Some(test_config) = test_config {
+		test_config
+	} else {
+		let config_path = project_path.join("fae.toml");
+		let Ok(config_file) = std::fs::read_to_string(&config_path) else {
+			usage_error!("Input directory does not contain a `fae.toml` file");
 		};
 
-		let source_directory = match project_path.join(config.source_directory).canonicalize() {
+		match toml::from_str::<ProjectConfig>(&config_file) {
+			Ok(config) => config,
+			Err(err) => usage_error!("Project config parse error {config_path:?}\n{err}"),
+		}
+	};
+
+	let root_name = if project_path.is_dir() {
+		let source_directory = match project_path.join(project_config.source_directory.clone()).canonicalize() {
 			Ok(source_directory) => source_directory,
 			Err(err) => usage_error!("Unable to canonicalize source directory path: {err}"),
 		};
@@ -85,7 +96,7 @@ pub fn build_project(
 			usage_error!("Failed to load source files: {}", err);
 		}
 
-		config.project_name
+		project_config.project_name.clone()
 	} else if project_path.is_file() {
 		match load_single_file(project_path.to_path_buf(), &mut files) {
 			Ok(root_name) => root_name,
@@ -216,6 +227,8 @@ pub fn build_project(
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => llvm::driver::generate_code(
 			cli_arguments,
+			&project_config,
+			project_path,
 			&parsed_files,
 			&mut codegen_messages,
 			&lang_items.read(),
