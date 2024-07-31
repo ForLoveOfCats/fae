@@ -20,17 +20,22 @@ def linux_main():
 	])
 
 	print()
-	print("Building Fae compiler with musl in release mode")
+	print("Building Fae compiler with musl in release mode (requires clang)")
 	print()
 
+	env = os.environ.copy()
+	env["CC"] = "clang"
+
 	subprocess.run([
-		"cargo",
-		"build",
-		"--features=bundled",
-		"--release",
-		"--target",
-		"x86_64-unknown-linux-musl",
-	])
+			"cargo",
+			"build",
+			"--features=bundled",
+			"--release",
+			"--target",
+			"x86_64-unknown-linux-musl",
+		],
+		env=env
+	)
 
 	print()
 	print("Copying files")
