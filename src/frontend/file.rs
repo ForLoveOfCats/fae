@@ -3,6 +3,8 @@ use std::fs::{read_dir, File, ReadDir};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::frontend::error::WriteFmt;
+
 pub type Result<T> = std::result::Result<T, std::io::Error>;
 
 pub struct SourceFile {
@@ -44,9 +46,15 @@ pub fn load_single_file(path: PathBuf, files: &mut Vec<SourceFile>) -> Result<St
 	Ok(file_name)
 }
 
-// Returns directory-project root name
-pub fn load_all_files(path: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
+pub fn load_all_files(error_output: &mut impl WriteFmt, path: &Path, files: &mut Vec<SourceFile>) -> Result<bool> {
+	struct DisallowedModulePath {
+		path: PathBuf,
+		module_path: Vec<String>,
+		disallowed_indicies: Vec<usize>,
+	}
+
 	let mut walker = FileWalker::new(path)?;
+	let mut disallowed = Vec::new();
 
 	loop {
 		let walked_file = match walker.next_file() {
@@ -59,6 +67,19 @@ pub fn load_all_files(path: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
 		let path = walked_file.path;
 		let module_path = walked_file.module_path;
 
+		let mut disallowed_indicies = Vec::new();
+		for (index, part) in module_path.iter().enumerate() {
+			if crate::frontend::parser::is_word_reserved(part) {
+				disallowed_indicies.push(index);
+			}
+		}
+
+		if !disallowed_indicies.is_empty() {
+			let path = path.clone();
+			let module_path = module_path.clone();
+			disallowed.push(DisallowedModulePath { path, module_path, disallowed_indicies });
+		}
+
 		let capacity = file.metadata().map(|m| m.len()).unwrap_or(0);
 		let mut source = String::with_capacity(capacity as usize);
 		file.read_to_string(&mut source)?;
@@ -67,7 +88,19 @@ pub fn load_all_files(path: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
 		files.push(SourceFile { source, path, module_path, index });
 	}
 
-	Ok(())
+	let errored = !disallowed.is_empty();
+	disallowed.sort_by(|a, b| a.module_path.cmp(&b.module_path));
+	for disallowed in disallowed {
+		for index in disallowed.disallowed_indicies {
+			let reserved = &disallowed.module_path[index];
+			let module_path = disallowed.module_path.join("::");
+			let path = &disallowed.path;
+			let error = error!("Reserved word `{reserved}` may not be part of module path `{module_path}` for file {path:?}");
+			error.print(error_output, &[], "Project");
+		}
+	}
+
+	Ok(errored)
 }
 
 #[derive(Debug)]

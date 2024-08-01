@@ -192,8 +192,6 @@ pub fn generate_code<'a>(
 			Vec::new()
 		};
 
-		dbg!(&additional_objects);
-
 		let executable_path = PathBuf::from("./fae_target/fae_executable.x64");
 
 		let mut command = Command::new(linker)

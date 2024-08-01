@@ -27,7 +27,7 @@
 				},
 				{
 					"name": "keyword.default.fae",
-					"match": "\\b(const|let|mut|fn|import|and|or|is|in|of)\\b"
+					"match": "\\b(const|let|mut|fn|import|self|and|or|is|in|of)\\b"
 				},
 				{
 					"name": "keyword.structure.fae",

@@ -57,8 +57,10 @@ pub fn build_project(
 
 	if cli_arguments.std_enabled {
 		let std_path = std_path();
-		if let Err(err) = load_all_files(&std_path, &mut files) {
-			usage_error!("Failed to load standard library files at {std_path:?}: {}", err);
+		match load_all_files(message_output, &std_path, &mut files) {
+			Ok(false) => {}
+			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
+			Err(err) => usage_error!("Failed to load standard library files at {std_path:?}: {}", err),
 		}
 	}
 
@@ -92,8 +94,10 @@ pub fn build_project(
 			.map(|dir| Path::new("./").join(dir))
 			.unwrap_or(source_directory);
 
-		if let Err(err) = load_all_files(&source_directory, &mut files) {
-			usage_error!("Failed to load source files: {}", err);
+		match load_all_files(message_output, &source_directory, &mut files) {
+			Ok(false) => {}
+			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
+			Err(err) => usage_error!("Failed to load source files: {}", err),
 		}
 
 		project_config.project_name.clone()

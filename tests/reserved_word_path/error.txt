@@ -1,0 +1,3 @@
+Project error: Reserved word `defer` may not be part of module path `defer::file` for file "./tests/reserved_word_path/defer/file.fae"
+
+Project error: Reserved word `while` may not be part of module path `while` for file "./tests/reserved_word_path/while.fae"

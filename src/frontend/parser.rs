@@ -1540,8 +1540,6 @@ fn parse_path_segments<'a>(
 	let mut segments = BumpVec::new_in(bump);
 	loop {
 		let segment_token = tokens.expect(messages, TokenKind::Word)?;
-		check_not_reserved(messages, segment_token, "path segment")?;
-
 		segments.push(Node::from_token(segment_token.text, segment_token));
 
 		if tokens.peek_kind() == Ok(TokenKind::DoubleColon) {
@@ -2134,26 +2132,29 @@ fn parse_return_statement<'a>(
 	Ok(Node { item, span })
 }
 
-fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
-	let is_reserved =
-		matches!(
-			token.text,
-			"const"
-				| "fn" | "let" | "mut"
-				| "return" | "struct"
-				| "enum" | "import"
-				| "generic" | "extern"
-				| "export" | "method"
-				| "static" | "if"
-				| "else" | "while"
-				| "for" | "match"
-				| "or" | "and" | "is"
-				| "in" | "of" | "defer"
-				| "break" | "continue"
-				| "true" | "false"
-		);
+pub fn is_word_reserved(word: &str) -> bool {
+	matches!(
+		word,
+		"const"
+			| "fn" | "let"
+			| "mut" | "return"
+			| "struct" | "enum"
+			| "import" | "generic"
+			| "extern" | "export"
+			| "method" | "static"
+			| "self" | "if"
+			| "else" | "while"
+			| "for" | "match"
+			| "or" | "and"
+			| "is" | "in"
+			| "of" | "defer"
+			| "break" | "continue"
+			| "true" | "false"
+	)
+}
 
-	if is_reserved {
+fn check_not_reserved(messages: &mut Messages, token: Token, use_as: &str) -> ParseResult<()> {
+	if is_word_reserved(token.text) {
 		let error = error!("Cannot use reserved word {:?} as {use_as}", token.text);
 		messages.message(error.span(token.span));
 		Err(())

@@ -168,14 +168,12 @@ impl<'a> RootMessages<'a> {
 		for file_messages in &self.file_messages {
 			for message in &file_messages.messages {
 				message.print(output, self.sources, stage);
-				writeln!(output);
 			}
 		}
 
 		if self.missing_main {
 			let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
 			error.print(output, self.sources, stage);
-			writeln!(output);
 		}
 
 		self.file_messages.clear();
@@ -286,12 +284,14 @@ impl Message {
 		self
 	}
 
-	fn print(&self, output: &mut impl WriteFmt, sources: &[SourceFile], stage: &str) {
+	pub fn print(&self, output: &mut impl WriteFmt, sources: &[SourceFile], stage: &str) {
 		self.print_message(output, sources, stage);
 
 		for note in &self.notes {
 			Self::print_file_message(output, sources, None, note.span, &note.text, "Note");
 		}
+
+		writeln!(output);
 	}
 
 	fn print_message(&self, output: &mut impl WriteFmt, sources: &[SourceFile], stage: &str) {
