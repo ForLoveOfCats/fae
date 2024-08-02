@@ -1,0 +1,14 @@
+struct A {
+	a_field: i32
+	a_field: f32
+}
+
+enum B {
+	thing: bool
+	thing: f64
+
+	Variant { inner: i32, inner: i32, thing: str }
+	Variant { }
+}
+
+fn main() {}

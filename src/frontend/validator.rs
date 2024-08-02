@@ -1272,7 +1272,7 @@ fn create_block_enum<'a>(
 		messages.message(error.span(statement.name.span));
 	}
 
-	let mut variants = Vec::new();
+	let mut variants: Vec<EnumVariantShape> = Vec::new();
 
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
 		let struct_shape_index = user_types.len();
@@ -1303,6 +1303,12 @@ fn create_block_enum<'a>(
 		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
 		TypeStore::register_type(&mut user_types, name, variant_generic_parameters, kind, scope_id, span);
+
+		if let Some(existing) = variants.iter().find(|v| v.name == name) {
+			let error = error!("Duplicate variant `{}` on enum `{}`", name, statement.name.item);
+			let note = note!(existing.span, "Original variant here");
+			messages.message(error.span(span).note(note))
+		}
 
 		let variant_shape = EnumVariantShape {
 			name,
@@ -1426,6 +1432,7 @@ fn fill_block_struct<'a>(
 ) {
 	let lock = type_store.user_types.read()[shape_index].clone();
 	let user_type = lock.read();
+	let struct_name = user_type.name;
 
 	let filling_lock = match &user_type.kind {
 		UserTypeKind::Struct { shape } => shape.filling_lock.clone(),
@@ -1443,7 +1450,7 @@ fn fill_block_struct<'a>(
 	drop(user_type);
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-	let mut fields = Vec::with_capacity(statement.fields.len());
+	let mut fields: Vec<Node<FieldShape>> = Vec::with_capacity(statement.fields.len());
 
 	for field in statement.fields {
 		let field_type = match type_store.lookup_type(
@@ -1461,13 +1468,19 @@ fn fill_block_struct<'a>(
 			None => type_store.any_collapse_type_id(),
 		};
 
+		let span = field.name.span + field.parsed_type.span;
+		if let Some(existing) = fields.iter().find(|f| f.item.name == field.name.item) {
+			let error = error!("Duplicate field `{}` on struct `{}`", field.name.item, struct_name);
+			let note = note!(existing.span, "Original field here");
+			messages.message(error.span(span).note(note))
+		}
+
 		let field_shape = FieldShape {
 			name: field.name.item,
 			field_type,
 			attribute: field.attribute,
 			read_only: field.read_only,
 		};
-		let span = field.name.span + field.parsed_type.span;
 		let node = Node::new(field_shape, span);
 		fields.push(node);
 	}
@@ -1512,6 +1525,7 @@ fn fill_block_enum<'a>(
 ) {
 	let lock = type_store.user_types.read()[enum_shape_index].clone();
 	let user_type = lock.read();
+	let enum_name = user_type.name;
 
 	let filling_lock = match &user_type.kind {
 		UserTypeKind::Enum { shape } => shape.filling_lock.clone(),
@@ -1529,7 +1543,7 @@ fn fill_block_enum<'a>(
 	drop(user_type);
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-	let mut shared_fields = Vec::with_capacity(statement.shared_fields.len());
+	let mut shared_fields: Vec<Node<FieldShape>> = Vec::with_capacity(statement.shared_fields.len());
 
 	for shared_field in statement.shared_fields {
 		let field_type = match type_store.lookup_type(
@@ -1546,6 +1560,13 @@ fn fill_block_enum<'a>(
 			Some(type_id) => type_id,
 			None => type_store.any_collapse_type_id(),
 		};
+
+		let span = shared_field.name.span + shared_field.parsed_type.span;
+		if let Some(existing) = shared_fields.iter().find(|f| f.item.name == shared_field.name.item) {
+			let error = error!("Duplicate shared field `{}` on enum `{}`", shared_field.name.item, enum_name);
+			let note = note!(existing.span, "Original shared field here");
+			messages.message(error.span(span).note(note))
+		}
 
 		let field_shape = FieldShape {
 			name: shared_field.name.item,
@@ -1668,6 +1689,8 @@ fn fill_struct_like_enum_variant<'a>(
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	match tree_variant {
 		tree::EnumVariant::StructLike(struct_like) => {
+			let variant_name = struct_like.name.item;
+
 			for field in struct_like.fields {
 				let field_type = match type_store.lookup_type(
 					messages,
@@ -1684,13 +1707,19 @@ fn fill_struct_like_enum_variant<'a>(
 					None => type_store.any_collapse_type_id(),
 				};
 
+				let span = field.name.span + field.parsed_type.span;
+				if let Some(existing) = fields.iter().find(|f| f.item.name == field.name.item) {
+					let error = error!("Duplicate field `{}` on enum variant struct `{}`", field.name.item, variant_name);
+					let note = note!(existing.span, "Original field here");
+					messages.message(error.span(span).note(note))
+				}
+
 				let field_shape = FieldShape {
 					name: field.name.item,
 					field_type,
 					attribute: field.attribute,
 					read_only: field.read_only,
 				};
-				let span = field.name.span + field.parsed_type.span;
 				let node = Node::new(field_shape, span);
 				fields.push(node);
 			}
