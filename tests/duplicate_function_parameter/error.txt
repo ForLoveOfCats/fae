@@ -1,0 +1,13 @@
+Validation error: ./tests/duplicate_function_parameter/duplicate_function_parameter.fae, line 1: Duplicate parameter `a` of function `func`
+  1| fn func(a: i32, b: f32, a: bool) {}
+                             ^^^^^^^
+Note: ./tests/duplicate_function_parameter/duplicate_function_parameter.fae, line 1: Original parameter here
+  1| fn func(a: i32, b: f32, a: bool) {}
+             ^^^^^^
+
+Validation error: ./tests/duplicate_function_parameter/duplicate_function_parameter.fae, line 6: Duplicate parameter `arg` of function `met`
+  6| fn met(arg: bool, arg: f64) {}
+                       ^^^^^^^^
+Note: ./tests/duplicate_function_parameter/duplicate_function_parameter.fae, line 6: Original parameter here
+  6| fn met(arg: bool, arg: f64) {}
+            ^^^^^^^^^

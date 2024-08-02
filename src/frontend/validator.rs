@@ -2698,6 +2698,13 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 		let name = parameter.name.item;
 		scope.push_symbol(Symbol { name, kind, span: Some(span) });
+
+		let previous = &statement.parameters.parameters[..index];
+		if let Some(existing) = previous.iter().find(|f| f.item.name.item == name) {
+			let error = error!("Duplicate parameter `{name}` of function `{}`", statement.name.item);
+			let note = note!(existing.span, "Original parameter here");
+			scope.message(error.span(span).note(note))
+		}
 	}
 
 	drop(shape);

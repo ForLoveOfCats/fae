@@ -1,0 +1,8 @@
+fn func(a: i32, b: f32, a: bool) {}
+
+struct A {}
+
+method A
+fn met(arg: bool, arg: f64) {}
+
+fn main() {}
