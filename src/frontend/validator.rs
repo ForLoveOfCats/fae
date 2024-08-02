@@ -2019,7 +2019,16 @@ fn create_block_functions<'a>(
 			readables.starting_index = readables.overall_len();
 
 			let method_base_shape_index = statement.method_attribute.as_ref().and_then(|attribute| {
-				method_base_shape_index(messages, root_layers, type_store, symbols, symbols.scopes.len(), attribute)
+				method_base_shape_index(
+					messages,
+					root_layers,
+					type_store,
+					symbols,
+					symbols.scopes.len(),
+					attribute,
+					statement.name.item,
+					statement.name.span,
+				)
 			});
 			let base_shape_generics = method_base_shape_index.map(|method_base_shape_index| {
 				type_store.user_types.read()[method_base_shape_index]
@@ -2299,6 +2308,8 @@ fn method_base_shape_index<'a>(
 	symbols: &mut Symbols<'a>,
 	function_initial_scope_count: usize,
 	method_attribute: &'a Node<MethodAttribute>,
+	method_name: &'a str,
+	span: Span,
 ) -> Option<usize> {
 	let symbol = symbols.lookup_symbol(
 		messages,
@@ -2308,15 +2319,32 @@ fn method_base_shape_index<'a>(
 		&method_attribute.item.base_type.item,
 	)?;
 
-	match symbol.kind {
-		SymbolKind::Type { shape_index } => Some(shape_index),
+	let shape_index = match symbol.kind {
+		SymbolKind::Type { shape_index } => shape_index,
 
 		_ => {
 			let error = error!("Method declaration self type specifier must be a type");
 			messages.message(error.span(method_attribute.item.base_type.span));
 			return None;
 		}
+	};
+
+	if method_attribute.item.kind == MethodKind::Static {
+		let lock = type_store.user_types.read()[shape_index].clone();
+		let user_type = lock.read();
+		let base_name = user_type.name;
+
+		if let UserTypeKind::Enum { shape } = &user_type.kind {
+			if let Some(existing) = shape.variant_shapes.iter().find(|v| v.name == method_name) {
+				let variant_name = existing.name;
+				let error = error!("Static method `{method_name}` on enum `{base_name}` conflicts with variant `{variant_name}`");
+				let note = note!(existing.span, "Variant `{variant_name}` here");
+				messages.message(error.span(span).note(note));
+			}
+		}
 	}
+
+	Some(shape_index)
 }
 
 fn validate_block_consts<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>) {

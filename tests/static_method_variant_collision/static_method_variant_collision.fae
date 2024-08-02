@@ -1,0 +1,8 @@
+enum State {
+	OnFire
+}
+
+method static State
+fn OnFire() {}
+
+fn main() {}
