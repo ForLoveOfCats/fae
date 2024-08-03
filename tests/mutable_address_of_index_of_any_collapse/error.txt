@@ -1,0 +1,3 @@
+Validation error: ./tests/mutable_address_of_index_of_any_collapse/mutable_address_of_index_of_any_collapse.fae, line 2: No symbol `abc` in the current scope
+  2|     abc[6].&mut
+         ^^^

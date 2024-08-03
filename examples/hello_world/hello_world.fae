@@ -1,7 +1,5 @@
 import fae::collections::list::List
 
-fn should_be_unused() {}
-
 fn main() {
 	mut list = List<str>.new()
 	defer list.free()

@@ -1225,7 +1225,7 @@ impl<'a> TypeStore<'a> {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => Some((type_id, mutable)),
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, false)),
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, true)),
 			_ => None,
 		}
 	}
