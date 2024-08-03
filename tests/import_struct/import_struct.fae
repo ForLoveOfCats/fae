@@ -7,4 +7,5 @@ struct A {
 fn main() {
 	let a = A { field: B { field: 5 } }
 	println(f"{a.field.field}")
+	other::func(a)
 }

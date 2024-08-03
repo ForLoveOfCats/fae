@@ -934,7 +934,7 @@ fn resolve_block_type_imports<'a>(
 	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
-		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, &path, None, true);
 	}
 
 	for statement in block.statements {
@@ -963,7 +963,7 @@ fn resolve_block_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names);
-		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, path, names);
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, path, names, false);
 	}
 }
 
@@ -974,6 +974,7 @@ fn resolve_import_for_block_types<'a>(
 	function_initial_scope_count: usize,
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
+	is_prelude: bool,
 ) {
 	let Some(layer) = root_layers.layer_for_path(messages, path) else {
 		return;
@@ -988,12 +989,12 @@ fn resolve_import_for_block_types<'a>(
 		let importable_types = &source_symbols.scopes[importable_types_index];
 		for name in names {
 			if let Some(&importing) = importable_types.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
 			}
 		}
 	} else {
 		for &importing in source_symbols.scopes[importable_types_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
 		}
 	}
 }
@@ -1011,7 +1012,7 @@ fn resolve_block_non_type_imports<'a>(
 	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, &path, None);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, &path, None, true);
 	}
 
 	for statement in block.statements {
@@ -1022,7 +1023,7 @@ fn resolve_block_non_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names);
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, path, names);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, path, names, false);
 	}
 }
 
@@ -1033,6 +1034,7 @@ fn resolve_import_for_block_non_types<'a>(
 	function_initial_scope_count: usize,
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
+	is_prelude: bool,
 ) {
 	let Some(layer) = root_layers.layer_for_path(messages, path) else {
 		return;
@@ -1052,26 +1054,26 @@ fn resolve_import_for_block_non_types<'a>(
 
 		for name in names {
 			if let Some(&importing) = importable_functions.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
 			} else if let Some(&importing) = importable_consts.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
 			} else if let Some(&importing) = importable_statics.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span));
+				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
 			}
 		}
 	} else {
 		// TODO: Add asterisk syntax for importing all items in a scope
 
 		for &importing in source_symbols.scopes[importable_functions_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
 		}
 
 		for &importing in source_symbols.scopes[importable_consts_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
 		}
 
 		for &importing in source_symbols.scopes[importable_statics_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None);
+			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
 		}
 	}
 }

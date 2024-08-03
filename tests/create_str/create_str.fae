@@ -1,4 +1,4 @@
-import fae::libc::malloc, memcpy
+import fae::libc::malloc
 
 fn main() {
 	let source = "Hello world!"

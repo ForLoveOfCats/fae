@@ -96,6 +96,7 @@ impl<'a> Symbols<'a> {
 		function_initial_scope_count: usize,
 		mut symbol: Symbol<'a>,
 		import_span: Option<Span>,
+		is_prelude: bool,
 	) {
 		if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name, false) {
 			messages.message(
@@ -104,7 +105,11 @@ impl<'a> Symbols<'a> {
 					.note_if_some(found.span, "Existing symbol here"),
 			);
 		} else {
-			symbol.used = true;
+			symbol.used = is_prelude;
+			if let Some(import_span) = import_span {
+				symbol.span = Some(import_span);
+			}
+
 			self.scopes.last_mut().unwrap().insert(symbol.name, symbol);
 		}
 	}

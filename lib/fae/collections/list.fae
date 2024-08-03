@@ -1,4 +1,4 @@
-import fae::libc::realloc, exit
+import fae::libc::realloc
 import fae::memory::free_slice
 
 generic T

@@ -1,0 +1,8 @@
+struct A {}
+
+enum B {}
+
+const C = 5
+
+fn d() {}
+

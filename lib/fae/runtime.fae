@@ -30,7 +30,7 @@ fn for_range_inverted(range: Range) {
 }
 
 fn panic_impl(message: fstr): noreturn {
-	import fae::libc::DlInfo, StdErrFile, exit, backtrace, dladdr, strlen
+	import fae::libc::DlInfo, exit, backtrace, dladdr, strlen
 
 	eprintln(f"Fae thread panicked: {message}")	
 
