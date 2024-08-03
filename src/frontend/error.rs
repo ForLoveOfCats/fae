@@ -76,7 +76,8 @@ impl<'a> WriteFmt for StderrOutput<'a> {
 }
 
 struct Colors {
-	label_color: &'static str,
+	error_label_color: &'static str,
+	warning_label_color: &'static str,
 	path_color: &'static str,
 	message_color: &'static str,
 	gutter_color: &'static str,
@@ -90,7 +91,8 @@ impl Colors {
 
 		if output.supports_color() {
 			Colors {
-				label_color: RED,
+				error_label_color: BOLD_RED,
+				warning_label_color: BOLD_YELLOW,
 				path_color: YELLOW,
 				message_color: PURPLE,
 				gutter_color: YELLOW,
@@ -99,7 +101,8 @@ impl Colors {
 			}
 		} else {
 			Colors {
-				label_color: "",
+				error_label_color: "",
+				warning_label_color: "",
 				path_color: "",
 				message_color: "",
 				gutter_color: "",
@@ -299,8 +302,23 @@ impl Message {
 			Self::print_file_message(output, sources, Some(self.kind), span, &self.text, stage);
 		} else {
 			let kind = self.kind.name();
-			let Colors { label_color, message_color, reset_color, .. } = Colors::new(output);
-			writeln!(output, "{label_color}{stage} {kind}: {message_color}{}{reset_color}", self.text);
+			let Colors {
+				error_label_color,
+				warning_label_color,
+				message_color,
+				reset_color,
+				..
+			} = Colors::new(output);
+
+			match self.kind {
+				MessageKind::Error => {
+					writeln!(output, "{error_label_color}{stage} {kind}: {message_color}{}{reset_color}", self.text)
+				}
+
+				MessageKind::Warning => {
+					writeln!(output, "{warning_label_color}{stage} {kind}: {message_color}{}{reset_color}", self.text)
+				}
+			}
 		}
 	}
 
@@ -318,7 +336,8 @@ impl Message {
 		let source = &source_file.source;
 
 		let Colors {
-			label_color,
+			error_label_color,
+			warning_label_color,
 			path_color,
 			message_color,
 			gutter_color,
@@ -351,17 +370,26 @@ impl Message {
 		let column_start = calc_spaces_from_byte_offset(line, start);
 
 		if let Some(kind) = kind {
-			let kind = kind.name();
-			write!(
-				output,
-				"{label_color}{stage} {kind}: {path_color}{}{reset_color}, line {}: ",
-				path.display(),
-				line_num
-			);
+			let kind_name = kind.name();
+			match kind {
+				MessageKind::Error => write!(
+					output,
+					"{error_label_color}{stage} {kind_name}: {path_color}{}{reset_color}, line {}: ",
+					path.display(),
+					line_num
+				),
+
+				MessageKind::Warning => write!(
+					output,
+					"{warning_label_color}{stage} {kind_name}: {path_color}{}{reset_color}, line {}: ",
+					path.display(),
+					line_num
+				),
+			}
 		} else {
 			write!(
 				output,
-				"{label_color}{stage}: {path_color}{}{reset_color}, line {}: ",
+				"{warning_label_color}{stage}: {path_color}{}{reset_color}, line {}: ",
 				path.display(),
 				line_num
 			);

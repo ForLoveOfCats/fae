@@ -7,5 +7,5 @@ fn returns_pet(): Pet {
 }
 
 fn main() {
-	let pet = returns_pet()
+	let _pet = returns_pet()
 }

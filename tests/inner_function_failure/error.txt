@@ -6,6 +6,6 @@ Validation error: ./tests/inner_function_failure/inner_function_failure.fae, lin
   37|         return level_two<E>(a)
                      ^^^^^^^^^^^^^^^
 
-Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 40: Expected argument of type `T`, got `untyped integer`
-  40|     return level_one(b, 4)
+Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 41: Expected argument of type `T`, got `untyped integer`
+  41|     return level_one(b, 4)
                               ^

@@ -1,0 +1,7 @@
+fn main() {
+	func(4)
+}
+
+fn func(arg: i32) {
+	let variable = false
+}

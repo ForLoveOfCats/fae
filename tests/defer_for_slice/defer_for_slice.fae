@@ -18,7 +18,8 @@ fn breaks(slice: []str, early_break: bool) {
 	println("A")
 	defer println("1")
 
-	for index in 0..3 {
+	for item, index in slice {
+		println(f"item: {item}")
 		defer println("2")
 
 		if early_break => break
@@ -36,7 +37,8 @@ fn continues(slice: []str, early_continue: bool) {
 	println("A")
 	defer println("1")
 
-	for index in 0..3 {
+	for item, index in slice {
+		println(f"item: {item}")
 		defer println("2")
 
 		if early_continue and index == 1 => break

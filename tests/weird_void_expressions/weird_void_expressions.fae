@@ -1,5 +1,5 @@
 fn main() {
 	mut a = true
-	let b = a = false
+	let _ = a = false
 	return void
 }

@@ -1,4 +1,4 @@
 generic T, E
-fn main(argc: i32, argv: &&u8): i32 {
+fn main(_argc: i32, _argv: &&u8): i32 {
 	return 0
 }

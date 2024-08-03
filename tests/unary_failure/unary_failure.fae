@@ -1,6 +1,6 @@
 fn main() {
-	let a = 5.!
-	let b = "hi".!
-	let c = -"hi"
-	let d = -true
+	let _ = 5.!
+	let _ = "hi".!
+	let _ = -"hi"
+	let _ = -true
 }

@@ -7,5 +7,5 @@ Validation error: ./tests/field_order_count_failure/field_order_count_failure.fa
               ^^^^^
 
 Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae, line 8: Too few field initializers, expected 3, but only found 2
-  8|     let a = A {
+  8|     let _ = A {
                    ^^

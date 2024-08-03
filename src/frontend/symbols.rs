@@ -13,6 +13,7 @@ pub struct Symbol<'a> {
 	pub name: &'a str,
 	pub kind: SymbolKind,
 	pub span: Option<Span>,
+	pub used: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -61,7 +62,7 @@ impl<'a> Symbols<'a> {
 		SymbolsScope { symbols: self }
 	}
 
-	pub fn push_symbol(&mut self, messages: &mut Messages, function_initial_scope_count: usize, symbol: Symbol<'a>) {
+	pub fn push_symbol(&mut self, messages: &mut Messages, function_initial_scope_count: usize, mut symbol: Symbol<'a>) {
 		let can_shadow = matches!(
 			symbol.kind,
 			SymbolKind::Let { .. }
@@ -71,7 +72,7 @@ impl<'a> Symbols<'a> {
 		);
 
 		if !can_shadow {
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name) {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name, false) {
 				// `symbol.span` should only be None for builtin types, yes it's a hack, shush
 				messages.message(
 					error!("Duplicate symbol `{}`", symbol.name)
@@ -79,6 +80,10 @@ impl<'a> Symbols<'a> {
 						.note_if_some(found.span, "Original symbol here"),
 				);
 			}
+		}
+
+		if symbol.name.starts_with('_') {
+			symbol.used = true;
 		}
 
 		// Pushing the symbol even if duplicate is probably has less error virality
@@ -89,28 +94,36 @@ impl<'a> Symbols<'a> {
 		&mut self,
 		messages: &mut Messages,
 		function_initial_scope_count: usize,
-		symbol: Symbol<'a>,
+		mut symbol: Symbol<'a>,
 		import_span: Option<Span>,
 	) {
-		if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name) {
+		if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, symbol.name, false) {
 			messages.message(
 				error!("Import conflicts with existing symbol `{}`", found.name)
 					.span_if_some(import_span)
 					.note_if_some(found.span, "Existing symbol here"),
 			);
 		} else {
+			symbol.used = true;
 			self.scopes.last_mut().unwrap().insert(symbol.name, symbol);
 		}
 	}
 
-	fn find_local_symbol_matching_name(&self, function_initial_scope_count: usize, name: &str) -> Option<Symbol<'a>> {
+	fn find_local_symbol_matching_name(
+		&mut self,
+		function_initial_scope_count: usize,
+		name: &str,
+		mark_used: bool,
+	) -> Option<Symbol<'a>> {
 		let mut scope_index = self.scopes.len();
-		for scope in self.scopes.iter().rev() {
+		for scope in self.scopes.iter_mut().rev() {
 			scope_index -= 1;
 
-			let Some(&symbol) = scope.get(name) else {
+			let Some(symbol) = scope.get_mut(name) else {
 				continue;
 			};
+
+			symbol.used |= mark_used;
 
 			if scope_index < function_initial_scope_count {
 				match symbol.kind {
@@ -124,14 +137,14 @@ impl<'a> Symbols<'a> {
 				}
 			}
 
-			return Some(symbol);
+			return Some(*symbol);
 		}
 
 		None
 	}
 
 	pub fn lookup_symbol(
-		&self,
+		&mut self,
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,
 		type_store: &TypeStore<'a>,
@@ -146,7 +159,7 @@ impl<'a> Symbols<'a> {
 				return Some(found);
 			}
 
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, name) {
+			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, name, true) {
 				return Some(found);
 			}
 
@@ -167,6 +180,23 @@ impl<'a, 'b> SymbolsScope<'a, 'b> {
 	pub fn child_scope<'s>(&'s mut self) -> SymbolsScope<'a, 's> {
 		self.symbols.scopes.push(FxHashMap::default());
 		SymbolsScope { symbols: self.symbols }
+	}
+
+	pub fn report_unused(&self, messages: &mut Messages<'a>) {
+		let scope = self.symbols.scopes.last().unwrap();
+		report_unused(scope, messages);
+	}
+}
+
+pub fn report_unused<'a>(scope: &FxHashMap<&'a str, Symbol<'a>>, messages: &mut Messages<'a>) {
+	// TODO: At this point we should just switch back to linear symbol lookup
+	// if we're going to have to iterate through them all at the end of each
+	// scope anyway which can be super expensive with a hashmap
+	for symbol in scope.values() {
+		if !symbol.used {
+			let warning = warning!("Unused symbol `{}`", symbol.name);
+			messages.message(warning.span_if_some(symbol.span));
+		}
 	}
 }
 
@@ -260,11 +290,6 @@ impl<'a> Readables<'a> {
 	}
 
 	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
-		// if name == "new_capacity" {
-		// 	dbg!(&self, std::backtrace::Backtrace::force_capture());
-		// 	println!();
-		// 	println!();
-		// }
 		let index = self.readables.len() - self.starting_index;
 		self.readables.push(Readable { name, type_id, kind });
 		index

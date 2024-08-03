@@ -630,7 +630,7 @@ impl<'a> TypeStore<'a> {
 
 			if let Some(name) = name {
 				let kind = SymbolKind::BuiltinType { type_id };
-				let symbol = Symbol { name, kind, span: None };
+				let symbol = Symbol { name, kind, span: None, used: true };
 				primative_type_symbols.push(symbol);
 			}
 
@@ -1471,7 +1471,7 @@ impl<'a> TypeStore<'a> {
 		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
-		symbols: &Symbols<'a>,
+		symbols: &mut Symbols<'a>,
 		function_initial_symbols_len: usize,
 		enclosing_generic_parameters: &GenericParameters<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
@@ -1639,7 +1639,7 @@ impl<'a> TypeStore<'a> {
 		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		root_layers: &RootLayers<'a>,
-		symbols: &Symbols<'a>,
+		symbols: &mut Symbols<'a>,
 		shape_index: usize,
 		invoke_span: Option<Span>,
 		function_initial_symbols_len: usize,

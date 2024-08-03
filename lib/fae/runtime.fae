@@ -1,5 +1,5 @@
 export "main"
-fn fae_main(argc: i32, argv: &&u8): i32 {
+fn fae_main(_argc: i32, _argv: &&u8): i32 {
 	fae::intrinsics::user_main_function()
 	return 0
 }

@@ -197,7 +197,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			.push_symbol(self.messages, self.function_initial_scope_count, symbol);
 	}
 
-	pub fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind) -> usize {
+	pub fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind, used: bool) -> usize {
 		let readable_index = self.readables.push(name.item, type_id, kind);
 
 		let span = Some(name.span);
@@ -208,7 +208,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		};
 
 		if name != "_" {
-			self.push_symbol(Symbol { name, kind, span });
+			self.push_symbol(Symbol { name, kind, span, used });
 		}
 
 		readable_index
@@ -1229,7 +1229,7 @@ fn create_block_struct<'a>(
 	}
 
 	let kind = SymbolKind::Type { shape_index };
-	let symbol = Symbol { name, kind, span: Some(span) };
+	let symbol = Symbol { name, kind, span: Some(span), used: true };
 	symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	shape_index
 }
@@ -1345,7 +1345,7 @@ fn create_block_enum<'a>(
 	}
 
 	let kind = SymbolKind::Type { shape_index };
-	let symbol = Symbol { name, kind, span: Some(span) };
+	let symbol = Symbol { name, kind, span: Some(span), used: true };
 	symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	shape_index
 }
@@ -1444,7 +1444,12 @@ fn fill_block_struct<'a>(
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
 		let kind = SymbolKind::UserTypeGeneric { shape_index, generic_index };
-		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+		};
 		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
 	drop(user_type);
@@ -1537,7 +1542,12 @@ fn fill_block_enum<'a>(
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
 		let kind = SymbolKind::UserTypeGeneric { shape_index: enum_shape_index, generic_index };
-		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+		};
 		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
 	drop(user_type);
@@ -1651,7 +1661,12 @@ fn fill_struct_like_enum_variant<'a>(
 	let struct_shape = lock.read();
 	for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
 		let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
-		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+		};
 		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 	}
 	drop(struct_shape);
@@ -2056,7 +2071,12 @@ fn create_block_functions<'a>(
 				explicit_generics.push(GenericParameter { name: generic, generic_type_id });
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-				let symbol = Symbol { name: generic.item, kind, span: Some(generic.span) };
+				let symbol = Symbol {
+					name: generic.item,
+					kind,
+					span: Some(generic.span),
+					used: true,
+				};
 				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
@@ -2070,7 +2090,7 @@ fn create_block_functions<'a>(
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let span = Some(parent_parameter.name.span);
-				let symbol = Symbol { name: parent_parameter.name.item, kind, span };
+				let symbol = Symbol { name: parent_parameter.name.item, kind, span, used: true };
 				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
@@ -2088,7 +2108,7 @@ fn create_block_functions<'a>(
 
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(base_type_parameter.name.span);
-					let symbol = Symbol { name: base_type_parameter.name.item, kind, span };
+					let symbol = Symbol { name: base_type_parameter.name.item, kind, span, used: true };
 					scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
 				}
 
@@ -2269,7 +2289,7 @@ fn create_block_functions<'a>(
 
 				let kind = SymbolKind::Function { function_shape_index };
 				let span = Some(statement.name.span);
-				let symbol = Symbol { name: name.item, kind, span };
+				let symbol = Symbol { name: name.item, kind, span, used: true };
 				symbols.push_symbol(messages, function_initial_scope_count, symbol);
 			}
 
@@ -2390,7 +2410,16 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	};
 
 	let should_import_prelude = is_root && context.cli_arguments.std_enabled;
-	validate_block_in_context(&mut context, block, scope_id, is_root, should_import_prelude)
+	let block = validate_block_in_context(&mut context, block, scope_id, is_root, should_import_prelude);
+	if is_root {
+		for scope in &context.symbols_scope.symbols.scopes {
+			crate::frontend::symbols::report_unused(scope, context.messages);
+		}
+	} else {
+		context.symbols_scope.report_unused(context.messages);
+	}
+
+	block
 }
 
 fn validate_block_in_context<'a>(
@@ -2680,7 +2709,12 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 
 	for (generic_index, generic) in generics.parameters().iter().enumerate() {
 		let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-		let symbol = Symbol { name: generic.name.item, kind, span: Some(generic.name.span) };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+		};
 		scope.push_symbol(symbol);
 	}
 
@@ -2697,7 +2731,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			let type_id = shape.parameters[0].type_id;
 			let readable_index = scope.readables.push("self", type_id, ReadableKind::Let);
 			let kind = SymbolKind::Let { readable_index };
-			let symbol = Symbol { name: "self", kind, span: None };
+			let symbol = Symbol { name: "self", kind, span: None, used: true };
 
 			scope.push_symbol(symbol);
 			maybe_self = 1;
@@ -2705,7 +2739,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	}
 
 	for (index, parameter) in statement.parameters.parameters.iter().enumerate() {
-		let span = parameter.span;
+		let span = parameter.item.name.span;
 		let parameter = &parameter.item;
 
 		let parameter_shape = &shape.parameters[index + maybe_self];
@@ -2725,12 +2759,12 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		};
 
 		let name = parameter.name.item;
-		scope.push_symbol(Symbol { name, kind, span: Some(span) });
+		scope.push_symbol(Symbol { name, kind, span: Some(span), used: false });
 
 		let previous = &statement.parameters.parameters[..index];
 		if let Some(existing) = previous.iter().find(|f| f.item.name.item == name) {
 			let error = error!("Duplicate parameter `{name}` of function `{}`", statement.name.item);
-			let note = note!(existing.span, "Original parameter here");
+			let note = note!(existing.item.name.span, "Original parameter here");
 			scope.message(error.span(span).note(note))
 		}
 	}
@@ -2939,7 +2973,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	let name = statement.item.name.item;
 	let kind = SymbolKind::Const { constant_index };
 	let span = Some(statement.span + expression.span);
-	let symbol = Symbol { name, kind, span };
+	let symbol = Symbol { name, kind, span, used: true };
 	context.push_symbol(symbol);
 
 	Some(())
@@ -2967,7 +3001,7 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 	let name = statement.item.name.item;
 	let kind = SymbolKind::Static { static_index: index };
 	let span = Some(statement.span);
-	context.push_symbol(Symbol { name, kind, span });
+	context.push_symbol(Symbol { name, kind, span, used: true });
 
 	Some(())
 }
@@ -3014,7 +3048,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 		true => ReadableKind::Mut,
 		false => ReadableKind::Let,
 	};
-	let readable_index = context.push_readable(statement.item.name, type_id, kind);
+	let readable_index = context.push_readable(statement.item.name, type_id, kind, false);
 
 	let name = statement.item.name.item;
 	Some(Binding { name, type_id, expression, readable_index })
@@ -3360,7 +3394,7 @@ fn validate_match_expression<'a>(
 				false => ReadableKind::Let,
 			};
 
-			let readable_index = scope.push_readable(binding_name, type_id, kind);
+			let readable_index = scope.push_readable(binding_name, type_id, kind, false);
 			Some(ResultBinding { type_id, readable_index })
 		} else {
 			None
@@ -3482,32 +3516,32 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 		ForKind::InSlice => {
 			let slice = slice.unwrap();
 			let type_id = slice.type_id;
-			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false);
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::OfSlice => {
 			let slice = slice.unwrap();
 			let type_id = scope.type_store.pointer_to(slice.type_id, slice.mutable);
-			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false);
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::Range => {
 			let type_id = scope.type_store.isize_type_id();
-			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let);
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false);
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::AnyCollapse => {
-			let readable_index = scope.push_readable(statement.item.item, any_collapse, ReadableKind::Mut);
+			let readable_index = scope.push_readable(statement.item.item, any_collapse, ReadableKind::Mut, false);
 			ResultBinding { type_id: any_collapse, readable_index }
 		}
 	};
 
 	let index = if let Some(index) = statement.item.index {
 		let type_id = scope.type_store.isize_type_id();
-		let readable_index = scope.push_readable(index, type_id, ReadableKind::Let);
+		let readable_index = scope.push_readable(index, type_id, ReadableKind::Let, false);
 		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None
@@ -3521,7 +3555,7 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 		}
 
 		let type_id = scope.type_store.bool_type_id();
-		let readable_index = scope.push_readable(is_last, type_id, ReadableKind::Let);
+		let readable_index = scope.push_readable(is_last, type_id, ReadableKind::Let, false);
 		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None
@@ -3938,28 +3972,32 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		Ref::new(type_arguments),
 		Some(span),
 	);
-	let FunctionSpecializationResult { specialization_index, return_type } = match result {
-		Some(results) => results,
-		None => return Expression::any_collapse(context.type_store, span),
-	};
 
 	let mut returns = false;
 	let mut arguments = Vec::with_capacity(call.arguments.len());
 	for (index, argument) in call.arguments.iter().enumerate() {
 		let mut scope = context.child_scope();
+		scope.expected_type = None;
 
-		let shape = lock.read();
-		let specialization = &shape.specializations[specialization_index];
-		scope.expected_type = match specialization.parameters.get(index) {
-			Some(parameter) => Some(parameter.type_id),
-			None => None,
-		};
-		drop(shape);
+		if let Some(result) = &result {
+			let shape = lock.read();
+			let specialization = &shape.specializations[result.specialization_index];
+			scope.expected_type = match specialization.parameters.get(index) {
+				Some(parameter) => Some(parameter.type_id),
+				None => None,
+			};
+			drop(shape);
+		}
 
 		let argument = validate_expression(&mut scope, argument);
 		returns |= argument.returns;
 		arguments.push(argument);
 	}
+
+	let FunctionSpecializationResult { specialization_index, return_type } = match result {
+		Some(results) => results,
+		None => return Expression::any_collapse(context.type_store, span),
+	};
 
 	let shape = lock.read();
 	let specialization = &shape.specializations[specialization_index];
@@ -5764,7 +5802,8 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 			false => ReadableKind::Let,
 		};
 
-		let readable_index = context.push_readable(binding_name, type_id, kind);
+		let used = check.binding_name.is_none();
+		let readable_index = context.push_readable(binding_name, type_id, kind, used);
 		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None

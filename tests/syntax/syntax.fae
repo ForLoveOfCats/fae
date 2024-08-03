@@ -10,7 +10,7 @@ struct EmptyA {
 
 struct EmptyB {}
 
-fn takes_empty(empty: EmptyA): bool {
+fn takes_empty(_: EmptyA): bool {
 	return true
 }
 
@@ -21,12 +21,12 @@ struct HasBool {
 const STRING = "Hi there"
 
 fn main() {
-	let a = "This is a string\n"
-	let b: str = "\"This is a string\""
+	let _ = "This is a string\n"
+	let _: str = "\"This is a string\""
 
 	mut c = MyType { a: 5, b: 6 }
 	c.a = 7
-	let c_b = c.b
+	let _c_b = c.b
 	c = MyType { a: 5, b: 6, }
 	c = MyType {
 		a: 7,
@@ -65,10 +65,10 @@ fn main() {
 		println("In function if")
 	}
 
-	let d: u64 = generic_function<u64>(54)
+	let _: u64 = generic_function<u64>(54)
 
-	let ptr: &u8 = STRING.pointer
-	let len: isize = STRING.length
+	let _ptr: &u8 = STRING.pointer
+	let _len: isize = STRING.length
 	println(STRING)
 }
 

@@ -1,6 +1,6 @@
 fn main() {
-	let a: Enum = .Something
-	let b = .WhoKnows
+	let _: Enum = .Something
+	let _ = .WhoKnows
 
 	dump_enum(.Blah)
 
@@ -14,7 +14,7 @@ fn main() {
 
 	value = Struct.new(.Abc { another: 6.4 }, -8)
 
-	let other: OtherEnum = .Variant { shared: .A, unshared: .Nope }
+	let _: OtherEnum = .Variant { shared: .A, unshared: .Nope }
 }
 
 fn dump_enum(arg: Enum) {

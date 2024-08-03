@@ -7,7 +7,7 @@ struct B {
 }
 
 fn main() {
-	let a = A {
+	let _a = A {
 		field_a: B {
 			field_b: A {
 				field_a: 4

@@ -1,8 +1,8 @@
 fn main() {
 	let a: u8 = 0
-	let null = a.(&u8)
+	let _null = a.(&u8)
 
-	let ptr = a.&.(&mut u8)
+	let _ptr = a.&.(&mut u8)
 
 	mut b: i32 = 5
 	let mutable = b.&mut

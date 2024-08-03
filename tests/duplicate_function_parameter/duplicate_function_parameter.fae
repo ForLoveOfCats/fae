@@ -1,8 +1,8 @@
-fn func(a: i32, b: f32, a: bool) {}
+fn func(_a: i32, _b: f32, _a: bool) {}
 
 struct A {}
 
 method A
-fn met(arg: bool, arg: f64) {}
+fn met(_arg: bool, _arg: f64) {}
 
 fn main() {}

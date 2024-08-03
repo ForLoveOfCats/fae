@@ -13,10 +13,10 @@ fn main() {
 }
 
 fn outer_i32(arg: i32): f64 {
-	let a = "Hi"
+	let _a = "Hi"
 
-	fn inner(arg: i32): f64 {
-		let a = "Hello"
+	fn inner(_arg: i32): f64 {
+		let _a = "Hello"
 		return 3.2
 	}
 
@@ -35,7 +35,7 @@ fn outer_generic(arg: T): T {
 
 generic T, E
 fn multi_nested_generic(a: T, b: E): E {
-	fn level_one(a: E, b: T): E {
+	fn level_one(a: E, _: T): E {
 		fn level_two(a: E): E {
 			return outer_generic<E>(a)
 		}

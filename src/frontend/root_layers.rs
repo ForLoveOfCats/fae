@@ -94,7 +94,7 @@ impl<'a> RootLayers<'a> {
 		let segments = path.segments;
 		assert!(segments.len() > 1);
 		let layer = self.layer_for_module_path(messages, &segments[..segments.len() - 1])?;
-		let lock = layer.read();
+		let mut lock = layer.write();
 		lock.lookup_root_symbol(messages, &[*segments.last().unwrap()])
 	}
 }
@@ -123,16 +123,19 @@ impl<'a> RootLayer<'a> {
 		}
 	}
 
-	fn lookup_root_symbol(&self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<Symbol<'a>> {
+	fn lookup_root_symbol(&mut self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<Symbol<'a>> {
 		assert_eq!(segments.len(), 1);
 
 		let segment = &segments[0];
 		let name = segment.item;
-		let found = self.symbols.scopes.iter().find_map(|scope| scope.get(name));
+		let mut found = self.symbols.scopes.iter_mut().find_map(|scope| scope.get_mut(name));
 
-		if found.is_none() {
+		if let Some(found) = &mut found {
+			found.used = true;
+		} else {
 			messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
 		}
+
 		found.copied()
 	}
 }

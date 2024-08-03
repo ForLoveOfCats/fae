@@ -15,7 +15,7 @@ struct Above {
 }
 
 fn main() {
-	let a = Above<f32, i32> {
+	let _ = Above<f32, i32> {
 		field: 42
 		below: Below<f32> {
 			field: 4.5
@@ -23,7 +23,7 @@ fn main() {
 	}
 
 	// Fails expecting Below<i32>
-	let b = Above<i32, f32> {
+	let _ = Above<i32, f32> {
 		field: 42
 		below: Below<f32> {
 			field: 4.5
@@ -45,5 +45,5 @@ struct Below {
 }
 
 generic A
-fn below(structure: Above<A, A>) {
+fn below(_structure: Above<A, A>) {
 }

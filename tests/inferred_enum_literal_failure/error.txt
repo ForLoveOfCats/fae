@@ -1,9 +1,9 @@
 Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 2: Expected enum `Enum` has no variant named `Something`
-  2|     let a: Enum = .Something
+  2|     let _: Enum = .Something
                         ^^^^^^^^^
 
 Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 3: Cannot infer enum type for variant, there is no specific expected type in this context
-  3|     let b = .WhoKnows
+  3|     let _ = .WhoKnows
                  ^^^^^^^^^
 
 Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 5: Expected enum `Enum` has no variant named `Blah`
@@ -27,5 +27,5 @@ Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_fa
                               ^^^
 
 Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 17: Expected enum `Enum` has no variant named `Nope`
-  17|     let other: OtherEnum = .Variant { shared: .A, unshared: .Nope }
-                                                                   ^^^^
+  17|     let _: OtherEnum = .Variant { shared: .A, unshared: .Nope }
+                                                               ^^^^
