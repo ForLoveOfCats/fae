@@ -1,0 +1,19 @@
+fn main() {
+	let slice = []{ "Hello", "there", "Fae", "world" }
+	mut iterator = Iterator { slice, index: 0 }
+	while iterator.next() is item: Some {
+		println(f"{item}")
+	}
+}
+
+struct Iterator {
+	slice: []str
+	index: isize
+}
+
+method mut Iterator
+fn next(): Option<str> {
+	if self.index >= self.slice.length => return .None
+	defer self.index += 1
+	return .Some(self.slice[self.index])
+}

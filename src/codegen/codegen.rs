@@ -6,9 +6,8 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
 	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral,
-	FunctionId, FunctionShape, IfElseChain, IntegerValue, Match, MethodCall, Read, Return, SliceMutableToImmutable,
-	StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
-	While,
+	FunctionId, FunctionShape, IfElseChain, IntegerValue, Match, MethodCall, Read, SliceMutableToImmutable, StatementKind,
+	StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -170,6 +169,7 @@ pub fn generate_function<'a, G: Generator>(
 fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator: &mut G, block: &'b Block<'a>) {
 	generator.start_block();
 	let block_start_defer_len = context.defer_stack.len();
+	let mut should_generate_defer_stack = true;
 
 	for statement in &block.statements {
 		let debug_location = statement.debug_location;
@@ -203,11 +203,13 @@ fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator
 
 			StatementKind::Break(statement) => {
 				let marker = context.loop_stack.last().unwrap();
-				let defer_stack = std::mem::take(&mut context.defer_stack);
+				let mut defer_stack = std::mem::take(&mut context.defer_stack);
 				for expression in defer_stack[marker.start_index..].iter().rev() {
 					generate_expression(context, generator, expression);
 				}
+				defer_stack.truncate(block_start_defer_len);
 				context.defer_stack = defer_stack;
+				should_generate_defer_stack = false;
 
 				generate_break(generator, statement, debug_location);
 				break;
@@ -215,36 +217,48 @@ fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator
 
 			StatementKind::Continue(statement) => {
 				let marker = context.loop_stack.last().unwrap();
-				let defer_stack = std::mem::take(&mut context.defer_stack);
+				let mut defer_stack = std::mem::take(&mut context.defer_stack);
 				for expression in defer_stack[marker.start_index..].iter().rev() {
 					generate_expression(context, generator, expression);
 				}
+				defer_stack.truncate(block_start_defer_len);
 				context.defer_stack = defer_stack;
+				should_generate_defer_stack = false;
 
 				generate_continue(generator, statement, debug_location);
 				break;
 			}
 
 			StatementKind::Return(statement) => {
-				let defer_stack = std::mem::take(&mut context.defer_stack);
-				for expression in defer_stack.iter().rev() {
-					generate_expression(context, generator, expression);
-				}
-				context.defer_stack = defer_stack;
+				let value = statement
+					.expression
+					.as_ref()
+					.and_then(|expression| generate_expression(context, generator, expression));
 
-				generate_return(context, generator, statement, debug_location);
+				generator.generate_return(context, context.function_id, value, debug_location, |context, generator| {
+					let mut defer_stack = std::mem::take(&mut context.defer_stack);
+					for expression in defer_stack.iter().rev() {
+						generate_expression(context, generator, expression);
+					}
+					defer_stack.truncate(block_start_defer_len);
+					context.defer_stack = defer_stack;
+				});
+
+				should_generate_defer_stack = false;
 				break;
 			}
 		};
 	}
 
-	let mut defer_stack = std::mem::take(&mut context.defer_stack);
-	for expression in defer_stack[block_start_defer_len..].iter().rev() {
-		generate_expression(context, generator, expression);
-	}
+	if should_generate_defer_stack {
+		let mut defer_stack = std::mem::take(&mut context.defer_stack);
+		for expression in defer_stack[block_start_defer_len..].iter().rev() {
+			generate_expression(context, generator, expression);
+		}
 
-	defer_stack.truncate(block_start_defer_len);
-	context.defer_stack = defer_stack;
+		defer_stack.truncate(block_start_defer_len);
+		context.defer_stack = defer_stack;
+	}
 
 	generator.end_block();
 }
@@ -925,21 +939,6 @@ fn generate_break<G: Generator>(generator: &mut G, statement: &Break, debug_loca
 
 fn generate_continue<G: Generator>(generator: &mut G, statement: &Continue, debug_location: DebugLocation) {
 	generator.generate_continue(statement.loop_index, debug_location);
-}
-
-fn generate_return<'a, 'b, G: Generator>(
-	context: &mut Context<'a, 'b>,
-	generator: &mut G,
-	statement: &'b Return<'a>,
-	debug_location: DebugLocation,
-) {
-	let Some(expression) = &statement.expression else {
-		generator.generate_return(context.function_id, None, debug_location);
-		return;
-	};
-
-	let value = generate_expression(context, generator, expression);
-	generator.generate_return(context.function_id, value, debug_location);
 }
 
 fn generate_intrinsic<'a, 'b, G: Generator>(

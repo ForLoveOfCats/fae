@@ -843,7 +843,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			LLVMPositionBuilderAtEnd(self.builder, condition_block);
 		}
 
+		let previous_condition_binding_block = context.if_condition_binding_block;
+		context.if_condition_binding_block = Some(condition_block);
 		let condition_binding = condition_callback(context, self);
+		context.if_condition_binding_block = previous_condition_binding_block;
 		let condition = condition_binding.to_value(self.builder);
 		unsafe {
 			let zero = LLVMConstNull(LLVMTypeOf(condition));
@@ -2494,15 +2497,20 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMBuildBr(self.builder, condition_block) };
 	}
 
-	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>, debug_location: DebugLocation) {
+	fn generate_return<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		function_id: FunctionId,
+		value: Option<Self::Binding>,
+		debug_location: DebugLocation,
+		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	) {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 
-		let mut abi = self.abi.take().unwrap();
-		abi.return_value(self.context, self.builder, function, value);
-		self.abi = Some(abi);
+		ABI::return_value(context, self, function.llvm_function, function.return_type, value, defer_callback);
 	}
 
 	fn generate_slice(

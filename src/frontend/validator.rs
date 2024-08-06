@@ -3469,6 +3469,7 @@ fn validate_match_expression<'a>(
 
 fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a Node<tree::While<'a>>) -> While<'a> {
 	let mut scope = context.child_scope();
+	scope.can_is_bind = true;
 
 	let condition = validate_expression(&mut scope, &statement.item.condition);
 	if !condition.type_id.is_bool(scope.type_store) && !condition.type_id.is_any_collapse(scope.type_store) {

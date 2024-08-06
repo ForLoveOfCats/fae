@@ -13,11 +13,15 @@ use llvm_sys::prelude::*;
 use llvm_sys::{self, LLVMLinkage};
 
 use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
+use crate::codegen::codegen;
 use crate::codegen::llvm::generator::{self, AttributeKinds, BindingKind, LLVMGenerator, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
 use crate::frontend::type_store::{Layout, NumericKind, TypeId, TypeStore};
 
-pub trait LLVMAbi {
+pub trait LLVMAbi
+where
+	Self: Sized,
+{
 	fn new() -> Self;
 
 	fn define_function(
@@ -43,12 +47,13 @@ pub trait LLVMAbi {
 	where
 		Self: Sized;
 
-	fn return_value(
-		&mut self,
-		context: LLVMContextRef,
-		builder: LLVMBuilderRef,
-		function: &DefinedFunction,
+	fn return_value<'a, 'b>(
+		codegen_context: &mut codegen::Context<'a, 'b>,
+		generator: &mut generator::LLVMGenerator<Self>,
+		llvm_function: LLVMValueRef,
+		return_type: FunctionReturnType,
 		value: Option<generator::Binding>,
+		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut generator::LLVMGenerator<Self>),
 	);
 }
 
@@ -647,24 +652,27 @@ impl LLVMAbi for SysvAbi {
 		}
 	}
 
-	fn return_value(
-		&mut self,
-		context: LLVMContextRef,
-		builder: LLVMBuilderRef,
-		function: &DefinedFunction,
+	fn return_value<'a, 'b>(
+		codegen_context: &mut codegen::Context<'a, 'b>,
+		generator: &mut LLVMGenerator<Self>,
+		llvm_function: LLVMValueRef,
+		return_type: FunctionReturnType,
 		value: Option<generator::Binding>,
+		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut generator::LLVMGenerator<Self>),
 	) {
-		match function.return_type {
+		match return_type {
 			FunctionReturnType::Void => {
 				assert!(value.is_none(), "{value:?}");
-				unsafe { LLVMBuildRetVoid(builder) };
+				defer_callback(codegen_context, generator);
+				unsafe { LLVMBuildRetVoid(generator.builder) };
 			}
 
 			FunctionReturnType::ByValue { abi_type, .. } => {
 				let value = value.unwrap();
 				let pointer = match value.kind {
 					BindingKind::Value(value) => {
-						unsafe { LLVMBuildRet(builder, value) };
+						defer_callback(codegen_context, generator);
+						unsafe { LLVMBuildRet(generator.builder, value) };
 						return;
 					}
 
@@ -672,28 +680,30 @@ impl LLVMAbi for SysvAbi {
 				};
 
 				unsafe {
-					let value = LLVMBuildLoad2(builder, abi_type, pointer, c"".as_ptr());
-					LLVMBuildRet(builder, value);
+					let value = LLVMBuildLoad2(generator.builder, abi_type, pointer, c"".as_ptr());
+					defer_callback(codegen_context, generator);
+					LLVMBuildRet(generator.builder, value);
 				}
 			}
 
 			FunctionReturnType::ByPointer { pointed_type, layout } => {
-				let sret_pointer = unsafe { LLVMGetParam(function.llvm_function, 0) };
+				let sret_pointer = unsafe { LLVMGetParam(llvm_function, 0) };
 
 				match value.unwrap().kind {
 					generator::BindingKind::Value(value) => {
-						unsafe { LLVMBuildStore(builder, value, sret_pointer) };
+						unsafe { LLVMBuildStore(generator.builder, value, sret_pointer) };
 					}
 
 					generator::BindingKind::Pointer { pointer, pointed_type: ty } => unsafe {
 						assert_eq!(pointed_type, ty);
-						let size = LLVMConstInt(LLVMInt64TypeInContext(context), layout.size as u64, false as _);
+						let size = LLVMConstInt(LLVMInt64TypeInContext(generator.context), layout.size as u64, false as _);
 						let align = layout.alignment as u32;
-						LLVMBuildMemCpy(builder, sret_pointer, align, pointer, align, size);
+						LLVMBuildMemCpy(generator.builder, sret_pointer, align, pointer, align, size);
 					},
 				}
 
-				unsafe { LLVMBuildRetVoid(builder) };
+				defer_callback(codegen_context, generator);
+				unsafe { LLVMBuildRetVoid(generator.builder) };
 			}
 		}
 	}

@@ -223,7 +223,14 @@ pub trait Generator {
 
 	fn generate_continue(&mut self, loop_index: usize, debug_location: DebugLocation);
 
-	fn generate_return(&mut self, function_id: FunctionId, value: Option<Self::Binding>, debug_location: DebugLocation);
+	fn generate_return<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		function_id: FunctionId,
+		value: Option<Self::Binding>,
+		debug_location: DebugLocation,
+		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	);
 
 	fn generate_slice(
 		&mut self,
