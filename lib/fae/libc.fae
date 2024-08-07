@@ -51,6 +51,9 @@ fn backtrace_symbols(addresses: &&void, address_count: i32): &&u8
 extern "backtrace_symbols_fd"
 fn backtrace_symbols_fd(addresses: &&void, address_count: i32, fd: i32)
 
+extern "close"
+fn close(file_descriptor: i32): i32
+
 extern "dladdr"
 fn dladdr(address: &void, info: &mut DlInfo): i32
 
@@ -74,6 +77,12 @@ fn malloc(size: usize): &mut u8
 
 extern "memcpy"
 fn memcpy(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
+
+extern "memmove"
+fn memmove(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
+
+extern "open"
+fn open(pathname: &u8, flags: i32, ...): i32
 
 extern "printf"
 fn printf(pointer: &u8, ...)

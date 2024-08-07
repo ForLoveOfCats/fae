@@ -1,5 +1,11 @@
 import fae::intrinsics::create_slice_mut
-import fae::libc::malloc, memcpy
+import fae::libc::malloc, memcpy, memmove
+
+generic T
+fn allocate_space(): &mut T {
+    let size = size_of<T>().(usize)
+    return malloc(size).(&mut T)
+}
 
 generic T
 fn allocate_copied(source: &T): &mut T {
@@ -23,6 +29,13 @@ fn free(pointer: &T) {
 }
 
 generic T
+fn allocate_slice_space(length: isize): []mut T {
+    let size = (size_of<T>() * length).(usize)
+    let pointer = malloc(size)
+    return create_slice_mut<T>(pointer.(&mut T), length)
+}
+
+generic T
 fn allocate_slice_copied(source: []T): []mut T {
     let size = (size_of<T>() * source.length).(usize)
     let pointer = malloc(size)
@@ -33,4 +46,20 @@ fn allocate_slice_copied(source: []T): []mut T {
 generic T
 fn free_slice(slice: []T) {
     free<T>(slice.pointer)
+}
+
+generic T
+fn copy_slice_into(source: []T, destination: []mut T) {
+    let message = f"source length {source.length} greater than destination length {destination.length}"
+    assertf(destination.length >= source.length, message)
+    let size = (size_of<T>() * source.length).(usize)
+    memcpy(destination.pointer.(&mut u8), source.pointer.(&u8), size)
+}
+
+generic T
+fn move_slice_into(source: []T, destination: []mut T) {
+    let message = f"source length {source.length} greater than destination length {destination.length}"
+    assertf(destination.length >= source.length, message)
+    let size = (size_of<T>() * source.length).(usize)
+    memmove(destination.pointer.(&mut u8), source.pointer.(&u8), size)
 }

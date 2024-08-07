@@ -1,6 +1,6 @@
-import fae::libc::StdInDescriptor, atol, rand
-import fae::collections::list::List
+import fae::libc::rand
 import fae::io::file::File
+import fae::string::parse::parse_bytes_to_integer
 
 fn main() {
 	play_round()
@@ -17,23 +17,23 @@ fn play_round() {
 	let number = rand().(i64) % 100
 	println("Guess the random number between 1 and 100")
 
-	mut stdin = File.from_fd(StdInDescriptor)
-	mut buffer = List<u8>.new()
-	defer buffer.free()
+	mut stdin = File.new_stdin()
+	mut reader = stdin.lines_reader()
+	defer reader.free()
 
 	while true {
 		print(">>> ")
-		stdin.read_until_newline(buffer.&mut)
-		buffer.push(0)
+		let line = reader.next().unwrap()
 
-		let guess = atol(buffer.items.pointer)
-		println(f"You guessed {guess}")
+		if parse_bytes_to_integer(line) is guess: Some {
+			println(f"You guessed {guess}")
 
-		if guess < number => println("Too low")
-		else if guess > number  => println("Too high")
-		else {
-			println("That was the number!")
-			break
+			if guess < number => println("Too low")
+			else if guess > number  => println("Too high")
+			else {
+				println("That was the number!")
+				break
+			}
 		}
 	}
 }

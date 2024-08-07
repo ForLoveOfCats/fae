@@ -541,7 +541,7 @@ fn generate_array_literal<'a, 'b, G: Generator>(
 	let type_id = context.specialize_type_id(literal.type_id);
 
 	let pointee_layout = context.type_store.type_layout(pointee_type_id);
-	if pointee_layout.size <= 0 {
+	if pointee_layout.size <= 0 || elements.is_empty() {
 		return Some(generator.generate_non_null_invalid_slice(type_id, literal.expressions.len() as u64, debug_location));
 	}
 

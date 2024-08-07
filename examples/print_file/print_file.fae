@@ -1,0 +1,9 @@
+import fae::io::file::File
+
+fn main() {
+	let path = "./examples/print_file/print_file.fae"
+	mut file = File.open(path.bytes, false, false).unwrap()
+	defer file.close()
+	let contents = file.read_all_string()
+	print(f"{contents}")
+}

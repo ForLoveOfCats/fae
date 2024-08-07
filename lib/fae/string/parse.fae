@@ -1,0 +1,21 @@
+fn parse_to_integer(string: str): Option<i64> {
+	return parse_bytes_to_integer(string.bytes)
+}
+
+fn parse_bytes_to_integer(bytes: []u8): Option<i64> {
+	let negative = bytes.length > 0 and bytes[0] == b'-'
+	mut result: i64 = 0
+
+	for byte in bytes {
+		if byte < b'0' or b'9' < byte => return .None
+
+		result *= 10
+		result += (byte - b'0').(i64)
+
+		// Check for overflow
+		if result < 0 => return .None
+	}
+
+	if negative => result = -result
+	return .Some(result)
+}

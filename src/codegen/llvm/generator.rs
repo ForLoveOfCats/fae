@@ -1842,8 +1842,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			let zero = LLVMConstNull(i64_type);
 			let start_greater_than_zero = LLVMBuildICmp(self.builder, LLVMIntSGE, start, zero, c"".as_ptr());
-			let start_less_than_len = LLVMBuildICmp(self.builder, LLVMIntSLT, start, len, c"".as_ptr());
-			let start_in_bounds = LLVMBuildAnd(self.builder, start_greater_than_zero, start_less_than_len, c"".as_ptr());
+			let start_less_equal_len = LLVMBuildICmp(self.builder, LLVMIntSLE, start, len, c"".as_ptr());
+			let start_in_bounds = LLVMBuildAnd(self.builder, start_greater_than_zero, start_less_equal_len, c"".as_ptr());
 
 			LLVMBuildCondBr(
 				self.builder,

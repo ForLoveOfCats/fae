@@ -1,8 +1,31 @@
 import fae::collections::list::List
-import fae::libc::read
+import fae::libc::StdInDescriptor, open, read, close
+import fae::memory::allocate_slice_space, copy_slice_into, free_slice
 
 struct File {
 	file_descriptor: i32 readonly
+}
+
+method static File
+fn open(path: []u8, write: bool, create: bool): Option<File> {
+	// TODO: Do like Rust and have an API for doing this on the stack
+	// if the result will be short enough to fit
+	let space = allocate_slice_space<u8>(path.length + 1)
+	defer free_slice<u8>(space)
+	copy_slice_into<u8>(path, space)
+	space[path.length] = 0
+
+	mut flags: i32 = 0
+	if write => flags |= 2 // O_RDWR
+	else => flags |= 0 // O_RDONLY
+	if create => flags |= 64 // O_CREAT
+
+	let mode: i32 = 1638 // 0x666
+
+	let file_descriptor = open(space.pointer, flags, mode)
+	if file_descriptor < 0 => return .None
+
+	return .Some(File { file_descriptor })
 }
 
 method static File
@@ -10,19 +33,98 @@ fn from_fd(file_descriptor: i32): File {
 	return File { file_descriptor }
 }
 
+method static File
+fn new_stdin(): File {
+	return File { file_descriptor: StdInDescriptor }
+}
+
 method mut File
-fn read_until_newline(buffer: &mut List<u8>) {
-	buffer.clear()
+fn close() {
+	// TODO: This should report failure to the caller
+	close(self.file_descriptor)
+}
+
+method File
+fn read_all(): []u8 {
+	mut buffer = List<u8>.new()
+	self.read_all_into(buffer.&mut)
+	return buffer.items
+}
+
+method File
+fn read_all_string(): str {
+	let slice = self.read_all()
+	return fae::intrinsics::create_str(slice.pointer, slice.length)
+}
+
+method File
+fn read_all_into(buffer: &mut List<u8>) {
 	const ChunkSize = 20
 
 	while true {
 		let original_length = buffer.items.length
-		buffer.reserve_capacity(buffer.items.length + ChunkSize)
+		buffer.reserve_capacity(original_length + ChunkSize)
 		let pointer = offset_pointer_mut<u8>(buffer.items.pointer, original_length)
 
 		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
 		buffer.set_length(original_length + bytes_read)
 
-		if buffer.last() is last: Some and last == b'\n' => return
+		if bytes_read == 0 => break
 	}
 }
+
+method File
+fn lines_reader(): DelimitedReader {
+	return self.delimited_reader(b'\n')
+}
+
+method File
+fn delimited_reader(delimiter: u8): DelimitedReader {
+	return DelimitedReader {
+		file: self.*
+		delimiter
+		previous_region_end: 0
+		buffer: List<u8>.new()
+	}
+}
+
+struct DelimitedReader {
+	file: File
+	delimiter: u8
+	previous_region_end: isize
+	buffer: List<u8>
+}
+
+method mut DelimitedReader
+fn free() {
+	self.buffer.free()
+}
+
+method mut DelimitedReader
+fn next(): Option<[]u8> {
+	const ChunkSize = 20
+
+	self.buffer.remove_range(0..self.previous_region_end)
+	self.previous_region_end = 0
+
+	while true {
+		for byte, index in self.buffer.items {
+			if byte == self.delimiter {
+				self.previous_region_end = index + 1
+				return .Some(self.buffer.items[0..index])
+			}
+		}
+
+		let original_length = self.buffer.items.length
+		self.buffer.reserve_capacity(original_length + ChunkSize)
+		let pointer = offset_pointer_mut<u8>(self.buffer.items.pointer, original_length)
+
+		let bytes_read = read(self.file.file_descriptor, pointer, ChunkSize)
+		self.buffer.set_length(original_length + bytes_read)
+
+		if bytes_read == 0 => break
+	}
+
+	return .None
+}
+

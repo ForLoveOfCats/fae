@@ -1,0 +1,6 @@
+fn main() {
+	let original = []bool {}
+	let sliced = original[0..0]
+	println(f"{sliced.length}")
+}
+
