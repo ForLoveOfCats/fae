@@ -1,0 +1,15 @@
+import fae::io::file::File
+import fae::os::arguments::Arguments
+
+fn main() {
+	mut arguments = Arguments.parse_user_arguments()
+	defer arguments.free()
+
+	for path in arguments.items {
+		mut file = File.open(path.bytes, false, false).unwrap()
+		defer file.close()
+
+		let contents = file.read_all_string()
+		print(f"{contents}")
+	}
+}

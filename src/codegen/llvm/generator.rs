@@ -499,12 +499,23 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				.llvm_types
 				.type_to_llvm_type(self.context, type_store, static_instance.type_id);
 
-			let extern_attribute = static_instance.extern_attribute.unwrap();
-			let name = CString::new(extern_attribute.name).unwrap();
-			let global = unsafe { LLVMAddGlobal(self.module, llvm_type, name.as_ptr()) };
-			unsafe { LLVMSetLinkage(global, LLVMLinkage::LLVMExternalLinkage) };
+			let pointer = if let Some(extern_attribute) = static_instance.extern_attribute {
+				let name = CString::new(extern_attribute.name).unwrap();
+				let global = unsafe { LLVMAddGlobal(self.module, llvm_type, name.as_ptr()) };
+				unsafe { LLVMSetLinkage(global, LLVMLinkage::LLVMExternalLinkage) };
+				global
+			} else {
+				let formatted = format!("fae_static_{}", static_instance.name);
+				let name = CString::new(formatted).unwrap();
+				let global = unsafe { LLVMAddGlobal(self.module, llvm_type, name.as_ptr()) };
+				unsafe {
+					LLVMSetLinkage(global, LLVMLinkage::LLVMInternalLinkage);
+					LLVMSetInitializer(global, LLVMConstNull(llvm_type));
+				}
+				global
+			};
 
-			let kind = BindingKind::Value(global);
+			let kind = BindingKind::Pointer { pointer, pointed_type: llvm_type };
 			let binding = Binding { type_id: static_instance.type_id, kind };
 			self.statics.push(binding);
 		}

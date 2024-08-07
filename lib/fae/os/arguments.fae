@@ -1,0 +1,42 @@
+import fae::runtime::ArgC, ArgV
+import fae::intrinsics::create_slice, create_str
+import fae::libc::strlen
+import fae::collections::list::List
+
+struct Arguments {
+	items: []str
+}
+
+method static Arguments
+fn parse_user_arguments(): Arguments {
+	let argv = create_slice<&u8>(ArgV, ArgC.(isize))
+	mut parsed = List<str>.new()
+
+	for pointer in argv[1..argv.length] {
+		let length = strlen(pointer).(isize)
+		let string = create_str(pointer, length)
+		parsed.push(string)
+	}
+
+	return Arguments { items: parsed.items }
+}
+
+method static Arguments
+fn parse_all_arguments(): Arguments {
+	let argv = create_slice<&u8>(ArgV, ArgC.(isize))
+	mut parsed = List<str>.new()
+
+	for pointer in argv {
+		let length = strlen(pointer).(isize)
+		let string = create_str(pointer, length)
+		parsed.push(string)
+	}
+
+	return Arguments { items: parsed.items }
+}
+
+method mut Arguments
+fn free() {
+	fae::memory::free_slice<str>(self.items)
+}
+

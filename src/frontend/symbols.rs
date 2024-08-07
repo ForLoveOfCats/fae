@@ -244,6 +244,7 @@ impl<'a> Externs<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Static<'a> {
+	pub name: &'a str,
 	pub type_id: TypeId,
 	pub extern_attribute: Option<ExternAttribute<'a>>,
 }
@@ -258,9 +259,9 @@ impl<'a> Statics<'a> {
 		Statics { statics: Vec::new() }
 	}
 
-	pub fn push(&mut self, type_id: TypeId, extern_attribute: Option<ExternAttribute<'a>>) -> usize {
+	pub fn push(&mut self, name: &'a str, type_id: TypeId, extern_attribute: Option<ExternAttribute<'a>>) -> usize {
 		let index = self.statics.len();
-		let instance = Static { type_id, extern_attribute };
+		let instance = Static { name, type_id, extern_attribute };
 		self.statics.push(instance);
 		index
 	}

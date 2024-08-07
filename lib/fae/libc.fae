@@ -4,22 +4,22 @@ const StdErrDescriptor: i32 = 2
 
 when PlatformLinux {
 	extern "stdin"
-	static StdInFile: &&FileHandle
+	static StdInFile: &FileHandle
 
 	extern "stdout"
-	static StdOutFile: &&FileHandle
+	static StdOutFile: &FileHandle
 
 	extern "stderr"
-	static StdErrFile: &&FileHandle
+	static StdErrFile: &FileHandle
 } else when PlatformDarwin {
 	extern "__stdinp"
-	static StdInFile: &&FileHandle
+	static StdInFile: &FileHandle
 
 	extern "__stdoutp"
-	static StdOutFile: &&FileHandle
+	static StdOutFile: &FileHandle
 
 	extern "__stderrp"
-	static StdErrFile: &&FileHandle
+	static StdErrFile: &FileHandle
 }
 
 struct DlInfo {

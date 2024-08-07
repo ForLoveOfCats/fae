@@ -4,8 +4,6 @@ static EXTERNAL_STATIC: i32
 extern "made_up_symbol"
 static DUPLICATE: i32
 
-static MISSING_EXTERN: u8
-
 generic T
 extern "another_made_up_symbol"
 export "TODO: Allow exporting"

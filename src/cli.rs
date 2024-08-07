@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub struct CliArguments {
 	pub project_path: Option<PathBuf>,
 	pub command: CompileCommand,
+	pub child_arguments: Vec<OsString>,
 	pub loud: bool,
 	pub color_messages: bool,
 	pub std_enabled: bool,
@@ -47,6 +48,7 @@ pub fn parse_arguments() -> CliArguments {
 	let mut cli_arguments = CliArguments {
 		project_path: None,
 		command: CompileCommand::Build,
+		child_arguments: Vec::new(),
 		loud: true,
 		color_messages: true,
 		std_enabled: true,
@@ -61,7 +63,7 @@ pub fn parse_arguments() -> CliArguments {
 
 	while let Some(arg) = iterator.next() {
 		if arg.as_encoded_bytes().starts_with(b"-") {
-			parse_tack_option(&mut cli_arguments, &mut any_errors, arg.as_os_str());
+			parse_tack_option(&mut cli_arguments, &mut any_errors, arg.as_os_str(), &mut iterator);
 		} else if parse_command(&mut cli_arguments, &mut any_errors, arg.as_os_str(), &mut iterator) {
 		} else if cli_arguments.project_path.is_none() {
 			cli_arguments.project_path = Some(PathBuf::from(arg));
@@ -126,15 +128,21 @@ fn parse_command(
 	}
 }
 
-fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, arg: &OsStr) {
+fn parse_tack_option(
+	cli_arguments: &mut CliArguments,
+	any_errors: &mut bool,
+	arg: &OsStr,
+	iterator: &mut impl Iterator<Item = OsString>,
+) {
 	match arg.to_str() {
 		Some("--help") => {
 			eprintln!("Fae programming language compiler");
 			eprintln!("Usage: fae [optional command] [zero or more options] [optional path]");
+			eprintln!("Arguments after lone \"--\" are passed to launched executablek");
 			eprintln!();
 			eprintln!("Commands:");
 			eprintln!("  parse, p: Parse targeted project");
-			eprintln!("  check, b: Check targeted project");
+			eprintln!("  check, c: Check targeted project");
 			eprintln!("  build, b: Build targeted project (default)");
 			eprintln!("  run, r: Build and run targeted project");
 			#[cfg(not(feature = "bundled"))]
@@ -169,6 +177,8 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 
 		Some("--disable-llvm-verification") => cli_arguments.verify_llvm_module = false,
 
+		Some("--") => parse_child_arguments(cli_arguments, iterator),
+
 		arg => {
 			eprintln!("Unknown cli option {arg:?}");
 			*any_errors = true;
@@ -178,9 +188,9 @@ fn parse_tack_option(cli_arguments: &mut CliArguments, any_errors: &mut bool, ar
 
 #[cfg(not(feature = "bundled"))]
 fn parse_test_names(cli_arguments: &mut CliArguments, any_errors: &mut bool, iterator: &mut impl Iterator<Item = OsString>) {
-	for arg in iterator {
+	while let Some(arg) = iterator.next() {
 		if arg.to_str().map(|a| a.starts_with('-')).unwrap_or(false) {
-			parse_tack_option(cli_arguments, any_errors, &arg);
+			parse_tack_option(cli_arguments, any_errors, &arg, iterator);
 			continue;
 		}
 
@@ -190,5 +200,11 @@ fn parse_test_names(cli_arguments: &mut CliArguments, any_errors: &mut bool, ite
 		};
 
 		cli_arguments.compiler_test_names.push(arg.to_owned());
+	}
+}
+
+fn parse_child_arguments(cli_arguments: &mut CliArguments, iterator: &mut impl Iterator<Item = OsString>) {
+	for arg in iterator {
+		cli_arguments.child_arguments.push(arg);
 	}
 }

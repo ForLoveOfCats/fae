@@ -66,6 +66,7 @@ fn main() {
 		}
 
 		let mut command = Command::new(binary_path);
+		command.args(cli_arguments.child_arguments);
 		let mut child = command.spawn().unwrap();
 		let status = child.wait().unwrap();
 

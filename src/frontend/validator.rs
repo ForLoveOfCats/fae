@@ -1117,12 +1117,6 @@ fn create_block_types<'a>(
 				| tree::Statement::Const(..)
 				| tree::Statement::Static(..) => {}
 			}
-		} else {
-			if let tree::Statement::Static(..) = statement {
-				let error = error!("{} is only allowed in a root scope", statement.name_and_article());
-				messages.message(error.span(statement.span()));
-				continue;
-			}
 		}
 
 		if let tree::Statement::Struct(statement) = statement {
@@ -2994,9 +2988,6 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 	if let Some(extern_attribute) = statement.item.extern_attribute {
 		let name = extern_attribute.item.name;
 		context.externs.write().push(context.messages, name, statement.span);
-	} else {
-		let error = error!("Static definition must have extern attribute");
-		context.message(error.span(statement.span));
 	}
 
 	let type_id = context.lookup_type(&statement.item.parsed_type)?;
@@ -3006,10 +2997,10 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 		context.message(error.span(statement.span));
 	}
 
-	let extern_attribute = statement.item.extern_attribute.map(|n| n.item);
-	let index = context.statics.write().push(type_id, extern_attribute);
-
 	let name = statement.item.name.item;
+	let extern_attribute = statement.item.extern_attribute.map(|n| n.item);
+	let index = context.statics.write().push(name, type_id, extern_attribute);
+
 	let kind = SymbolKind::Static { static_index: index };
 	let span = Some(statement.span);
 	context.push_symbol(Symbol { name, kind, span, used: true });
@@ -5533,6 +5524,7 @@ fn validate_binary_operation<'a>(
 				if readable.kind != ReadableKind::Mut {
 					context.message(error!("Cannot assign to immutable binding `{}`", read.name).span(span));
 				}
+			} else if let ExpressionKind::StaticRead(_) = &left.kind {
 			} else if let ExpressionKind::FieldRead(field_read) = &left.kind {
 				if !left.is_mutable {
 					let name = field_read.name;

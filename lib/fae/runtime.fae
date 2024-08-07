@@ -1,5 +1,11 @@
+static ArgC: i32
+static ArgV: &&u8
+
 export "main"
-fn fae_main(_argc: i32, _argv: &&u8): i32 {
+fn fae_main(argc: i32, argv: &&u8): i32 {
+	ArgC = argc
+	ArgV = argv
+
 	fae::intrinsics::user_main_function()
 	return 0
 }
