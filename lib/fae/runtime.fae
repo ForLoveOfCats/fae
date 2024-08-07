@@ -37,7 +37,7 @@ fn panic_impl(message: fstr): noreturn {
 	// Backtraces can differ between platforms, optimization level, and change
 	// when code is refactored. Therefore they should not be included in panic
 	// messages when in compiler tests
-	if fae::intrinsics::is_compiler_test() => exit(-1)
+	when InCompilerTest => exit(-1)
 
 	eprintln("Function backtrace:")
 
@@ -67,16 +67,11 @@ fn panic_impl(message: fstr): noreturn {
 
 	// 50 items
 	let symbols = []Symbol {
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
-		Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error, Symbol.Error,
+		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
 	}
 	let symbols = symbols[0..symbol_count]
 

@@ -18,6 +18,3 @@ fn debugger_break()
 
 #intrinsic
 fn user_main_function()
-
-#intrinsic
-fn is_compiler_test(): bool

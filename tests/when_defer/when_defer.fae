@@ -1,0 +1,7 @@
+// Should print B then A
+fn main() {
+	when InCompilerTest {
+		defer println("A")
+	}
+	defer println("B")
+}

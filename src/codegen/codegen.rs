@@ -6,8 +6,9 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
 	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral,
-	FunctionId, FunctionShape, IfElseChain, IntegerValue, Match, MethodCall, Read, SliceMutableToImmutable, StatementKind,
-	StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	FunctionId, FunctionShape, IfElseChain, IntegerValue, Match, MethodCall, Read, SliceMutableToImmutable, Statement,
+	StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
+	While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -25,7 +26,6 @@ pub fn generate<'a, G: Generator>(
 	statics: &Statics,
 	generator: &mut G,
 	optimizing: bool,
-	is_compiler_test: bool,
 ) {
 	generator.register_type_descriptions(type_store);
 	generator.register_statics(type_store, statics);
@@ -58,16 +58,7 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			let function_id = FunctionId { function_shape_index, specialization_index };
-			generate_function(
-				messages,
-				lang_items,
-				type_store,
-				function_store,
-				generator,
-				shape,
-				function_id,
-				is_compiler_test,
-			);
+			generate_function(messages, lang_items, type_store, function_store, generator, shape, function_id);
 		}
 	}
 
@@ -84,7 +75,6 @@ struct LoopMarker {
 }
 
 pub struct Context<'a, 'b> {
-	pub is_compiler_test: bool,
 	pub messages: &'b mut Messages<'a>,
 	pub lang_items: &'b LangItems,
 	pub type_store: &'b mut TypeStore<'a>,
@@ -127,7 +117,6 @@ pub fn generate_function<'a, G: Generator>(
 	generator: &mut G,
 	shape: ReadGuard<FunctionShape<'a>>,
 	function_id: FunctionId,
-	is_compiler_test: bool,
 ) {
 	let specialization = &shape.specializations[function_id.specialization_index];
 
@@ -149,7 +138,6 @@ pub fn generate_function<'a, G: Generator>(
 	drop(shape);
 
 	let mut context = Context {
-		is_compiler_test,
 		messages,
 		lang_items,
 		type_store,
@@ -165,89 +153,15 @@ pub fn generate_function<'a, G: Generator>(
 	generate_block(&mut context, generator, block.as_ref());
 }
 
-// TODO: Handle scope alloc lifetime
 fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator: &mut G, block: &'b Block<'a>) {
 	generator.start_block();
 	let block_start_defer_len = context.defer_stack.len();
 	let mut should_generate_defer_stack = true;
 
 	for statement in &block.statements {
-		let debug_location = statement.debug_location;
-
-		match &statement.kind {
-			StatementKind::Expression(expression) => {
-				generate_expression(context, generator, expression);
-			}
-
-			StatementKind::Block(block) => generate_block(context, generator, block),
-
-			StatementKind::While(statement) => {
-				let start_index = context.defer_stack.len();
-				context.loop_stack.push(LoopMarker { start_index });
-				generate_while(context, generator, statement, debug_location);
-				context.loop_stack.pop();
-			}
-
-			StatementKind::For(statement) => {
-				let start_index = context.defer_stack.len();
-				context.loop_stack.push(LoopMarker { start_index });
-				generate_for(context, generator, statement, debug_location);
-				context.loop_stack.pop();
-			}
-
-			StatementKind::Binding(binding) => generate_binding(context, generator, binding, debug_location),
-
-			StatementKind::Defer(statement) => {
-				context.defer_stack.push(&statement.expression);
-			}
-
-			StatementKind::Break(statement) => {
-				let marker = context.loop_stack.last().unwrap();
-				let mut defer_stack = std::mem::take(&mut context.defer_stack);
-				for expression in defer_stack[marker.start_index..].iter().rev() {
-					generate_expression(context, generator, expression);
-				}
-				defer_stack.truncate(block_start_defer_len);
-				context.defer_stack = defer_stack;
-				should_generate_defer_stack = false;
-
-				generate_break(generator, statement, debug_location);
-				break;
-			}
-
-			StatementKind::Continue(statement) => {
-				let marker = context.loop_stack.last().unwrap();
-				let mut defer_stack = std::mem::take(&mut context.defer_stack);
-				for expression in defer_stack[marker.start_index..].iter().rev() {
-					generate_expression(context, generator, expression);
-				}
-				defer_stack.truncate(block_start_defer_len);
-				context.defer_stack = defer_stack;
-				should_generate_defer_stack = false;
-
-				generate_continue(generator, statement, debug_location);
-				break;
-			}
-
-			StatementKind::Return(statement) => {
-				let value = statement
-					.expression
-					.as_ref()
-					.and_then(|expression| generate_expression(context, generator, expression));
-
-				generator.generate_return(context, context.function_id, value, debug_location, |context, generator| {
-					let mut defer_stack = std::mem::take(&mut context.defer_stack);
-					for expression in defer_stack.iter().rev() {
-						generate_expression(context, generator, expression);
-					}
-					defer_stack.truncate(block_start_defer_len);
-					context.defer_stack = defer_stack;
-				});
-
-				should_generate_defer_stack = false;
-				break;
-			}
-		};
+		if generate_statement(context, generator, statement, block_start_defer_len, &mut should_generate_defer_stack) {
+			break;
+		}
 	}
 
 	if should_generate_defer_stack {
@@ -261,6 +175,102 @@ fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator
 	}
 
 	generator.end_block();
+}
+
+// True means break statement loop
+fn generate_statement<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	statement: &'b Statement<'a>,
+	block_start_defer_len: usize,
+	should_generate_defer_stack: &mut bool,
+) -> bool {
+	let debug_location = statement.debug_location;
+
+	match &statement.kind {
+		StatementKind::Expression(expression) => {
+			generate_expression(context, generator, expression);
+		}
+
+		StatementKind::When(block) => {
+			for statement in &block.statements {
+				if generate_statement(context, generator, statement, block_start_defer_len, should_generate_defer_stack) {
+					return true;
+				}
+			}
+		}
+
+		StatementKind::Block(block) => generate_block(context, generator, block),
+
+		StatementKind::While(statement) => {
+			let start_index = context.defer_stack.len();
+			context.loop_stack.push(LoopMarker { start_index });
+			generate_while(context, generator, statement, debug_location);
+			context.loop_stack.pop();
+		}
+
+		StatementKind::For(statement) => {
+			let start_index = context.defer_stack.len();
+			context.loop_stack.push(LoopMarker { start_index });
+			generate_for(context, generator, statement, debug_location);
+			context.loop_stack.pop();
+		}
+
+		StatementKind::Binding(binding) => generate_binding(context, generator, binding, debug_location),
+
+		StatementKind::Defer(statement) => {
+			context.defer_stack.push(&statement.expression);
+		}
+
+		StatementKind::Break(statement) => {
+			let marker = context.loop_stack.last().unwrap();
+			let mut defer_stack = std::mem::take(&mut context.defer_stack);
+			for expression in defer_stack[marker.start_index..].iter().rev() {
+				generate_expression(context, generator, expression);
+			}
+			defer_stack.truncate(block_start_defer_len);
+			context.defer_stack = defer_stack;
+			*should_generate_defer_stack = false;
+
+			generate_break(generator, statement, debug_location);
+			return true;
+		}
+
+		StatementKind::Continue(statement) => {
+			let marker = context.loop_stack.last().unwrap();
+			let mut defer_stack = std::mem::take(&mut context.defer_stack);
+			for expression in defer_stack[marker.start_index..].iter().rev() {
+				generate_expression(context, generator, expression);
+			}
+			defer_stack.truncate(block_start_defer_len);
+			context.defer_stack = defer_stack;
+			*should_generate_defer_stack = false;
+
+			generate_continue(generator, statement, debug_location);
+			return true;
+		}
+
+		StatementKind::Return(statement) => {
+			let value = statement
+				.expression
+				.as_ref()
+				.and_then(|expression| generate_expression(context, generator, expression));
+
+			generator.generate_return(context, context.function_id, value, debug_location, |context, generator| {
+				let mut defer_stack = std::mem::take(&mut context.defer_stack);
+				for expression in defer_stack.iter().rev() {
+					generate_expression(context, generator, expression);
+				}
+				defer_stack.truncate(block_start_defer_len);
+				context.defer_stack = defer_stack;
+			});
+
+			*should_generate_defer_stack = false;
+			return true;
+		}
+	}
+
+	false
 }
 
 pub fn generate_expression<'a, 'b, G: Generator>(
@@ -1012,13 +1022,6 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 				generator.generate_call(context.type_store, main, &[], debug_location);
 			}
 			None
-		}
-
-		"is_compiler_test" => {
-			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			assert_eq!(specialization.parameters.len(), 0);
-
-			Some(generator.generate_boolean_literal(context.type_store, context.is_compiler_test))
 		}
 
 		_ => unreachable!(),

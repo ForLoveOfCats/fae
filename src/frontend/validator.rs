@@ -2569,7 +2569,14 @@ fn validate_statement<'a>(
 		}
 
 		tree::Statement::WhenElseChain(statement) => {
-			validate_when(context, statement, scope_id, is_root);
+			if let Some(block) = validate_when(context, statement, scope_id, is_root) {
+				*returns |= block.returns;
+				let kind = StatementKind::When(block);
+				return Some(Statement {
+					kind,
+					debug_location: statement.span.debug_location(context.parsed_files),
+				});
+			}
 		}
 
 		tree::Statement::While(statement) => {
@@ -2683,9 +2690,11 @@ fn validate_when<'a>(
 	statement: &'a Node<tree::WhenElseChain<'a>>,
 	scope_id: ScopeId,
 	is_root: bool,
-) {
+) -> Option<Block<'a>> {
 	if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
-		validate_block_in_context(context, &body.item, scope_id, is_root, false);
+		Some(validate_block_in_context(context, &body.item, scope_id, is_root, false))
+	} else {
+		None
 	}
 }
 

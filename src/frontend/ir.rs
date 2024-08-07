@@ -371,6 +371,7 @@ pub struct Statement<'a> {
 pub enum StatementKind<'a> {
 	Expression(Expression<'a>),
 
+	When(Block<'a>),
 	Block(Block<'a>),
 	While(While<'a>),
 	For(For<'a>),
