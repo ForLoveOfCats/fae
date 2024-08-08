@@ -378,7 +378,7 @@ pub enum StatementKind<'a> {
 
 	Binding(Box<Binding<'a>>),
 
-	Defer(Defer<'a>),
+	Defer(Box<Defer<'a>>),
 
 	Break(Break),
 	Continue(Continue),
@@ -395,7 +395,7 @@ pub struct Binding<'a> {
 
 #[derive(Debug)]
 pub struct Defer<'a> {
-	pub expression: Expression<'a>,
+	pub statement: Statement<'a>,
 }
 
 #[derive(Debug)]

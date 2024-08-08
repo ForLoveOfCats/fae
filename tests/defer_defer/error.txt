@@ -1,0 +1,3 @@
+Validation error: ./tests/defer_defer/defer_defer.fae, line 2: Deferring a lone defer statement is disallowed
+  2|     defer defer println("deferred defer")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

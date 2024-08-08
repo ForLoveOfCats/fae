@@ -85,7 +85,7 @@ pub struct Context<'a, 'b> {
 	pub function_type_arguments: &'b TypeArguments,
 	pub function_id: FunctionId,
 
-	defer_stack: Vec<&'b Expression<'a>>,
+	defer_stack: Vec<&'b Statement<'a>>,
 	loop_stack: Vec<LoopMarker>,
 
 	// TODO: Merge codegen and llvm/generator ASAP, way too many details have leaked
@@ -166,8 +166,8 @@ fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator
 
 	if should_generate_defer_stack {
 		let mut defer_stack = std::mem::take(&mut context.defer_stack);
-		for expression in defer_stack[block_start_defer_len..].iter().rev() {
-			generate_expression(context, generator, expression);
+		for statement in defer_stack[block_start_defer_len..].iter().rev() {
+			generate_statement(context, generator, statement, context.defer_stack.len(), &mut false);
 		}
 
 		defer_stack.truncate(block_start_defer_len);
@@ -219,14 +219,14 @@ fn generate_statement<'a, 'b, G: Generator>(
 		StatementKind::Binding(binding) => generate_binding(context, generator, binding, debug_location),
 
 		StatementKind::Defer(statement) => {
-			context.defer_stack.push(&statement.expression);
+			context.defer_stack.push(&statement.statement);
 		}
 
 		StatementKind::Break(statement) => {
 			let marker = context.loop_stack.last().unwrap();
 			let mut defer_stack = std::mem::take(&mut context.defer_stack);
-			for expression in defer_stack[marker.start_index..].iter().rev() {
-				generate_expression(context, generator, expression);
+			for statement in defer_stack[marker.start_index..].iter().rev() {
+				generate_statement(context, generator, statement, context.defer_stack.len(), &mut false);
 			}
 			defer_stack.truncate(block_start_defer_len);
 			context.defer_stack = defer_stack;
@@ -239,8 +239,8 @@ fn generate_statement<'a, 'b, G: Generator>(
 		StatementKind::Continue(statement) => {
 			let marker = context.loop_stack.last().unwrap();
 			let mut defer_stack = std::mem::take(&mut context.defer_stack);
-			for expression in defer_stack[marker.start_index..].iter().rev() {
-				generate_expression(context, generator, expression);
+			for statement in defer_stack[marker.start_index..].iter().rev() {
+				generate_statement(context, generator, statement, context.defer_stack.len(), &mut false);
 			}
 			defer_stack.truncate(block_start_defer_len);
 			context.defer_stack = defer_stack;
@@ -258,8 +258,8 @@ fn generate_statement<'a, 'b, G: Generator>(
 
 			generator.generate_return(context, context.function_id, value, debug_location, |context, generator| {
 				let mut defer_stack = std::mem::take(&mut context.defer_stack);
-				for expression in defer_stack.iter().rev() {
-					generate_expression(context, generator, expression);
+				for statement in defer_stack.iter().rev() {
+					generate_statement(context, generator, statement, context.defer_stack.len(), &mut false);
 				}
 				defer_stack.truncate(block_start_defer_len);
 				context.defer_stack = defer_stack;

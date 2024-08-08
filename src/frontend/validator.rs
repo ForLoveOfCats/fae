@@ -2613,9 +2613,24 @@ fn validate_statement<'a>(
 		}
 
 		tree::Statement::Defer(statement) => {
-			let expression = validate_expression(context, &statement.item.expression);
-			let kind = StatementKind::Defer(Defer { expression });
-			let debug_location = statement.span.debug_location(context.parsed_files);
+			let span = statement.span;
+			let debug_location = span.debug_location(context.parsed_files);
+
+			let mut scope = context.child_scope();
+			let scope_id = ScopeId { file_index: scope.file_index, scope_index: scope.scope_index };
+
+			let Some(statement) = validate_statement(&mut scope, scope_id, &statement.item.statement, &mut false, false) else {
+				return None;
+			};
+
+			if let StatementKind::Defer(_) = statement.kind {
+				let error = error!("Deferring a lone defer statement is disallowed");
+				scope.message(error.span(span));
+				return None;
+			}
+
+			let boxed = Box::new(Defer { statement });
+			let kind = StatementKind::Defer(boxed);
 			return Some(Statement { kind, debug_location });
 		}
 

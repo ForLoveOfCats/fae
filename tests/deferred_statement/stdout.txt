@@ -1,0 +1,8 @@
+Before defer
+
+This
+was
+a
+deferred
+for
+loop

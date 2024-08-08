@@ -499,7 +499,7 @@ pub enum EnumInitializer<'a> {
 
 #[derive(Debug)]
 pub struct Defer<'a> {
-	pub expression: Node<Expression<'a>>,
+	pub statement: Statement<'a>,
 }
 
 #[derive(Debug)]
@@ -532,7 +532,7 @@ pub enum Statement<'a> {
 	Static(&'a Node<Static<'a>>),
 	Binding(&'a Node<Binding<'a>>),
 
-	Defer(Node<Defer<'a>>),
+	Defer(&'a Node<Defer<'a>>),
 
 	Break(Node<Break>),
 	Continue(Node<Continue>),

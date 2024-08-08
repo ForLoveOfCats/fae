@@ -1,0 +1,5 @@
+fn main() {
+	let slice = []{ "This", "was", "a", "deferred", "for", "loop" }
+	defer for item in slice => println(item)
+	println("Before defer\n")
+}

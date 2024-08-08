@@ -36,16 +36,11 @@ pub fn parse_block<'a>(
 	if allow_braceless && tokens.peek_kind() == Ok(TokenKind::FatArrow) {
 		let fat_arrow = tokens.next()?;
 
-		let token = tokens.peek()?;
-		let statement = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank(), token, false);
-
-		if let Some(statement) = &statement {
-			if let Statement::Block(_) = statement {
-				let warning = warning!(
-					"A single statement block is extraneous if it only contains another block, consider removing the `=>`"
-				);
-				messages.message(warning.span(fat_arrow.span))
-			}
+		let statement = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank(), false);
+		if let Some(Statement::Block(_)) = &statement {
+			let warning =
+				warning!("A single statement block is extraneous if it only contains another block, consider removing the `=>`");
+			messages.message(warning.span(fat_arrow.span))
 		}
 
 		let statements = if let Some(statement) = statement {
@@ -109,7 +104,7 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 			break;
 		}
 
-		if let Some(statement) = parse_statement(bump, messages, tokens, &mut next_function_index, attributes, token, true) {
+		if let Some(statement) = parse_statement(bump, messages, tokens, &mut next_function_index, attributes, true) {
 			items.push(statement);
 		}
 	}
@@ -123,12 +118,12 @@ fn parse_statement<'a>(
 	tokens: &mut Tokens<'a>,
 	next_function_index: &mut usize,
 	attributes: Attributes<'a>,
-	token: Token<'a>,
 	consume_newline: bool,
 ) -> Option<Statement<'a>> {
-	match token {
+	let peeked = tokens.peek().ok()?;
+	match peeked {
 		Token { kind: TokenKind::Word, text: "import", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "An import statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "An import statement");
 			if let Ok(statement) = parse_import_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::Import(statement));
 			} else {
@@ -137,7 +132,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "const", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A const definition");
+			disallow_all_attributes(messages, attributes, peeked.span, "A const definition");
 			if let Ok(statement) = parse_const_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::Const(bump.alloc(statement)));
 			} else {
@@ -164,7 +159,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "when", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A while statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A while statement");
 			if let Ok(statement) = parse_when_else_chain(bump, messages, tokens) {
 				return Some(Statement::WhenElseChain(statement));
 			} else {
@@ -173,7 +168,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "let" | "mut", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A let statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A let statement");
 			if let Ok(statement) = parse_binding_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::Binding(bump.alloc(statement)));
 			} else {
@@ -229,7 +224,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "while", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A while loop");
+			disallow_all_attributes(messages, attributes, peeked.span, "A while loop");
 			if let Ok(statement) = parse_while_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::While(statement));
 			} else {
@@ -238,7 +233,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "for", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A for loop");
+			disallow_all_attributes(messages, attributes, peeked.span, "A for loop");
 			if let Ok(statement) = parse_for_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::For(statement));
 			} else {
@@ -247,16 +242,16 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "defer", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A defer statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A defer statement");
 			if let Ok(statement) = parse_defer_statement(bump, messages, tokens, consume_newline) {
-				return Some(Statement::Defer(statement));
+				return Some(Statement::Defer(bump.alloc(statement)));
 			} else {
 				consume_error_syntax(messages, tokens);
 			}
 		}
 
 		Token { kind: TokenKind::Word, text: "break", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A break statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A break statement");
 			if let Ok(statement) = parse_break_statement(messages, tokens, consume_newline) {
 				return Some(Statement::Break(statement));
 			} else {
@@ -265,7 +260,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "continue", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A continue statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A continue statement");
 			if let Ok(statement) = parse_continue_statement(messages, tokens, consume_newline) {
 				return Some(Statement::Continue(statement));
 			} else {
@@ -274,7 +269,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "return", .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A return statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A return statement");
 			if let Ok(statement) = parse_return_statement(bump, messages, tokens, consume_newline) {
 				return Some(Statement::Return(bump.alloc(statement)));
 			} else {
@@ -283,7 +278,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::OpenBrace, .. } => {
-			disallow_all_attributes(messages, attributes, token.span, "A block");
+			disallow_all_attributes(messages, attributes, peeked.span, "A block");
 			if let Ok(statement) = parse_block(bump, messages, tokens, false, consume_newline) {
 				return Some(Statement::Block(statement));
 			} else {
@@ -292,7 +287,7 @@ fn parse_statement<'a>(
 		}
 
 		_ => {
-			disallow_all_attributes(messages, attributes, token.span, "An expression");
+			disallow_all_attributes(messages, attributes, peeked.span, "An expression");
 			if let Ok(expression) = parse_expression(bump, messages, tokens, true) {
 				let expression = Statement::Expression(expression);
 
@@ -2067,14 +2062,12 @@ fn parse_defer_statement<'a>(
 ) -> ParseResult<Node<Defer<'a>>> {
 	let defer_token = tokens.expect_word(messages, "defer")?;
 
-	let expression = parse_expression(bump, messages, tokens, true)?;
+	let Some(statement) = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank(), consume_newline) else {
+		return Err(());
+	};
 
-	if consume_newline {
-		tokens.expect(messages, TokenKind::Newline)?;
-	}
-
-	let span = defer_token.span + expression.span;
-	let statement = Defer { expression };
+	let span = defer_token.span + statement.span();
+	let statement = Defer { statement };
 	Ok(Node::new(statement, span))
 }
 
