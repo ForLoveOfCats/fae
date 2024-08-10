@@ -30,6 +30,10 @@ pub trait Generator {
 
 	fn end_block(&mut self);
 
+	fn start_block_expression(&mut self, type_store: &mut TypeStore, yield_target_index: usize, type_id: TypeId);
+
+	fn end_block_expression(&mut self, yield_target_index: usize) -> Option<Self::Binding>;
+
 	fn generate_if_else_chain<'a, 'b>(
 		&mut self,
 		context: &mut codegen::Context<'a, 'b>,
@@ -222,6 +226,8 @@ pub trait Generator {
 	fn generate_break(&mut self, loop_index: usize, debug_location: DebugLocation);
 
 	fn generate_continue(&mut self, loop_index: usize, debug_location: DebugLocation);
+
+	fn generate_yield(&mut self, yield_target_index: usize, value: Option<Self::Binding>, debug_location: DebugLocation);
 
 	fn generate_return<'a, 'b>(
 		&mut self,

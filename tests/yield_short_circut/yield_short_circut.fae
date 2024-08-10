@@ -1,0 +1,8 @@
+fn main() {
+	let message = {
+		yield "Hello"
+		yield "World"
+	}
+	println(message)
+}
+

@@ -153,8 +153,16 @@ pub fn generate_function<'a, G: Generator>(
 	generate_block(&mut context, generator, block.as_ref());
 }
 
-fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator: &mut G, block: &'b Block<'a>) {
+fn generate_block<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	block: &'b Block<'a>,
+) -> Option<G::Binding> {
 	generator.start_block();
+	if let Some(yield_target_index) = block.yield_target_index {
+		generator.start_block_expression(context.type_store, yield_target_index, block.type_id);
+	}
+
 	let block_start_defer_len = context.defer_stack.len();
 	let mut should_generate_defer_stack = true;
 
@@ -174,7 +182,14 @@ fn generate_block<'a, 'b, G: Generator>(context: &mut Context<'a, 'b>, generator
 		context.defer_stack = defer_stack;
 	}
 
+	let binding = if let Some(yield_target_index) = block.yield_target_index {
+		generator.end_block_expression(yield_target_index)
+	} else {
+		None
+	};
 	generator.end_block();
+
+	binding
 }
 
 // True means break statement loop
@@ -200,7 +215,9 @@ fn generate_statement<'a, 'b, G: Generator>(
 			}
 		}
 
-		StatementKind::Block(block) => generate_block(context, generator, block),
+		StatementKind::Block(block) => {
+			generate_block(context, generator, block);
+		}
 
 		StatementKind::While(statement) => {
 			let start_index = context.defer_stack.len();
@@ -250,6 +267,12 @@ fn generate_statement<'a, 'b, G: Generator>(
 			return true;
 		}
 
+		StatementKind::Yield(statement) => {
+			let value = generate_expression(context, generator, &statement.expression);
+			generator.generate_yield(statement.yield_target_index, value, debug_location);
+			return true;
+		}
+
 		StatementKind::Return(statement) => {
 			let value = statement
 				.expression
@@ -281,10 +304,7 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 	let debug_location = expression.debug_location;
 
 	match &expression.kind {
-		ExpressionKind::Block(block) => {
-			generate_block(context, generator, block);
-			None
-		}
+		ExpressionKind::Block(block) => generate_block(context, generator, block),
 
 		ExpressionKind::IfElseChain(chain_expression) => generate_if_else_chain(context, generator, chain_expression),
 
@@ -355,11 +375,10 @@ fn generate_if_else_chain<'a, 'b, G: Generator>(
 			generate_expression(context, generator, condition).unwrap()
 		},
 		|context, generator, body, is_else| {
-			let block = generate_block(context, generator, body);
+			generate_block(context, generator, body);
 			if !is_else {
 				generator.end_block();
 			}
-			block
 		},
 	);
 

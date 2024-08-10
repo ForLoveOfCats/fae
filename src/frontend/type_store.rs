@@ -900,12 +900,14 @@ impl<'a> TypeStore<'a> {
 
 				let type_id = self.decimal_type_id;
 				let mutable = from.is_mutable;
+				let yields = from.yields;
 				let returns = from.returns;
 				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
 				*from = Expression {
 					span: from.span,
 					type_id,
 					is_mutable: mutable,
+					yields,
 					returns,
 					kind,
 					debug_location: from.debug_location,
@@ -1052,6 +1054,7 @@ impl<'a> TypeStore<'a> {
 					// TODO: This replace is a dumb solution
 					let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
 					let span = expression.span;
+					let yields = expression.yields;
 					let returns = expression.returns;
 					let debug_location = expression.debug_location;
 					let type_id = TypeId { entry: expression.type_id.entry - 1 };
@@ -1061,6 +1064,7 @@ impl<'a> TypeStore<'a> {
 						span,
 						type_id,
 						is_mutable: false,
+						yields,
 						returns,
 						kind,
 						debug_location,
@@ -1075,6 +1079,7 @@ impl<'a> TypeStore<'a> {
 			// TODO: This replace is a dumb solution
 			let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
 			let span = expression.span;
+			let yields = expression.yields;
 			let returns = expression.returns;
 			let debug_location = expression.debug_location;
 			let conversion = Box::new(StringToFormatString { expression });
@@ -1083,6 +1088,7 @@ impl<'a> TypeStore<'a> {
 				span,
 				type_id: to,
 				is_mutable: false,
+				yields,
 				returns,
 				kind,
 				debug_location,
@@ -1100,6 +1106,7 @@ impl<'a> TypeStore<'a> {
 						if shape_index == parent_enum_shape_index {
 							// TODO: This replace is a dumb solution
 							let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
+							let yields = expression.yields;
 							let returns = expression.returns;
 							let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
 							let kind = ExpressionKind::EnumVariantToEnum(conversion);
@@ -1107,6 +1114,7 @@ impl<'a> TypeStore<'a> {
 								span: from.span,
 								type_id: to,
 								is_mutable: false,
+								yields,
 								returns,
 								kind,
 								debug_location: from.debug_location,

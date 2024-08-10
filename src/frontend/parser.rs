@@ -268,6 +268,15 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "yield", .. } => {
+			disallow_all_attributes(messages, attributes, peeked.span, "A yield statement");
+			if let Ok(statement) = parse_yield_statement(bump, messages, tokens, consume_newline) {
+				return Some(Statement::Yield(bump.alloc(statement)));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "return", .. } => {
 			disallow_all_attributes(messages, attributes, peeked.span, "A return statement");
 			if let Ok(statement) = parse_return_statement(bump, messages, tokens, consume_newline) {
@@ -2097,6 +2106,25 @@ fn parse_continue_statement<'a>(
 	}
 
 	Ok(Node::from_token(Continue, continue_token))
+}
+
+fn parse_yield_statement<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	consume_newline: bool,
+) -> ParseResult<Node<Yield<'a>>> {
+	let return_token = tokens.expect_word(messages, "yield")?;
+
+	let expression = parse_expression(bump, messages, tokens, true)?;
+
+	if consume_newline {
+		tokens.expect(messages, TokenKind::Newline)?;
+	}
+
+	let span = return_token.span + expression.span;
+	let item = Yield { expression };
+	Ok(Node { item, span })
 }
 
 fn parse_return_statement<'a>(

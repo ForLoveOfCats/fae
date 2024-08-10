@@ -201,6 +201,19 @@ pub enum Architecture {
 	Aarch64,
 }
 
+#[derive(Clone, Copy)]
+struct YieldTarget {
+	binding: Option<YieldBinding>,
+	following_block: LLVMBasicBlockRef,
+}
+
+#[derive(Clone, Copy)]
+struct YieldBinding {
+	type_id: TypeId,
+	pointer: LLVMValueRef,
+	pointed_type: LLVMTypeRef,
+}
+
 pub struct LLVMGenerator<ABI: LLVMAbi> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
@@ -217,6 +230,7 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 
 	state: State,
 	block_frames: Vec<BlockFrame>,
+	yield_targets: Vec<YieldTarget>,
 	loop_condition_blocks: Vec<LLVMBasicBlockRef>,
 	loop_follow_blocks: Vec<LLVMBasicBlockRef>,
 	functions: Vec<Vec<Option<DefinedFunction>>>,
@@ -277,6 +291,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 
 			state: State::InModule,
 			block_frames: Vec::new(),
+			yield_targets: Vec::new(),
 			loop_condition_blocks: Vec::new(),
 			loop_follow_blocks: Vec::new(),
 			functions: Vec::new(),
@@ -634,6 +649,44 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn end_block(&mut self) {
 		let frame = self.block_frames.pop().expect("Every end must match a start");
 		self.readables.truncate(frame.intial_readables_len);
+	}
+
+	fn start_block_expression(&mut self, type_store: &mut TypeStore, yield_target_index: usize, type_id: TypeId) {
+		assert_eq!(yield_target_index, self.yield_targets.len());
+
+		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
+		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
+		let following_block_name = c"start_block_expression.following".as_ptr();
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, following_block_name) };
+
+		let binding = if type_store.type_layout(type_id).size > 0 {
+			let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, type_id);
+			let pointer = self.build_alloca(pointed_type, c"start_block_expression.yield_target_alloca");
+			Some(YieldBinding { type_id, pointer, pointed_type })
+		} else {
+			None
+		};
+
+		self.yield_targets.push(YieldTarget { binding, following_block });
+	}
+
+	fn end_block_expression(&mut self, yield_target_index: usize) -> Option<Self::Binding> {
+		let target = self.yield_targets.pop().unwrap();
+		assert_eq!(yield_target_index, self.yield_targets.len());
+
+		unsafe {
+			let current_block = LLVMGetInsertBlock(self.builder);
+			if LLVMGetBasicBlockTerminator(current_block).is_null() {
+				LLVMBuildBr(self.builder, target.following_block);
+			}
+
+			LLVMPositionBuilderAtEnd(self.builder, target.following_block);
+		}
+
+		target.binding.map(|binding| Binding {
+			type_id: binding.type_id,
+			kind: BindingKind::Pointer { pointer: binding.pointer, pointed_type: binding.pointed_type },
+		})
 	}
 
 	fn start_function(&mut self, type_store: &TypeStore, function: &Function, function_id: FunctionId) {
@@ -2506,6 +2559,20 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let condition_block = self.loop_condition_blocks[loop_index];
 		unsafe { LLVMBuildBr(self.builder, condition_block) };
+	}
+
+	fn generate_yield(&mut self, yield_target_index: usize, value: Option<Self::Binding>, debug_location: DebugLocation) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let target = self.yield_targets[yield_target_index];
+
+		if let Some(value) = value {
+			let value = value.to_value(self.builder);
+			let binding = target.binding.unwrap();
+			unsafe { LLVMBuildStore(self.builder, value, binding.pointer) };
+		}
+
+		unsafe { LLVMBuildBr(self.builder, target.following_block) };
 	}
 
 	fn generate_return<'a, 'b>(

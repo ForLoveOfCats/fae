@@ -509,6 +509,11 @@ pub struct Break;
 pub struct Continue;
 
 #[derive(Debug)]
+pub struct Yield<'a> {
+	pub expression: Node<Expression<'a>>,
+}
+
+#[derive(Debug)]
 pub struct Return<'a> {
 	pub expression: Option<Node<Expression<'a>>>,
 }
@@ -536,6 +541,7 @@ pub enum Statement<'a> {
 
 	Break(Node<Break>),
 	Continue(Node<Continue>),
+	Yield(&'a Node<Yield<'a>>),
 	Return(&'a Node<Return<'a>>),
 }
 
@@ -560,6 +566,7 @@ impl<'a> Statement<'a> {
 			Defer(statement) => statement.span,
 			Break(statement) => statement.span,
 			Continue(statement) => statement.span,
+			Yield(statement) => statement.span,
 			Return(statement) => statement.span,
 		}
 	}
@@ -583,6 +590,7 @@ impl<'a> Statement<'a> {
 			Defer(..) => "A defer statement",
 			Break(..) => "A break statement",
 			Continue(..) => "A continue statement",
+			Yield(..) => "A yield statement",
 			Return(..) => "A return statement",
 		}
 	}

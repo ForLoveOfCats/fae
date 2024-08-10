@@ -14,6 +14,7 @@ use crate::frontend::tree::{
 };
 use crate::frontend::type_store::*;
 use crate::frontend::when::WhenContext;
+use crate::frontend::yield_targets::YieldTargets;
 use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
@@ -45,9 +46,15 @@ pub struct Context<'a, 'b, 'c> {
 	pub externs: &'b RwLock<Externs<'a>>,
 	pub constants: &'b RwLock<Vec<ConstantValue<'a>>>,
 	pub statics: &'b RwLock<Statics<'a>>,
+
 	pub initial_readables_starting_index: usize,
 	pub initial_readables_overall_len: usize,
 	pub readables: &'b mut Readables<'a>,
+
+	pub initial_yield_targets_starting_index: usize,
+	pub initial_yield_targets_overall_len: usize,
+	pub yield_targets: &'b mut YieldTargets,
+	pub current_yield_target_index: Option<usize>,
 
 	pub initial_local_function_shape_indicies_len: usize,
 	pub local_function_shape_indicies: &'b mut Vec<usize>,
@@ -70,6 +77,9 @@ impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
 	fn drop(&mut self) {
 		self.readables.readables.truncate(self.initial_readables_overall_len);
 		self.readables.starting_index = self.initial_readables_starting_index;
+
+		self.yield_targets.targets.truncate(self.initial_yield_targets_overall_len);
+		self.yield_targets.starting_index = self.initial_yield_targets_starting_index;
 	}
 }
 
@@ -105,9 +115,15 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			externs: self.externs,
 			constants: self.constants,
 			statics: self.statics,
+
 			initial_readables_starting_index: self.readables.starting_index,
 			initial_readables_overall_len: self.readables.overall_len(),
 			readables: self.readables,
+
+			initial_yield_targets_starting_index: self.yield_targets.starting_index,
+			initial_yield_targets_overall_len: self.yield_targets.overall_len(),
+			yield_targets: self.yield_targets,
+			current_yield_target_index: self.current_yield_target_index,
 
 			initial_local_function_shape_indicies_len: self.local_function_shape_indicies.len(),
 			local_function_shape_indicies: self.local_function_shape_indicies,
@@ -138,6 +154,9 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		let initial_readables_starting_index = self.readables.starting_index;
 		self.readables.starting_index = self.readables.overall_len();
 
+		let initial_yield_targets_starting_index = self.yield_targets.starting_index;
+		self.yield_targets.starting_index = self.yield_targets.overall_len();
+
 		Context {
 			cli_arguments: self.cli_arguments,
 			herd_member: self.herd_member,
@@ -165,9 +184,15 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			externs: self.externs,
 			constants: self.constants,
 			statics: self.statics,
+
 			initial_readables_starting_index,
 			initial_readables_overall_len: self.readables.overall_len(),
 			readables: self.readables,
+
+			initial_yield_targets_starting_index,
+			initial_yield_targets_overall_len: self.yield_targets.overall_len(),
+			yield_targets: self.yield_targets,
+			current_yield_target_index: None,
 
 			initial_local_function_shape_indicies_len: self.local_function_shape_indicies.len(),
 			local_function_shape_indicies: self.local_function_shape_indicies,
@@ -360,6 +385,7 @@ pub fn validate<'a>(
 
 				barrier.wait();
 
+				let mut yield_targets = YieldTargets::new();
 				validate_root_consts(
 					cli_arguments,
 					&herd_member,
@@ -374,6 +400,7 @@ pub fn validate<'a>(
 					&constants,
 					statics,
 					&mut readables,
+					&mut yield_targets,
 					parsed_files,
 					&parsed_files_iter_5,
 					&type_shape_indicies,
@@ -395,6 +422,7 @@ pub fn validate<'a>(
 					&constants,
 					statics,
 					&mut readables,
+					&mut yield_targets,
 					parsed_files,
 					&parsed_files_iter_6,
 					&type_shape_indicies,
@@ -417,6 +445,7 @@ pub fn validate<'a>(
 					&constants,
 					statics,
 					&mut readables,
+					&mut yield_targets,
 					parsed_files,
 					&parsed_files_iter_7,
 					&type_shape_indicies,
@@ -449,6 +478,7 @@ fn deep_pass<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
+	yield_targets: &mut YieldTargets,
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
@@ -472,6 +502,9 @@ fn deep_pass<'a>(
 
 		readables.starting_index = 0;
 		readables.readables.clear();
+
+		yield_targets.starting_index = 0;
+		yield_targets.targets.clear();
 
 		let mut next_scope_index = 1;
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -498,6 +531,10 @@ fn deep_pass<'a>(
 			initial_readables_starting_index: 0,
 			initial_readables_overall_len: 0,
 			readables,
+			initial_yield_targets_starting_index: 0,
+			initial_yield_targets_overall_len: 0,
+			yield_targets,
+			current_yield_target_index: None,
 			initial_local_function_shape_indicies_len: 0,
 			local_function_shape_indicies: &mut local_function_shape_indicies,
 			function_initial_scope_count: symbols.scopes.len(),
@@ -746,6 +783,7 @@ fn validate_root_consts<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
+	yield_targets: &mut YieldTargets,
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
@@ -766,6 +804,9 @@ fn validate_root_consts<'a>(
 
 		readables.starting_index = 0;
 		readables.readables.clear();
+
+		yield_targets.starting_index = 0;
+		yield_targets.targets.clear();
 
 		let importable_consts_index = symbols.scopes.len();
 		assert_eq!(importable_consts_index, 2);
@@ -797,6 +838,10 @@ fn validate_root_consts<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
+			initial_yield_targets_starting_index: 0,
+			initial_yield_targets_overall_len: 0,
+			yield_targets,
+			current_yield_target_index: None,
 			function_initial_scope_count: symbols.scopes.len(),
 			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
@@ -840,6 +885,7 @@ fn validate_root_statics<'a>(
 	constants: &RwLock<Vec<ConstantValue<'a>>>,
 	statics: &RwLock<Statics<'a>>,
 	readables: &mut Readables<'a>,
+	yield_targets: &mut YieldTargets,
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
@@ -860,6 +906,9 @@ fn validate_root_statics<'a>(
 
 		readables.starting_index = 0;
 		readables.readables.clear();
+
+		yield_targets.starting_index = 0;
+		yield_targets.targets.clear();
 
 		let importable_statics_index = symbols.scopes.len();
 		assert_eq!(importable_statics_index, 3);
@@ -891,6 +940,10 @@ fn validate_root_statics<'a>(
 			initial_readables_starting_index: readables.starting_index,
 			initial_readables_overall_len: readables.overall_len(),
 			readables,
+			initial_yield_targets_starting_index: 0,
+			initial_yield_targets_overall_len: 0,
+			yield_targets,
+			current_yield_target_index: None,
 			function_initial_scope_count: symbols.scopes.len(),
 			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
@@ -1103,6 +1156,7 @@ fn create_block_types<'a>(
 				| tree::Statement::Defer(..)
 				| tree::Statement::Break(..)
 				| tree::Statement::Continue(..)
+				| tree::Statement::Yield(..)
 				| tree::Statement::Return(..) => {
 					let error = error!("{} is not allowed in a root scope", statement.name_and_article());
 					messages.message(error.span(statement.span()));
@@ -2504,25 +2558,32 @@ fn validate_block_in_context<'a>(
 		validate_block_consts(context, block);
 	}
 
+	let mut yields = false;
 	let mut returns = false;
 	let mut statements = Vec::with_capacity(block.statements.len());
 
 	for statement in block.statements {
-		if let Some(statement) = validate_statement(context, scope_id, statement, &mut returns, is_root) {
+		if let Some(statement) = validate_statement(context, scope_id, statement, &mut yields, &mut returns, is_root) {
 			statements.push(statement);
 		}
 	}
 
-	// TODO: Add `give` keywork and support block expressions
-	// Make sure to disallow in root of function
-	let type_id = context.type_store.void_type_id();
-	Block { type_id, returns, statements }
+	let type_id = if let Some(index) = context.current_yield_target_index {
+		let any_collapse = context.type_store.any_collapse_type_id();
+		context.yield_targets.get(index).type_id.unwrap_or(any_collapse)
+	} else {
+		context.type_store.void_type_id()
+	};
+
+	let yield_target_index = None;
+	Block { type_id, yields, yield_target_index, returns, statements }
 }
 
 fn validate_statement<'a>(
 	context: &mut Context<'a, '_, '_>,
 	scope_id: ScopeId,
 	statement: &'a tree::Statement<'a>,
+	yields: &mut bool,
 	returns: &mut bool,
 	is_root: bool,
 ) -> Option<Statement<'a>> {
@@ -2537,11 +2598,13 @@ fn validate_statement<'a>(
 		| tree::Statement::Defer(..)
 		| tree::Statement::Break(..)
 		| tree::Statement::Continue(..)
+		| tree::Statement::Yield(..)
 		| tree::Statement::Return(..)
 			if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
 		tree::Statement::Expression(statement) => {
 			let expression = validate_expression(context, statement);
+			*yields |= expression.yields;
 			*returns |= expression.returns;
 
 			let kind = StatementKind::Expression(expression);
@@ -2554,6 +2617,7 @@ fn validate_statement<'a>(
 		tree::Statement::Block(statement) => {
 			let scope = context.child_scope();
 			let block = validate_block(scope, &statement.item, false);
+			*yields |= block.yields;
 			*returns |= block.returns;
 			let kind = StatementKind::Block(block);
 			return Some(Statement {
@@ -2564,6 +2628,7 @@ fn validate_statement<'a>(
 
 		tree::Statement::WhenElseChain(statement) => {
 			if let Some(block) = validate_when(context, statement, scope_id, is_root) {
+				*yields |= block.yields;
 				*returns |= block.returns;
 				let kind = StatementKind::When(block);
 				return Some(Statement {
@@ -2605,7 +2670,7 @@ fn validate_statement<'a>(
 				None => return None,
 			};
 
-			let kind = StatementKind::Binding(Box::new(validated));
+			let kind = StatementKind::Binding(validated);
 			return Some(Statement {
 				kind,
 				debug_location: statement.span.debug_location(context.parsed_files),
@@ -2619,7 +2684,8 @@ fn validate_statement<'a>(
 			let mut scope = context.child_scope();
 			let scope_id = ScopeId { file_index: scope.file_index, scope_index: scope.scope_index };
 
-			let Some(statement) = validate_statement(&mut scope, scope_id, &statement.item.statement, &mut false, false) else {
+			let statement = &statement.item.statement;
+			let Some(statement) = validate_statement(&mut scope, scope_id, statement, &mut false, &mut false, false) else {
 				return None;
 			};
 
@@ -2662,7 +2728,42 @@ fn validate_statement<'a>(
 			return Some(Statement { kind, debug_location });
 		}
 
+		tree::Statement::Yield(statement) => {
+			*yields |= true;
+
+			let debug_location = statement.span.debug_location(context.parsed_files);
+			let statement = if let Some(yield_target_index) = context.current_yield_target_index {
+				let mut expression = validate_expression(context, &statement.item.expression);
+
+				let target_type = context.yield_targets.get_mut(yield_target_index);
+				if let Some(expected) = target_type.type_id {
+					if let Ok(false) = context.collapse_to(expected, &mut expression) {
+						let expected = context.type_name(expected);
+						let got = context.type_name(expression.type_id);
+						let error = error!("Expected yield type of {expected}, got {got}");
+						context.message(error.span(statement.span));
+					}
+				} else {
+					target_type.type_id = Some(expression.type_id);
+				}
+
+				Yield { yield_target_index, expression }
+			} else {
+				let error = error!("Cannot yield when outside a block expression");
+				context.message(error.span(statement.span));
+				let expression = Expression::any_collapse(context.type_store, statement.item.expression.span);
+				Yield { yield_target_index: 0, expression }
+			};
+
+			let kind = StatementKind::Yield(statement);
+			return Some(Statement { kind, debug_location });
+		}
+
 		tree::Statement::Return(statement) => {
+			// There are valid reasons for wanting to return within a block expression, in these
+			// cases it should count as a yield to avoid errors if the returning codepath has no
+			// yield statement
+			*yields |= true;
 			*returns |= true;
 
 			let expression = statement.item.expression.as_ref();
@@ -2682,8 +2783,7 @@ fn validate_statement<'a>(
 				}
 			}
 
-			let boxed_return = Box::new(Return { expression });
-			let kind = StatementKind::Return(boxed_return);
+			let kind = StatementKind::Return(Return { expression });
 			return Some(Statement {
 				kind,
 				debug_location: statement.span.debug_location(context.parsed_files),
@@ -3083,10 +3183,17 @@ pub fn validate_expression<'a>(
 
 	match &expression.item {
 		tree::Expression::Block(block) => {
-			context.expected_type = None;
-			context.can_is_bind = false;
-			let expression = validate_block_expression(context, block, span);
-			context.can_is_bind = original_can_is_bind;
+			let mut scope = context.child_scope();
+			scope.can_is_bind = false;
+			let index = scope.yield_targets.push();
+			scope.current_yield_target_index = Some(index);
+
+			let expression = validate_block_expression(&mut scope, block, span, index);
+			if !expression.yields {
+				let error = error!("Not all code paths for block expression yield a value");
+				scope.message(error.span(expression.span));
+			}
+
 			expression
 		}
 
@@ -3190,8 +3297,15 @@ pub fn validate_expression<'a>(
 	}
 }
 
-fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a tree::Block<'a>, span: Span) -> Expression<'a> {
-	let validated_block = validate_block(context.child_scope(), block, false);
+fn validate_block_expression<'a>(
+	context: &mut Context<'a, '_, '_>,
+	block: &'a tree::Block<'a>,
+	span: Span,
+	yield_target_index: usize,
+) -> Expression<'a> {
+	let mut validated_block = validate_block(context.child_scope(), block, false);
+	let yields = validated_block.yields;
+	validated_block.yield_target_index = Some(yield_target_index);
 	let returns = validated_block.returns;
 	let type_id = validated_block.type_id;
 	let kind = ExpressionKind::Block(validated_block);
@@ -3199,6 +3313,7 @@ fn validate_block_expression<'a>(context: &mut Context<'a, '_, '_>, block: &'a t
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3226,6 +3341,10 @@ fn validate_if_else_chain_expression<'a>(
 	};
 
 	let mut entries = Vec::with_capacity(chain_expression.entries.len());
+
+	let mut first_condition_yields = false;
+	let mut all_if_bodies_yield = true;
+
 	let mut first_condition_returns = false;
 	let mut all_if_bodies_return = true;
 
@@ -3234,6 +3353,9 @@ fn validate_if_else_chain_expression<'a>(
 		scope.can_is_bind = true;
 		let condition = validate_expression(&mut scope, &entry.condition);
 		scope.can_is_bind = false;
+		if index == 0 && condition.yields {
+			first_condition_yields = true;
+		}
 		if index == 0 && condition.returns {
 			first_condition_returns = true;
 		}
@@ -3245,6 +3367,7 @@ fn validate_if_else_chain_expression<'a>(
 		}
 
 		let body = validate_block(scope, &entry.body.item, false);
+		all_if_bodies_yield &= body.yields;
 		all_if_bodies_return &= body.returns;
 		check_body_type_id(context, &body, entry.body.span);
 
@@ -3252,10 +3375,12 @@ fn validate_if_else_chain_expression<'a>(
 		entries.push(entry);
 	}
 
+	let mut else_yields = false;
 	let mut else_returns = false;
 	let else_body = if let Some(else_body) = &chain_expression.else_body {
 		let scope = context.child_scope();
 		let body = validate_block(scope, &else_body.item, false);
+		else_yields = body.yields;
 		else_returns = body.returns;
 		Some(body)
 	} else {
@@ -3263,6 +3388,7 @@ fn validate_if_else_chain_expression<'a>(
 	};
 
 	let type_id = type_id.unwrap();
+	let yields = (all_if_bodies_yield && else_yields) || first_condition_yields;
 	let returns = (all_if_bodies_return && else_returns) || first_condition_returns;
 	let chain = IfElseChain { _type_id: type_id, entries, else_body };
 	let kind = ExpressionKind::IfElseChain(Box::new(chain));
@@ -3270,6 +3396,7 @@ fn validate_if_else_chain_expression<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3324,7 +3451,8 @@ fn validate_match_expression<'a>(
 	}
 	drop(user_type);
 
-	let mut arms_returns = true;
+	let mut arms_yield = true;
+	let mut arms_return = true;
 	let mut arms = Vec::new();
 
 	for arm in match_expression.arms {
@@ -3418,7 +3546,8 @@ fn validate_match_expression<'a>(
 		};
 
 		let block = validate_block(scope.child_scope(), &arm.block.item, false);
-		arms_returns &= block.returns;
+		arms_yield &= block.yields;
+		arms_return &= block.returns;
 
 		let arm = MatchArm { binding, block, variant_infos };
 		arms.push(arm);
@@ -3469,13 +3598,15 @@ fn validate_match_expression<'a>(
 
 	// TODO: When adding `give` make sure to infer match type from arms
 	let type_id = context.type_store.void_type_id();
-	let returns = expression.returns | arms_returns;
+	let yields = expression.yields | arms_yield;
+	let returns = expression.returns | arms_return;
 	let match_expression = Box::new(Match { expression, arms, else_arm });
 	let kind = ExpressionKind::Match(match_expression);
 	Expression {
 		span,
 		type_id,
 		is_mutable,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3594,6 +3725,7 @@ fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tre
 		span,
 		type_id,
 		is_mutable: true,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3608,6 +3740,7 @@ fn validate_float_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree:
 		span,
 		type_id,
 		is_mutable: true,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3621,6 +3754,7 @@ fn validate_bool_literal<'a>(context: &mut Context<'a, '_, '_>, literal: bool, s
 		span,
 		type_id,
 		is_mutable: true,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3638,6 +3772,7 @@ fn validate_codepoint_literal<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3655,6 +3790,7 @@ fn validate_byte_codepoint_literal<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3672,6 +3808,7 @@ fn validate_string_literal<'a>(
 		span,
 		type_id,
 		is_mutable: false,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3712,6 +3849,7 @@ fn validate_format_string_literal<'a>(
 		span,
 		type_id,
 		is_mutable: false,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3730,10 +3868,12 @@ fn validate_array_literal<'a>(
 	});
 	context.expected_type = pointee_type_id;
 
+	let mut yields = false;
 	let mut returns = false;
 	let mut expressions = Vec::with_capacity(literal.expressions.len());
 	for expression in literal.expressions {
 		let expression = validate_expression(context, expression);
+		yields |= expression.yields;
 		returns |= expression.returns;
 		expressions.push(expression);
 	}
@@ -3776,6 +3916,7 @@ fn validate_array_literal<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3823,6 +3964,7 @@ fn validate_struct_literal<'a>(
 	let fields = shape.specializations[specialization_index].fields.clone();
 	drop(user_type);
 
+	let mut yields = false;
 	let mut returns = false;
 	let field_initializers = validate_struct_initializer(
 		context,
@@ -3831,6 +3973,7 @@ fn validate_struct_literal<'a>(
 		type_id,
 		&literal.initializer,
 		&fields,
+		&mut yields,
 		&mut returns,
 	);
 
@@ -3839,6 +3982,7 @@ fn validate_struct_literal<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -3852,6 +3996,7 @@ fn validate_struct_initializer<'a>(
 	type_id: TypeId,
 	initializer: &'a Node<tree::StructInitializer<'a>>,
 	fields: &[Field<'a>],
+	yields: &mut bool,
 	returns: &mut bool,
 ) -> Vec<FieldInitializer<'a>> {
 	let mut fields = fields.iter();
@@ -3865,6 +4010,7 @@ fn validate_struct_initializer<'a>(
 		let mut expression = validate_expression(&mut scope, &intializer.expression);
 		drop(scope);
 
+		*yields |= expression.yields;
 		*returns |= expression.returns;
 
 		let field = match field {
@@ -3991,6 +4137,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		Some(span),
 	);
 
+	let mut yields = false;
 	let mut returns = false;
 	let mut arguments = Vec::with_capacity(call.arguments.len());
 	for (index, argument) in call.arguments.iter().enumerate() {
@@ -4008,6 +4155,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		}
 
 		let argument = validate_expression(&mut scope, argument);
+		yields |= argument.yields;
 		returns |= argument.returns;
 		arguments.push(argument);
 	}
@@ -4089,6 +4237,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		span,
 		type_id: return_type,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -4158,6 +4307,7 @@ fn get_method_function_specialization<'a>(
 }
 
 struct MethodArgumentsResult<'a> {
+	yields: bool,
 	returns: bool,
 	arguments: Vec<Expression<'a>>,
 }
@@ -4176,6 +4326,7 @@ fn validate_method_arguments<'a>(
 		.unwrap()
 		.clone();
 
+	let mut yields = false;
 	let mut returns = false;
 	let mut arguments = Vec::with_capacity(call_arguments.len());
 	for (index, argument) in call_arguments.iter().enumerate() {
@@ -4190,6 +4341,7 @@ fn validate_method_arguments<'a>(
 		drop(shape);
 
 		let argument = validate_expression(&mut scope, argument);
+		yields |= argument.yields;
 		returns |= argument.returns;
 		arguments.push(argument);
 	}
@@ -4234,7 +4386,7 @@ fn validate_method_arguments<'a>(
 		return None;
 	}
 
-	Some(MethodArgumentsResult { returns, arguments })
+	Some(MethodArgumentsResult { yields, returns, arguments })
 }
 
 fn validate_method_call<'a>(
@@ -4324,7 +4476,7 @@ fn validate_method_call<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let Some(MethodArgumentsResult { mut returns, arguments }) =
+	let Some(MethodArgumentsResult { yields, mut returns, arguments }) =
 		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, false)
 	else {
 		return Expression::any_collapse(context.type_store, span);
@@ -4342,6 +4494,7 @@ fn validate_method_call<'a>(
 		span,
 		type_id: return_type,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -4408,10 +4561,15 @@ fn validate_static_method_call<'a>(
 						})
 						.unwrap();
 
+					let mut yields = false;
 					let mut returns = false;
-					let Some(field_initializers) =
-						validate_transparent_variant_initializer(context, &mut returns, expression, expected_type_id)
-					else {
+					let Some(field_initializers) = validate_transparent_variant_initializer(
+						context,
+						&mut yields,
+						&mut returns,
+						expression,
+						expected_type_id,
+					) else {
 						return Expression::any_collapse(context.type_store, span);
 					};
 
@@ -4422,6 +4580,7 @@ fn validate_static_method_call<'a>(
 						span,
 						type_id,
 						is_mutable: true,
+						yields,
 						returns,
 						kind,
 						debug_location: span.debug_location(context.parsed_files),
@@ -4475,7 +4634,7 @@ fn validate_static_method_call<'a>(
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
-	let Some(MethodArgumentsResult { mut returns, arguments }) =
+	let Some(MethodArgumentsResult { yields, mut returns, arguments }) =
 		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, true)
 	else {
 		return Expression::any_collapse(context.type_store, span);
@@ -4493,6 +4652,7 @@ fn validate_static_method_call<'a>(
 		span,
 		type_id: return_type,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -4545,6 +4705,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				span,
 				type_id,
 				is_mutable: false,
+				yields: false,
 				returns: false,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -4563,6 +4724,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				span,
 				type_id,
 				is_mutable: false,
+				yields: false,
 				returns: false,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -4580,6 +4742,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 					span,
 					type_id,
 					is_mutable: false,
+					yields: false,
 					returns: false,
 					kind,
 					debug_location: span.debug_location(context.parsed_files),
@@ -4609,6 +4772,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				span,
 				type_id,
 				is_mutable: false,
+				yields: false,
 				returns: false,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -4622,7 +4786,6 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 	};
 
 	let Some(readable) = context.readables.get(readable_index) else {
-		// dbg!(&context.readables);
 		panic!("Symbol pointed to unknown readable index {readable_index}, {read:?}");
 	};
 
@@ -4635,6 +4798,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		span,
 		type_id,
 		is_mutable,
+		yields: false,
 		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -4706,6 +4870,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			span,
 			type_id,
 			is_mutable,
+			yields: false,
 			returns: false,
 			kind,
 			debug_location: span.debug_location(context.parsed_files),
@@ -4839,11 +5004,13 @@ fn validate_inferred_enum<'a>(
 			let variant = variants[variant_index];
 			let type_id = variant.type_id;
 
+			let mut yields = false;
 			let mut returns = false;
 			let Some(field_initializers) = validate_enum_initializer(
 				context,
 				inferred_enum.name.item,
 				type_id,
+				&mut yields,
 				&mut returns,
 				inferred_enum.initializer,
 				span,
@@ -4857,6 +5024,7 @@ fn validate_inferred_enum<'a>(
 				span,
 				type_id,
 				is_mutable: true,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -4879,11 +5047,13 @@ fn validate_dot_access_enum_literal<'a>(
 		return Expression::any_collapse(context.type_store, span);
 	};
 
+	let mut yields = false;
 	let mut returns = false;
 	let Some(field_initializers) = validate_enum_initializer(
 		context,
 		dot_access.name.item,
 		variant_type_id,
+		&mut yields,
 		&mut returns,
 		dot_access.enum_initializer,
 		span,
@@ -4897,6 +5067,7 @@ fn validate_dot_access_enum_literal<'a>(
 		span,
 		type_id: variant_type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -4907,6 +5078,7 @@ fn validate_enum_initializer<'a>(
 	context: &mut Context<'a, '_, '_>,
 	variant_name: &str,
 	variant_type_id: TypeId,
+	yields: &mut bool,
 	returns: &mut bool,
 	initializer: Option<&'a tree::EnumInitializer<'a>>,
 	span: Span,
@@ -4947,7 +5119,7 @@ fn validate_enum_initializer<'a>(
 					.type_id;
 
 				drop(user_type);
-				return validate_transparent_variant_initializer(context, returns, expression, expected_type_id);
+				return validate_transparent_variant_initializer(context, yields, returns, expression, expected_type_id);
 			}
 
 			// Uggg
@@ -4990,6 +5162,7 @@ fn validate_enum_initializer<'a>(
 			variant_type_id,
 			struct_initializer,
 			&fields,
+			yields,
 			returns,
 		))
 	} else if !fields.is_empty() {
@@ -5007,6 +5180,7 @@ fn validate_enum_initializer<'a>(
 
 fn validate_transparent_variant_initializer<'a>(
 	context: &mut Context<'a, '_, '_>,
+	yields: &mut bool,
 	returns: &mut bool,
 	expression: &'a Node<tree::Expression<'a>>,
 	expected_type_id: TypeId,
@@ -5016,6 +5190,7 @@ fn validate_transparent_variant_initializer<'a>(
 	let mut expression = validate_expression(&mut scope, expression);
 	drop(scope);
 
+	*yields |= expression.yields;
 	*returns |= expression.returns;
 
 	if !context.collapse_to(expected_type_id, &mut expression).unwrap_or(true) {
@@ -5077,6 +5252,7 @@ fn validate_unary_operation<'a>(
 	}
 
 	let type_id = expression.type_id;
+	let yields = expression.yields;
 	let returns = expression.returns;
 
 	if matches!(op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
@@ -5100,6 +5276,7 @@ fn validate_unary_operation<'a>(
 				span,
 				type_id,
 				is_mutable: true,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5120,6 +5297,7 @@ fn validate_unary_operation<'a>(
 				span,
 				type_id,
 				is_mutable: true,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5133,6 +5311,7 @@ fn validate_unary_operation<'a>(
 				span,
 				type_id,
 				is_mutable: true,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5152,6 +5331,7 @@ fn validate_unary_operation<'a>(
 				span,
 				type_id,
 				is_mutable: true,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5170,6 +5350,7 @@ fn validate_unary_operation<'a>(
 				span,
 				type_id,
 				is_mutable,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5284,6 +5465,7 @@ fn validate_cast<'a>(
 	}
 
 	let type_id = to_type_id;
+	let yields = expression.yields;
 	let returns = expression.returns;
 	let op = UnaryOperator::Cast { type_id };
 	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
@@ -5291,6 +5473,7 @@ fn validate_cast<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -5310,6 +5493,7 @@ fn validate_bracket_index<'a>(
 	let (type_id, is_mutable) = if let Some((sliced, is_mutable)) = context.type_store.sliced_of(expression.type_id) {
 		if is_range {
 			let type_id = context.type_store.slice_of(sliced, is_mutable);
+			let yields = expression.yields || index_expression.yields;
 			let returns = expression.returns || index_expression.returns;
 			let op = UnaryOperator::RangeIndex { index_expression };
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
@@ -5317,6 +5501,7 @@ fn validate_bracket_index<'a>(
 				span,
 				type_id,
 				is_mutable,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5327,6 +5512,7 @@ fn validate_bracket_index<'a>(
 	} else if expression.type_id.is_string(context.type_store) {
 		if is_range {
 			let type_id = context.type_store.string_type_id();
+			let yields = expression.yields || index_expression.yields;
 			let returns = expression.returns || index_expression.returns;
 			let op = UnaryOperator::RangeIndex { index_expression };
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
@@ -5334,6 +5520,7 @@ fn validate_bracket_index<'a>(
 				span,
 				type_id,
 				is_mutable: false,
+				yields,
 				returns,
 				kind,
 				debug_location: span.debug_location(context.parsed_files),
@@ -5354,6 +5541,7 @@ fn validate_bracket_index<'a>(
 		context.message(error.span(index_expression.span));
 	}
 
+	let yields = expression.yields || index_expression.yields;
 	let returns = expression.returns || index_expression.returns;
 	let op = UnaryOperator::Index { index_expression };
 	let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
@@ -5361,6 +5549,7 @@ fn validate_bracket_index<'a>(
 		span,
 		type_id,
 		is_mutable,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -5405,6 +5594,7 @@ fn validate_binary_operation<'a>(
 		}
 
 		let type_id = context.lang_items.read().range_type.unwrap();
+		let yields = left.yields || right.yields;
 		let returns = left.returns || right.returns;
 		let operation = Box::new(BinaryOperation { op, left, right, type_id });
 		let kind = ExpressionKind::BinaryOperation(operation);
@@ -5412,6 +5602,7 @@ fn validate_binary_operation<'a>(
 			span,
 			type_id,
 			is_mutable: true,
+			yields,
 			returns,
 			kind,
 			debug_location: span.debug_location(context.parsed_files),
@@ -5589,6 +5780,7 @@ fn validate_binary_operation<'a>(
 		_ => collapsed,
 	};
 
+	let yields = left.yields || right.yields;
 	let returns = left.returns || right.returns;
 	let operation = Box::new(BinaryOperation { op, left, right, type_id });
 	let kind = ExpressionKind::BinaryOperation(operation);
@@ -5596,6 +5788,7 @@ fn validate_binary_operation<'a>(
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
@@ -5634,6 +5827,7 @@ fn perform_constant_binary_operation<'a>(
 			span,
 			type_id,
 			is_mutable: true,
+			yields: false,
 			returns: false,
 			kind,
 			debug_location: span.debug_location(context.parsed_files),
@@ -5662,6 +5856,7 @@ fn perform_constant_binary_operation<'a>(
 			span,
 			type_id,
 			is_mutable: true,
+			yields: false,
 			returns: false,
 			kind,
 			debug_location: span.debug_location(context.parsed_files),
@@ -5687,6 +5882,7 @@ fn perform_constant_binary_operation<'a>(
 			span,
 			type_id,
 			is_mutable: true,
+			yields: false,
 			returns: false,
 			kind,
 			debug_location: span.debug_location(context.parsed_files),
@@ -5829,6 +6025,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	};
 
 	let type_id = context.type_store.bool_type_id();
+	let yields = left.yields;
 	let returns = left.returns;
 	let check_is = CheckIs { left, binding, variant_infos };
 	let kind = ExpressionKind::CheckIs(Box::new(check_is));
@@ -5836,6 +6033,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		span,
 		type_id,
 		is_mutable: true,
+		yields,
 		returns,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),

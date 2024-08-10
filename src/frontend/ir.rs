@@ -300,6 +300,8 @@ pub struct ScopeId {
 #[derive(Debug)]
 pub struct Block<'a> {
 	pub type_id: TypeId,
+	pub yields: bool,
+	pub yield_target_index: Option<usize>,
 	pub returns: bool,
 	pub statements: Vec<Statement<'a>>,
 }
@@ -376,13 +378,14 @@ pub enum StatementKind<'a> {
 	While(While<'a>),
 	For(For<'a>),
 
-	Binding(Box<Binding<'a>>),
+	Binding(Binding<'a>),
 
 	Defer(Box<Defer<'a>>),
 
 	Break(Break),
 	Continue(Continue),
-	Return(Box<Return<'a>>),
+	Yield(Yield<'a>),
+	Return(Return<'a>),
 }
 
 #[derive(Debug)]
@@ -409,6 +412,12 @@ pub struct Continue {
 }
 
 #[derive(Debug)]
+pub struct Yield<'a> {
+	pub yield_target_index: usize,
+	pub expression: Expression<'a>,
+}
+
+#[derive(Debug)]
 pub struct Return<'a> {
 	pub expression: Option<Expression<'a>>,
 }
@@ -418,6 +427,7 @@ pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
 	pub is_mutable: bool,
+	pub yields: bool,
 	pub returns: bool,
 	pub kind: ExpressionKind<'a>,
 	pub debug_location: DebugLocation,
@@ -429,6 +439,7 @@ impl<'a> Expression<'a> {
 			span,
 			type_id: type_store.any_collapse_type_id(),
 			is_mutable: true,
+			yields: false,
 			returns: false, // TODO: This could cause erronious error messages?
 			kind: ExpressionKind::AnyCollapse,
 			debug_location: DebugLocation::unusable(),
@@ -439,7 +450,8 @@ impl<'a> Expression<'a> {
 		Expression {
 			span,
 			type_id: type_store.void_type_id(),
-			is_mutable: true, // TODO: Think about this harder?
+			is_mutable: true,
+			yields: false,
 			returns: false,
 			kind: ExpressionKind::Void,
 			debug_location: span.debug_location(parsed_files),

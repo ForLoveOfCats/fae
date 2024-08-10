@@ -301,7 +301,7 @@ impl<'a> Readables<'a> {
 		index
 	}
 
-	pub fn get(&mut self, index: usize) -> Option<Readable<'a>> {
+	pub fn get(&self, index: usize) -> Option<Readable<'a>> {
 		self.readables.get(index + self.starting_index).copied()
 	}
 }
