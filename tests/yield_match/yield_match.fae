@@ -1,0 +1,17 @@
+fn main() {
+	function(.A { field_a_1: 42, field_a_2: 3.14 })
+	function(.B { field_b_1: true, field_b_2: 99 })
+}
+
+enum Value {
+	A { field_a_1: i32, field_a_2: f64 }
+	B { field_b_1: bool, field_b_2: i32 }
+}
+
+fn function(arg: Value) {
+	let value = match arg {
+		A => yield arg.field_a_1
+		B => yield arg.field_b_2
+	}
+	println(f"{value}")
+}

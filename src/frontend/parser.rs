@@ -223,6 +223,24 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "if", .. } => {
+			disallow_all_attributes(messages, attributes, peeked.span, "An if-else statement");
+			if let Ok(chain) = parse_if_else_chain(bump, messages, tokens) {
+				return Some(Statement::IfElseChain(chain));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "match", .. } => {
+			disallow_all_attributes(messages, attributes, peeked.span, "A match statement");
+			if let Ok(expression) = parse_match(bump, messages, tokens) {
+				return Some(Statement::Match(expression));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "while", .. } => {
 			disallow_all_attributes(messages, attributes, peeked.span, "A while loop");
 			if let Ok(statement) = parse_while_statement(bump, messages, tokens, consume_newline) {
@@ -548,9 +566,17 @@ fn parse_expression_atom<'a>(
 
 		TokenKind::Word | TokenKind::DoubleColon => {
 			match peeked.text {
-				"if" => return parse_if_else_chain(bump, messages, tokens),
+				"if" => {
+					let node = parse_if_else_chain(bump, messages, tokens)?;
+					let expression = Expression::IfElseChain(bump.alloc(node.item));
+					return Ok(Node::new(expression, node.span));
+				}
 
-				"match" => return parse_match(bump, messages, tokens),
+				"match" => {
+					let node = parse_match(bump, messages, tokens)?;
+					let expression = Expression::Match(bump.alloc(node.item));
+					return Ok(Node::new(expression, node.span));
+				}
 
 				"true" => {
 					tokens.next()?;
@@ -996,7 +1022,7 @@ fn parse_if_else_chain<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
-) -> ParseResult<Node<Expression<'a>>> {
+) -> ParseResult<Node<IfElseChain<'a>>> {
 	let mut entries = BumpVec::new_in(bump);
 	let mut else_body = None;
 
@@ -1026,11 +1052,10 @@ fn parse_if_else_chain<'a>(
 	}
 
 	let value = IfElseChain { entries: entries.into_bump_slice(), else_body };
-	let expression = Expression::IfElseChain(bump.alloc(value));
-	Ok(Node::new(expression, span))
+	Ok(Node::new(value, span))
 }
 
-fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Expression<'a>>> {
+fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Match<'a>>> {
 	let match_token = tokens.expect_word(messages, "match")?;
 
 	let expression = parse_expression(bump, messages, tokens, false)?;
@@ -1098,9 +1123,8 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 	let close_brace = tokens.expect(messages, TokenKind::CloseBrace)?;
 	let span = match_token.span + close_brace.span;
 
-	let boxed_match = bump.alloc(Match { expression, arms: arms.into_bump_slice(), else_arm });
-	let expression = Expression::Match(boxed_match);
-	Ok(Node::new(expression, span))
+	let value = Match { expression, arms: arms.into_bump_slice(), else_arm };
+	Ok(Node::new(value, span))
 }
 
 fn parse_while_statement<'a>(

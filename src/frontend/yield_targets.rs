@@ -3,6 +3,7 @@ use crate::frontend::type_store::TypeId;
 #[derive(Debug, Clone, Copy)]
 pub struct YieldTarget {
 	pub type_id: Option<TypeId>,
+	pub outer_loop_index: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -20,9 +21,9 @@ impl YieldTargets {
 		self.targets.len()
 	}
 
-	pub fn push(&mut self) -> usize {
+	pub fn push(&mut self, outer_loop_index: Option<usize>) -> usize {
 		let index = self.targets.len() - self.starting_index;
-		self.targets.push(YieldTarget { type_id: None });
+		self.targets.push(YieldTarget { type_id: None, outer_loop_index });
 		index
 	}
 

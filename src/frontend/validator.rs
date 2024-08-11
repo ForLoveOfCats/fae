@@ -1150,6 +1150,8 @@ fn create_block_types<'a>(
 			match statement {
 				tree::Statement::Expression(..)
 				| tree::Statement::Block(..)
+				| tree::Statement::IfElseChain(..)
+				| tree::Statement::Match(..)
 				| tree::Statement::While(..)
 				| tree::Statement::For(..)
 				| tree::Statement::Binding(..)
@@ -2592,6 +2594,8 @@ fn validate_statement<'a>(
 	match statement {
 		tree::Statement::Expression(..)
 		| tree::Statement::Block(..)
+		| tree::Statement::IfElseChain(..)
+		| tree::Statement::Match(..)
 		| tree::Statement::While(..)
 		| tree::Statement::For(..)
 		| tree::Statement::Binding(..)
@@ -2636,6 +2640,30 @@ fn validate_statement<'a>(
 					debug_location: statement.span.debug_location(context.parsed_files),
 				});
 			}
+		}
+
+		tree::Statement::IfElseChain(chain) => {
+			let expression = validate_if_else_chain_expression(context, &chain.item, chain.span, None);
+			*yields |= expression.yields;
+			*returns |= expression.returns;
+
+			let kind = StatementKind::Expression(expression);
+			return Some(Statement {
+				kind,
+				debug_location: chain.span.debug_location(context.parsed_files),
+			});
+		}
+
+		tree::Statement::Match(statement) => {
+			let expression = validate_match_expression(context, &statement.item, statement.span, None);
+			*yields |= expression.yields;
+			*returns |= expression.returns;
+
+			let kind = StatementKind::Expression(expression);
+			return Some(Statement {
+				kind,
+				debug_location: statement.span.debug_location(context.parsed_files),
+			});
 		}
 
 		tree::Statement::While(statement) => {
@@ -2702,7 +2730,17 @@ fn validate_statement<'a>(
 
 		tree::Statement::Break(statement) => {
 			let debug_location = statement.span.debug_location(context.parsed_files);
+
 			let statement = if let Some(loop_index) = context.current_loop_index {
+				if let Some(target_index) = context.current_yield_target_index {
+					let target = context.yield_targets.get(target_index);
+					if let Some(outer_loop_index) = target.outer_loop_index {
+						if outer_loop_index <= loop_index {
+							*yields = true;
+						}
+					}
+				}
+
 				Break { loop_index }
 			} else {
 				let error = error!("Cannot break when outside a loop");
@@ -2716,7 +2754,17 @@ fn validate_statement<'a>(
 
 		tree::Statement::Continue(statement) => {
 			let debug_location = statement.span.debug_location(context.parsed_files);
+
 			let statement = if let Some(loop_index) = context.current_loop_index {
+				if let Some(target_index) = context.current_yield_target_index {
+					let target = context.yield_targets.get(target_index);
+					if let Some(outer_loop_index) = target.outer_loop_index {
+						if outer_loop_index <= loop_index {
+							*yields = true;
+						}
+					}
+				}
+
 				Continue { loop_index }
 			} else {
 				let error = error!("Cannot continue when outside a loop");
@@ -3185,7 +3233,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::Block(block) => {
 			let mut scope = context.child_scope();
 			scope.can_is_bind = false;
-			let index = scope.yield_targets.push();
+			let index = scope.yield_targets.push(scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
 			let expression = validate_block_expression(&mut scope, block, span, index);
@@ -3198,18 +3246,32 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::IfElseChain(chain_expression) => {
-			context.expected_type = None;
-			context.can_is_bind = false;
-			let expression = validate_if_else_chain_expression(context, chain_expression, span);
-			context.can_is_bind = original_can_is_bind;
+			let mut scope = context.child_scope();
+			scope.can_is_bind = false;
+			let index = scope.yield_targets.push(scope.current_loop_index);
+			scope.current_yield_target_index = Some(index);
+
+			let expression = validate_if_else_chain_expression(&mut scope, chain_expression, span, Some(index));
+			if !expression.yields {
+				let error = error!("Not all code paths for if-else expression yield a value");
+				scope.message(error.span(expression.span));
+			}
+
 			expression
 		}
 
 		tree::Expression::Match(match_expression) => {
-			context.expected_type = None;
-			context.can_is_bind = false;
-			let expression = validate_match_expression(context, match_expression, span);
-			context.can_is_bind = original_can_is_bind;
+			let mut scope = context.child_scope();
+			scope.can_is_bind = false;
+			let index = scope.yield_targets.push(scope.current_loop_index);
+			scope.current_yield_target_index = Some(index);
+
+			let expression = validate_match_expression(&mut scope, match_expression, span, Some(index));
+			if !expression.yields {
+				let error = error!("Not all code paths for match expression yield a value");
+				scope.message(error.span(expression.span));
+			}
+
 			expression
 		}
 
@@ -3324,11 +3386,11 @@ fn validate_if_else_chain_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	chain_expression: &'a tree::IfElseChain<'a>,
 	span: Span,
+	yield_target_index: Option<usize>,
 ) -> Expression<'a> {
 	let mut type_id = None;
 	let mut check_body_type_id = |context: &mut Context, body: &Block, span: Span| {
 		if let Some(type_id) = type_id {
-			// TODO: Make sure that future `give` statement performs expression collapse
 			if !context.type_store.direct_match(type_id, body.type_id) {
 				let expected = context.type_name(type_id);
 				let found = context.type_name(body.type_id);
@@ -3390,7 +3452,7 @@ fn validate_if_else_chain_expression<'a>(
 	let type_id = type_id.unwrap();
 	let yields = (all_if_bodies_yield && else_yields) || first_condition_yields;
 	let returns = (all_if_bodies_return && else_returns) || first_condition_returns;
-	let chain = IfElseChain { _type_id: type_id, entries, else_body };
+	let chain = IfElseChain { type_id, yield_target_index, entries, else_body };
 	let kind = ExpressionKind::IfElseChain(Box::new(chain));
 	Expression {
 		span,
@@ -3407,6 +3469,7 @@ fn validate_match_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	match_expression: &'a tree::Match<'a>,
 	span: Span,
+	yield_target_index: Option<usize>,
 ) -> Expression<'a> {
 	let expression = validate_expression(context, &match_expression.expression);
 	if expression.type_id.is_any_collapse(context.type_store) {
@@ -3596,11 +3659,16 @@ fn validate_match_expression<'a>(
 		}
 	}
 
-	// TODO: When adding `give` make sure to infer match type from arms
-	let type_id = context.type_store.void_type_id();
+	let type_id = if let Some(index) = context.current_yield_target_index {
+		let any_collapse = context.type_store.any_collapse_type_id();
+		context.yield_targets.get(index).type_id.unwrap_or(any_collapse)
+	} else {
+		context.type_store.void_type_id()
+	};
+
 	let yields = expression.yields | arms_yield;
 	let returns = expression.returns | arms_return;
-	let match_expression = Box::new(Match { expression, arms, else_arm });
+	let match_expression = Box::new(Match { type_id, yield_target_index, expression, arms, else_arm });
 	let kind = ExpressionKind::Match(match_expression);
 	Expression {
 		span,

@@ -314,13 +314,16 @@ pub struct IfElseChainEntry<'a> {
 
 #[derive(Debug)]
 pub struct IfElseChain<'a> {
-	pub _type_id: TypeId,
+	pub type_id: TypeId,
+	pub yield_target_index: Option<usize>,
 	pub entries: Vec<IfElseChainEntry<'a>>,
 	pub else_body: Option<Block<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Match<'a> {
+	pub type_id: TypeId,
+	pub yield_target_index: Option<usize>,
 	pub expression: Expression<'a>,
 	pub arms: Vec<MatchArm<'a>>,
 	pub else_arm: Option<Block<'a>>,

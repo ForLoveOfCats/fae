@@ -524,6 +524,8 @@ pub enum Statement<'a> {
 
 	Block(Node<Block<'a>>),
 	WhenElseChain(Node<WhenElseChain<'a>>),
+	IfElseChain(Node<IfElseChain<'a>>),
+	Match(Node<Match<'a>>),
 	While(Node<While<'a>>),
 	For(Node<For<'a>>),
 
@@ -553,6 +555,8 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(statement) => statement.span,
 			Block(statement) => statement.span,
+			IfElseChain(statement) => statement.span,
+			Match(statement) => statement.span,
 			WhenElseChain(statement) => statement.span,
 			While(statement) => statement.span,
 			For(statement) => statement.span,
@@ -577,6 +581,8 @@ impl<'a> Statement<'a> {
 		match self {
 			Expression(..) => "An expression",
 			Block(..) => "A block",
+			IfElseChain(..) => "An if-else statement",
+			Match(..) => "A match statement",
 			While(..) => "A while loop",
 			For(..) => "A for loop",
 			WhenElseChain(..) => "A when statement",

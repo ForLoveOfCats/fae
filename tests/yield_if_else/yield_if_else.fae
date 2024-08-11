@@ -1,0 +1,30 @@
+fn main() {
+	within_block(false)
+	within_block(true)
+	within_block(false)
+
+	println("")
+
+	bare_if_else(true)
+	bare_if_else(false)
+	bare_if_else(true)
+}
+
+fn within_block(arg: bool) {
+	let message = {
+		if arg => yield "Hello"
+		else => yield "World"
+	}
+
+	println(message)
+}
+
+fn bare_if_else(arg: bool) {
+	let message = if arg {
+		yield "Cat"
+	} else {
+		yield "Dog"
+	}
+
+	println(message)
+}

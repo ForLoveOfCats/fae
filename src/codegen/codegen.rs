@@ -367,6 +367,10 @@ fn generate_if_else_chain<'a, 'b, G: Generator>(
 	generator: &mut G,
 	chain_expression: &'b IfElseChain<'a>,
 ) -> Option<G::Binding> {
+	if let Some(yield_target_index) = chain_expression.yield_target_index {
+		generator.start_block_expression(context.type_store, yield_target_index, chain_expression.type_id);
+	}
+
 	generator.generate_if_else_chain(
 		context,
 		chain_expression,
@@ -382,7 +386,11 @@ fn generate_if_else_chain<'a, 'b, G: Generator>(
 		},
 	);
 
-	None
+	if let Some(yield_target_index) = chain_expression.yield_target_index {
+		generator.end_block_expression(yield_target_index)
+	} else {
+		None
+	}
 }
 
 fn generate_match<'a, 'b, G: Generator>(
@@ -390,6 +398,10 @@ fn generate_match<'a, 'b, G: Generator>(
 	generator: &mut G,
 	match_expression: &'b Match<'a>,
 ) -> Option<G::Binding> {
+	if let Some(yield_target_index) = match_expression.yield_target_index {
+		generator.start_block_expression(context.type_store, yield_target_index, match_expression.type_id);
+	}
+
 	let value = generate_expression(context, generator, &match_expression.expression).unwrap();
 	let expression_type_id = context.specialize_type_id(match_expression.expression.type_id);
 	let value_type_id = match expression_type_id.as_pointed(context.type_store) {
@@ -417,7 +429,11 @@ fn generate_match<'a, 'b, G: Generator>(
 		},
 	);
 
-	None
+	if let Some(yield_target_index) = match_expression.yield_target_index {
+		generator.end_block_expression(yield_target_index)
+	} else {
+		None
+	}
 }
 
 fn generate_while<'a, 'b, G: Generator>(

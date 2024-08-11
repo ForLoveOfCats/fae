@@ -120,9 +120,7 @@ fn panic_impl(message: fstr): noreturn {
 
 	for symbol in symbols {
 		mut current_width: isize = 0
-		mut path = ""
-
-		match symbol {
+		let path = match symbol {
 			Error {
 				eprintln(f"{Indentation}{Error}")
 				continue
@@ -131,13 +129,13 @@ fn panic_impl(message: fstr): noreturn {
 			Unknown {
 				eprint(f"{Indentation}{Unknown}")
 				current_width = Unknown.length
-				path = symbol.path
+				yield symbol.path
 			}
 
 			Found {
 				eprint(f"{Indentation}{symbol.name}")
 				current_width = symbol.name.length
-				path = symbol.path
+				yield symbol.path
 			}
 		}
 
