@@ -167,6 +167,17 @@ def linux_main():
 	print("LLVM has been fetched and built!")
 
 def macos_main():
+	print("This script will build a local copy of LLVM for use in developing and bundling the Fae compiler.")
+	print("To accomplish this it will clone LLVM, build libc++, and build LLVM against libc++.")
+	print("This process will be quite noisy and may take a while.")
+	print()
+	print("System dependencies required: a Clang+LLD toolchain, cmake, ninja, make, git, and a posix shell.")
+	print("If any of these dependencies are missing then the fetch and build will fail.")
+	print()
+	print("[press enter to continue]", end="")
+	input()
+	print()
+
 	remove_llvm_folder_if_exists()
 
 	cpu_count = multiprocessing.cpu_count()
