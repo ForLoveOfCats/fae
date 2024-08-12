@@ -18,11 +18,15 @@ impl<'a> RootLayers<'a> {
 		RootLayers { root: Ref::new(RwLock::new(RootLayer::new(""))), root_name }
 	}
 
-	pub fn layer_for_path(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Ref<RwLock<RootLayer<'a>>>> {
+	pub fn layer_for_path(&self, messages: Option<&mut Messages>, path: &PathSegments<'a>) -> Option<Ref<RwLock<RootLayer<'a>>>> {
 		self.layer_for_module_path(messages, &path.segments)
 	}
 
-	fn layer_for_module_path(&self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<Ref<RwLock<RootLayer<'a>>>> {
+	fn layer_for_module_path(
+		&self,
+		messages: Option<&mut Messages>,
+		segments: &[Node<&'a str>],
+	) -> Option<Ref<RwLock<RootLayer<'a>>>> {
 		assert!(!segments.is_empty());
 		let mut next = self.root.clone();
 
@@ -32,7 +36,9 @@ impl<'a> RootLayers<'a> {
 				Some(layer) => layer.clone(),
 
 				None => {
-					messages.message(error!("Cannot find module layer for path segment").span(piece.span));
+					if let Some(messages) = messages {
+						messages.message(error!("Cannot find module for path segment").span(piece.span));
+					}
 					return None;
 				}
 			};
@@ -93,7 +99,7 @@ impl<'a> RootLayers<'a> {
 	pub fn lookup_path_symbol(&self, messages: &mut Messages, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
 		let segments = path.segments;
 		assert!(segments.len() > 1);
-		let layer = self.layer_for_module_path(messages, &segments[..segments.len() - 1])?;
+		let layer = self.layer_for_module_path(Some(messages), &segments[..segments.len() - 1])?;
 		let mut lock = layer.write();
 		lock.lookup_root_symbol(messages, &[*segments.last().unwrap()])
 	}

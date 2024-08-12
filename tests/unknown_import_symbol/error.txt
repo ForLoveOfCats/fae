@@ -1,0 +1,11 @@
+Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae, line 1: Cannot find module for path segment
+  1| import abc::Abc
+            ^^^
+
+Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae, line 2: Module does not contain importable symbols
+  2| import fae::Abc
+            ^^^
+
+Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae, line 4: Cannot find symbol `Abc` to import
+  4| import other::Abc
+                   ^^^

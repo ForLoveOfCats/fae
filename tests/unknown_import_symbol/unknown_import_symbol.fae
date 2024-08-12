@@ -1,0 +1,6 @@
+import abc::Abc
+import fae::Abc
+
+import other::Abc
+
+fn main() {}

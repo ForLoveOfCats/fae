@@ -1029,11 +1029,14 @@ fn resolve_import_for_block_types<'a>(
 	names: Option<&[Node<&'a str>]>,
 	is_prelude: bool,
 ) {
-	let Some(layer) = root_layers.layer_for_path(messages, path) else {
+	let Some(layer) = root_layers.layer_for_path(None, path) else {
 		return;
 	};
 
 	let layer_guard = layer.read();
+	if layer_guard.symbols.scopes.is_empty() {
+		return;
+	}
 	let importable_types_index = layer_guard.importable_types_index;
 	let source_symbols = layer_guard.symbols.clone();
 	drop(layer_guard);
@@ -1089,11 +1092,17 @@ fn resolve_import_for_block_non_types<'a>(
 	names: Option<&[Node<&'a str>]>,
 	is_prelude: bool,
 ) {
-	let Some(layer) = root_layers.layer_for_path(messages, path) else {
+	let Some(layer) = root_layers.layer_for_path(Some(messages), path) else {
 		return;
 	};
 
 	let layer_guard = layer.read();
+	if layer_guard.symbols.scopes.is_empty() {
+		let error = error!("Module does not contain importable symbols");
+		messages.message(error.span(path.segments.last().unwrap().span));
+		return;
+	}
+	let importable_types_index = layer_guard.importable_types_index;
 	let importable_functions_index = layer_guard.importable_functions_index;
 	let importable_consts_index = layer_guard.importable_consts_index;
 	let importable_statics_index = layer_guard.importable_statics_index;
@@ -1101,6 +1110,7 @@ fn resolve_import_for_block_non_types<'a>(
 	drop(layer_guard);
 
 	if let Some(names) = names {
+		let importable_types = &source_symbols.scopes[importable_types_index];
 		let importable_functions = &source_symbols.scopes[importable_functions_index];
 		let importable_consts = &source_symbols.scopes[importable_consts_index];
 		let importable_statics = &source_symbols.scopes[importable_statics_index];
@@ -1112,6 +1122,10 @@ fn resolve_import_for_block_non_types<'a>(
 				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
 			} else if let Some(&importing) = importable_statics.get(name.item) {
 				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
+			} else if importable_types.get(name.item).is_some() {
+			} else {
+				let error = error!("Cannot find symbol `{}` to import", name.item);
+				messages.message(error.span(name.span));
 			}
 		}
 	} else {
