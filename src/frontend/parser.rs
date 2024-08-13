@@ -1067,6 +1067,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 
 			if first.text == "else" {
 				let block = parse_block(bump, messages, tokens, true)?;
+				tokens.consume_newlines();
 
 				if let Some(else_arm) = &else_arm {
 					let error = error!("Match expression may not have multiple else arms");

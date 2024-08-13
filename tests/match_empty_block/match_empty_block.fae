@@ -1,0 +1,7 @@
+fn main() {
+	let value: Option<void> = .Some(void)
+	match value {
+		Some {}
+		else {}
+	}
+}
