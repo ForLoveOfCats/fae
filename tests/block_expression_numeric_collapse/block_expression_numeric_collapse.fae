@@ -11,7 +11,7 @@ fn main() {
 	} * 2
 	println(f"{b}")
 
-	let thing: Option<bool> = .Some(true)
+	let thing: Option<void> = .Some(void)
 	let c: f64 = match thing {
 		Some => yield 12
 		None => yield 15

@@ -104,6 +104,7 @@ struct UserTypeStruct {
 
 pub struct LLVMTypes {
 	pub opaque_pointer: LLVMTypeRef,
+	pub void_struct: LLVMTypeRef,
 	pub slice_struct: LLVMTypeRef,
 	pub range_struct: LLVMTypeRef,
 
@@ -116,11 +117,13 @@ impl LLVMTypes {
 			let opaque_pointer = LLVMPointerTypeInContext(context, 0);
 			let i64_type = LLVMInt64TypeInContext(context);
 
+			let void_struct = LLVMStructTypeInContext(context, [].as_mut_ptr(), 0, false as _);
 			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
 			let range_struct = LLVMStructTypeInContext(context, [i64_type, i64_type].as_mut_ptr(), 2, false as _);
 
 			LLVMTypes {
 				opaque_pointer,
+				void_struct,
 				slice_struct,
 				range_struct,
 				user_type_structs: Vec::new(),
@@ -164,9 +167,10 @@ impl LLVMTypes {
 
 				PrimativeKind::String | PrimativeKind::FormatString => self.slice_struct,
 
+				PrimativeKind::Void => self.void_struct,
+
 				PrimativeKind::AnyCollapse
 				| PrimativeKind::NoReturn
-				| PrimativeKind::Void
 				| PrimativeKind::UntypedInteger
 				| PrimativeKind::UntypedDecimal => unreachable!("{kind:?}"),
 			},
