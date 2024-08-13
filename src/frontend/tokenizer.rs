@@ -190,15 +190,6 @@ impl<'a> Tokens<'a> {
 	}
 
 	#[inline]
-	pub fn previous_kind(&mut self) -> Option<TokenKind> {
-		if self.index == 0 || self.index - 1 >= self.tokens.len() {
-			return None;
-		}
-
-		Some(self.tokens[self.index - 1].kind)
-	}
-
-	#[inline]
 	pub fn next(&mut self) -> ParseResult<Token<'a>> {
 		if self.index >= self.tokens.len() {
 			return Err(());
@@ -214,6 +205,18 @@ impl<'a> Tokens<'a> {
 		while self.peek_kind() == Ok(TokenKind::Newline) {
 			self.index += 1;
 		}
+	}
+
+	#[inline]
+	pub fn expect_peek(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
+		let token = self.peek()?;
+		if token.kind == expected {
+			return Ok(token);
+		}
+
+		let message = error!("Expected {expected} but found {:?}", token.text);
+		messages.message(message.span(token.span));
+		Err(())
 	}
 
 	#[inline]
