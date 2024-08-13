@@ -3237,9 +3237,6 @@ pub fn validate_expression<'a>(
 	context: &mut Context<'a, '_, '_>,
 	expression: &'a tree::Node<tree::Expression<'a>>,
 ) -> Expression<'a> {
-	// This function is a bit overzealous in setting/resetting `can_is_bind` but that's fine
-	// I'd rather be safe than make a mistake and miss a necessary case
-
 	let span = expression.span;
 	let original_can_is_bind = context.can_is_bind;
 
@@ -3247,7 +3244,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::Block(block) => {
 			let mut scope = context.child_scope();
 			scope.can_is_bind = false;
-			let index = scope.yield_targets.push(scope.current_loop_index);
+			let index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
 			let expression = validate_block_expression(&mut scope, block, span, index);
@@ -3262,7 +3259,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::IfElseChain(chain_expression) => {
 			let mut scope = context.child_scope();
 			scope.can_is_bind = false;
-			let index = scope.yield_targets.push(scope.current_loop_index);
+			let index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
 			let expression = validate_if_else_chain_expression(&mut scope, chain_expression, span, Some(index));
@@ -3277,7 +3274,7 @@ pub fn validate_expression<'a>(
 		tree::Expression::Match(match_expression) => {
 			let mut scope = context.child_scope();
 			scope.can_is_bind = false;
-			let index = scope.yield_targets.push(scope.current_loop_index);
+			let index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
 			let expression = validate_match_expression(&mut scope, match_expression, span, Some(index));
@@ -3328,7 +3325,6 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::MethodCall(method_call) => {
-			context.expected_type = None;
 			context.can_is_bind = false;
 			let expression = validate_method_call(context, method_call, span);
 			context.can_is_bind = original_can_is_bind;
@@ -3344,7 +3340,6 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::DotAcccess(dot_access) => {
-			context.expected_type = None;
 			context.can_is_bind = false;
 			let expression = validate_dot_access(context, dot_access, span);
 			context.can_is_bind = original_can_is_bind;
@@ -3354,7 +3349,6 @@ pub fn validate_expression<'a>(
 		tree::Expression::InferredEnum(inferred_enum) => validate_inferred_enum(context, inferred_enum, span),
 
 		tree::Expression::UnaryOperation(operation) => {
-			context.expected_type = None;
 			context.can_is_bind = false;
 			let expression = validate_unary_operation(context, operation, span);
 			context.can_is_bind = original_can_is_bind;
@@ -3362,7 +3356,6 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::BinaryOperation(operation) => {
-			context.expected_type = None;
 			// Modifies `can_is_bind` flag internally
 			let expression = validate_binary_operation(context, operation, span);
 			context.can_is_bind = original_can_is_bind;
@@ -3402,17 +3395,17 @@ fn validate_if_else_chain_expression<'a>(
 	span: Span,
 	yield_target_index: Option<usize>,
 ) -> Expression<'a> {
-	let mut type_id = None;
-	let mut check_body_type_id = |context: &mut Context, body: &Block, span: Span| {
+	let mut type_id = context.expected_type;
+	let check_body_type_id = |context: &mut Context, type_id: &mut Option<TypeId>, body: &Block, span: Span| {
 		if let Some(type_id) = type_id {
-			if !context.type_store.direct_match(type_id, body.type_id) {
-				let expected = context.type_name(type_id);
+			if !context.type_store.direct_match(*type_id, body.type_id) {
+				let expected = context.type_name(*type_id);
 				let found = context.type_name(body.type_id);
 				let error = error!("If-else chain body type mismatch, expected {expected} but found {found}");
 				context.message(error.span(span));
 			}
 		} else {
-			type_id = Some(body.type_id);
+			*type_id = Some(body.type_id);
 		}
 	};
 
@@ -3442,10 +3435,17 @@ fn validate_if_else_chain_expression<'a>(
 			scope.message(error.span(condition.span));
 		}
 
-		let body = validate_block(scope, &entry.body.item, false);
-		all_if_bodies_yield &= body.yields;
-		all_if_bodies_return &= body.returns;
-		check_body_type_id(context, &body, entry.body.span);
+		let body = {
+			let mut body_scope = scope.child_scope();
+			body_scope.expected_type = type_id;
+
+			let body = validate_block(body_scope, &entry.body.item, false);
+			all_if_bodies_yield &= body.yields;
+			all_if_bodies_return &= body.returns;
+
+			check_body_type_id(&mut scope, &mut type_id, &body, entry.body.span);
+			body
+		};
 
 		let entry = IfElseChainEntry { condition, body };
 		entries.push(entry);
@@ -4477,6 +4477,7 @@ fn validate_method_call<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let base = validate_expression(context, &method_call.base);
+	context.expected_type = None;
 	if let ExpressionKind::Type(base_type) = base.kind {
 		return validate_static_method_call(context, method_call, base_type, span);
 	}
@@ -4889,6 +4890,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 
 fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tree::DotAccess<'a>, span: Span) -> Expression<'a> {
 	let base = validate_expression(context, &dot_access.base);
+	context.expected_type = None;
 	if base.type_id.is_any_collapse(context.type_store) {
 		return Expression::any_collapse(context.type_store, span);
 	}

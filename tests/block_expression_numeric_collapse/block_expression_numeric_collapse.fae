@@ -1,0 +1,20 @@
+fn main() {
+	let a: i32 = if false {
+		yield 3
+	} else {
+		yield 4
+	} + 5
+	println(f"{a}")
+
+	let b: u32 = {
+		yield 6
+	} * 2
+	println(f"{b}")
+
+	let thing: Option<bool> = .Some(true)
+	let c: f64 = match thing {
+		Some => yield 12
+		None => yield 15
+	} - 2
+	println(f"{c}")
+}

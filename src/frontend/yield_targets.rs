@@ -21,9 +21,9 @@ impl YieldTargets {
 		self.targets.len()
 	}
 
-	pub fn push(&mut self, outer_loop_index: Option<usize>) -> usize {
+	pub fn push(&mut self, type_id: Option<TypeId>, outer_loop_index: Option<usize>) -> usize {
 		let index = self.targets.len() - self.starting_index;
-		self.targets.push(YieldTarget { type_id: None, outer_loop_index });
+		self.targets.push(YieldTarget { type_id, outer_loop_index });
 		index
 	}
 
