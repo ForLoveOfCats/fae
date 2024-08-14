@@ -2641,7 +2641,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn generate_non_null_invalid_slice(
 		&mut self,
 		slice_type_id: TypeId,
-		length: u64,
+		length: Self::Binding,
 		debug_location: DebugLocation,
 	) -> Self::Binding {
 		let _debug_scope = self.create_debug_scope(debug_location);
@@ -2651,7 +2651,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let pointer_type = self.llvm_types.opaque_pointer;
 
 			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"non_null_invalid_slice.pointer".as_ptr());
-			let length = LLVMConstInt(LLVMInt64TypeInContext(self.context), length, false as _);
+			let length = length.to_value(self.builder);
 
 			let fields = &mut [pointer, length];
 			let slice = LLVMConstNamedStruct(self.llvm_types.slice_struct, fields.as_mut_ptr(), fields.len() as u32);

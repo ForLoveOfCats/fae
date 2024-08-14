@@ -9,6 +9,14 @@ fn create_slice_mut(pointer: &mut T, length: isize): []mut T
 #intrinsic
 fn create_str(pointer: &u8, length: isize): str
 
+#intrinsic
+generic T
+fn create_non_null_invalid_pointer(): &mut T
+
+#intrinsic
+generic T
+fn create_non_null_invalid_slice(length: isize): []mut T
+
 // May be a no-op on some platforms depending on implementation support
 // Currently implemented on
 //   - AMD64

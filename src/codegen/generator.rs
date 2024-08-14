@@ -251,7 +251,7 @@ pub trait Generator {
 	fn generate_non_null_invalid_slice(
 		&mut self,
 		slice_type_id: TypeId,
-		length: u64,
+		length: Self::Binding,
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 

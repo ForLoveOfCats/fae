@@ -587,7 +587,9 @@ fn generate_array_literal<'a, 'b, G: Generator>(
 
 	let pointee_layout = context.type_store.type_layout(pointee_type_id);
 	if pointee_layout.size <= 0 || elements.is_empty() {
-		return Some(generator.generate_non_null_invalid_slice(type_id, literal.expressions.len() as u64, debug_location));
+		let isize_type_id = context.type_store.isize_type_id();
+		let length = generator.generate_integer_value(context.type_store, isize_type_id, literal.expressions.len() as i128);
+		return Some(generator.generate_non_null_invalid_slice(type_id, length, debug_location));
 	}
 
 	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
@@ -1039,6 +1041,27 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 			let length = generate_expression(context, generator, &call.arguments[1]).unwrap();
 
 			Some(generator.generate_slice(specialization.return_type, pointer, length, debug_location))
+		}
+
+		"create_non_null_invalid_pointer" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 1);
+			assert_eq!(specialization.parameters.len(), 0);
+			assert_eq!(call.arguments.len(), 0);
+
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
+			let pointer_type_id = context.type_store.pointer_to(type_id, true);
+			Some(generator.generate_non_null_invalid_pointer(pointer_type_id, debug_location))
+		}
+
+		"create_non_null_invalid_slice" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 1);
+			assert_eq!(specialization.parameters.len(), 1);
+			assert_eq!(call.arguments.len(), 1);
+
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
+			let pointer_type_id = context.type_store.pointer_to(type_id, true);
+			let length = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			Some(generator.generate_non_null_invalid_slice(pointer_type_id, length, debug_location))
 		}
 
 		"debugger_break" => {

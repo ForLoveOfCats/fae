@@ -1,5 +1,4 @@
-import fae::libc::realloc
-import fae::memory::free_slice
+import fae::memory::free_slice, reallocate_region
 
 const GrowthFactor = 2
 const InitialGrowth = 8
@@ -47,9 +46,7 @@ fn reserve_exact(new_capacity: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
 	if new_capacity <= self.capacity => return
 
-	let new_size = size_of<T>() * new_capacity
-	let pointer = realloc(self.items.pointer.(&mut u8), new_size.(usize))
-	self.items.pointer = pointer.(&mut T)
+	reallocate_region<T>(self.items.pointer.&mut, new_capacity)
 	self.capacity = new_capacity
 }
 
@@ -63,9 +60,7 @@ fn reserve_at_least(mut new_capacity: isize) {
 		new_capacity = self.capacity * GrowthFactor
 	}
 
-	let new_size = size_of<T>() * new_capacity
-	let pointer = realloc(self.items.pointer.(&mut u8), new_size.(usize))
-	self.items.pointer = pointer.(&mut T)
+	reallocate_region<T>(self.items.pointer.&mut, new_capacity)
 	self.capacity = new_capacity
 }
 
