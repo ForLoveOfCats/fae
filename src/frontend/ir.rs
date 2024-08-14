@@ -182,6 +182,7 @@ pub struct FunctionSpecializationResult {
 pub struct ParameterShape {
 	pub type_id: TypeId,
 	pub readable_index: usize,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -283,6 +284,7 @@ pub struct Function {
 #[derive(Debug, Clone, Copy)]
 pub struct Parameter {
 	pub type_id: TypeId,
+	pub is_mutable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

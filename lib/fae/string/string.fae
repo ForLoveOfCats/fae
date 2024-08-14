@@ -1,0 +1,32 @@
+import fae::memory::allocate_string_copied, free_str
+import fae::intrinsics::create_str
+
+fn slice_to_str(slice: []u8): str {
+	return create_str(slice.pointer, slice.length)
+}
+
+struct String {
+	contents: str readable
+}
+
+method static String
+fn from_str(input: str): String {
+	return String { contents: input  }
+}
+
+method static String
+fn from_bytes(input: []u8): String {
+	let contents = create_str(input.pointer, input.length)
+	return String { contents }
+}
+
+method static String
+fn clone_str(input: str): String {
+	let contents = allocate_string_copied(input)
+	return String { contents }
+}
+
+method mut String
+fn free() {
+	free_str(self.contents)
+}

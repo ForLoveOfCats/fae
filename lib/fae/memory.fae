@@ -1,4 +1,4 @@
-import fae::intrinsics::create_slice_mut
+import fae::intrinsics::create_slice_mut, create_str
 import fae::libc::malloc, memcpy, memmove
 
 generic T
@@ -43,9 +43,20 @@ fn allocate_slice_copied(source: []T): []mut T {
     return create_slice_mut<T>(pointer.(&mut T), source.length)
 }
 
+fn allocate_string_copied(source: str): str {
+    let size = source.length.(usize)
+    let pointer = malloc(size)
+    memcpy(pointer, source.pointer, size)
+    return create_str(pointer, source.length)
+}
+
 generic T
 fn free_slice(slice: []T) {
     free<T>(slice.pointer)
+}
+
+fn free_str(string: str) {
+    free<u8>(string.pointer)
 }
 
 generic T

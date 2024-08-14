@@ -79,7 +79,7 @@ impl<'a> FunctionStore<'a> {
 					parameter.type_id,
 				);
 
-				Parameter { type_id }
+				Parameter { type_id, is_mutable: parameter.is_mutable }
 			})
 			.collect::<Vec<_>>();
 

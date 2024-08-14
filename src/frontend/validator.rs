@@ -2246,7 +2246,7 @@ fn create_block_functions<'a>(
 
 					let readable_index = readables.push("self", type_id, ReadableKind::Let);
 					assert_eq!(readable_index, 0);
-					parameters.push(ParameterShape { type_id, readable_index });
+					parameters.push(ParameterShape { type_id, readable_index, is_mutable: false });
 				}
 			}
 
@@ -2278,7 +2278,8 @@ fn create_block_functions<'a>(
 				let readable_index = readables.push(name, type_id, readable_kind);
 				assert_eq!(readable_index, index + maybe_self);
 
-				parameters.push(ParameterShape { type_id, readable_index });
+				let is_mutable = parameter.item.is_mutable;
+				parameters.push(ParameterShape { type_id, readable_index, is_mutable });
 			}
 
 			drop(scope);

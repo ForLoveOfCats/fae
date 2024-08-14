@@ -704,7 +704,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, logic_begin_block) };
 
 		self.readables.clear();
-		self.readables.extend_from_slice(&defined_function.initial_values);
+		self.readables.extend_from_slice(&defined_function.parameter_bindings);
 
 		self.scope_stack.push(defined_function.subroutine);
 		self.file = Some(DebugFile { file_index: defined_function.file_index });

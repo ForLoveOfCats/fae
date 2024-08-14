@@ -71,7 +71,7 @@ pub struct DefinedFunction {
 	pub return_type_id: TypeId,
 	pub parameter_information: Vec<Option<ParameterInformation>>,
 	pub c_varargs: bool,
-	pub initial_values: Vec<Option<generator::Binding>>,
+	pub parameter_bindings: Vec<Option<generator::Binding>>,
 	pub alloca_block: Option<LLVMBasicBlockRef>,      // None for extern functions
 	pub logic_begin_block: Option<LLVMBasicBlockRef>, // None for extern functions
 
@@ -87,13 +87,16 @@ struct ParameterAttribute {
 #[derive(Debug, Clone)]
 pub enum ParameterInformation {
 	BareValue {
+		llvm_type: LLVMTypeRef,
 		type_id: TypeId,
+		needs_alloca: bool,
 	},
 
 	ByPointer {
 		pointed_type: LLVMTypeRef,
 		pointed_type_id: TypeId,
 		layout: Layout,
+		needs_alloca: bool,
 	},
 
 	Composition(ParameterComposition),
@@ -190,6 +193,7 @@ impl SysvAbi {
 		context: LLVMContextRef,
 		llvm_types: &LLVMTypes,
 		parameter_type_id: TypeId,
+		is_mutable: bool,
 	) -> Option<ParameterInformation> {
 		let layout = type_store.type_layout(parameter_type_id);
 		if layout.size <= 0 {
@@ -209,11 +213,21 @@ impl SysvAbi {
 
 		if is_bare_value {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
-			Some(ParameterInformation::BareValue { type_id: parameter_type_id })
+			let llvm_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
+			Some(ParameterInformation::BareValue {
+				llvm_type,
+				type_id: parameter_type_id,
+				needs_alloca: is_mutable,
+			})
 		} else if is_by_pointer {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			let pointed_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
-			Some(ParameterInformation::ByPointer { pointed_type, pointed_type_id: parameter_type_id, layout })
+			Some(ParameterInformation::ByPointer {
+				pointed_type,
+				pointed_type_id: parameter_type_id,
+				layout,
+				needs_alloca: is_mutable,
+			})
 		} else {
 			let composition_struct = unsafe {
 				LLVMStructTypeInContext(
@@ -379,7 +393,8 @@ impl LLVMAbi for SysvAbi {
 		self.parameter_information_buffer.clear();
 
 		for parameter in &function.parameters {
-			let information = self.construct_parameter_information(type_store, context, llvm_types, parameter.type_id);
+			let information =
+				self.construct_parameter_information(type_store, context, llvm_types, parameter.type_id, parameter.is_mutable);
 			self.parameter_information_buffer.push(information);
 		}
 
@@ -415,7 +430,7 @@ impl LLVMAbi for SysvAbi {
 				return_type_id,
 				parameter_information: self.parameter_information_buffer.clone(),
 				c_varargs: function_shape.c_varargs,
-				initial_values: Vec::new(),
+				parameter_bindings: Vec::new(),
 				alloca_block: None,
 				logic_begin_block: None,
 				subroutine,
@@ -447,7 +462,7 @@ impl LLVMAbi for SysvAbi {
 		let logic_begin_block = unsafe { LLVMAppendBasicBlockInContext(context, llvm_function, c"logic_begin_block".as_ptr()) };
 		unsafe { LLVMPositionBuilderAtEnd(builder, logic_begin_block) };
 
-		let mut initial_values = Vec::with_capacity(self.parameter_information_buffer.len());
+		let mut parameter_bindings = Vec::with_capacity(self.parameter_information_buffer.len());
 		let mut parameter_index = if matches!(return_type, FunctionReturnType::ByPointer { .. }) {
 			1 // Skip processing first parameter, it is the invisible sret pointer
 		} else {
@@ -456,24 +471,54 @@ impl LLVMAbi for SysvAbi {
 
 		for information in &self.parameter_information_buffer {
 			let Some(information) = information else {
-				initial_values.push(None);
+				parameter_bindings.push(None);
 				parameter_index += 1;
 				continue;
 			};
 
 			let composition = match information {
-				&ParameterInformation::BareValue { type_id } => {
+				&ParameterInformation::BareValue { llvm_type, type_id, needs_alloca } => {
 					let parameter = unsafe { LLVMGetParam(llvm_function, parameter_index) };
-					let kind = generator::BindingKind::Value(parameter);
-					initial_values.push(Some(generator::Binding { type_id, kind }));
+
+					let kind = if needs_alloca {
+						let alloca = unsafe {
+							LLVMPositionBuilderAtEnd(builder, alloca_block);
+							let alloca = LLVMBuildAlloca(builder, llvm_type, c"".as_ptr());
+							LLVMPositionBuilderAtEnd(builder, logic_begin_block);
+							LLVMBuildStore(builder, parameter, alloca);
+							alloca
+						};
+
+						generator::BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type }
+					} else {
+						generator::BindingKind::Value(parameter)
+					};
+
+					parameter_bindings.push(Some(generator::Binding { type_id, kind }));
 					parameter_index += 1;
 					continue;
 				}
 
-				&ParameterInformation::ByPointer { pointed_type, pointed_type_id, .. } => {
+				&ParameterInformation::ByPointer { pointed_type, pointed_type_id, needs_alloca, .. } => {
 					let parameter = unsafe { LLVMGetParam(llvm_function, parameter_index) };
-					let kind = generator::BindingKind::Pointer { pointer: parameter, pointed_type };
-					initial_values.push(Some(generator::Binding { type_id: pointed_type_id, kind }));
+
+					let kind = if needs_alloca {
+						let alloca = unsafe {
+							LLVMPositionBuilderAtEnd(builder, alloca_block);
+							let alloca = LLVMBuildAlloca(builder, pointed_type, c"".as_ptr());
+							LLVMPositionBuilderAtEnd(builder, logic_begin_block);
+							let value = LLVMBuildLoad2(builder, pointed_type, parameter, c"".as_ptr());
+							LLVMBuildStore(builder, value, alloca);
+							alloca
+						};
+
+						generator::BindingKind::Pointer { pointer: alloca, pointed_type }
+					} else {
+						generator::BindingKind::Pointer { pointer: parameter, pointed_type }
+					};
+
+					let binding = generator::Binding { type_id: pointed_type_id, kind };
+					parameter_bindings.push(Some(binding));
 					parameter_index += 1;
 					continue;
 				}
@@ -493,7 +538,7 @@ impl LLVMAbi for SysvAbi {
 			let pointed_type = composition.actual_type;
 			let type_id = composition.actual_type_id;
 			let kind = generator::BindingKind::Pointer { pointer: alloca, pointed_type };
-			initial_values.push(Some(generator::Binding { type_id, kind }));
+			parameter_bindings.push(Some(generator::Binding { type_id, kind }));
 
 			let composition = composition.composition_struct;
 			let composition_field_count = unsafe { LLVMCountStructElementTypes(composition) };
@@ -515,7 +560,7 @@ impl LLVMAbi for SysvAbi {
 			return_type_id,
 			parameter_information: self.parameter_information_buffer.clone(),
 			c_varargs: function_shape.c_varargs,
-			initial_values,
+			parameter_bindings,
 			alloca_block: Some(alloca_block),
 			logic_begin_block: Some(logic_begin_block),
 			subroutine,
@@ -564,11 +609,11 @@ impl LLVMAbi for SysvAbi {
 				};
 
 				let llvm_types = &generator.llvm_types;
-				let constructed = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id);
+				let constructed = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id, false);
 				let information = constructed.unwrap();
 
 				// Some numeric varargs need to be widened before passing
-				if let ParameterInformation::BareValue { type_id } = information {
+				if let ParameterInformation::BareValue { type_id, .. } = information {
 					if let Some(numeric_kind) = type_id.numeric_kind(type_store) {
 						match numeric_kind {
 							// Sign extend

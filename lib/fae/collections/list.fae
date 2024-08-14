@@ -1,6 +1,9 @@
 import fae::libc::realloc
 import fae::memory::free_slice
 
+const GrowthFactor = 2
+const InitialGrowth = 8
+
 generic T
 struct List {
 	items: []mut T readable
@@ -17,12 +20,7 @@ fn new(): List<T> {
 
 method mut List
 fn push(item: T) {
-	if self.items.length + 1 >= self.capacity {
-		mut new_capacity = self.capacity * 2
-		if new_capacity == 0 => new_capacity = 4
-		self.reserve_capacity(new_capacity)
-	}
-
+	self.reserve_at_least(self.items.length + 1)
 	let index = self.items.length
 	self.items.length += 1
 	self.items[index] = item
@@ -45,7 +43,26 @@ fn set_length(to_length: isize) {
 }
 
 method mut List
-fn reserve_capacity(new_capacity: isize) {
+fn reserve_exact(new_capacity: isize) {
+	assertf(new_capacity > 0, f"{new_capacity}")
+	if new_capacity <= self.capacity => return
+
+	let new_size = size_of<T>() * new_capacity
+	let pointer = realloc(self.items.pointer.(&mut u8), new_size.(usize))
+	self.items.pointer = pointer.(&mut T)
+	self.capacity = new_capacity
+}
+
+method mut List
+fn reserve_at_least(mut new_capacity: isize) {
+	assertf(new_capacity > 0, f"{new_capacity}")
+	if new_capacity <= self.capacity => return
+
+	if new_capacity < InitialGrowth => new_capacity = InitialGrowth
+	if new_capacity < self.capacity * GrowthFactor {
+		new_capacity = self.capacity * GrowthFactor
+	}
+
 	let new_size = size_of<T>() * new_capacity
 	let pointer = realloc(self.items.pointer.(&mut u8), new_size.(usize))
 	self.items.pointer = pointer.(&mut T)
@@ -55,7 +72,7 @@ fn reserve_capacity(new_capacity: isize) {
 method mut List
 fn extend_from_slice(slice: []T) {
 	let result_length = self.items.length + slice.length
-	self.reserve_capacity(result_length)
+	self.reserve_at_least(result_length)
 	let destination = self.items[self.items.length..result_length]
 	fae::memory::copy_slice_into<T>(slice, destination)
 	self.items.length = result_length
@@ -125,7 +142,7 @@ fn slice_mut(range: Range): []mut T {
 	return self.items[range]
 }
 
-method List
+method mut List
 fn free() {
 	free_slice<T>(self.items)
 }

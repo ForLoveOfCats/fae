@@ -1,4 +1,5 @@
 import fae::collections::list::List
+import fae::string::string::String
 import fae::libc::StdInDescriptor, open, read, close
 import fae::memory::allocate_slice_space, copy_slice_into, free_slice
 
@@ -45,16 +46,16 @@ fn close() {
 }
 
 method File
-fn read_all(): []u8 {
+fn read_all(): List<u8> {
 	mut buffer = List<u8>.new()
 	self.read_all_into(buffer.&mut)
-	return buffer.items
+	return buffer
 }
 
 method File
-fn read_all_string(): str {
-	let slice = self.read_all()
-	return fae::intrinsics::create_str(slice.pointer, slice.length)
+fn read_all_string(): String {
+	let buffer = self.read_all()
+	return String.from_bytes(buffer.items)
 }
 
 method File
@@ -63,7 +64,7 @@ fn read_all_into(buffer: &mut List<u8>) {
 
 	while true {
 		let original_length = buffer.items.length
-		buffer.reserve_capacity(original_length + ChunkSize)
+		buffer.reserve_at_least(original_length + ChunkSize)
 		let pointer = offset_pointer_mut<u8>(buffer.items.pointer, original_length)
 
 		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
@@ -116,7 +117,7 @@ fn next(): Option<[]u8> {
 		}
 
 		let original_length = self.buffer.items.length
-		self.buffer.reserve_capacity(original_length + ChunkSize)
+		self.buffer.reserve_at_least(original_length + ChunkSize)
 		let pointer = offset_pointer_mut<u8>(self.buffer.items.pointer, original_length)
 
 		let bytes_read = read(self.file.file_descriptor, pointer, ChunkSize)
