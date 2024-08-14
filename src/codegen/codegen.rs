@@ -70,7 +70,7 @@ pub fn generate<'a, G: Generator>(
 // must inject *all* defer expressions in the stack. This struct marks the start
 // of each loop in the stack, so every defer at `start_index..` have been
 // defined in the loop the marker corresponds to
-struct LoopMarker {
+struct DeferMarker {
 	start_index: usize,
 }
 
@@ -86,7 +86,8 @@ pub struct Context<'a, 'b> {
 	pub function_id: FunctionId,
 
 	defer_stack: Vec<&'b Statement<'a>>,
-	loop_stack: Vec<LoopMarker>,
+	loop_stack: Vec<DeferMarker>,
+	yield_target_stack: Vec<DeferMarker>,
 
 	// TODO: Merge codegen and llvm/generator ASAP, way too many details have leaked
 	pub if_condition_binding_block: Option<LLVMBasicBlockRef>,
@@ -147,6 +148,7 @@ pub fn generate_function<'a, G: Generator>(
 		function_id,
 		defer_stack: Vec::new(),
 		loop_stack: Vec::new(),
+		yield_target_stack: Vec::new(),
 		if_condition_binding_block: None,
 	};
 
@@ -221,14 +223,14 @@ fn generate_statement<'a, 'b, G: Generator>(
 
 		StatementKind::While(statement) => {
 			let start_index = context.defer_stack.len();
-			context.loop_stack.push(LoopMarker { start_index });
+			context.loop_stack.push(DeferMarker { start_index });
 			generate_while(context, generator, statement, debug_location);
 			context.loop_stack.pop();
 		}
 
 		StatementKind::For(statement) => {
 			let start_index = context.defer_stack.len();
-			context.loop_stack.push(LoopMarker { start_index });
+			context.loop_stack.push(DeferMarker { start_index });
 			generate_for(context, generator, statement, debug_location);
 			context.loop_stack.pop();
 		}
@@ -269,7 +271,17 @@ fn generate_statement<'a, 'b, G: Generator>(
 
 		StatementKind::Yield(statement) => {
 			let value = generate_expression(context, generator, &statement.expression);
-			generator.generate_yield(statement.yield_target_index, value, debug_location);
+			generator.generate_yield(context, statement.yield_target_index, value, debug_location, |context, generator| {
+				let marker = context.yield_target_stack.last().unwrap();
+				let mut defer_stack = std::mem::take(&mut context.defer_stack);
+				for statement in defer_stack[marker.start_index..].iter().rev() {
+					generate_statement(context, generator, statement, context.defer_stack.len(), &mut false);
+				}
+				defer_stack.truncate(block_start_defer_len);
+				context.defer_stack = defer_stack;
+			});
+
+			*should_generate_defer_stack = false;
 			return true;
 		}
 
@@ -304,11 +316,29 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 	let debug_location = expression.debug_location;
 
 	match &expression.kind {
-		ExpressionKind::Block(block) => generate_block(context, generator, block),
+		ExpressionKind::Block(block) => {
+			let start_index = context.defer_stack.len();
+			context.yield_target_stack.push(DeferMarker { start_index });
+			let result = generate_block(context, generator, block);
+			context.yield_target_stack.pop();
+			result
+		}
 
-		ExpressionKind::IfElseChain(chain_expression) => generate_if_else_chain(context, generator, chain_expression),
+		ExpressionKind::IfElseChain(chain_expression) => {
+			let start_index = context.defer_stack.len();
+			context.yield_target_stack.push(DeferMarker { start_index });
+			let result = generate_if_else_chain(context, generator, chain_expression);
+			context.yield_target_stack.pop();
+			result
+		}
 
-		ExpressionKind::Match(match_expression) => generate_match(context, generator, match_expression),
+		ExpressionKind::Match(match_expression) => {
+			let start_index = context.defer_stack.len();
+			context.yield_target_stack.push(DeferMarker { start_index });
+			let result = generate_match(context, generator, match_expression);
+			context.yield_target_stack.pop();
+			result
+		}
 
 		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
 

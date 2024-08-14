@@ -2565,16 +2565,24 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe { LLVMBuildBr(self.builder, condition_block) };
 	}
 
-	fn generate_yield(&mut self, yield_target_index: usize, value: Option<Self::Binding>, debug_location: DebugLocation) {
+	fn generate_yield<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		yield_target_index: usize,
+		value: Option<Self::Binding>,
+		debug_location: DebugLocation,
+		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	) {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
 		let target = self.yield_targets[yield_target_index];
-
 		if let Some(value) = value {
 			let value = value.to_value(self.builder);
 			let binding = target.binding.unwrap();
 			unsafe { LLVMBuildStore(self.builder, value, binding.pointer) };
 		}
+
+		defer_callback(context, self);
 
 		unsafe { LLVMBuildBr(self.builder, target.following_block) };
 	}

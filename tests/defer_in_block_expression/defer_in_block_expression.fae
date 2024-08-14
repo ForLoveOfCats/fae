@@ -1,0 +1,30 @@
+fn main() {
+	defer println("Outer defer")
+	mut index: i32 = 0
+
+	let yielded = {
+		defer index += 1
+		yield index
+	}
+	println(f"index: {index}, yielded: {yielded}")
+
+
+	let yielded = if true {
+		defer index += 1
+		yield index
+	} else {
+		defer index += 2
+		yield index
+	}
+	println(f"index: {index}, yielded: {yielded}")
+
+	let condition: Option<void> = .None
+	let yielded = match condition {
+		Some => yield index
+		None {
+			defer index += 1
+			yield index
+		}
+	}
+	println(f"index: {index}, yielded: {yielded}")
+}

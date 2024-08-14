@@ -1,0 +1,4 @@
+index: 1, yielded: 0
+index: 2, yielded: 1
+index: 3, yielded: 2
+Outer defer
