@@ -23,7 +23,7 @@
 			"patterns": [
 				{
 					"name": "keyword.control.fae",
-					"match": "\\b(if|else|while|for|match|defer|continue|break|return)\\b"
+					"match": "\\b(if|else|while|for|match|defer|continue|break|yield|return)\\b"
 				},
 				{
 					"name": "keyword.default.fae",

@@ -2,7 +2,7 @@
   "name": "vscode-fae",
   "displayName": "Fae Language",
   "description": "Support extension for the Fae programming language",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "fae-lang",
   "engines": {
     "vscode": "^1.89.0"

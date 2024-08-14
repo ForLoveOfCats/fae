@@ -2114,7 +2114,8 @@ pub fn is_word_reserved(word: &str) -> bool {
 			| "is" | "in"
 			| "of" | "defer"
 			| "break" | "continue"
-			| "true" | "false"
+			| "yield" | "true"
+			| "false"
 	)
 }
 
