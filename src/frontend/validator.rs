@@ -2736,6 +2736,10 @@ fn validate_statement<'a>(
 				let error = error!("Deferring a lone defer statement is disallowed");
 				scope.message(error.span(span));
 				return None;
+			} else if let StatementKind::Yield(_) = statement.kind {
+				let error = error!("Deferring a lone yield statement is disallowed");
+				scope.message(error.span(span));
+				return None;
 			}
 
 			let boxed = Box::new(Defer { statement });

@@ -1,0 +1,6 @@
+fn main() {
+	let _ = {
+		defer yield false
+		yield true
+	}
+}

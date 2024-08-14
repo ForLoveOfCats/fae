@@ -1,0 +1,3 @@
+Validation error: ./tests/defer_yield/defer_yield.fae, line 3: Deferring a lone yield statement is disallowed
+  3|         defer yield false
+             ^^^^^^^^^^^^^^^^^
