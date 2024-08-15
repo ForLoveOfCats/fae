@@ -204,6 +204,20 @@ impl<'a> Tokens<'a> {
 	}
 
 	#[inline]
+	pub fn next_expected(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
+		if self.index >= self.tokens.len() {
+			let error = error!("Ran out of tokens to parse, expected {expected}");
+			let span = self.tokens.last().map(|t| t.span);
+			messages.message(error.span_if_some(span));
+			return Err(());
+		}
+
+		let index = self.index;
+		self.index += 1;
+		Ok(self.tokens[index])
+	}
+
+	#[inline]
 	pub fn consume_newlines(&mut self) {
 		while self.peek_kind() == Ok(TokenKind::Newline) {
 			self.index += 1;
@@ -224,7 +238,7 @@ impl<'a> Tokens<'a> {
 
 	#[inline]
 	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
-		let token = self.next(messages)?;
+		let token = self.next_expected(messages, expected)?;
 		if token.kind == expected {
 			return Ok(token);
 		}
