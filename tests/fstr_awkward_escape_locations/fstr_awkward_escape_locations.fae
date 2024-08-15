@@ -1,0 +1,4 @@
+fn main() {
+    let sub = "Abc"
+    println(f"hello \t{sub}\n")
+}

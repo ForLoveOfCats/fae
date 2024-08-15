@@ -924,6 +924,9 @@ fn parse_format_string_contents<'a>(
 		} else if string.as_bytes()[index] == b'{' {
 			if (last_extend_index..index).len() > 0 {
 				allocated.push_str(&string[last_extend_index..index]);
+			}
+
+			if !allocated.is_empty() {
 				let cow = Cow::Owned(allocated);
 				allocated = String::new();
 				items.push(FormatStringItem::Text(cow));
@@ -949,7 +952,12 @@ fn parse_format_string_contents<'a>(
 				index += 1;
 			}
 
-			if string.as_bytes()[index] != b'}' {
+			if index >= string.len() {
+				let error = error!("Missing closing brace for format string sub-expression");
+				let span = Span { start: token.span.end - 1, ..token.span };
+				messages.message(error.span(span));
+				break;
+			} else if string.as_bytes()[index] != b'}' {
 				panic!();
 			}
 
