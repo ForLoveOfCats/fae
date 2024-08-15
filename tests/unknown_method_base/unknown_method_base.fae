@@ -2,5 +2,5 @@ fn main() {}
 
 method UnknownType
 fn my_method() {
-    self.unknown_field = 5
+	self.unknown_field = 5
 }

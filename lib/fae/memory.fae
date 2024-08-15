@@ -3,130 +3,130 @@ import fae::libc::malloc, memcpy, memmove
 
 generic T
 fn allocate_space(): &mut T {
-    if size_of<T>() <= 0 {
-        return create_non_null_invalid_pointer<T>()
-    }
+	if size_of<T>() <= 0 {
+		return create_non_null_invalid_pointer<T>()
+	}
 
-    let size = size_of<T>().(usize)
-    return malloc(size).(&mut T)
+	let size = size_of<T>().(usize)
+	return malloc(size).(&mut T)
 }
 
 generic T
 fn allocate_copied(source: &T): &mut T {
-    if size_of<T>() <= 0 {
-        return create_non_null_invalid_pointer<T>()
-    }
+	if size_of<T>() <= 0 {
+		return create_non_null_invalid_pointer<T>()
+	}
 
-    let size = size_of<T>().(usize)
-    let pointer = malloc(size)
-    memcpy(pointer, source.(&u8), size)
-    return pointer.(&mut T)
+	let size = size_of<T>().(usize)
+	let pointer = malloc(size)
+	memcpy(pointer, source.(&u8), size)
+	return pointer.(&mut T)
 }
 
 generic T
 fn allocate_moved(source: T): &mut T {
-    if size_of<T>() <= 0 {
-        return create_non_null_invalid_pointer<T>()
-    }
+	if size_of<T>() <= 0 {
+		return create_non_null_invalid_pointer<T>()
+	}
 
-    let size = size_of<T>().(usize)
-    let pointer = malloc(size)
-    memcpy(pointer, source.&.(&u8), size)
-    return pointer.(&mut T)
+	let size = size_of<T>().(usize)
+	let pointer = malloc(size)
+	memcpy(pointer, source.&.(&u8), size)
+	return pointer.(&mut T)
 }
 
 generic T
 fn allocate_region(length: isize): &mut T {
-    assertf(length > 0, f"{length}")
-    if size_of<T>() <= 0 {
-        return create_non_null_invalid_pointer<T>()
-    }
+	assertf(length > 0, f"{length}")
+	if size_of<T>() <= 0 {
+		return create_non_null_invalid_pointer<T>()
+	}
 
-    let size = (size_of<T>() * length).(usize)
-    return fae::libc::malloc(size).(&mut T)
+	let size = (size_of<T>() * length).(usize)
+	return fae::libc::malloc(size).(&mut T)
 }
 
 generic T
 fn reallocate_region(pointer: &mut &mut T, new_length: isize) {
-    assertf(new_length > 0, f"{new_length}")
-    if size_of<T>() <= 0 => return
+	assertf(new_length > 0, f"{new_length}")
+	if size_of<T>() <= 0 => return
 
-    let new_size = (size_of<T>() * new_length).(usize)
-    let result = fae::libc::realloc(pointer.*.(&mut u8), new_size)
-    pointer.* = result.(&mut T)
+	let new_size = (size_of<T>() * new_length).(usize)
+	let result = fae::libc::realloc(pointer.*.(&mut u8), new_size)
+	pointer.* = result.(&mut T)
 }
 
 generic T
 fn free(pointer: &T) {
-    if size_of<T>() <= 0 => return
-    fae::libc::free(pointer.(&u8))
+	if size_of<T>() <= 0 => return
+	fae::libc::free(pointer.(&u8))
 }
 
 generic T
 fn allocate_slice_space(length: isize): []mut T {
-    if size_of<T>() <= 0 {
-        return create_non_null_invalid_slice<T>(length)
-    }
+	if size_of<T>() <= 0 {
+		return create_non_null_invalid_slice<T>(length)
+	}
 
-    let size = (size_of<T>() * length).(usize)
-    let pointer = malloc(size)
-    return create_slice_mut<T>(pointer.(&mut T), length)
+	let size = (size_of<T>() * length).(usize)
+	let pointer = malloc(size)
+	return create_slice_mut<T>(pointer.(&mut T), length)
 }
 
 generic T
 fn allocate_slice_copied(source: []T): []mut T {
-    if size_of<T>() <= 0 {
-        return create_non_null_invalid_slice<T>(source.length)
-    }
+	if size_of<T>() <= 0 {
+		return create_non_null_invalid_slice<T>(source.length)
+	}
 
-    let size = (size_of<T>() * source.length).(usize)
-    let pointer = malloc(size)
-    memcpy(pointer, source.pointer.(&u8), size)
-    return create_slice_mut<T>(pointer.(&mut T), source.length)
+	let size = (size_of<T>() * source.length).(usize)
+	let pointer = malloc(size)
+	memcpy(pointer, source.pointer.(&u8), size)
+	return create_slice_mut<T>(pointer.(&mut T), source.length)
 }
 
 generic T
 fn reallocate_slice(source: &mut []mut T, new_length: isize) {
-    if size_of<T>() <= 0 => return
-    if new_length == source.length => return
+	if size_of<T>() <= 0 => return
+	if new_length == source.length => return
 
-    reallocate_region<T>(source.pointer.&mut, new_length)
-    source.length = new_length
+	reallocate_region<T>(source.pointer.&mut, new_length)
+	source.length = new_length
 }
 
 generic T
 fn free_slice(slice: []T) {
-    if size_of<T>() <= 0 => return
-    free<T>(slice.pointer)
+	if size_of<T>() <= 0 => return
+	free<T>(slice.pointer)
 }
 
 fn allocate_string_copied(source: str): str {
-    let size = source.length.(usize)
-    let pointer = malloc(size)
-    memcpy(pointer, source.pointer, size)
-    return create_str(pointer, source.length)
+	let size = source.length.(usize)
+	let pointer = malloc(size)
+	memcpy(pointer, source.pointer, size)
+	return create_str(pointer, source.length)
 }
 
 fn free_str(string: str) {
-    free<u8>(string.pointer)
+	free<u8>(string.pointer)
 }
 
 generic T
 fn copy_slice_into(source: []T, destination: []mut T) {
-    let message = f"source length {source.length} greater than destination length {destination.length}"
-    assertf(destination.length >= source.length, message)
-    if size_of<T>() <= 0 => return
+	let message = f"source length {source.length} greater than destination length {destination.length}"
+	assertf(destination.length >= source.length, message)
+	if size_of<T>() <= 0 => return
 
-    let size = (size_of<T>() * source.length).(usize)
-    memcpy(destination.pointer.(&mut u8), source.pointer.(&u8), size)
+	let size = (size_of<T>() * source.length).(usize)
+	memcpy(destination.pointer.(&mut u8), source.pointer.(&u8), size)
 }
 
 generic T
 fn move_slice_into(source: []T, destination: []mut T) {
-    let message = f"source length {source.length} greater than destination length {destination.length}"
-    assertf(destination.length >= source.length, message)
-    if size_of<T>() <= 0 => return
+	let message = f"source length {source.length} greater than destination length {destination.length}"
+	assertf(destination.length >= source.length, message)
+	if size_of<T>() <= 0 => return
 
-    let size = (size_of<T>() * source.length).(usize)
-    memmove(destination.pointer.(&mut u8), source.pointer.(&u8), size)
+	let size = (size_of<T>() * source.length).(usize)
+	memmove(destination.pointer.(&mut u8), source.pointer.(&u8), size)
 }

@@ -1,11 +1,11 @@
 fn main() {
-    println("Hello")
-    /*
-        123
-        /*
-            456
-        */
-        789
-    */
-    println("world")
+	println("Hello")
+	/*
+		123
+		/*
+			456
+		*/
+		789
+	*/
+	println("world")
 }
