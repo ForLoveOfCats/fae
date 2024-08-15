@@ -190,8 +190,11 @@ impl<'a> Tokens<'a> {
 	}
 
 	#[inline]
-	pub fn next(&mut self) -> ParseResult<Token<'a>> {
+	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
 		if self.index >= self.tokens.len() {
+			let error = error!("Ran out of tokens to parse");
+			let span = self.tokens.last().map(|t| t.span);
+			messages.message(error.span_if_some(span));
 			return Err(());
 		}
 
@@ -221,7 +224,7 @@ impl<'a> Tokens<'a> {
 
 	#[inline]
 	pub fn expect(&mut self, messages: &mut Messages, expected: TokenKind) -> ParseResult<Token<'a>> {
-		let token = self.next()?;
+		let token = self.next(messages)?;
 		if token.kind == expected {
 			return Ok(token);
 		}
@@ -699,7 +702,6 @@ impl<'a> Tokenizer<'a> {
 							line_index: self.line_index,
 						};
 						messages.message(error.span(span));
-						return Err(());
 					}
 				}
 				self.expect_byte(messages, b'\'')?;

@@ -33,7 +33,7 @@ pub fn parse_block<'a>(
 	allow_braceless: bool,
 ) -> ParseResult<Node<Block<'a>>> {
 	if allow_braceless && tokens.peek_kind() == Ok(TokenKind::FatArrow) {
-		let fat_arrow = tokens.next()?;
+		let fat_arrow = tokens.next(messages)?;
 
 		let statement = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank());
 		if let Some(Statement::Block(_)) = &statement {
@@ -74,7 +74,7 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 				break;
 			}
 
-			if tokens.next().is_err() {
+			if tokens.next(messages).is_err() {
 				return items.into_bump_slice();
 			}
 		}
@@ -393,7 +393,7 @@ fn parse_expression_climb<'a>(
 				break;
 			}
 
-			tokens.next().expect("Known peeked token");
+			tokens.next(messages).expect("Known peeked token");
 
 			let associativity = operator.item.associativity();
 			let next_min_precedence = match associativity {
@@ -410,13 +410,13 @@ fn parse_expression_climb<'a>(
 
 			atom = Node::new(expression, left_span + right_span);
 		} else if let Ok(Token { text: "is", .. }) = tokens.peek() {
-			tokens.next()?;
+			tokens.next(messages)?;
 
 			let (binding_name, variant_names) = {
 				let first = tokens.expect(messages, TokenKind::Word)?;
 
 				if tokens.peek_kind() == Ok(TokenKind::Colon) {
-					tokens.next()?;
+					tokens.next(messages)?;
 					let variant_name = tokens.expect(messages, TokenKind::Word)?;
 					let binding_name = Some(Node::from_token(first.text, first));
 					let variant_name = Node::from_token(variant_name.text, variant_name);
@@ -425,7 +425,7 @@ fn parse_expression_climb<'a>(
 					let mut variant_names = bump_vec![in bump; Node::from_token(first.text, first)];
 
 					while tokens.peek_kind() == Ok(TokenKind::Comma) {
-						tokens.next()?;
+						tokens.next(messages)?;
 						let name = tokens.expect(messages, TokenKind::Word)?;
 						variant_names.push(Node::from_token(name.text, name));
 					}
@@ -506,7 +506,7 @@ fn parse_expression_atom<'a>(
 
 	match peeked.kind {
 		TokenKind::Sub => {
-			let token = tokens.next()?;
+			let token = tokens.next(messages)?;
 			let op = Node::new(UnaryOperator::Negate, token.span);
 
 			let expression = parse_expression(bump, messages, tokens, allow_struct_literal)?;
@@ -518,19 +518,19 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::String => {
-			let string_token = tokens.next()?;
+			let string_token = tokens.next(messages)?;
 			let value = parse_string_contents(string_token.text);
 			Ok(Node::from_token(Expression::StringLiteral(StringLiteral { value }), string_token))
 		}
 
 		TokenKind::FormatString => {
-			let string_token = tokens.next()?;
+			let string_token = tokens.next(messages)?;
 			let value = parse_format_string_contents(bump, messages, tokens, string_token);
 			Ok(Node::from_token(Expression::FormatStringLiteral(value), string_token))
 		}
 
 		TokenKind::Codepoint => {
-			let codepoint_token = tokens.next()?;
+			let codepoint_token = tokens.next(messages)?;
 			let codepoint = parse_codepoint_contents(messages, codepoint_token)?;
 			let value = Node::from_token(codepoint, codepoint_token);
 
@@ -541,7 +541,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::ByteCodepoint => {
-			let codepoint_token = tokens.next()?;
+			let codepoint_token = tokens.next(messages)?;
 			let codepoint = parse_codepoint_contents(messages, codepoint_token)?;
 
 			// Tokenizer guarentees that this will be a single byte in the success case
@@ -572,12 +572,12 @@ fn parse_expression_atom<'a>(
 				}
 
 				"true" => {
-					tokens.next()?;
+					tokens.next(messages)?;
 					return Ok(Node::new(Expression::BooleanLiteral(true), peeked.span));
 				}
 
 				"false" => {
-					tokens.next()?;
+					tokens.next(messages)?;
 					return Ok(Node::new(Expression::BooleanLiteral(false), peeked.span));
 				}
 
@@ -631,7 +631,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::OpenParen => {
-			tokens.next()?;
+			tokens.next(messages)?;
 			// Regardless of if parent parsing context disallowed struct literals, we override that within parenthesis
 			let expression = parse_expression(bump, messages, tokens, true)?;
 			tokens.expect(messages, TokenKind::CloseParen)?;
@@ -639,7 +639,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::OpenBracket => {
-			let type_start_token = tokens.next()?;
+			let type_start_token = tokens.next(messages)?;
 			tokens.expect(messages, TokenKind::CloseBracket)?;
 
 			let parsed_type = if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
@@ -658,7 +658,7 @@ fn parse_expression_atom<'a>(
 				if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
 					break;
 				} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-					tokens.next()?;
+					tokens.next(messages)?;
 					tokens.consume_newlines();
 				} else {
 					tokens.expect(messages, TokenKind::Newline)?;
@@ -684,7 +684,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::Period => {
-			let period = tokens.next()?;
+			let period = tokens.next(messages)?;
 			let name_token = tokens.expect(messages, TokenKind::Word)?;
 			let name = Node::from_token(name_token.text, name_token);
 
@@ -695,7 +695,7 @@ fn parse_expression_atom<'a>(
 				span += struct_initializer.span;
 				Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_)
 			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
-				tokens.next()?;
+				tokens.next(messages)?;
 				let expression = parse_expression(bump, messages, tokens, true)?;
 				let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
 				span += close_paren.span;
@@ -727,7 +727,7 @@ fn parse_following_period<'a>(
 	tokens.expect(messages, TokenKind::Period)?;
 
 	if tokens.peek_kind() == Ok(TokenKind::Exclamation) {
-		let exclamation = tokens.next()?;
+		let exclamation = tokens.next(messages)?;
 		let span = atom.span + exclamation.span;
 
 		let op = Node::new(UnaryOperator::Invert, exclamation.span);
@@ -737,7 +737,7 @@ fn parse_following_period<'a>(
 	}
 
 	if tokens.peek_kind() == Ok(TokenKind::Ampersand) {
-		let ampersand = tokens.next()?;
+		let ampersand = tokens.next(messages)?;
 
 		let mut op_span = ampersand.span;
 		let mut op = UnaryOperator::AddressOf;
@@ -756,7 +756,7 @@ fn parse_following_period<'a>(
 	}
 
 	if tokens.peek_kind() == Ok(TokenKind::Mul) {
-		let asterisk = tokens.next()?;
+		let asterisk = tokens.next(messages)?;
 		let span = atom.span + asterisk.span;
 
 		let op = Node::new(UnaryOperator::Dereference, asterisk.span);
@@ -766,7 +766,7 @@ fn parse_following_period<'a>(
 	}
 
 	if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
-		let open_paren = tokens.next()?;
+		let open_paren = tokens.next(messages)?;
 		let parsed_type = parse_type(bump, messages, tokens)?;
 		let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
 
@@ -933,10 +933,19 @@ fn parse_format_string_contents<'a>(
 			let start_index = index;
 			let substring_start = token.span.start + 2 + index;
 
+			let mut open_count = 1;
 			while index < string.len() {
-				if string.as_bytes()[index] == b'}' {
-					break;
+				let byte = string.as_bytes()[index];
+
+				if byte == b'}' {
+					if open_count <= 1 {
+						break;
+					}
+					open_count -= 1
+				} else if byte == b'{' {
+					open_count += 1;
 				}
+
 				index += 1;
 			}
 
@@ -990,10 +999,10 @@ fn parse_when_else_chain<'a>(
 	entries.push(WhenElseChainEntry { condition, body });
 
 	while let Ok(Token { text: "else", .. }) = tokens.peek() {
-		tokens.next()?;
+		tokens.next(messages)?;
 
 		if let Ok(Token { text: "when", .. }) = tokens.peek() {
-			tokens.next()?;
+			tokens.next(messages)?;
 			let condition_token = tokens.expect(messages, TokenKind::Word)?;
 			let condition = Node::from_token(condition_token.text, condition_token);
 			let body = parse_block(bump, messages, tokens, true)?;
@@ -1028,10 +1037,10 @@ fn parse_if_else_chain<'a>(
 	entries.push(IfElseChainEntry { condition, body });
 
 	while let Ok(Token { text: "else", .. }) = tokens.peek() {
-		tokens.next()?;
+		tokens.next(messages)?;
 
 		if let Ok(Token { text: "if", .. }) = tokens.peek() {
-			tokens.next()?;
+			tokens.next(messages)?;
 			let condition = parse_expression(bump, messages, tokens, false)?;
 			let body = parse_block(bump, messages, tokens, true)?;
 			span += body.span;
@@ -1090,7 +1099,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 			}
 
 			if tokens.peek_kind() == Ok(TokenKind::Colon) {
-				tokens.next()?;
+				tokens.next(messages)?;
 				let variant_name = tokens.expect(messages, TokenKind::Word)?;
 				let binding_name = Some(Node::from_token(first.text, first));
 				let variant_name = Node::from_token(variant_name.text, variant_name);
@@ -1099,7 +1108,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 				let mut variant_names = bump_vec![in bump; Node::from_token(first.text, first)];
 
 				while tokens.peek_kind() == Ok(TokenKind::Comma) {
-					tokens.next()?;
+					tokens.next(messages)?;
 					let name = tokens.expect(messages, TokenKind::Word)?;
 					variant_names.push(Node::from_token(name.text, name));
 				}
@@ -1140,7 +1149,7 @@ fn parse_for_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut
 	let item = Node::from_token(item_token.text, item_token);
 
 	let index = if tokens.peek_kind() == Ok(TokenKind::Comma) {
-		tokens.next()?;
+		tokens.next(messages)?;
 		let index_token = tokens.expect(messages, TokenKind::Word)?;
 		Some(Node::from_token(index_token.text, index_token))
 	} else {
@@ -1148,7 +1157,7 @@ fn parse_for_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut
 	};
 
 	let is_last = if tokens.peek_kind() == Ok(TokenKind::Comma) {
-		tokens.next()?;
+		tokens.next(messages)?;
 		let is_last_token = tokens.expect(messages, TokenKind::Word)?;
 		Some(Node::from_token(is_last_token.text, is_last_token))
 	} else {
@@ -1158,7 +1167,7 @@ fn parse_for_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut
 	// Intentionally peek for `of` first so if we have an unexpected token it falls through to the `in` expect
 	// for a better "default" parse error message
 	let iteration_kind = if let Ok(Token { text: "of", kind: TokenKind::Word, .. }) = tokens.peek() {
-		let of_token = tokens.next()?;
+		let of_token = tokens.next(messages)?;
 		Node::from_token(IterationKind::Of, of_token)
 	} else {
 		let in_token = tokens.expect_word(messages, "in")?;
@@ -1223,7 +1232,7 @@ fn parse_arguments<'a>(
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
 		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			tokens.consume_newlines();
 		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
@@ -1254,7 +1263,7 @@ fn parse_struct_initializer<'a>(
 		let name = Node::from_token(name_token.text, name_token);
 
 		let expression = if tokens.peek_kind() == Ok(TokenKind::Colon) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			parse_expression(bump, messages, tokens, true)?
 		} else {
 			let path = PathSegments { segments: bump_vec![in bump; name].into_bump_slice() };
@@ -1269,7 +1278,7 @@ fn parse_struct_initializer<'a>(
 		}
 
 		if tokens.peek_kind() == Ok(TokenKind::Comma) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			tokens.consume_newlines();
 		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
@@ -1368,7 +1377,7 @@ fn parse_attributes<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 				_ => break,
 			}
 		} else if peeked.kind == TokenKind::PoundSign {
-			tokens.next()?;
+			tokens.next(messages)?;
 			match tokens.peek().map(|t| t.text) {
 				Ok("intrinsic") => {
 					check_duplicate_attribute(messages, attributes.intrinsic_attribute, "intrinsic", peeked.span)?;
@@ -1407,7 +1416,7 @@ fn parse_generic_attribute<'a>(
 		names.push(Node::new(name_token.text, name_token.span));
 
 		if tokens.peek_kind() == Ok(TokenKind::Newline) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			break;
 		}
 		tokens.expect(messages, TokenKind::Comma)?;
@@ -1447,12 +1456,12 @@ fn parse_method_attribute<'a>(
 
 	let kind = match tokens.peek() {
 		Ok(Token { text: "mut", .. }) => {
-			tokens.next()?;
+			tokens.next(messages)?;
 			MethodKind::MutableSelf
 		}
 
 		Ok(Token { text: "static", .. }) => {
-			tokens.next()?;
+			tokens.next(messages)?;
 			MethodKind::Static
 		}
 
@@ -1516,7 +1525,7 @@ fn parse_import_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &
 	}
 
 	while tokens.peek_kind() == Ok(TokenKind::Comma) {
-		tokens.next()?;
+		tokens.next(messages)?;
 
 		let token = tokens.expect(messages, TokenKind::Word)?;
 		end = token.span;
@@ -1549,7 +1558,7 @@ fn parse_path_segments<'a>(
 		segments.push(Node::from_token(segment_token.text, segment_token));
 
 		if tokens.peek_kind() == Ok(TokenKind::DoubleColon) {
-			tokens.next()?;
+			tokens.next(messages)?;
 		} else {
 			break;
 		}
@@ -1562,15 +1571,15 @@ fn parse_path_segments<'a>(
 fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Type<'a>>> {
 	let parsed_type = match tokens.peek()? {
 		Token { text: "Void", .. } => {
-			let token = tokens.next()?;
+			let token = tokens.next(messages)?;
 			Node::from_token(Type::Void, token)
 		}
 
 		Token { kind: TokenKind::Ampersand, .. } => {
-			let ampersand = tokens.next()?;
+			let ampersand = tokens.next(messages)?;
 
 			let mutable = if matches!(tokens.peek(), Ok(Token { kind: TokenKind::Word, text: "mut", .. })) {
-				tokens.next()?;
+				tokens.next(messages)?;
 				true
 			} else {
 				false
@@ -1582,12 +1591,12 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 		}
 
 		Token { kind: TokenKind::OpenBracket, .. } => {
-			let opening = tokens.next()?;
+			let opening = tokens.next(messages)?;
 			tokens.expect(messages, TokenKind::CloseBracket)?;
 
 			let mut mutable = false;
 			if tokens.peek().map(|t| t.text) == Ok("mut") {
-				tokens.next()?;
+				tokens.next(messages)?;
 				mutable = true;
 			}
 
@@ -1603,7 +1612,7 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 			let mut type_arguments = BumpVec::new_in(bump);
 			let span = match tokens.peek() {
 				Ok(Token { kind: TokenKind::OpenGeneric, .. }) => {
-					tokens.next()?;
+					tokens.next(messages)?;
 
 					if tokens.peek_kind() != Ok(TokenKind::CompGreater) {
 						loop {
@@ -1623,7 +1632,7 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 			};
 
 			let dot_access = if tokens.peek_kind() == Ok(TokenKind::Period) {
-				let dot_token = tokens.next()?;
+				let dot_token = tokens.next(messages)?;
 				let name_token = tokens.expect(messages, TokenKind::Word)?;
 				let span = dot_token.span + name_token.span;
 				Some(bump.alloc(Node::new(name_token.text, span)) as &_)
@@ -1669,7 +1678,7 @@ fn parse_function_declaration<'a>(
 	let parameters = parse_parameters(bump, messages, tokens)?;
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
-		tokens.next()?;
+		tokens.next(messages)?;
 		Some(parse_type(bump, messages, tokens)?)
 	} else {
 		None
@@ -1708,7 +1717,7 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 	while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
 		let is_mutable = match tokens.peek() {
 			Ok(Token { text: "mut", .. }) => {
-				tokens.next()?;
+				tokens.next(messages)?;
 				true
 			}
 
@@ -1716,7 +1725,7 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 		};
 
 		if tokens.peek_kind() == Ok(TokenKind::TriplePeriod) {
-			let triple_period = tokens.next()?;
+			let triple_period = tokens.next(messages)?;
 			c_vararg = Some(triple_period.span);
 			break;
 		}
@@ -1736,7 +1745,7 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
 		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			tokens.consume_newlines();
 		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
@@ -1782,7 +1791,7 @@ fn parse_struct_declaration<'a>(
 		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
 			break;
 		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			tokens.consume_newlines();
 		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
@@ -1840,7 +1849,7 @@ fn parse_enum_declaration<'a>(
 			let mut variant_fields = BumpVec::new_in(bump);
 
 			if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-				tokens.next()?;
+				tokens.next(messages)?;
 				tokens.consume_newlines();
 
 				while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
@@ -1851,7 +1860,7 @@ fn parse_enum_declaration<'a>(
 					if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
 						break;
 					} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-						tokens.next()?;
+						tokens.next(messages)?;
 						tokens.consume_newlines();
 					} else {
 						tokens.expect(messages, TokenKind::Newline)?;
@@ -1861,7 +1870,7 @@ fn parse_enum_declaration<'a>(
 
 				tokens.expect(messages, TokenKind::CloseBrace)?;
 			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
-				tokens.next()?;
+				tokens.next(messages)?;
 				let parsed_type = parse_type(bump, messages, tokens)?;
 				tokens.expect(messages, TokenKind::CloseParen)?;
 
@@ -1873,7 +1882,7 @@ fn parse_enum_declaration<'a>(
 				if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
 					break;
 				} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-					tokens.next()?;
+					tokens.next(messages)?;
 					tokens.consume_newlines();
 				} else {
 					tokens.expect(messages, TokenKind::Newline)?;
@@ -1892,7 +1901,7 @@ fn parse_enum_declaration<'a>(
 		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
 			break;
 		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-			tokens.next()?;
+			tokens.next(messages)?;
 			tokens.consume_newlines();
 		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
@@ -1928,14 +1937,14 @@ fn parse_field<'a>(
 	let mut read_only = false;
 	let attribute = match tokens.peek() {
 		Ok(Token { text: "readable", .. }) => {
-			let token = tokens.next()?;
+			let token = tokens.next(messages)?;
 			Some(Node::from_token(FieldAttribute::Readable, token))
 		}
 
 		Ok(Token { text: "private", .. }) => {
-			let token = tokens.next()?;
+			let token = tokens.next(messages)?;
 			if let Ok(Token { text: "readonly", .. }) = tokens.peek() {
-				tokens.next()?;
+				tokens.next(messages)?;
 				read_only = true;
 			}
 			Some(Node::from_token(FieldAttribute::Private, token))
@@ -1943,7 +1952,7 @@ fn parse_field<'a>(
 
 		_ => {
 			if let Ok(Token { text: "readonly", .. }) = tokens.peek() {
-				tokens.next()?;
+				tokens.next(messages)?;
 				read_only = true;
 			}
 			None
@@ -1961,7 +1970,7 @@ fn parse_const_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &m
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
-		tokens.next()?;
+		tokens.next(messages)?;
 		Some(bump.alloc(parse_type(bump, messages, tokens)?) as &_)
 	} else {
 		None
@@ -2012,7 +2021,7 @@ fn parse_binding_statement<'a>(
 	let is_mutable;
 	let keyword_token = if let Ok(Token { text: "mut", .. }) = tokens.peek() {
 		is_mutable = true;
-		tokens.next()?
+		tokens.next(messages)?
 	} else {
 		is_mutable = false;
 		tokens.expect_word(messages, "let")?
@@ -2023,7 +2032,7 @@ fn parse_binding_statement<'a>(
 	let name = Node::from_token(name_token.text, name_token);
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
-		tokens.next()?;
+		tokens.next(messages)?;
 		Some(bump.alloc(parse_type(bump, messages, tokens)?) as &_)
 	} else {
 		None
@@ -2151,7 +2160,7 @@ fn consume_error_syntax(messages: &mut Messages, tokens: &mut Tokens) {
 			_ => {}
 		}
 
-		tokens.next().expect("This should never fail");
+		tokens.next(messages).expect("This should never fail");
 	}
 
 	//Reached end of file while unbalanced

@@ -1,0 +1,7 @@
+struct Abc {
+	field: i32
+}
+
+fn main() {
+	println(f"{Abc{ field: 42 }.field}")
+}
