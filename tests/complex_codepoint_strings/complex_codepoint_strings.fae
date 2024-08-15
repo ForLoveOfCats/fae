@@ -1,0 +1,5 @@
+fn main() {
+    println("😀")
+    let hello = "Hello world"
+    println(f"{hello} 😀")
+}

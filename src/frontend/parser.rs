@@ -858,7 +858,7 @@ fn parse_string_contents<'a>(string: &'a str) -> Cow<'a, str> {
 	let mut last_extend_index = 0;
 	while index < string.len() {
 		let mut escape = "";
-		match string[index..].as_bytes() {
+		match string.as_bytes()[index..] {
 			[b'\\', b'n', ..] => escape = "\n",
 			[b'\\', b'r', ..] => escape = "\r",
 			[b'\\', b't', ..] => escape = "\t",
@@ -903,7 +903,7 @@ fn parse_format_string_contents<'a>(
 	let mut last_extend_index = 0;
 	while index < string.len() {
 		let mut escape = "";
-		match string[index..].as_bytes() {
+		match string.as_bytes()[index..] {
 			[b'\\', b'n', ..] => escape = "\n",
 			[b'\\', b'r', ..] => escape = "\r",
 			[b'\\', b't', ..] => escape = "\t",
