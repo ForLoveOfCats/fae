@@ -3,7 +3,10 @@
 	"name": "Fae",
 	"patterns": [
 		{
-			"include": "#comments"
+			"include": "#single-line-comments"
+		},
+		{
+			"include": "#multi-line-comments"
 		},
 		{
 			"include": "#keywords"
@@ -43,17 +46,18 @@
 				}
 			]
 		},
-		"comments": {
+		"single-line-comments": {
+			"name": "comment.line.fae",
+			"begin": "//",
+			"end": "$"
+		},
+		"multi-line-comments": {
+			"name": "comment.multi-line.fae",
+			"begin": "/\\*",
+			"end": "\\*/",
 			"patterns": [
 				{
-					"name": "comment.line.fae",
-					"begin": "//",
-					"end": "$"
-				},
-				{
-					"name": "comment.multi-line.fae",
-					"begin": "/\\*",
-					"end": "\\*/"
+					"include": "#multi-line-comments"
 				}
 			]
 		},

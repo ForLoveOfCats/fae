@@ -480,13 +480,20 @@ impl<'a> Tokenizer<'a> {
 			}
 
 			[b'/', b'*', ..] => {
+				let mut open_count = 1;
+
 				loop {
 					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
-					if matches!(self.bytes[self.offset..], [b'*', b'/', ..]) {
-						self.offset += 2;
-						break;
+					if matches!(self.bytes[self.offset..], [b'/', b'*', ..]) {
+						open_count += 1;
+					} else if matches!(self.bytes[self.offset..], [b'*', b'/', ..]) {
+						if open_count <= 1 {
+							self.offset += 2;
+							break;
+						}
+						open_count -= 1;
 					}
 				}
 
