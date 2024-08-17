@@ -1,0 +1,14 @@
+fn main() {
+	let a = []{ "Hello", "world" }
+	println(f"{a == a}")
+	println(f"{a != a}")
+
+	let b = Empty {}
+	println(f"{b == b}")
+	println(f"{b != b}")
+
+	println(f"{a == b}")
+	println(f"{a != b}")
+}
+
+struct Empty {}

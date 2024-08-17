@@ -118,8 +118,23 @@ impl TypeId {
 		match entry.kind {
 			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::Pointer { .. } => true,
 			TypeEntryKind::UserType { .. } | TypeEntryKind::Slice(_) => false,
-			TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
-			TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
+			TypeEntryKind::UserTypeGeneric { .. } => false,
+			TypeEntryKind::FunctionGeneric { .. } => false,
+		}
+	}
+
+	pub fn is_comparable(self, type_store: &mut TypeStore) -> bool {
+		use PrimativeKind::*;
+
+		let entry = type_store.type_entries.get(self);
+		match entry.kind {
+			TypeEntryKind::BuiltinType {
+				kind: Void | UntypedInteger | UntypedDecimal | Bool | Numeric(_),
+			} => true,
+
+			TypeEntryKind::Pointer { .. } => true,
+
+			_ => false,
 		}
 	}
 
@@ -776,6 +791,8 @@ impl<'a> TypeStore<'a> {
 		// if either are any collapse then collapse to the other, even if it is also any collapse
 		// if both are untyped numbers then we know they are different, collapse to the decimal
 		// if either type is an untyped number we know the other isn't, collapse to the other type
+		// if either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
+		// if either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is an enum, collapse the other to it
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
@@ -821,18 +838,72 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		let is_enum = |type_store: &mut Self, e: &Expression| {
-			let entry = type_store.type_entries.get(e.type_id);
-			match entry.kind {
-				TypeEntryKind::UserType { shape_index, .. } => match type_store.user_types.read()[shape_index].read().kind {
-					UserTypeKind::Enum { .. } => return true,
-					_ => return false,
-				},
+		let a_entry = self.type_entries.get(a.type_id);
+		let b_entry = self.type_entries.get(b.type_id);
+
+		if let TypeEntryKind::Pointer { mutable: a_mutable, .. } = a_entry.kind {
+			let collapsed = if let TypeEntryKind::Pointer { mutable: b_mutable, .. } = b_entry.kind {
+				if a_mutable && !b_mutable {
+					self.collapse_to(messages, function_store, b.type_id, a)?
+				} else {
+					self.collapse_to(messages, function_store, a.type_id, b)?
+				}
+			} else {
+				self.collapse_to(messages, function_store, a.type_id, b)?
+			};
+
+			return match collapsed {
+				true => Ok(a.type_id),
+				false => Err(()),
+			};
+		}
+
+		if matches!(b_entry.kind, TypeEntryKind::Pointer { .. }) {
+			// No need to check for mutability and prefer a different direction because if both
+			// are pointers then that case would have been caught by the `a` block
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			return match collapsed {
+				true => Ok(b.type_id),
+				false => Err(()),
+			};
+		}
+
+		if let TypeEntryKind::Slice(a_slice) = a_entry.kind {
+			let collapsed = if let TypeEntryKind::Slice(b_slice) = b_entry.kind {
+				if a_slice.mutable && !b_slice.mutable {
+					self.collapse_to(messages, function_store, b.type_id, a)?
+				} else {
+					self.collapse_to(messages, function_store, a.type_id, b)?
+				}
+			} else {
+				self.collapse_to(messages, function_store, a.type_id, b)?
+			};
+
+			return match collapsed {
+				true => Ok(a.type_id),
+				false => Err(()),
+			};
+		}
+
+		if matches!(b_entry.kind, TypeEntryKind::Slice(_)) {
+			// No need to check for mutability and prefer a different direction because if both
+			// are slices then that case would have been caught by the `a` block
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			return match collapsed {
+				true => Ok(b.type_id),
+				false => Err(()),
+			};
+		}
+
+		let is_enum = |type_store: &mut Self, entry: TypeEntry| match entry.kind {
+			TypeEntryKind::UserType { shape_index, .. } => match type_store.user_types.read()[shape_index].read().kind {
+				UserTypeKind::Enum { .. } => return true,
 				_ => return false,
-			}
+			},
+			_ => return false,
 		};
 
-		if is_enum(self, a) {
+		if is_enum(self, a_entry) {
 			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
 			return match collapsed {
 				true => Ok(a.type_id),
@@ -840,7 +911,7 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		if is_enum(self, b) {
+		if is_enum(self, b_entry) {
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
 			return match collapsed {
 				true => Ok(b.type_id),

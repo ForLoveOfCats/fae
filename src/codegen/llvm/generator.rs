@@ -2253,8 +2253,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 		}
 
-		let left_is_int = unsafe { LLVMGetTypeKind(LLVMTypeOf(left)) == LLVMIntegerTypeKind };
-		let value = if left_is_int {
+		let left_type_kind = unsafe { LLVMGetTypeKind(LLVMTypeOf(left)) };
+
+		let value = if left_type_kind == LLVMIntegerTypeKind {
 			let left = left;
 			let right = right;
 
@@ -2360,7 +2361,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::LogicalOr
 				| BinaryOperator::Range => unreachable!(),
 			}
-		} else {
+		} else if left_type_kind == LLVMFloatTypeKind || left_type_kind == LLVMDoubleTypeKind {
 			use LLVMRealPredicate::*;
 			let n = c"".as_ptr();
 			match op {
@@ -2405,6 +2406,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::LogicalOr
 				| BinaryOperator::Range => unreachable!(),
 			}
+		} else if left_type_kind == LLVMPointerTypeKind {
+			match op {
+				BinaryOperator::Equals => unsafe { LLVMBuildICmp(self.builder, LLVMIntEQ, left, right, c"".as_ptr()) },
+				BinaryOperator::NotEquals => unsafe { LLVMBuildICmp(self.builder, LLVMIntNE, left, right, c"".as_ptr()) },
+				_ => unreachable!("{op:?}"),
+			}
+		} else {
+			unreachable!("{left_type_kind:?}")
 		};
 
 		let kind = BindingKind::Value(value);

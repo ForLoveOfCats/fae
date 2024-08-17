@@ -1,0 +1,29 @@
+fn main() {
+	mut variable: u64 = 99
+
+	let a = variable.&
+	let b = variable.&
+	println(f"{a == b}")
+	println(f"{a != b}")
+
+	println("")
+
+	let a = variable.&mut
+	let b = variable.&mut
+	println(f"{a == b}")
+	println(f"{a != b}")
+
+	println("")
+
+	let a = variable.&mut
+	let b = variable.&
+	println(f"{a == b}")
+	println(f"{a != b}")
+
+	println("")
+
+	let a = variable.&
+	let b = variable.&mut
+	println(f"{a == b}")
+	println(f"{a != b}")
+}
