@@ -132,7 +132,7 @@ fn tick(delta: f64) {{
 def generate_normal_logic(index):
 	return f"""
 generic T
-fn function(arg: &List<Entity{index + 1}<T>>) {{}}
+fn function(_arg: &List<Entity{index + 1}<T>>) {{}}
 
 fn logic_{index}(addend: i32): i32 {{
 	mut the_struct: Struct{index} = Struct{index} {{
@@ -237,8 +237,6 @@ def generate_last_file(index):
 // This is the last file, it is shorter as it doesn't have any logic
 // It has to be here so that the second to last file has something to reference
 // As each normal file references some stuff from the following file
-
-import fae::collections::list::List
 
 struct Struct{index} {{
 	first: i32
