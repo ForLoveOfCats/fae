@@ -21,12 +21,12 @@ fn null_slice(): []mut T {
 
 generic T
 fn offset_pointer(pointer: &T, by_bytes: isize): &T {
-	return (pointer.(usize) + by_bytes.(usize)).(&T)
+	return (pointer.(isize) + by_bytes).(&T)
 }
 
 generic T
 fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
-	return (pointer.(usize) + by_bytes.(usize)).(&mut T)
+	return (pointer.(isize) + by_bytes).(&mut T)
 }
 
 fn print(message: fstr) {
