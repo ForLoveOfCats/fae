@@ -1949,13 +1949,13 @@ fn parse_field<'a>(
 			Some(Node::from_token(FieldAttribute::Readable, token))
 		}
 
-		Ok(Token { text: "private", .. }) => {
+		Ok(Token { text: "internal", .. }) => {
 			let token = tokens.next(messages)?;
 			if let Ok(Token { text: "readonly", .. }) = tokens.peek() {
 				tokens.next(messages)?;
 				read_only = true;
 			}
-			Some(Node::from_token(FieldAttribute::Private, token))
+			Some(Node::from_token(FieldAttribute::Internal, token))
 		}
 
 		_ => {

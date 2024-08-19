@@ -170,7 +170,7 @@ pub struct TransparentVariant<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldAttribute {
-	Private,
+	Internal,
 	Readable,
 }
 

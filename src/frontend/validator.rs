@@ -4115,7 +4115,7 @@ fn validate_struct_initializer<'a>(
 		}
 
 		let name = field.name;
-		let is_private = matches!(field.attribute, Some(Node { item: FieldAttribute::Private, .. }));
+		let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
 		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
 		let external_access = if let Some(method_base_index) = context.method_base_index {
 			method_base_index != shape_index
@@ -4123,9 +4123,9 @@ fn validate_struct_initializer<'a>(
 			true
 		};
 
-		if is_private && external_access {
+		if is_internal && external_access {
 			let on = context.type_name(type_id);
-			let error = error!("Cannot publicly initialize private field `{name}` on type {on}",);
+			let error = error!("Cannot publicly initialize internal field `{name}` on type {on}",);
 			context.message(error.span(intializer.name.span + expression.span));
 		}
 
@@ -4928,13 +4928,13 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			return Expression::any_collapse(context.type_store, span);
 		};
 
-		let is_private = matches!(field.attribute, Some(Node { item: FieldAttribute::Private, .. }));
+		let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
 		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
 		let is_read_only = field.read_only;
 
-		if external_access && is_private {
+		if external_access && is_internal {
 			let type_name = context.type_name(base.type_id);
-			let error = error!("Cannot publicly access private field `{}` on type {}", dot_access.name.item, type_name);
+			let error = error!("Cannot publicly access internal field `{}` on type {}", dot_access.name.item, type_name);
 			context.messages.message(error.span(dot_access.name.span));
 			return Expression::any_collapse(context.type_store, span);
 		}

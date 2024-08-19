@@ -1,38 +1,38 @@
 struct MyStruct {
 	readable_field: i32 readable
-	private_field: i32 private
+	internal_field: i32 internal
 	readonly_field: i32 readonly
-	private_readonly_field: i32 private readonly
+	internal_readonly_field: i32 internal readonly
 }
 
 method static MyStruct
 fn new(): MyStruct {
 	return MyStruct {
 		readable_field: 0
-		private_field: 0
+		internal_field: 0
 		readonly_field: 0
-		private_readonly_field: 0
+		internal_readonly_field: 0
 	}
 }
 
 method mut MyStruct
 fn mutate_fields() {
 	self.readable_field += 1
-	self.private_field += 1
+	self.internal_field += 1
 	self.readonly_field += 1
-	self.private_readonly_field += 1
+	self.internal_readonly_field += 1
 }
 
 fn main() {
 	let public_created = MyStruct {
 		readable_field: 0
-		private_field: 0
+		internal_field: 0
 		readonly_field: 0
-		private_readonly_field: 0
+		internal_readonly_field: 0
 	}
 
 	public_created.readable_field += 1
-	public_created.private_field += 1
+	public_created.internal_field += 1
 	public_created.readonly_field += 1
-	public_created.private_readonly_field += 1
+	public_created.internal_readonly_field += 1
 }
