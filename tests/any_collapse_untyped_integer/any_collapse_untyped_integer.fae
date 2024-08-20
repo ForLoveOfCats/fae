@@ -1,3 +1,7 @@
 fn main() {
+	let region = match compare(1) {}
+	mut index: isize = 0
+	index += region /  2
+
 	return non_existent + 5
 }

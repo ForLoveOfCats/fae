@@ -788,7 +788,7 @@ impl<'a> TypeStore<'a> {
 			return Ok(a.type_id);
 		}
 
-		// if either are any collapse then collapse to the other, even if it is also any collapse
+		// if either are any collapse then collapse to any collapse
 		// if both are untyped numbers then we know they are different, collapse to the decimal
 		// if either type is an untyped number we know the other isn't, collapse to the other type
 		// if either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
@@ -796,9 +796,9 @@ impl<'a> TypeStore<'a> {
 		// if either type is an enum, collapse the other to it
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
-			return Ok(b.type_id);
+			return Ok(self.any_collapse_type_id);
 		} else if b.type_id.entry == self.any_collapse_type_id.entry {
-			return Ok(a.type_id);
+			return Ok(self.any_collapse_type_id);
 		}
 
 		let a_number = a.type_id.entry == self.integer_type_id.entry || a.type_id.entry == self.decimal_type_id.entry;
@@ -943,8 +943,9 @@ impl<'a> TypeStore<'a> {
 		// str -> fstr
 		// enum variant -> enum
 
-		if from.type_id.entry == self.any_collapse_type_id.entry {
-			// From any collapse
+		let any_collapse_entry = self.any_collapse_type_id.entry;
+		if from.type_id.entry == any_collapse_entry || to.entry == any_collapse_entry {
+			// From or to any collapse
 			// No need to convert anything, this only gets introduced in case of error so we know we won't codegen
 			return Ok(true);
 		}

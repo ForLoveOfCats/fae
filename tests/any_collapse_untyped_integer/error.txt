@@ -1,3 +1,7 @@
-Validation error: ./tests/any_collapse_untyped_integer/any_collapse_untyped_integer.fae, line 2: No symbol `non_existent` in the current scope
-  2|     return non_existent + 5
+Validation error: ./tests/any_collapse_untyped_integer/any_collapse_untyped_integer.fae, line 2: No symbol `compare` in the current scope
+  2|     let region = match compare(1) {}
+                            ^^^^^^^
+
+Validation error: ./tests/any_collapse_untyped_integer/any_collapse_untyped_integer.fae, line 6: No symbol `non_existent` in the current scope
+  6|     return non_existent + 5
                 ^^^^^^^^^^^^

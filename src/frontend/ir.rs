@@ -444,8 +444,8 @@ impl<'a> Expression<'a> {
 			span,
 			type_id: type_store.any_collapse_type_id(),
 			is_mutable: true,
-			yields: false,
-			returns: false, // TODO: This could cause erronious error messages?
+			yields: true,
+			returns: true,
 			kind: ExpressionKind::AnyCollapse,
 			debug_location: DebugLocation::unusable(),
 		}
