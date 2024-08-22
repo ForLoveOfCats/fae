@@ -1170,28 +1170,43 @@ impl<'a> TypeStore<'a> {
 
 		// enum variant -> enum
 		if let TypeEntryKind::UserType { shape_index, .. } = from_entry.kind {
-			let user_type = self.user_types.read()[shape_index].clone();
+			let user_types = self.user_types.read();
+
+			let user_type = user_types[shape_index].clone();
 			let user_type = user_type.read();
+
 			if let UserTypeKind::Struct { shape } = &user_type.kind {
 				if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
-					if let TypeEntryKind::UserType { shape_index, .. } = to_entry.kind {
+					let variant_index = shape.variant_index.unwrap();
+
+					if let TypeEntryKind::UserType { shape_index, specialization_index } = to_entry.kind {
 						if shape_index == parent_enum_shape_index {
-							// TODO: This replace is a dumb solution
-							let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
-							let yields = expression.yields;
-							let returns = expression.returns;
-							let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
-							let kind = ExpressionKind::EnumVariantToEnum(conversion);
-							*from = Expression {
-								span: from.span,
-								type_id: to,
-								is_mutable: false,
-								yields,
-								returns,
-								kind,
-								debug_location: from.debug_location,
+							let parent_shape = user_types[shape_index].read();
+							let UserTypeKind::Enum { shape: parent_shape } = &parent_shape.kind else {
+								unreachable!();
 							};
-							return Ok(true);
+
+							let parent_specialization = &parent_shape.specializations[specialization_index];
+							let expected_variant_type_id = parent_specialization.variants[variant_index].type_id;
+
+							if expected_variant_type_id.entry == from.type_id.entry {
+								// TODO: This replace is a dumb solution
+								let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
+								let yields = expression.yields;
+								let returns = expression.returns;
+								let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
+								let kind = ExpressionKind::EnumVariantToEnum(conversion);
+								*from = Expression {
+									span: from.span,
+									type_id: to,
+									is_mutable: false,
+									yields,
+									returns,
+									kind,
+									debug_location: from.debug_location,
+								};
+								return Ok(true);
+							}
 						}
 					}
 				}

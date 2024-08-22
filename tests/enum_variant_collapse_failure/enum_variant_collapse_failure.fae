@@ -1,0 +1,10 @@
+fn main() {
+	let a: Enum::Variant<i32> = Enum::Variant<i32> { shared: 3, variant: 8 }
+	let b: Enum<i64> = a
+}
+
+generic T
+enum Enum {
+	shared: T
+	Variant { variant: T }
+}
