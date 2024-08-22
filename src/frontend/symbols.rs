@@ -6,7 +6,7 @@ use crate::frontend::error::Messages;
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::tree::{ExternAttribute, PathSegments};
-use crate::frontend::type_store::{TypeId, TypeStore};
+use crate::frontend::type_store::{TypeId, TypeStore, UserTypeKind};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Symbol<'a> {
@@ -158,21 +158,67 @@ impl<'a> Symbols<'a> {
 	) -> Option<Symbol<'a>> {
 		if let [segment] = path.segments {
 			let name = segment.item;
-
 			let primatives = &type_store.primative_type_symbols;
 			if let Some(&found) = primatives.iter().find(|symbol| symbol.name == name) {
 				return Some(found);
 			}
+		}
 
-			if let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, name, true) {
+		assert!(!path.segments.is_empty());
+
+		if let [first, ..] = path.segments {
+			let Some(found) = self.find_local_symbol_matching_name(function_initial_scope_count, first.item, true) else {
+				if path.segments.len() <= 1 {
+					let error = error!("No symbol `{}` in the current scope", first.item);
+					messages.message(error.span(first.span));
+					return None;
+				}
+
+				return root_layers.lookup_path_symbol(messages, path);
+			};
+
+			if path.segments.len() == 1 {
 				return Some(found);
 			}
+			let second = path.segments[1];
 
-			messages.message(error!("No symbol `{name}` in the current scope").span(segment.span));
-			None
-		} else {
-			root_layers.lookup_path_symbol(messages, path)
+			if let SymbolKind::Type { shape_index } = found.kind {
+				let lock = type_store.user_types.read()[shape_index].clone();
+				let guard = lock.read();
+				let shape = match &guard.kind {
+					UserTypeKind::Enum { shape } => shape,
+
+					UserTypeKind::Struct { .. } => {
+						let error = error!("Cannot path sub-access `{}` as it is a struct", first.item);
+						messages.message(error.span(first.span + second.span));
+						return None;
+					}
+				};
+
+				let Some(variant_shape) = shape.variant_shapes.iter().find(|s| s.name == second.item) else {
+					let error = error!("No variant `{}` on enum `{}`", second.item, first.item);
+					messages.message(error.span(second.span));
+					return None;
+				};
+
+				if let [_, _, third, ..] = path.segments {
+					let error = error!("Cannot path sub-access `{}` as it is an enum variant", second.item);
+					messages.message(error.span(second.span + third.span));
+					return None;
+				}
+
+				let kind = SymbolKind::Type { shape_index: variant_shape.struct_shape_index };
+				let span = Some(variant_shape.span);
+				let symbol = Symbol { name: second.item, kind, span, used: true };
+				return Some(symbol);
+			}
+
+			let error = error!("Cannot path sub-access `{}` as it is {}", first.item, found.kind);
+			messages.message(error.span(first.span + second.span));
+			return None;
 		}
+
+		unreachable!();
 	}
 }
 

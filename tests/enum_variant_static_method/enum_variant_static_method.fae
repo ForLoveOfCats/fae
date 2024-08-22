@@ -1,0 +1,14 @@
+fn main() {
+	let a = Enum::A.new()
+	println(f"{a.shared}, {a.a}")
+}
+
+enum Enum {
+	shared: i32
+	A { a: i32 }
+}
+
+method static Enum::A
+fn new(): Enum::A {
+	return Enum::A { shared: 1, a: 2 }
+}
