@@ -1,0 +1,21 @@
+fn main() {
+	let a = Enum.new()
+	let b = Enum.new()
+	if a is Variant => println(f"{a.compare_shared(b)}")
+}
+
+enum Enum {
+	shared: i32 internal
+	Variant { variant: i32 internal }
+}
+
+method static Enum
+fn new(): Enum {
+	return .Variant { shared: 1, variant: 2 }
+}
+
+method Enum::Variant
+fn compare_shared(other: Enum): bool {
+	if other is Variant => println(f"{self.variant}, {other.variant}")
+	return other.shared == self.shared
+}

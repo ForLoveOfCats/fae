@@ -268,6 +268,34 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			.get_enum_variant(self.messages, self.function_store, self.module_path, base, name)
 	}
 
+	pub fn check_is_external_access(&self, shape_index: usize) -> bool {
+		let internal_access = if let Some(method_base_index) = self.method_base_index {
+			method_base_index == shape_index || {
+				let lock = self.type_store.user_types.read()[shape_index].clone();
+				let user_type = lock.read();
+				match &user_type.kind {
+					UserTypeKind::Struct { shape } => {
+						// check if the method base is the enum that the struct is a variant of
+						shape.parent_enum_shape_index == Some(method_base_index)
+					}
+
+					UserTypeKind::Enum { shape } => {
+						// check if the method base is a variant of the enum
+						shape
+							.variant_shapes
+							.iter()
+							.find(|s| s.struct_shape_index == method_base_index)
+							.is_some()
+					}
+				}
+			}
+		} else {
+			false
+		};
+
+		!internal_access
+	}
+
 	pub fn local_function_shape_index(&self, index: usize) -> usize {
 		self.local_function_shape_indicies[self.initial_local_function_shape_indicies_len + index]
 	}
@@ -4117,11 +4145,7 @@ fn validate_struct_initializer<'a>(
 		let name = field.name;
 		let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
 		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
-		let external_access = if let Some(method_base_index) = context.method_base_index {
-			method_base_index != shape_index
-		} else {
-			true
-		};
+		let external_access = context.check_is_external_access(shape_index);
 
 		if is_internal && external_access {
 			let on = context.type_name(type_id);
@@ -4972,21 +4996,16 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			let user_type = context.type_store.user_types.read()[shape_index].clone();
 			let user_type = user_type.read();
 
-			let mut external_access = true;
 			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
-					if let Some(method_base_index) = context.method_base_index {
-						external_access = method_base_index != shape_index;
-					}
+					let external_access = context.check_is_external_access(shape_index);
 					let fields = shape.specializations[specialization_index].fields.clone();
 					drop(user_type);
 					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
 				}
 
 				UserTypeKind::Enum { shape } => {
-					if let Some(method_base_index) = context.method_base_index {
-						external_access = method_base_index != shape_index;
-					}
+					let external_access = context.check_is_external_access(shape_index);
 					let fields = shape.specializations[specialization_index].shared_fields.clone();
 					drop(user_type);
 					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
