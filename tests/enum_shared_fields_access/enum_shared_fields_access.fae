@@ -17,8 +17,8 @@ fn main() {
 
 	println("Sizes:")
 	println(f"{size_of<HasShared>()}")
-	println(f"{size_of<HasShared.VariantA>()}")
-	println(f"{size_of<HasShared.VariantB>()}")
+	println(f"{size_of<HasShared::VariantA>()}")
+	println(f"{size_of<HasShared::VariantB>()}")
 
 	println("")
 

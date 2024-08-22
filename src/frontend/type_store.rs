@@ -1556,7 +1556,7 @@ impl<'a> TypeStore<'a> {
 		enclosing_generic_parameters: &GenericParameters<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
 	) -> Option<TypeId> {
-		let (path_segments, type_arguments, dot_access) = match &parsed_type.item {
+		let (path_segments, type_arguments) = match &parsed_type.item {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Pointer { pointee, mutable } => {
@@ -1589,7 +1589,7 @@ impl<'a> TypeStore<'a> {
 				return Some(self.slice_of(id, *mutable));
 			}
 
-			tree::Type::Path { path_segments, type_arguments, dot_access } => (path_segments, type_arguments, dot_access),
+			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
 		};
 
 		let symbol = symbols.lookup_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
@@ -1600,35 +1600,18 @@ impl<'a> TypeStore<'a> {
 					return None;
 				}
 
-				if let Some(dot_access) = dot_access {
-					messages.message(error!("Builtin types do not have variants").span(dot_access.span));
-					return None;
-				}
-
 				return Some(type_id);
 			}
 
 			SymbolKind::Type { shape_index } => shape_index,
 
 			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
-				if let Some(dot_access) = dot_access {
-					let error = error!("User type generic type parameters do not have variants");
-					messages.message(error.span(dot_access.span));
-					return None;
-				}
-
 				let user_type = &self.user_types.read()[shape_index];
 				let generic = user_type.read().generic_parameters.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
 
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
-				if let Some(dot_access) = dot_access {
-					let error = error!("Function generic type parameters do not have variants");
-					messages.message(error.span(dot_access.span));
-					return None;
-				}
-
 				let generics = &function_store.generics.read()[function_shape_index];
 				let generic = &generics.parameters()[generic_index];
 				return Some(generic.generic_type_id);
@@ -1655,11 +1638,7 @@ impl<'a> TypeStore<'a> {
 			type_arguments,
 		)?;
 
-		if let &Some(&dot_access) = dot_access {
-			self.get_enum_variant(messages, function_store, module_path, type_id, dot_access)
-		} else {
-			Some(type_id)
-		}
+		Some(type_id)
 	}
 
 	pub fn get_enum_variant(

@@ -609,7 +609,7 @@ fn parse_expression_atom<'a>(
 					None => path_segments.span,
 				};
 				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-				let type_object = Type::Path { path_segments, type_arguments, dot_access: None };
+				let type_object = Type::Path { path_segments, type_arguments };
 				let parsed_type = Node::new(type_object, type_span);
 
 				let initializer = parse_struct_initializer(bump, messages, tokens)?;
@@ -1639,20 +1639,8 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 				_ => path_segments.span,
 			};
 
-			let dot_access = if tokens.peek_kind() == Ok(TokenKind::Period) {
-				let dot_token = tokens.next(messages)?;
-				let name_token = tokens.expect(messages, TokenKind::Word)?;
-				let span = dot_token.span + name_token.span;
-				Some(bump.alloc(Node::new(name_token.text, span)) as &_)
-			} else {
-				None
-			};
-
-			let path = Type::Path {
-				path_segments,
-				type_arguments: type_arguments.into_bump_slice(),
-				dot_access,
-			};
+			let type_arguments = type_arguments.into_bump_slice();
+			let path = Type::Path { path_segments, type_arguments };
 			Node::new(path, span)
 		}
 	};
