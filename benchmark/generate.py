@@ -104,8 +104,8 @@ fn new(): EnumEntityStore<T> {{
 }}
 
 method static EnumEntityStore
-fn new_variant(): EnumEntityStore<T>.Variant {{
-	return EnumEntityStore<T>.Variant {{
+fn new_variant(): EnumEntityStore::Variant<T> {{
+	return EnumEntityStore::Variant<T> {{
 		shared_entities: List<Entity{index + 1}<T>>.new()
 		variant_entities: List<Entity{index + 1}<T>>.new()
 	}}
@@ -201,7 +201,7 @@ fn logic_{index}(addend: i32): i32 {{
 
 	println("")
 
-	mut variant_store: EnumEntityStore<i32>.Variant = EnumEntityStore<i32>.new_variant()
+	mut variant_store: EnumEntityStore::Variant<i32> = EnumEntityStore<i32>.new_variant()
 	variant_store.shared_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -600 }})
 	variant_store.variant_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -700 }})
 	function<i32>(variant_store.shared_entities.&)
