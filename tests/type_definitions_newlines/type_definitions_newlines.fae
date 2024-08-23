@@ -5,9 +5,9 @@ fn main() {
 }
 
 fn structs() {
-	let value = A {}
+	let _ = A {}
 
-	let value = B {}
+	let _ = B {}
 
 	let value = C { a: 1, b: 2 }
 	println(f"{value.a}, {value.b}")

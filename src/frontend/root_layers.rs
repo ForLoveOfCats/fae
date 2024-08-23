@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -8,7 +10,6 @@ use crate::reference::Ref;
 
 #[derive(Debug)]
 pub struct RootLayers<'a> {
-	// pub layers: FxHashMap<&'a str, Ref<RwLock<RootLayer<'a>>>>,
 	root: Ref<RwLock<RootLayer<'a>>>,
 	pub root_name: String,
 }
@@ -110,10 +111,10 @@ pub struct RootLayer<'a> {
 	pub name: &'a str,
 	pub children: FxHashMap<&'a str, Ref<RwLock<RootLayer<'a>>>>,
 	pub symbols: Symbols<'a>,
-	pub importable_types_index: usize,
-	pub importable_functions_index: usize,
-	pub importable_consts_index: usize,
-	pub importable_statics_index: usize,
+	pub importable_types_range: Range<usize>,
+	pub importable_functions_range: Range<usize>,
+	pub importable_consts_range: Range<usize>,
+	pub importable_statics_range: Range<usize>,
 }
 
 impl<'a> RootLayer<'a> {
@@ -122,10 +123,10 @@ impl<'a> RootLayer<'a> {
 			name,
 			children: FxHashMap::default(),
 			symbols: Symbols::new(),
-			importable_types_index: usize::MAX,
-			importable_functions_index: usize::MAX,
-			importable_consts_index: usize::MAX,
-			importable_statics_index: usize::MAX,
+			importable_types_range: usize::MAX - 1..usize::MAX,
+			importable_functions_range: usize::MAX - 1..usize::MAX,
+			importable_consts_range: usize::MAX - 1..usize::MAX,
+			importable_statics_range: usize::MAX - 1..usize::MAX,
 		}
 	}
 
@@ -134,7 +135,7 @@ impl<'a> RootLayer<'a> {
 
 		let segment = &segments[0];
 		let name = segment.item;
-		let mut found = self.symbols.scopes.iter_mut().find_map(|scope| scope.get_mut(name));
+		let mut found = self.symbols.symbols.iter_mut().find(|symbol| symbol.name == name);
 
 		if let Some(found) = &mut found {
 			found.used = true;

@@ -59,7 +59,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub initial_local_function_shape_indicies_len: usize,
 	pub local_function_shape_indicies: &'b mut Vec<usize>,
 
-	pub function_initial_scope_count: usize,
+	pub function_initial_symbols_length: usize,
 	pub symbols_scope: SymbolsScope<'a, 'b>,
 
 	pub next_loop_index: usize,
@@ -128,7 +128,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			initial_local_function_shape_indicies_len: self.local_function_shape_indicies.len(),
 			local_function_shape_indicies: self.local_function_shape_indicies,
 
-			function_initial_scope_count: self.function_initial_scope_count,
+			function_initial_symbols_length: self.function_initial_symbols_length, // TODO: Wrong?
 			symbols_scope: self.symbols_scope.child_scope(),
 
 			next_loop_index: self.next_loop_index,
@@ -156,6 +156,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 		let initial_yield_targets_starting_index = self.yield_targets.starting_index;
 		self.yield_targets.starting_index = self.yield_targets.overall_len();
+
+		let function_initial_symbols_length = self.symbols_scope.symbols.symbols.len();
 
 		Context {
 			cli_arguments: self.cli_arguments,
@@ -197,7 +199,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			initial_local_function_shape_indicies_len: self.local_function_shape_indicies.len(),
 			local_function_shape_indicies: self.local_function_shape_indicies,
 
-			function_initial_scope_count: self.function_initial_scope_count,
+			function_initial_symbols_length,
 			symbols_scope: self.symbols_scope.child_scope(),
 
 			next_loop_index: 0,
@@ -219,7 +221,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	pub fn push_symbol(&mut self, symbol: Symbol<'a>) {
 		self.symbols_scope
 			.symbols
-			.push_symbol(self.messages, self.function_initial_scope_count, symbol);
+			.push_symbol(self.messages, self.function_initial_symbols_length, symbol);
 	}
 
 	pub fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind, used: bool) -> usize {
@@ -244,7 +246,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			self.messages,
 			self.root_layers,
 			self.type_store,
-			self.function_initial_scope_count,
+			self.function_initial_symbols_length,
 			path,
 		)
 	}
@@ -257,7 +259,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			self.function_generic_usages,
 			self.root_layers,
 			self.symbols_scope.symbols,
-			self.function_initial_scope_count,
+			self.function_initial_symbols_length,
 			self.generic_parameters,
 			parsed_type,
 		)
@@ -565,7 +567,7 @@ fn deep_pass<'a>(
 			current_yield_target_index: None,
 			initial_local_function_shape_indicies_len: 0,
 			local_function_shape_indicies: &mut local_function_shape_indicies,
-			function_initial_scope_count: symbols.scopes.len(),
+			function_initial_symbols_length: symbols.symbols.len(),
 			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
@@ -613,9 +615,8 @@ fn create_root_types<'a>(
 		let block = &parsed_file.block;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
-		let importable_types_index = symbols.scopes.len();
-		assert_eq!(importable_types_index, 0);
-		symbols.scopes.push(FxHashMap::default());
+		let importable_types_start = symbols.symbols.len();
+		assert_eq!(importable_types_start, 0);
 
 		let mut messages = Messages::new(parsed_file.module_path);
 
@@ -634,8 +635,9 @@ fn create_root_types<'a>(
 			&mut type_shape_indicies,
 		);
 
+		let importable_types_end = symbols.symbols.len();
 		let mut layer_guard = layer.write();
-		layer_guard.importable_types_index = importable_types_index;
+		layer_guard.importable_types_range = importable_types_start..importable_types_end;
 		layer_guard.symbols = symbols;
 		drop(layer_guard);
 
@@ -762,9 +764,7 @@ fn create_root_functions<'a>(
 		let mut symbols = layer.read().symbols.clone();
 		let mut local_function_shape_indicies = local_function_shape_indicies[file_index as usize].write();
 
-		let importable_functions_index = symbols.scopes.len();
-		assert_eq!(importable_functions_index, 1);
-		symbols.scopes.push(FxHashMap::default());
+		let importable_functions_start = symbols.symbols.len();
 
 		let mut messages = Messages::new(parsed_file.module_path);
 
@@ -786,8 +786,9 @@ fn create_root_functions<'a>(
 			scope_id,
 		);
 
+		let importable_functions_end = symbols.symbols.len();
 		let mut layer_guard = layer.write();
-		layer_guard.importable_functions_index = importable_functions_index;
+		layer_guard.importable_functions_range = importable_functions_start..importable_functions_end;
 		layer_guard.symbols = symbols;
 		drop(layer_guard);
 
@@ -836,8 +837,7 @@ fn validate_root_consts<'a>(
 		yield_targets.starting_index = 0;
 		yield_targets.targets.clear();
 
-		let importable_consts_index = symbols.scopes.len();
-		assert_eq!(importable_consts_index, 2);
+		let importable_consts_start = symbols.symbols.len();
 
 		let mut next_scope_index = 1;
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -870,7 +870,7 @@ fn validate_root_consts<'a>(
 			initial_yield_targets_overall_len: 0,
 			yield_targets,
 			current_yield_target_index: None,
-			function_initial_scope_count: symbols.scopes.len(),
+			function_initial_symbols_length: symbols.symbols.len(),
 			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
@@ -885,11 +885,13 @@ fn validate_root_consts<'a>(
 		assert_eq!(context.readables.overall_len(), 0);
 		assert_eq!(context.readables.starting_index, 0);
 
+		let importable_consts_end = context.symbols_scope.symbols.symbols.len();
+
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
 		let mut layer_guard = layer.write();
-		layer_guard.importable_consts_index = importable_consts_index;
+		layer_guard.importable_consts_range = importable_consts_start..importable_consts_end;
 		layer_guard.symbols = symbols;
 		drop(layer_guard);
 
@@ -938,8 +940,7 @@ fn validate_root_statics<'a>(
 		yield_targets.starting_index = 0;
 		yield_targets.targets.clear();
 
-		let importable_statics_index = symbols.scopes.len();
-		assert_eq!(importable_statics_index, 3);
+		let importable_statics_start = symbols.symbols.len();
 
 		let mut next_scope_index = 1;
 		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -972,7 +973,7 @@ fn validate_root_statics<'a>(
 			initial_yield_targets_overall_len: 0,
 			yield_targets,
 			current_yield_target_index: None,
-			function_initial_scope_count: symbols.scopes.len(),
+			function_initial_symbols_length: symbols.symbols.len(),
 			symbols_scope: symbols.child_scope(),
 			next_loop_index: 0,
 			current_loop_index: None,
@@ -987,11 +988,13 @@ fn validate_root_statics<'a>(
 		assert_eq!(context.readables.overall_len(), 0);
 		assert_eq!(context.readables.starting_index, 0);
 
+		let importable_statics_end = context.symbols_scope.symbols.symbols.len();
+
 		std::mem::forget(context);
 		assert_eq!(next_scope_index, 1);
 
 		let mut layer_guard = layer.write();
-		layer_guard.importable_statics_index = importable_statics_index;
+		layer_guard.importable_statics_range = importable_statics_start..importable_statics_end;
 		layer_guard.symbols = symbols;
 		drop(layer_guard);
 
@@ -1008,14 +1011,14 @@ fn resolve_block_type_imports<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	block: &tree::Block<'a>,
 	should_import_prelude: bool,
 ) {
 	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
-		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, &path, None, true);
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_length, &path, None, true);
 	}
 
 	for statement in block.statements {
@@ -1031,7 +1034,7 @@ fn resolve_block_type_imports<'a>(
 						root_layers,
 						symbols,
 						module_path,
-						function_initial_scope_count,
+						function_initial_symbols_length,
 						&body.item,
 						false,
 					)
@@ -1044,7 +1047,7 @@ fn resolve_block_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names);
-		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_scope_count, path, names, false);
+		resolve_import_for_block_types(messages, root_layers, symbols, function_initial_symbols_length, path, names, false);
 	}
 }
 
@@ -1052,7 +1055,7 @@ fn resolve_import_for_block_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
 	is_prelude: bool,
@@ -1062,23 +1065,23 @@ fn resolve_import_for_block_types<'a>(
 	};
 
 	let layer_guard = layer.read();
-	if layer_guard.symbols.scopes.is_empty() {
+	if layer_guard.symbols.symbols.is_empty() {
 		return;
 	}
-	let importable_types_index = layer_guard.importable_types_index;
+	let importable_types_range = layer_guard.importable_types_range.clone();
 	let source_symbols = layer_guard.symbols.clone();
 	drop(layer_guard);
 
 	if let Some(names) = names {
-		let importable_types = &source_symbols.scopes[importable_types_index];
+		let importable_types = &source_symbols.symbols[importable_types_range];
 		for name in names {
-			if let Some(&importing) = importable_types.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
+			if let Some(&importing) = importable_types.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
 			}
 		}
 	} else {
-		for &importing in source_symbols.scopes[importable_types_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
+		for &importing in &source_symbols.symbols[importable_types_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
 		}
 	}
 }
@@ -1089,14 +1092,14 @@ fn resolve_block_non_type_imports<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	block: &tree::Block<'a>,
 	should_import_prelude: bool,
 ) {
 	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, &path, None, true);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_length, &path, None, true);
 	}
 
 	for statement in block.statements {
@@ -1107,7 +1110,7 @@ fn resolve_block_non_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names);
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_scope_count, path, names, false);
+		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_length, path, names, false);
 	}
 }
 
@@ -1115,7 +1118,7 @@ fn resolve_import_for_block_non_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	path: &PathSegments<'a>,
 	names: Option<&[Node<&'a str>]>,
 	is_prelude: bool,
@@ -1125,32 +1128,32 @@ fn resolve_import_for_block_non_types<'a>(
 	};
 
 	let layer_guard = layer.read();
-	if layer_guard.symbols.scopes.is_empty() {
+	if layer_guard.symbols.symbols.is_empty() {
 		let error = error!("Module does not contain importable symbols");
 		messages.message(error.span(path.segments.last().unwrap().span));
 		return;
 	}
-	let importable_types_index = layer_guard.importable_types_index;
-	let importable_functions_index = layer_guard.importable_functions_index;
-	let importable_consts_index = layer_guard.importable_consts_index;
-	let importable_statics_index = layer_guard.importable_statics_index;
+	let importable_types_range = layer_guard.importable_types_range.clone();
+	let importable_functions_range = layer_guard.importable_functions_range.clone();
+	let importable_consts_range = layer_guard.importable_consts_range.clone();
+	let importable_statics_range = layer_guard.importable_statics_range.clone();
 	let source_symbols = layer_guard.symbols.clone();
 	drop(layer_guard);
 
 	if let Some(names) = names {
-		let importable_types = &source_symbols.scopes[importable_types_index];
-		let importable_functions = &source_symbols.scopes[importable_functions_index];
-		let importable_consts = &source_symbols.scopes[importable_consts_index];
-		let importable_statics = &source_symbols.scopes[importable_statics_index];
+		let importable_types = &source_symbols.symbols[importable_types_range];
+		let importable_functions = &source_symbols.symbols[importable_functions_range];
+		let importable_consts = &source_symbols.symbols[importable_consts_range];
+		let importable_statics = &source_symbols.symbols[importable_statics_range];
 
 		for name in names {
-			if let Some(&importing) = importable_functions.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
-			} else if let Some(&importing) = importable_consts.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
-			} else if let Some(&importing) = importable_statics.get(name.item) {
-				symbols.push_imported_symbol(messages, function_initial_scope_count, importing, Some(name.span), is_prelude);
-			} else if importable_types.get(name.item).is_some() {
+			if let Some(&importing) = importable_functions.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
+			} else if let Some(&importing) = importable_consts.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
+			} else if let Some(&importing) = importable_statics.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
+			} else if importable_types.iter().find(|i| i.name == name.item).is_some() {
 			} else {
 				let error = error!("Cannot find symbol `{}` to import", name.item);
 				messages.message(error.span(name.span));
@@ -1159,16 +1162,16 @@ fn resolve_import_for_block_non_types<'a>(
 	} else {
 		// TODO: Add asterisk syntax for importing all items in a scope
 
-		for &importing in source_symbols.scopes[importable_functions_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
+		for &importing in &source_symbols.symbols[importable_functions_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
 		}
 
-		for &importing in source_symbols.scopes[importable_consts_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
+		for &importing in &source_symbols.symbols[importable_consts_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
 		}
 
-		for &importing in source_symbols.scopes[importable_statics_index].values() {
-			symbols.push_imported_symbol(messages, function_initial_scope_count, importing, None, is_prelude);
+		for &importing in &source_symbols.symbols[importable_statics_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
 		}
 	}
 }
@@ -1180,7 +1183,7 @@ fn create_block_types<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
 	scope_id: ScopeId,
@@ -1224,7 +1227,7 @@ fn create_block_types<'a>(
 				type_store,
 				function_store,
 				symbols,
-				function_initial_scope_count,
+				function_initial_symbols_length,
 				enclosing_generic_parameters,
 				scope_id,
 				statement,
@@ -1237,7 +1240,7 @@ fn create_block_types<'a>(
 				type_store,
 				function_store,
 				symbols,
-				function_initial_scope_count,
+				function_initial_symbols_length,
 				enclosing_generic_parameters,
 				scope_id,
 				statement,
@@ -1252,7 +1255,7 @@ fn create_block_types<'a>(
 					type_store,
 					function_store,
 					symbols,
-					function_initial_scope_count,
+					function_initial_symbols_length,
 					enclosing_generic_parameters,
 					&body.item,
 					scope_id,
@@ -1270,7 +1273,7 @@ fn create_block_struct<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
 	statement: &tree::Struct<'a>,
@@ -1324,7 +1327,7 @@ fn create_block_struct<'a>(
 
 	let kind = SymbolKind::Type { shape_index };
 	let symbol = Symbol { name, kind, span: Some(span), used: true };
-	symbols.push_symbol(messages, function_initial_scope_count, symbol);
+	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	shape_index
 }
 
@@ -1334,7 +1337,7 @@ fn create_block_enum<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
 	statement: &tree::Enum<'a>,
@@ -1440,7 +1443,7 @@ fn create_block_enum<'a>(
 
 	let kind = SymbolKind::Type { shape_index };
 	let symbol = Symbol { name, kind, span: Some(span), used: true };
-	symbols.push_symbol(messages, function_initial_scope_count, symbol);
+	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	shape_index
 }
 
@@ -1453,7 +1456,7 @@ fn fill_block_types<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	block: &tree::Block<'a>,
 	shape_index_iter: &mut std::slice::Iter<usize>,
 ) {
@@ -1468,7 +1471,7 @@ fn fill_block_types<'a>(
 					root_layers,
 					symbols,
 					module_path,
-					function_initial_scope_count,
+					function_initial_symbols_length,
 					statement,
 					*shape_index_iter.next().unwrap(),
 				);
@@ -1483,7 +1486,7 @@ fn fill_block_types<'a>(
 					root_layers,
 					symbols,
 					module_path,
-					function_initial_scope_count,
+					function_initial_symbols_length,
 					statement,
 					*shape_index_iter.next().unwrap(),
 				);
@@ -1500,7 +1503,7 @@ fn fill_block_types<'a>(
 						root_layers,
 						symbols,
 						module_path,
-						function_initial_scope_count,
+						function_initial_symbols_length,
 						&body.item,
 						shape_index_iter,
 					);
@@ -1520,7 +1523,7 @@ fn fill_block_struct<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	statement: &tree::Struct<'a>,
 	shape_index: usize,
 ) {
@@ -1544,7 +1547,7 @@ fn fill_block_struct<'a>(
 			span: Some(generic.name.span),
 			used: true,
 		};
-		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	}
 	drop(user_type);
 
@@ -1559,7 +1562,7 @@ fn fill_block_struct<'a>(
 			generic_usages,
 			root_layers,
 			scope.symbols,
-			function_initial_scope_count,
+			function_initial_symbols_length,
 			&blank_generic_parameters,
 			&field.parsed_type,
 		) {
@@ -1618,7 +1621,7 @@ fn fill_block_enum<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	statement: &tree::Enum<'a>,
 	enum_shape_index: usize,
 ) {
@@ -1642,7 +1645,7 @@ fn fill_block_enum<'a>(
 			span: Some(generic.name.span),
 			used: true,
 		};
-		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	}
 	drop(user_type);
 
@@ -1657,7 +1660,7 @@ fn fill_block_enum<'a>(
 			generic_usages,
 			root_layers,
 			scope.symbols,
-			function_initial_scope_count,
+			function_initial_symbols_length,
 			&blank_generic_parameters,
 			&shared_field.parsed_type,
 		) {
@@ -1702,7 +1705,7 @@ fn fill_block_enum<'a>(
 			root_layers,
 			scope.symbols,
 			module_path,
-			function_initial_scope_count,
+			function_initial_symbols_length,
 			&variant_shape,
 			statement,
 		);
@@ -1744,7 +1747,7 @@ fn fill_struct_like_enum_variant<'a>(
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	variant_shape: &EnumVariantShape<'a>,
 	statement: &tree::Enum<'a>,
 ) {
@@ -1761,7 +1764,7 @@ fn fill_struct_like_enum_variant<'a>(
 			span: Some(generic.name.span),
 			used: true,
 		};
-		scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	}
 	drop(struct_shape);
 
@@ -1776,7 +1779,7 @@ fn fill_struct_like_enum_variant<'a>(
 			generic_usages,
 			root_layers,
 			scope.symbols,
-			function_initial_scope_count,
+			function_initial_symbols_length,
 			&blank_generic_parameters,
 			&shared_field.parsed_type,
 		) {
@@ -1808,7 +1811,7 @@ fn fill_struct_like_enum_variant<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_scope_count,
+					function_initial_symbols_length,
 					&blank_generic_parameters,
 					&field.parsed_type,
 				) {
@@ -1842,7 +1845,7 @@ fn fill_struct_like_enum_variant<'a>(
 				generic_usages,
 				root_layers,
 				scope.symbols,
-				function_initial_scope_count,
+				function_initial_symbols_length,
 				&blank_generic_parameters,
 				&transparent.parsed_type,
 			) {
@@ -2133,7 +2136,7 @@ fn create_block_functions<'a>(
 					root_layers,
 					type_store,
 					symbols,
-					symbols.scopes.len(),
+					symbols.symbols.len(),
 					attribute,
 					statement.name.item,
 					statement.name.span,
@@ -2146,7 +2149,7 @@ fn create_block_functions<'a>(
 					.clone() // I am sad
 			});
 
-			let function_initial_scope_count = symbols.scopes.len();
+			let function_initial_symbols_length = symbols.symbols.len();
 			let scope = symbols.child_scope();
 
 			let mut function_store_shapes = function_store.shapes.write();
@@ -2171,7 +2174,7 @@ fn create_block_functions<'a>(
 					span: Some(generic.span),
 					used: true,
 				};
-				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+				scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 			}
 
 			let explicit_generics_len = explicit_generics.len();
@@ -2185,7 +2188,7 @@ fn create_block_functions<'a>(
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let span = Some(parent_parameter.name.span);
 				let symbol = Symbol { name: parent_parameter.name.item, kind, span, used: true };
-				scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+				scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 			}
 
 			let mut base_type_arguments;
@@ -2203,7 +2206,7 @@ fn create_block_functions<'a>(
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(base_type_parameter.name.span);
 					let symbol = Symbol { name: base_type_parameter.name.item, kind, span, used: true };
-					scope.symbols.push_symbol(messages, function_initial_scope_count, symbol);
+					scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 				}
 
 				base_type_arguments.explicit_len = base_shape_generics.explicit_len();
@@ -2224,7 +2227,7 @@ fn create_block_functions<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_scope_count,
+					function_initial_symbols_length,
 					enclosing_generic_parameters,
 					parsed_type,
 				);
@@ -2287,7 +2290,7 @@ fn create_block_functions<'a>(
 					generic_usages,
 					root_layers,
 					scope.symbols,
-					function_initial_scope_count,
+					function_initial_symbols_length,
 					enclosing_generic_parameters,
 					&parameter.item.parsed_type,
 				);
@@ -2385,7 +2388,7 @@ fn create_block_functions<'a>(
 				let kind = SymbolKind::Function { function_shape_index };
 				let span = Some(statement.name.span);
 				let symbol = Symbol { name: name.item, kind, span, used: true };
-				symbols.push_symbol(messages, function_initial_scope_count, symbol);
+				symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 			}
 
 			readables.readables.truncate(original_readables_overall_len);
@@ -2421,7 +2424,7 @@ fn method_base_shape_index<'a>(
 	root_layers: &RootLayers<'a>,
 	type_store: &TypeStore<'a>,
 	symbols: &mut Symbols<'a>,
-	function_initial_scope_count: usize,
+	function_initial_symbols_length: usize,
 	method_attribute: &'a Node<MethodAttribute>,
 	method_name: &'a str,
 	span: Span,
@@ -2430,7 +2433,7 @@ fn method_base_shape_index<'a>(
 		messages,
 		root_layers,
 		type_store,
-		function_initial_scope_count,
+		function_initial_symbols_length,
 		&method_attribute.item.base_type.item,
 	)?;
 
@@ -2507,9 +2510,8 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	let should_import_prelude = is_root && context.cli_arguments.std_enabled;
 	let block = validate_block_in_context(&mut context, block, scope_id, is_root, should_import_prelude);
 	if is_root {
-		for scope in &context.symbols_scope.symbols.scopes {
-			crate::frontend::symbols::report_unused(scope, context.messages);
-		}
+		let scope = &context.symbols_scope.symbols.symbols;
+		crate::frontend::symbols::report_unused(scope, context.messages);
 	} else {
 		context.symbols_scope.report_unused(context.messages);
 	}
@@ -2532,7 +2534,7 @@ fn validate_block_in_context<'a>(
 			context.type_store,
 			context.function_store,
 			context.symbols_scope.symbols,
-			context.function_initial_scope_count,
+			context.function_initial_symbols_length,
 			context.generic_parameters,
 			block,
 			scope_id,
@@ -2547,7 +2549,7 @@ fn validate_block_in_context<'a>(
 			context.root_layers,
 			context.symbols_scope.symbols,
 			context.module_path,
-			context.function_initial_scope_count,
+			context.function_initial_symbols_length,
 			block,
 			should_import_prelude,
 		);
@@ -2561,7 +2563,7 @@ fn validate_block_in_context<'a>(
 			context.root_layers,
 			context.symbols_scope.symbols,
 			context.module_path,
-			context.function_initial_scope_count,
+			context.function_initial_symbols_length,
 			block,
 			&mut context.type_shape_indicies.iter(),
 		);
@@ -2574,7 +2576,7 @@ fn validate_block_in_context<'a>(
 		context.root_layers,
 		context.symbols_scope.symbols,
 		context.module_path,
-		context.function_initial_scope_count,
+		context.function_initial_symbols_length,
 		block,
 		should_import_prelude,
 	);
@@ -2917,9 +2919,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	let return_type = shape.return_type;
 	let generics = shape.generic_parameters.clone();
 
-	let function_initial_scope_count = context.symbols_scope.symbols.scopes.len();
 	let mut scope = context.child_scope_for_function(return_type, &generics);
-	scope.function_initial_scope_count = function_initial_scope_count;
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	for (generic_index, generic) in generics.parameters().iter().enumerate() {
@@ -4872,7 +4872,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				context.symbols_scope.symbols,
 				shape_index,
 				Some(span),
-				context.function_initial_scope_count,
+				context.function_initial_symbols_length,
 				context.generic_parameters,
 				&read.type_arguments,
 			) else {
