@@ -1,0 +1,11 @@
+struct Struct {
+	public: i32
+	publically_readable: bool readable
+	private: f64 internal
+}
+
+method static Struct
+fn new(): Struct {
+	return Struct { public: 3, publically_readable: true, private: 3.14 }
+}
+

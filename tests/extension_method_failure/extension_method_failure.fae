@@ -1,0 +1,12 @@
+import module::Struct
+
+method Struct
+fn print() {
+	println(f"{self.public}, {self.publically_readable}, {self.private}")
+	self.publically_readable = false
+	self.private += 1
+}
+
+fn main() {
+	Struct.new().print()
+}

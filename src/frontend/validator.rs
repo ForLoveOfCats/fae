@@ -71,6 +71,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub return_type: Option<TypeId>,
 	pub generic_parameters: &'c GenericParameters<'a>,
 	pub method_base_index: Option<usize>,
+	pub is_extension_method: bool,
 }
 
 impl<'a, 'b, 'c> Drop for Context<'a, 'b, 'c> {
@@ -140,6 +141,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			return_type: self.return_type,
 			generic_parameters: self.generic_parameters,
 			method_base_index: self.method_base_index,
+			is_extension_method: self.is_extension_method,
 		}
 	}
 
@@ -210,7 +212,8 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 
 			return_type: Some(return_type),
 			generic_parameters,
-			method_base_index: self.method_base_index,
+			method_base_index: None,
+			is_extension_method: false,
 		}
 	}
 
@@ -271,7 +274,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 	}
 
 	pub fn check_is_external_access(&self, shape_index: usize) -> bool {
-		let internal_access = if let Some(method_base_index) = self.method_base_index {
+		let type_allowed_access = if let Some(method_base_index) = self.method_base_index {
 			method_base_index == shape_index || {
 				let lock = self.type_store.user_types.read()[shape_index].clone();
 				let user_type = lock.read();
@@ -295,6 +298,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			false
 		};
 
+		let internal_access = type_allowed_access && !self.is_extension_method;
 		!internal_access
 	}
 
@@ -576,6 +580,7 @@ fn deep_pass<'a>(
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 			method_base_index: None,
+			is_extension_method: false,
 		};
 
 		validate_block(context, &parsed_file.block, true);
@@ -879,6 +884,7 @@ fn validate_root_consts<'a>(
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 			method_base_index: None,
+			is_extension_method: false,
 		};
 
 		validate_block_consts(&mut context, &parsed_file.block);
@@ -982,6 +988,7 @@ fn validate_root_statics<'a>(
 			return_type: None,
 			generic_parameters: &blank_generic_parameters,
 			method_base_index: None,
+			is_extension_method: false,
 		};
 
 		validate_block_statics(&mut context, &parsed_file.block);
@@ -2404,16 +2411,15 @@ fn create_block_functions<'a>(
 			if let Some(method_attribute) = &statement.method_attribute {
 				if let Some(shape_index) = method_base_shape_index {
 					let lock = type_store.user_types.read()[shape_index].clone();
-					let base_scope_id = lock.read().scope_id;
-					if scope_id != base_scope_id {
-						let error = error!("Method must be defined in the same scope as the self type");
-						messages.message(error.span(statement.name.span));
-					} else {
-						let info = MethodInfo { function_shape_index, kind: method_attribute.item.kind };
 
-						let methods = &mut lock.write().methods;
-						assert!(methods.insert(statement.name.item, info).is_none()); // TODO: Detect duplicate methods
-					}
+					let kind = method_attribute.item.kind;
+					// let base_scope_id = guard.scope_id;
+					// let is_extension = scope_id != base_scope_id;
+					let info = MethodInfo { function_shape_index, kind };
+
+					let mut guard = lock.write();
+					let methods = &mut guard.methods;
+					assert!(methods.insert(statement.name.item, info).is_none()); // TODO: Detect duplicate methods
 				}
 			} else {
 				if let Some(lang_attribute) = &statement.lang_attribute {
@@ -2771,7 +2777,7 @@ fn validate_statement<'a>(
 
 		tree::Statement::Enum(..) => {}
 
-		tree::Statement::Function(statement) => validate_function(context, statement),
+		tree::Statement::Function(statement) => validate_function(context, statement, scope_id),
 
 		tree::Statement::Const(..) => {}
 
@@ -2944,7 +2950,7 @@ fn validate_when<'a>(
 	}
 }
 
-fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>) {
+fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>, scope_id: ScopeId) {
 	if statement.extern_attribute.is_some() || statement.intrinsic_attribute.is_some() {
 		// Note: Signature has already been checked in `create_block_functions`
 		return;
@@ -2976,6 +2982,13 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 	let mut maybe_self = 0;
 	if let Some(method_attribute) = &statement.method_attribute {
 		scope.method_base_index = shape.method_base_index;
+
+		if let Some(shape_index) = shape.method_base_index {
+			let lock = scope.type_store.user_types.read()[shape_index].clone();
+			let guard = lock.read();
+			let base_scope_id = guard.scope_id;
+			scope.is_extension_method = scope_id != base_scope_id;
+		}
 
 		let is_method = match method_attribute.item.kind {
 			MethodKind::ImmutableSelf | MethodKind::MutableSelf => true,
