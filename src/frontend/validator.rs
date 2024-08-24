@@ -3294,6 +3294,10 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	} else if type_id.is_untyped_decimal(context.type_store) {
 		context.message(error!("Cannot create binding of untyped decimal").span(statement.span));
 		type_id = context.type_store.any_collapse_type_id();
+	} else if let ExpressionKind::Type(found) = &expression.kind {
+		let found = context.type_name(*found);
+		context.message(error!("Binding expression must be a value, found type {found}").span(statement.span));
+		type_id = context.type_store.any_collapse_type_id();
 	}
 
 	let kind = match statement.item.is_mutable {

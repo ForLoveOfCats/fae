@@ -1,0 +1,5 @@
+import fae::collections::list::List
+
+fn main() {
+	let a = List<i32>
+}

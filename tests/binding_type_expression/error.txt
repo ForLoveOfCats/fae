@@ -1,0 +1,7 @@
+Validation error: ./tests/binding_type_expression/binding_type_expression.fae, line 4: Binding expression must be a value, found type `List<i32>`
+  4|     let a = List<i32>
+         ^^^^^^^^^^^^^^^^^
+
+Validation warning: ./tests/binding_type_expression/binding_type_expression.fae, line 4: Unused symbol `a`
+  4|     let a = List<i32>
+             ^
