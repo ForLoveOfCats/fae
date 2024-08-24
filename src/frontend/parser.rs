@@ -2139,8 +2139,12 @@ fn consume_error_syntax(messages: &mut Messages, tokens: &mut Tokens) {
 	let mut parens = 0;
 	let mut braces = 0;
 
+	let mut span = None;
+
 	while let Ok(token) = tokens.peek() {
+		span = Some(token.span);
 		let all_zero = brackets == 0 && parens == 0 && braces == 0;
+
 		match token.kind {
 			TokenKind::Newline if all_zero => break,
 
@@ -2161,12 +2165,12 @@ fn consume_error_syntax(messages: &mut Messages, tokens: &mut Tokens) {
 
 	//Reached end of file while unbalanced
 	if brackets != 0 {
-		messages.message(error!("Unbalanced brackets"));
+		messages.message(error!("Unbalanced brackets").span_if_some(span));
 	}
 	if parens != 0 {
-		messages.message(error!("Unbalanced parentheses"));
+		messages.message(error!("Unbalanced parentheses").span_if_some(span));
 	}
 	if braces != 0 {
-		messages.message(error!("Unbalanced braces"));
+		messages.message(error!("Unbalanced braces").span_if_some(span));
 	}
 }
