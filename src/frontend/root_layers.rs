@@ -28,31 +28,7 @@ impl<'a> RootLayers<'a> {
 		messages: Option<&mut Messages>,
 		segments: &[Node<&'a str>],
 	) -> Option<Ref<RwLock<RootLayer<'a>>>> {
-		assert!(!segments.is_empty());
-		let mut next = self.root.clone();
-
-		for (piece_index, piece) in segments.iter().enumerate() {
-			let guard = next.read();
-			let layer = match guard.children.get(piece.item) {
-				Some(layer) => layer.clone(),
-
-				None => {
-					if let Some(messages) = messages {
-						messages.message(error!("Cannot find module for path segment").span(piece.span));
-					}
-					return None;
-				}
-			};
-
-			if piece_index + 1 == segments.len() {
-				return Some(layer);
-			}
-
-			drop(guard);
-			next = layer;
-		}
-
-		unreachable!()
+		layer_for_module_path_under_root(messages, self.root.clone(), segments)
 	}
 
 	pub fn create_module_path(&self, path: &'a [String]) -> Ref<RwLock<RootLayer<'a>>> {
@@ -130,7 +106,7 @@ impl<'a> RootLayer<'a> {
 		}
 	}
 
-	fn lookup_root_symbol(&mut self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<Symbol<'a>> {
+	pub fn lookup_root_symbol(&mut self, messages: &mut Messages, segments: &[Node<&'a str>]) -> Option<Symbol<'a>> {
 		assert_eq!(segments.len(), 1);
 
 		let segment = &segments[0];
@@ -143,6 +119,38 @@ impl<'a> RootLayer<'a> {
 			messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
 		}
 
-		found.copied()
+		found.cloned()
 	}
+}
+
+pub fn layer_for_module_path_under_root<'a>(
+	messages: Option<&mut Messages>,
+	root: Ref<RwLock<RootLayer<'a>>>,
+	segments: &[Node<&'a str>],
+) -> Option<Ref<RwLock<RootLayer<'a>>>> {
+	assert!(!segments.is_empty());
+	let mut next = root;
+
+	for (piece_index, piece) in segments.iter().enumerate() {
+		let guard = next.read();
+		let layer = match guard.children.get(piece.item) {
+			Some(layer) => layer.clone(),
+
+			None => {
+				if let Some(messages) = messages {
+					messages.message(error!("Cannot find module for path segment").span(piece.span));
+				}
+				return None;
+			}
+		};
+
+		if piece_index + 1 == segments.len() {
+			return Some(layer);
+		}
+
+		drop(guard);
+		next = layer;
+	}
+
+	unreachable!()
 }

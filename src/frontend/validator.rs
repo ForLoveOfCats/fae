@@ -1075,13 +1075,19 @@ fn resolve_import_for_block_types<'a>(
 	if let Some(names) = names {
 		let importable_types = &source_symbols.symbols[importable_types_range];
 		for name in names {
-			if let Some(&importing) = importable_types.iter().find(|i| i.name == name.item) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
+			if let Some(importing) = importable_types.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(
+					messages,
+					function_initial_symbols_length,
+					importing.clone(),
+					Some(name.span),
+					is_prelude,
+				);
 			}
 		}
 	} else {
-		for &importing in &source_symbols.symbols[importable_types_range] {
-			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
+		for importing in &source_symbols.symbols[importable_types_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing.clone(), None, is_prelude);
 		}
 	}
 }
@@ -1129,16 +1135,33 @@ fn resolve_import_for_block_non_types<'a>(
 
 	let layer_guard = layer.read();
 	if layer_guard.symbols.symbols.is_empty() {
-		let error = error!("Module does not contain importable symbols");
-		messages.message(error.span(path.segments.last().unwrap().span));
+		let Some(names) = names else {
+			let error = error!("Module does not contain importable symbols");
+			messages.message(error.span(path.segments.last().unwrap().span));
+			return;
+		};
+
+		for name in names {
+			if let Some(layer) = layer_guard.children.get(name.item) {
+				let span = Some(name.span);
+				let name = name.item;
+				let kind = SymbolKind::Module { layer: layer.clone() };
+				let importing = Symbol { name, kind, span, used: false };
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
+			} else {
+				let error = error!("No importable module `{}`", name.item);
+				messages.message(error.span(name.span));
+			}
+		}
+
 		return;
 	}
+
 	let importable_types_range = layer_guard.importable_types_range.clone();
 	let importable_functions_range = layer_guard.importable_functions_range.clone();
 	let importable_consts_range = layer_guard.importable_consts_range.clone();
 	let importable_statics_range = layer_guard.importable_statics_range.clone();
 	let source_symbols = layer_guard.symbols.clone();
-	drop(layer_guard);
 
 	if let Some(names) = names {
 		let importable_types = &source_symbols.symbols[importable_types_range];
@@ -1147,13 +1170,37 @@ fn resolve_import_for_block_non_types<'a>(
 		let importable_statics = &source_symbols.symbols[importable_statics_range];
 
 		for name in names {
-			if let Some(&importing) = importable_functions.iter().find(|i| i.name == name.item) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
-			} else if let Some(&importing) = importable_consts.iter().find(|i| i.name == name.item) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
-			} else if let Some(&importing) = importable_statics.iter().find(|i| i.name == name.item) {
-				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, Some(name.span), is_prelude);
+			if let Some(importing) = importable_functions.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(
+					messages,
+					function_initial_symbols_length,
+					importing.clone(),
+					Some(name.span),
+					is_prelude,
+				);
+			} else if let Some(importing) = importable_consts.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(
+					messages,
+					function_initial_symbols_length,
+					importing.clone(),
+					Some(name.span),
+					is_prelude,
+				);
+			} else if let Some(importing) = importable_statics.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(
+					messages,
+					function_initial_symbols_length,
+					importing.clone(),
+					Some(name.span),
+					is_prelude,
+				);
 			} else if importable_types.iter().find(|i| i.name == name.item).is_some() {
+			} else if let Some(layer) = layer_guard.children.get(name.item) {
+				let span = Some(name.span);
+				let name = name.item;
+				let kind = SymbolKind::Module { layer: layer.clone() };
+				let importing = Symbol { name, kind, span, used: false };
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
 			} else {
 				let error = error!("Cannot find symbol `{}` to import", name.item);
 				messages.message(error.span(name.span));
@@ -1162,16 +1209,16 @@ fn resolve_import_for_block_non_types<'a>(
 	} else {
 		// TODO: Add asterisk syntax for importing all items in a scope
 
-		for &importing in &source_symbols.symbols[importable_functions_range] {
-			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
+		for importing in &source_symbols.symbols[importable_functions_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing.clone(), None, is_prelude);
 		}
 
-		for &importing in &source_symbols.symbols[importable_consts_range] {
-			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
+		for importing in &source_symbols.symbols[importable_consts_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing.clone(), None, is_prelude);
 		}
 
-		for &importing in &source_symbols.symbols[importable_statics_range] {
-			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, None, is_prelude);
+		for importing in &source_symbols.symbols[importable_statics_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing.clone(), None, is_prelude);
 		}
 	}
 }
@@ -2054,30 +2101,23 @@ fn fill_pre_existing_enum_specializations<'a>(
 	}
 	drop(user_type);
 
-	let mut type_ids = Vec::new();
 	let user_type = lock.read();
 	match &user_type.kind {
 		UserTypeKind::Enum { shape } => {
-			type_ids.reserve(shape.specializations.len());
+			let type_ids: Vec<_> = shape.specializations.iter().map(|s| s.type_id).collect();
+			drop(user_type);
 
-			for specialization in &shape.specializations {
-				let type_id = specialization.type_id;
+			for &type_id in &type_ids {
 				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
 				} else {
-					type_ids.push(type_id);
+					type_store.calculate_layout(type_id);
 				}
 			}
 		}
 
 		kind => unreachable!("{kind:?}"),
-	}
-
-	drop(user_type);
-
-	for type_id in type_ids {
-		type_store.calculate_layout(type_id);
 	}
 }
 
@@ -4998,16 +5038,16 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 
 			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
-					let external_access = context.check_is_external_access(shape_index);
 					let fields = shape.specializations[specialization_index].fields.clone();
 					drop(user_type);
+					let external_access = context.check_is_external_access(shape_index);
 					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
 				}
 
 				UserTypeKind::Enum { shape } => {
-					let external_access = context.check_is_external_access(shape_index);
 					let fields = shape.specializations[specialization_index].shared_fields.clone();
 					drop(user_type);
+					let external_access = context.check_is_external_access(shape_index);
 					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
 				}
 			}

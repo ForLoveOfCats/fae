@@ -1,0 +1,8 @@
+import submodule::a
+import submodule::subsubmodule
+
+fn main() {
+	let one = a::function_a()
+	let two = subsubmodule::b::function_b()
+	println(f"{one}, {two}")
+}

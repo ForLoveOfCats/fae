@@ -21,7 +21,6 @@ type Locations = std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<std
 enum AccessKind {
 	Read,
 	Write,
-	Lock,
 }
 
 #[cfg(feature = "duplicate-lock-checking")]

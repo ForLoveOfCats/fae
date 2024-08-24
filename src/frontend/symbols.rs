@@ -3,21 +3,23 @@ use std::collections::hash_map;
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
-use crate::frontend::root_layers::RootLayers;
+use crate::frontend::root_layers::{layer_for_module_path_under_root, RootLayer, RootLayers};
 use crate::frontend::span::Span;
 use crate::frontend::tree::{ExternAttribute, PathSegments};
 use crate::frontend::type_store::{TypeId, TypeStore, UserTypeKind};
+use crate::lock::RwLock;
+use crate::reference::Ref;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Symbol<'a> {
 	pub name: &'a str,
-	pub kind: SymbolKind,
+	pub kind: SymbolKind<'a>,
 	pub span: Option<Span>,
 	pub used: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum SymbolKind {
+#[derive(Debug, Clone)]
+pub enum SymbolKind<'a> {
 	BuiltinType { type_id: TypeId },
 	Type { shape_index: usize },
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
@@ -27,9 +29,10 @@ pub enum SymbolKind {
 	Static { static_index: usize },
 	Let { readable_index: usize },
 	Mut { readable_index: usize },
+	Module { layer: Ref<RwLock<RootLayer<'a>>> },
 }
 
-impl std::fmt::Display for SymbolKind {
+impl<'a> std::fmt::Display for SymbolKind<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let name = match self {
 			SymbolKind::BuiltinType { .. } => "a built in type",
@@ -41,6 +44,7 @@ impl std::fmt::Display for SymbolKind {
 			SymbolKind::Static { .. } => "a static",
 			SymbolKind::Let { .. } => "an immutable binding",
 			SymbolKind::Mut { .. } => "a mutable binding",
+			SymbolKind::Module { .. } => "an imported module",
 		};
 
 		f.write_str(name)
@@ -137,13 +141,14 @@ impl<'a> Symbols<'a> {
 					| SymbolKind::Type { .. }
 					| SymbolKind::Const { .. }
 					| SymbolKind::Static { .. }
-					| SymbolKind::BuiltinType { .. } => {}
+					| SymbolKind::BuiltinType { .. }
+					| SymbolKind::Module { .. } => {}
 
 					_ => break,
 				}
 			}
 
-			return Some(*symbol);
+			return Some(symbol.clone());
 		}
 
 		None
@@ -160,8 +165,8 @@ impl<'a> Symbols<'a> {
 		if let [segment] = path.segments {
 			let name = segment.item;
 			let primatives = &type_store.primative_type_symbols;
-			if let Some(&found) = primatives.iter().find(|symbol| symbol.name == name) {
-				return Some(found);
+			if let Some(found) = primatives.iter().find(|symbol| symbol.name == name) {
+				return Some(found.clone());
 			}
 		}
 
@@ -183,7 +188,15 @@ impl<'a> Symbols<'a> {
 			}
 			let second = path.segments[1];
 
-			if let SymbolKind::Type { shape_index } = found.kind {
+			if let SymbolKind::Module { mut layer } = found.kind {
+				let segments = &path.segments[1..];
+				if segments.len() > 1 {
+					layer = layer_for_module_path_under_root(Some(messages), layer, &segments[..segments.len() - 1])?;
+				}
+
+				let mut lock = layer.write();
+				return lock.lookup_root_symbol(messages, &[*segments.last().unwrap()]);
+			} else if let SymbolKind::Type { shape_index } = found.kind {
 				let lock = type_store.user_types.read()[shape_index].clone();
 				let guard = lock.read();
 				let shape = match &guard.kind {

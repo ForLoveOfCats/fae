@@ -1,0 +1,3 @@
+fn function_b(): i32 {
+	return 55
+}
