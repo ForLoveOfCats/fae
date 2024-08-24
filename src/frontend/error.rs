@@ -366,7 +366,7 @@ impl Message {
 			(&source[line_start..line_end], span.start - line_start, span.end - line_start)
 		};
 
-		let line_num = span.get_line_num(source);
+		let line_num = span.line_index + 1;
 		let column_start = calc_spaces_from_byte_offset(line, start);
 
 		if let Some(kind) = kind {

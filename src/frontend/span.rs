@@ -40,18 +40,6 @@ impl Span {
 		}
 	}
 
-	pub fn get_line_num(self, source: &str) -> usize {
-		let mut current_line_num = 1;
-
-		for &byte in &source.as_bytes()[..self.start] {
-			if byte == b'\n' {
-				current_line_num += 1;
-			}
-		}
-
-		current_line_num
-	}
-
 	pub fn debug_location(self, parsed_files: &[tree::File]) -> DebugLocation {
 		let file = &parsed_files[self.file_index as usize];
 		let line_start = file.line_starts[self.line_index as usize];
