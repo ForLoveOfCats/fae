@@ -171,7 +171,7 @@ pub fn generate_code<'a>(
 		LLVMTargetMachineEmitToFile(
 			machine,
 			generator.module,
-			object_path.into_raw(), // Why does this need mutable access???
+			object_path.as_ptr(),
 			LLVMCodeGenFileType::LLVMObjectFile,
 			error_string.as_mut_ptr(),
 		);

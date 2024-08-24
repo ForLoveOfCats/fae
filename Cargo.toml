@@ -22,7 +22,7 @@ tracy-profile-zones = ["tracy-profile"]
 debug = true
 
 [dependencies]
-rustc-hash = "1.1.0"
+rustc-hash = "2.0.0"
 parking_lot_upstream = { version = "0.12.3", package = "parking_lot", optional = true }
 parking_lot_contention = { git = "https://github.com/ForLoveOfCats/parking_lot.git", branch = "contention-statistics", package = "parking_lot", optional = true }
 bumpalo = { version = "3.16.0", features = ["collections"] }
@@ -34,4 +34,4 @@ serde = { version = "1.0.145", features = ["derive"] }
 tracy-client = { version = "0.17.0", features = ["manual-lifetime"], optional = true }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.5.4"
+tikv-jemallocator = "0.6.0"
