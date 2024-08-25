@@ -1911,7 +1911,7 @@ fn fill_struct_like_enum_variant<'a>(
 				name: transparent.name.item,
 				field_type,
 				attribute: None,
-				read_only: false, // TODO: Let the user control this
+				read_only: false,
 			};
 			let span = transparent.parsed_type.span;
 			let node = Node::new(field_shape, span);
@@ -2410,13 +2410,10 @@ fn create_block_functions<'a>(
 
 			if let Some(method_attribute) = &statement.method_attribute {
 				if let Some(shape_index) = method_base_shape_index {
-					let lock = type_store.user_types.read()[shape_index].clone();
-
 					let kind = method_attribute.item.kind;
-					// let base_scope_id = guard.scope_id;
-					// let is_extension = scope_id != base_scope_id;
 					let info = MethodInfo { function_shape_index, kind };
 
+					let lock = type_store.user_types.read()[shape_index].clone();
 					let mut guard = lock.write();
 					let methods = &mut guard.methods;
 					assert!(methods.insert(statement.name.item, info).is_none()); // TODO: Detect duplicate methods
