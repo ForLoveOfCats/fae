@@ -143,12 +143,14 @@ pub fn generate_code<'a>(
 	}
 
 	_ = std::fs::create_dir("./fae_target");
-	unsafe {
-		let path = c"./fae_target/fae.ll".as_ptr();
-		let mut error_string = MaybeUninit::uninit();
-		if LLVMPrintModuleToFile(generator.module, path, error_string.as_mut_ptr()) == 1 {
-			let error = CStr::from_ptr(error_string.assume_init());
-			panic!("{error:?}");
+	if cli_arguments.dump_llvm_ir {
+		unsafe {
+			let path = c"./fae_target/fae.ll".as_ptr();
+			let mut error_string = MaybeUninit::uninit();
+			if LLVMPrintModuleToFile(generator.module, path, error_string.as_mut_ptr()) == 1 {
+				let error = CStr::from_ptr(error_string.assume_init());
+				panic!("{error:?}");
+			}
 		}
 	}
 

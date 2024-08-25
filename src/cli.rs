@@ -13,6 +13,7 @@ pub struct CliArguments {
 	pub codegen_backend: CodegenBackend,
 	pub parallel_validator: bool,
 	pub verify_llvm_module: bool,
+	pub dump_llvm_ir: bool,
 	pub optimize_artifacts: bool,
 	pub debug_generics: bool,
 	pub debug_type_ids: bool,
@@ -56,6 +57,7 @@ pub fn parse_arguments() -> CliArguments {
 		codegen_backend: CodegenBackend::LLVM,
 		parallel_validator: false,
 		verify_llvm_module: true,
+		dump_llvm_ir: false,
 		optimize_artifacts: false,
 		debug_generics: false,
 		debug_type_ids: false,
@@ -158,6 +160,7 @@ fn parse_tack_option(
 			eprintln!("  --debug-type-ids: Print types as their internal type id index value");
 			eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
 			eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
+			eprintln!("  --dump-llvm-ir: Dump LLVM IR to a file");
 			std::process::exit(0);
 		}
 
@@ -176,6 +179,8 @@ fn parse_tack_option(
 		Some("--disable-std") => cli_arguments.std_enabled = false,
 
 		Some("--disable-llvm-verification") => cli_arguments.verify_llvm_module = false,
+
+		Some("--dump-llvm-ir") => cli_arguments.dump_llvm_ir = true,
 
 		Some("--") => parse_child_arguments(cli_arguments, iterator),
 
