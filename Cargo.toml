@@ -21,6 +21,10 @@ tracy-profile-zones = ["tracy-profile"]
 [profile.release]
 debug = true
 
+[profile.bundled]
+inherits = "release"
+debug = false
+
 [dependencies]
 rustc-hash = "2.0.0"
 parking_lot_upstream = { version = "0.12.3", package = "parking_lot", optional = true }

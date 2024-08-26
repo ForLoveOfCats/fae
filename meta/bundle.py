@@ -29,8 +29,8 @@ def linux_main():
 	subprocess.run([
 			"cargo",
 			"build",
+			"--profile=bundled",
 			"--features=bundled",
-			"--release",
 			"--target",
 			"x86_64-unknown-linux-musl",
 		],
@@ -45,7 +45,7 @@ def linux_main():
 	except: pass
 	os.makedirs("./target/bundle/fae", exist_ok=True)
 
-	shutil.copy("./target/x86_64-unknown-linux-musl/release/fae", "./target/bundle/fae/fae")
+	shutil.copy("./target/x86_64-unknown-linux-musl/bundled/fae", "./target/bundle/fae/fae")
 	shutil.copytree("./lib", "./target/bundle/fae/lib")
 
 	print("Archiving bundle")
@@ -62,8 +62,8 @@ def macos_main(args):
 	subprocess.run([
 		"cargo",
 		"build",
+		"--profile=bundled",
 		"--features=bundled",
-		"--release",
 	])
 
 	print()
@@ -74,7 +74,7 @@ def macos_main(args):
 	except: pass
 	os.makedirs("./target/bundle/fae", exist_ok=True)
 
-	shutil.copy("./target/release/fae", "./target/bundle/fae/fae")
+	shutil.copy("./target/bundled/fae", "./target/bundle/fae/fae")
 	shutil.copytree("./lib", "./target/bundle/fae/lib")
 
 	if args.identity_uuid is not None:
