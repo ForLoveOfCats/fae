@@ -1,4 +1,5 @@
 .DS_Store
+.vscode
 /target
 **/fae_target
 /llvm
