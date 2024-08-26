@@ -181,7 +181,7 @@ fn parse_tack_option(
 
 		Some("--") => parse_child_arguments(cli_arguments, iterator),
 
-		arg => {
+		_ => {
 			eprintln!("Unknown cli option {arg:?}");
 			*any_errors = true;
 		}
