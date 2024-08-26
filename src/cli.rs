@@ -88,12 +88,6 @@ fn parse_command(
 	arg: &OsStr,
 	iterator: &mut impl Iterator<Item = OsString>,
 ) -> bool {
-	#[cfg(feature = "bundled")]
-	{
-		_ = any_errors;
-		_ = iterator;
-	}
-
 	let Some(arg) = arg.to_str() else {
 		return false;
 	};
@@ -119,7 +113,6 @@ fn parse_command(
 			true
 		}
 
-		#[cfg(not(feature = "bundled"))]
 		"ct" => {
 			cli_arguments.command = CompileCommand::CompilerTest;
 			parse_test_names(cli_arguments, any_errors, iterator);
@@ -154,13 +147,17 @@ fn parse_tack_option(
 			eprintln!("  --help: Print this help message");
 			eprintln!("  --quiet: Silence compilation progress messages");
 			eprintln!("  --release: Build artifacts with optimizations enabled");
-			eprintln!("  --parallel-validator: Enable experimential parallelized validator");
-			eprintln!("  --disable-message-color: Avoid printing messages with color highlights");
-			eprintln!("  --debug-generics: Include useful debug information when printing types");
-			eprintln!("  --debug-type-ids: Print types as their internal type id index value");
-			eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
 			eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
 			eprintln!("  --dump-llvm-ir: Dump LLVM IR to a file");
+			if !cfg!(feature = "bundled") {
+				eprintln!();
+				eprintln!("Compiler Debugging Options:");
+				eprintln!("  --parallel-validator: Enable experimential parallelized validator");
+				eprintln!("  --disable-message-color: Avoid printing messages with color highlights");
+				eprintln!("  --debug-generics: Include useful debug information when printing types");
+				eprintln!("  --debug-type-ids: Print types as their internal type id index value");
+				eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
+			}
 			std::process::exit(0);
 		}
 
@@ -191,7 +188,6 @@ fn parse_tack_option(
 	}
 }
 
-#[cfg(not(feature = "bundled"))]
 fn parse_test_names(cli_arguments: &mut CliArguments, any_errors: &mut bool, iterator: &mut impl Iterator<Item = OsString>) {
 	while let Some(arg) = iterator.next() {
 		if arg.to_str().map(|a| a.starts_with('-')).unwrap_or(false) {
