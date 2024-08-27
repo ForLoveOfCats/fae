@@ -1,0 +1,5 @@
+const A = unknown
+
+fn main() {
+	let _ = A
+}

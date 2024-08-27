@@ -566,6 +566,7 @@ impl<'a> ExpressionKind<'a> {
 
 #[derive(Debug, Clone)]
 pub enum ConstantValue<'a> {
+	AnyCollapse,
 	NumberValue(Decimal),
 	CodepointLiteral(char),
 	StringLiteral(Cow<'a, str>),

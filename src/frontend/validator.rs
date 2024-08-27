@@ -3222,6 +3222,8 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 		ExpressionKind::StringLiteral(literal) => ConstantValue::StringLiteral(literal.value.clone()),
 		ExpressionKind::CodepointLiteral(literal) => ConstantValue::CodepointLiteral(literal.value),
 
+		ExpressionKind::AnyCollapse => ConstantValue::AnyCollapse,
+
 		kind => {
 			let name = kind.name();
 			context.message(error!("Cannot have a runtime {name} as a const expression").span(expression.span));
@@ -4833,6 +4835,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 					let kind = ExpressionKind::StringLiteral(StringLiteral { value: value.clone() });
 					(kind, context.type_store.string_type_id())
 				}
+
+				ConstantValue::AnyCollapse => return Expression::any_collapse(context.type_store, span),
 			};
 
 			return Expression {
