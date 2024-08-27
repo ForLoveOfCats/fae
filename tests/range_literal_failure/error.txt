@@ -1,8 +1,8 @@
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 2: Cannot create a range with a left value of type `untyped decimal`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 2: Constant number 1.1 is a decimal and so cannot be represented as `isize`
   2|     print_range(1.1..4)
                      ^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 3: Cannot create a range with a right value of type `untyped decimal`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 3: Constant number 100.8 is a decimal and so cannot be represented as `isize`
   3|     print_range(3..100.8)
                         ^^^^^
 

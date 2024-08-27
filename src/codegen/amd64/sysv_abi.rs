@@ -76,11 +76,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 				return &mut buffer[..2];
 			}
 
-			PrimativeKind::AnyCollapse
-			| PrimativeKind::NoReturn
-			| PrimativeKind::Void
-			| PrimativeKind::UntypedInteger
-			| PrimativeKind::UntypedDecimal => {
+			PrimativeKind::AnyCollapse | PrimativeKind::NoReturn | PrimativeKind::Void | PrimativeKind::UntypedNumber => {
 				unreachable!("{:?}", entry.kind);
 			}
 		},

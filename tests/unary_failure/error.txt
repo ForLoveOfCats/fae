@@ -1,4 +1,4 @@
-Validation error: ./tests/unary_failure/unary_failure.fae, line 2: Cannot invert `untyped integer` as it is not a boolean
+Validation error: ./tests/unary_failure/unary_failure.fae, line 2: Cannot invert `untyped number` as it is not a boolean
   2|     let _ = 5.!
                  ^^^
 

@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::vec as bump_vec;
 use bumpalo::Bump;
+use rust_decimal::Decimal;
 
 use crate::frontend::error::{Messages, ParseResult};
 use crate::frontend::file::SourceFile;
@@ -1302,35 +1303,15 @@ fn parse_struct_initializer<'a>(
 
 fn parse_number<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Expression<'a>>> {
 	let number_token = tokens.expect(messages, TokenKind::Number)?;
-	let has_period = number_token.text.as_bytes().contains(&b'.');
 	let span = number_token.span;
 
-	let expression = if has_period {
-		let value = match number_token.text.parse::<f64>() {
-			Ok(value) => value,
-
-			Err(_) => {
-				messages.message(error!("Invalid float literal").span(span));
-				return Err(());
-			}
-		};
-
-		let literal = FloatLiteral { value: Node::new(value, span) };
-		Expression::FloatLiteral(literal)
-	} else {
-		let value = match number_token.text.parse::<i128>() {
-			Ok(value) => value,
-
-			Err(_) => {
-				messages.message(error!("Invalid integer literal").span(span));
-				return Err(());
-			}
-		};
-
-		let literal = IntegerLiteral { value: Node::new(value, span) };
-		Expression::IntegerLiteral(literal)
+	let Ok(value) = Decimal::from_str_exact(number_token.text) else {
+		messages.message(error!("Invalid number literal").span(span));
+		return Err(());
 	};
 
+	let literal = NumberLiteral { value: Node::new(value, span) };
+	let expression = Expression::NumberLiteral(literal);
 	Ok(Node::new(expression, span))
 }
 

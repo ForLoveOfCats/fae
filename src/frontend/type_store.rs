@@ -1,10 +1,12 @@
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
-	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId,
-	SliceMutableToImmutable, StringToFormatString, TypeArguments,
+	EnumVariantToEnum, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId, SliceMutableToImmutable,
+	StringToFormatString, TypeArguments,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
@@ -36,22 +38,23 @@ impl TypeId {
 		type_store.direct_match(self, type_store.void_type_id)
 	}
 
-	pub fn is_untyped_integer(self, type_store: &TypeStore) -> bool {
-		type_store.direct_match(self, type_store.integer_type_id)
-	}
-
-	pub fn is_untyped_decimal(self, type_store: &TypeStore) -> bool {
-		type_store.direct_match(self, type_store.decimal_type_id)
+	pub fn is_untyped_number(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.number_type_id)
 	}
 
 	pub fn is_numeric(self, type_store: &TypeStore) -> bool {
-		let range = type_store.integer_type_id.entry..=type_store.f64_type_id.entry;
+		let range = type_store.number_type_id.entry..=type_store.f64_type_id.entry;
 		range.contains(&self.entry) || self.is_any_collapse(type_store)
 	}
 
-	pub fn is_integer(self, type_store: &TypeStore) -> bool {
+	pub fn is_integer(self, type_store: &TypeStore, expression: &Expression) -> bool {
 		let range = type_store.i8_type_id.entry..=type_store.usize_type_id.entry;
-		range.contains(&self.entry) || self.entry == type_store.integer_type_id.entry || self.is_any_collapse(type_store)
+		range.contains(&self.entry)
+			|| self.is_any_collapse(type_store)
+			|| match &expression.kind {
+				ExpressionKind::NumberValue(value) => value.is_integer(),
+				_ => false,
+			}
 	}
 
 	pub fn is_bool(self, type_store: &TypeStore) -> bool {
@@ -128,12 +131,8 @@ impl TypeId {
 
 		let entry = type_store.type_entries.get(self);
 		match entry.kind {
-			TypeEntryKind::BuiltinType {
-				kind: Void | UntypedInteger | UntypedDecimal | Bool | Numeric(_),
-			} => true,
-
+			TypeEntryKind::BuiltinType { kind: Void | UntypedNumber | Bool | Numeric(_) } => true,
 			TypeEntryKind::Pointer { .. } => true,
-
 			_ => false,
 		}
 	}
@@ -401,8 +400,7 @@ pub enum PrimativeKind {
 	NoReturn,
 	Void,
 
-	UntypedInteger,
-	UntypedDecimal,
+	UntypedNumber,
 
 	Bool,
 	Numeric(NumericKind),
@@ -416,8 +414,7 @@ impl PrimativeKind {
 			PrimativeKind::AnyCollapse => "any collapse",
 			PrimativeKind::NoReturn => "noreturn",
 			PrimativeKind::Void => "void",
-			PrimativeKind::UntypedInteger => "untyped integer",
-			PrimativeKind::UntypedDecimal => "untyped decimal",
+			PrimativeKind::UntypedNumber => "untyped number",
 			PrimativeKind::Bool => "bool",
 			PrimativeKind::Numeric(numeric) => numeric.name(),
 			PrimativeKind::String => "str",
@@ -430,8 +427,7 @@ impl PrimativeKind {
 			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 1 },
 			PrimativeKind::NoReturn => Layout { size: 0, alignment: 1 },
 			PrimativeKind::Void => Layout { size: 0, alignment: 1 },
-			PrimativeKind::UntypedInteger => unreachable!(),
-			PrimativeKind::UntypedDecimal => unreachable!(),
+			PrimativeKind::UntypedNumber => unreachable!(),
 			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
 			PrimativeKind::Numeric(numeric) => numeric.layout(),
 			PrimativeKind::String | PrimativeKind::FormatString => Layout { size: 8 * 2, alignment: 8 },
@@ -607,8 +603,7 @@ pub struct TypeStore<'a> {
 	noreturn_type_id: TypeId,
 	void_type_id: TypeId,
 
-	integer_type_id: TypeId,
-	decimal_type_id: TypeId,
+	number_type_id: TypeId,
 
 	i8_type_id: TypeId,
 	i16_type_id: TypeId,
@@ -657,8 +652,7 @@ impl<'a> TypeStore<'a> {
 		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
 
 		// NOTE: These numeric type ids must all be generated together for the `is_numeric` range check
-		let integer_type_id = push_primative(None, PrimativeKind::UntypedInteger);
-		let decimal_type_id = push_primative(None, PrimativeKind::UntypedDecimal);
+		let number_type_id = push_primative(None, PrimativeKind::UntypedNumber);
 
 		let i8_type_id = push_primative(Some("i8"), PrimativeKind::Numeric(NumericKind::I8));
 		let i16_type_id = push_primative(Some("i16"), PrimativeKind::Numeric(NumericKind::I16));
@@ -690,8 +684,7 @@ impl<'a> TypeStore<'a> {
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
-			integer_type_id,
-			decimal_type_id,
+			number_type_id,
 			bool_type_id,
 			i8_type_id,
 			i16_type_id,
@@ -725,12 +718,8 @@ impl<'a> TypeStore<'a> {
 		self.void_type_id
 	}
 
-	pub fn integer_type_id(&self) -> TypeId {
-		self.integer_type_id
-	}
-
-	pub fn decimal_type_id(&self) -> TypeId {
-		self.decimal_type_id
+	pub fn number_type_id(&self) -> TypeId {
+		self.number_type_id
 	}
 
 	pub fn u8_type_id(&self) -> TypeId {
@@ -789,7 +778,6 @@ impl<'a> TypeStore<'a> {
 		}
 
 		// if either are any collapse then collapse to any collapse
-		// if both are untyped numbers then we know they are different, collapse to the decimal
 		// if either type is an untyped number we know the other isn't, collapse to the other type
 		// if either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
@@ -801,24 +789,8 @@ impl<'a> TypeStore<'a> {
 			return Ok(self.any_collapse_type_id);
 		}
 
-		let a_number = a.type_id.entry == self.integer_type_id.entry || a.type_id.entry == self.decimal_type_id.entry;
-		let b_number = b.type_id.entry == self.integer_type_id.entry || b.type_id.entry == self.decimal_type_id.entry;
-
-		if a_number && b_number {
-			let non_decimal = if a.type_id.entry == self.decimal_type_id.entry {
-				b
-			} else if b.type_id.entry == self.decimal_type_id.entry {
-				a
-			} else {
-				unreachable!();
-			};
-
-			let collapsed = self.collapse_to(messages, function_store, self.decimal_type_id, non_decimal)?;
-			return match collapsed {
-				true => Ok(self.decimal_type_id),
-				false => Err(()),
-			};
-		}
+		let a_number = a.type_id.entry == self.number_type_id.entry;
+		let b_number = b.type_id.entry == self.number_type_id.entry;
 
 		if a_number {
 			assert!(!b_number);
@@ -936,8 +908,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		// any collapse -> anything else
-		// untyped integer -> signed of large enough | unsigned of large enough if not negative | float of large enough | decimal if small enough
-		// untyped decimal -> float of large enough
+		// untyped number -> signed of large enough if whole number | unsigned of large enough if not negative whole number | float of large enough
 		// mutable reference -> immutable reference
 		// mutable slice -> immutable slice
 		// str -> fstr
@@ -950,58 +921,32 @@ impl<'a> TypeStore<'a> {
 			return Ok(true);
 		}
 
-		if from.type_id.entry == self.integer_type_id.entry {
-			// From untyped integer
-
-			let to_decimal = to.entry == self.decimal_type_id.entry;
+		if from.type_id.entry == self.number_type_id.entry {
+			// From untyped number
 
 			let (value, span, from_value) = match &mut from.kind {
-				ExpressionKind::IntegerValue(value) => (value.value(), value.span(), value),
-				kind => panic!("Collapsing from_integer with a non-IntegerValue expression: {kind:#?}"),
+				ExpressionKind::NumberValue(value) => (value.value(), value.span(), value),
+				kind => panic!("Collapsing from_number with a non-NumberValue expression: {kind:#?}"),
 			};
 
-			const MAX_F23_INTEGER: i128 = 16_777_215; // 2^24
-			const MAX_F64_INTEGER: i128 = 9_007_199_254_740_991; // 2^53 - 1
-
-			if to_decimal {
-				if value.abs() > MAX_F64_INTEGER {
-					let err = error!("Constant integer {value} is unable to be represented as a constant decimal");
-					messages.message(err.span(span));
-					return Err(());
-				}
-
-				let type_id = self.decimal_type_id;
-				let mutable = from.is_mutable;
-				let yields = from.yields;
-				let returns = from.returns;
-				let kind = ExpressionKind::DecimalValue(DecimalValue::new(value as f64, span));
-				*from = Expression {
-					span: from.span,
-					type_id,
-					is_mutable: mutable,
-					yields,
-					returns,
-					kind,
-					debug_location: from.debug_location,
-				};
-				return Ok(true);
-			}
+			const MAX_F23_INTEGER: Decimal = dec!(16_777_215); // 2^24
+			const MAX_F64_INTEGER: Decimal = dec!(9_007_199_254_740_991); // 2^53 - 1
 
 			let (to_float, max_float_integer) = match to.entry {
 				e if e == self.f32_type_id.entry => (true, MAX_F23_INTEGER),
 				e if e == self.f64_type_id.entry => (true, MAX_F64_INTEGER),
-				_ => (false, 0),
+				_ => (false, Decimal::ZERO),
 			};
 
 			if to_float {
-				if value.abs() > max_float_integer {
+				if value.is_integer() && value.abs() > max_float_integer {
 					let name = self.type_name(function_store, &[], to);
-					let err = error!("Constant integer {value} is unable to be represented as {name}");
+					let err = error!("Constant number {value} is unable to be represented as {name}");
 					messages.message(err.span(span));
 					return Err(());
 				}
 
-				// constant integer -> float of large enough
+				// constant number -> float of large enough
 				from_value.collapse(to);
 				return Ok(true);
 			}
@@ -1024,77 +969,56 @@ impl<'a> TypeStore<'a> {
 			};
 
 			if to_signed {
-				if value.is_negative() {
-					let min_value = -i128::pow(2, bit_count - 1);
+				if !value.is_integer() {
+					let name = self.type_name(function_store, &[], to);
+					let error = error!("Constant number {value} is a decimal and so cannot be represented as {name}");
+					messages.message(error.span(span));
+					return Err(());
+				} else if value.is_sign_negative() {
+					let min_value = Decimal::from(-i128::pow(2, bit_count - 1));
 					if value < min_value {
 						let name = self.type_name(function_store, &[], to);
-						let error = error!("Constant integer {value} is too small to be represented as {name}");
+						let error = error!("Constant number {value} is too small to be represented as {name}");
 						messages.message(error.span(span));
 						return Err(());
 					}
 				} else {
-					let max_value = i128::pow(2, bit_count - 1) - 1;
+					let max_value = Decimal::from(i128::pow(2, bit_count - 1) - 1);
 					if value > max_value {
 						let name = self.type_name(function_store, &[], to);
-						let error = error!("Constant integer {value} is too large to be represented as {name}");
+						let error = error!("Constant number {value} is too large to be represented as {name}");
 						messages.message(error.span(span));
 						return Err(());
 					}
 				}
 
-				// constant integer -> signed of large enough
+				// constant number -> signed of large enough
 				from_value.collapse(to);
 				return Ok(true);
 			}
 
 			if to_unsigned {
-				if value.is_negative() {
+				if !value.is_integer() {
 					let name = self.type_name(function_store, &[], to);
-					let error = error!("Constant integer {value} is negative and so cannot be represented as {name}",);
+					let error = error!("Constant number {value} is a decimal and so cannot be represented as {name}");
+					messages.message(error.span(span));
+					return Err(());
+				} else if value.is_sign_negative() {
+					let name = self.type_name(function_store, &[], to);
+					let error = error!("Constant number {value} is negative and so cannot be represented as {name}",);
 					messages.message(error.span(span));
 					return Err(());
 				}
 
-				let max_value = i128::pow(2, bit_count) - 1;
+				let max_value = Decimal::from(i128::pow(2, bit_count) - 1);
 				if value > max_value {
 					let name = self.type_name(function_store, &[], to);
-					let error = error!("Constant integer {value} is too large to be represented as {name}");
+					let error = error!("Constant number {value} is too large to be represented as {name}");
 					messages.message(error.span(span));
 					return Err(());
 				}
 
-				// constant integer -> unsigned of large enough if not negative
-				from_value.collapse(to);
-				return Ok(true);
-			}
-		}
-
-		if from.type_id.entry == self.decimal_type_id.entry {
-			// From untyped decimal
-
-			let (value, span, from_value) = match &mut from.kind {
-				ExpressionKind::DecimalValue(value) => (value.value(), value.span(), value),
-				kind => panic!("Collapsing from_decimal with a non-DecimalValue expression: {kind:#?}"),
-			};
-
-			let (to_float, bit_count) = match to.entry {
-				e if e == self.f32_type_id.entry => (true, 32),
-				e if e == self.f64_type_id.entry => (true, 64),
-				_ => (false, 0),
-			};
-
-			if to_float {
-				if bit_count == 32 {
-					let cast = value as f32 as f64;
-					if cast != value {
-						let name = self.type_name(function_store, &[], to);
-						let err = error!("Constant decimal {value} cannot be represented as {name} without a loss in precision");
-						messages.message(err.span(span));
-						return Err(());
-					}
-				}
-
-				// constant decimal -> float of large enough
+				// constant number -> unsigned of large enough if not negative
 				from_value.collapse(to);
 				return Ok(true);
 			}

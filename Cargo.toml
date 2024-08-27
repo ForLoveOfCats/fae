@@ -32,6 +32,8 @@ parking_lot_contention = { git = "https://github.com/ForLoveOfCats/parking_lot.g
 bumpalo = { version = "3.16.0", features = ["collections"] }
 bumpalo-herd = "0.1.2"
 llvm-sys = { version = "181.0.0", features = ["no-llvm-linking"] }
+rust_decimal = "1.36.0"
+rust_decimal_macros = "1.36.0"
 unicode-width = "0.1.12"
 toml = "0.8.12"
 serde = { version = "1.0.145", features = ["derive"] }

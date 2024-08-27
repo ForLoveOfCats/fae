@@ -11,5 +11,5 @@ fn main() {
 	let _: i8 = -129 // to small
 
 	let _: f64 = 2.2
-	let _: f32 = 2.2 // loss of precision
+	let _: f32 = 2.2
 }

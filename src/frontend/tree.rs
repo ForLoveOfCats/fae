@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use rust_decimal::Decimal;
+
 use crate::frontend::file::SourceFile;
 use crate::frontend::span::Span;
 use crate::frontend::tokenizer::Token;
@@ -232,13 +234,8 @@ pub struct Binding<'a> {
 }
 
 #[derive(Debug)]
-pub struct IntegerLiteral {
-	pub value: Node<i128>,
-}
-
-#[derive(Debug)]
-pub struct FloatLiteral {
-	pub value: Node<f64>,
+pub struct NumberLiteral {
+	pub value: Node<Decimal>,
 }
 
 #[derive(Debug)]
@@ -679,8 +676,7 @@ pub enum Expression<'a> {
 	IfElseChain(&'a IfElseChain<'a>),
 	Match(&'a Match<'a>),
 
-	IntegerLiteral(IntegerLiteral),
-	FloatLiteral(FloatLiteral),
+	NumberLiteral(NumberLiteral),
 
 	BooleanLiteral(bool),
 	CodepointLiteral(CodepointLiteral),

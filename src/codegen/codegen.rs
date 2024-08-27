@@ -1,14 +1,14 @@
 use llvm_sys::prelude::LLVMBasicBlockRef;
+use rust_decimal::Decimal;
 
 use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
-	DecimalValue, EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral,
-	FunctionId, FunctionShape, IfElseChain, IntegerValue, Match, MethodCall, Read, SliceMutableToImmutable, Statement,
-	StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
-	While,
+	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, FunctionId,
+	FunctionShape, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable, Statement, StatementKind,
+	StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -340,9 +340,7 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 			result
 		}
 
-		ExpressionKind::IntegerValue(value) => generate_integer_value(context, generator, value),
-
-		ExpressionKind::DecimalValue(value) => generate_decimal_value(context, generator, value),
+		ExpressionKind::NumberValue(value) => generate_number_value(context, generator, value),
 
 		&ExpressionKind::BooleanLiteral(literal) => generate_boolean_literal(context, generator, literal),
 
@@ -507,12 +505,8 @@ fn generate_for<'a, 'b, G: Generator>(
 	}
 }
 
-fn generate_integer_value<G: Generator>(context: &Context, generator: &mut G, value: &IntegerValue) -> Option<G::Binding> {
-	Some(generator.generate_integer_value(context.type_store, value.collapsed(), value.value()))
-}
-
-fn generate_decimal_value<G: Generator>(context: &Context, generator: &mut G, value: &DecimalValue) -> Option<G::Binding> {
-	Some(generator.generate_decimal_value(context.type_store, value.collapsed(), value.value()))
+fn generate_number_value<G: Generator>(context: &Context, generator: &mut G, value: &NumberValue) -> Option<G::Binding> {
+	Some(generator.generate_number_value(context.type_store, value.collapsed(), value.value()))
 }
 
 fn generate_boolean_literal<G: Generator>(context: &Context, generator: &mut G, literal: bool) -> Option<G::Binding> {
@@ -525,7 +519,8 @@ fn generate_codepoint_literal<G: Generator>(
 	literal: &CodepointLiteral,
 ) -> Option<G::Binding> {
 	let type_id = context.type_store.u32_type_id();
-	Some(generator.generate_integer_value(context.type_store, type_id, literal.value as i128))
+	let value = Decimal::from(literal.value as u32);
+	Some(generator.generate_number_value(context.type_store, type_id, value))
 }
 
 fn generate_byte_codepoint_literal<G: Generator>(
@@ -534,7 +529,8 @@ fn generate_byte_codepoint_literal<G: Generator>(
 	literal: &ByteCodepointLiteral,
 ) -> Option<G::Binding> {
 	let type_id = context.type_store.u8_type_id();
-	Some(generator.generate_integer_value(context.type_store, type_id, literal.value as i128))
+	let value = Decimal::from(literal.value);
+	Some(generator.generate_number_value(context.type_store, type_id, value))
 }
 
 fn generate_string_literal<G: Generator>(context: &Context, generator: &mut G, literal: &StringLiteral) -> Option<G::Binding> {
@@ -618,7 +614,8 @@ fn generate_array_literal<'a, 'b, G: Generator>(
 	let pointee_layout = context.type_store.type_layout(pointee_type_id);
 	if pointee_layout.size <= 0 || elements.is_empty() {
 		let isize_type_id = context.type_store.isize_type_id();
-		let length = generator.generate_integer_value(context.type_store, isize_type_id, literal.expressions.len() as i128);
+		let length_value = Decimal::from(literal.expressions.len());
+		let length = generator.generate_number_value(context.type_store, isize_type_id, length_value);
 		return Some(generator.generate_non_null_invalid_slice(type_id, length, debug_location));
 	}
 
@@ -865,9 +862,8 @@ fn generate_binary_operation<'a, 'b, G: Generator>(
 	let left_type_id = context.specialize_type_id(operation.left.type_id);
 	let result_type_id = context.specialize_type_id(operation.type_id);
 
-	let left_untyped_integer = left_type_id.is_untyped_integer(context.type_store);
-	let left_untyped_decimal = left_type_id.is_untyped_decimal(context.type_store);
-	let left_has_size = left_untyped_integer || left_untyped_decimal || context.type_store.type_layout(left_type_id).size > 0;
+	let left_untyped_number = left_type_id.is_untyped_number(context.type_store);
+	let left_has_size = left_untyped_number || context.type_store.type_layout(left_type_id).size > 0;
 
 	if !left_has_size {
 		let left = generate_expression(context, generator, &operation.left);
@@ -1038,17 +1034,17 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 		"size_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 1);
 			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
-			let size = context.type_store.type_layout(type_id).size as i128;
-			let integer = IntegerValue::new_collapsed(size, span, context.type_store.isize_type_id());
-			generate_integer_value(context, generator, &integer)
+			let size = Decimal::from(context.type_store.type_layout(type_id).size);
+			let integer = NumberValue::new_collapsed(size, span, context.type_store.isize_type_id());
+			generate_number_value(context, generator, &integer)
 		}
 
 		"alignment_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 1);
 			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
-			let alignment = context.type_store.type_layout(type_id).alignment as i128;
-			let integer = IntegerValue::new_collapsed(alignment, span, context.type_store.isize_type_id());
-			generate_integer_value(context, generator, &integer)
+			let alignment = Decimal::from(context.type_store.type_layout(type_id).alignment);
+			let integer = NumberValue::new_collapsed(alignment, span, context.type_store.isize_type_id());
+			generate_number_value(context, generator, &integer)
 		}
 
 		"create_slice" | "create_slice_mut" => {

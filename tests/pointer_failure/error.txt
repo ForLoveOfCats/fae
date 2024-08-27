@@ -2,7 +2,7 @@ Validation error: ./tests/pointer_failure/pointer_failure.fae, line 3: Cannot ta
   3|     a.&mut
          ^^^^^^
 
-Validation error: ./tests/pointer_failure/pointer_failure.fae, line 5: Cannot dereference `untyped integer` as it is not a pointer
+Validation error: ./tests/pointer_failure/pointer_failure.fae, line 5: Cannot dereference `untyped number` as it is not a pointer
   5|     5.*
          ^^^
 

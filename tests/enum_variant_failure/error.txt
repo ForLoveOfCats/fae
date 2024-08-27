@@ -14,7 +14,7 @@ Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 7:
   7|     let _: Enum = .B {}
                        ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 9: Transparent enum variant initializer type mismatch, expected `i32` but got `untyped decimal` instead
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 9: Constant number 0.1 is a decimal and so cannot be represented as `i32`
   9|     let _: Enum = .B(0.1)
                           ^^^
 
@@ -26,9 +26,9 @@ Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 12
   12|     let _: Enum = .C {}
                            ^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 14: Field intializer type mismatch, expected `i32` but got `untyped decimal` instead
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 14: Constant number 0.1 is a decimal and so cannot be represented as `i32`
   14|     let _: Enum = .C { field: 0.1 }
-                             ^^^^^^^^^^
+                                    ^^^
 
 Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 15: Expected initalizer for field `field`, got `wrong` instead
   15|     let _: Enum = .C { wrong: 1}

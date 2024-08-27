@@ -3218,8 +3218,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	}
 
 	let value = match &expression.kind {
-		ExpressionKind::IntegerValue(value) => ConstantValue::IntegerValue(value.value()),
-		ExpressionKind::DecimalValue(value) => ConstantValue::DecimalValue(value.value()),
+		ExpressionKind::NumberValue(value) => ConstantValue::NumberValue(value.value()),
 		ExpressionKind::StringLiteral(literal) => ConstantValue::StringLiteral(literal.value.clone()),
 		ExpressionKind::CodepointLiteral(literal) => ConstantValue::CodepointLiteral(literal.value),
 
@@ -3298,11 +3297,8 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 		_ => expression.type_id,
 	};
 
-	if type_id.is_untyped_integer(context.type_store) {
-		context.message(error!("Cannot create binding of untyped integer").span(statement.span));
-		type_id = context.type_store.any_collapse_type_id();
-	} else if type_id.is_untyped_decimal(context.type_store) {
-		context.message(error!("Cannot create binding of untyped decimal").span(statement.span));
+	if type_id.is_untyped_number(context.type_store) {
+		context.message(error!("Cannot create binding of untyped number").span(statement.span));
 		type_id = context.type_store.any_collapse_type_id();
 	} else if let ExpressionKind::Type(found) = &expression.kind {
 		let found = context.type_name(*found);
@@ -3373,9 +3369,7 @@ pub fn validate_expression<'a>(
 			expression
 		}
 
-		tree::Expression::IntegerLiteral(literal) => validate_integer_literal(context, literal, span),
-
-		tree::Expression::FloatLiteral(literal) => validate_float_literal(context, literal, span),
+		tree::Expression::NumberLiteral(literal) => validate_number_literal(context, literal, span),
 
 		tree::Expression::BooleanLiteral(literal) => validate_bool_literal(context, *literal, span),
 
@@ -3886,25 +3880,10 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 	For { kind, item, index, is_last, initializer, body }
 }
 
-fn validate_integer_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::IntegerLiteral, span: Span) -> Expression<'a> {
-	let value = IntegerValue::new(literal.value.item, literal.value.span);
-	let kind = ExpressionKind::IntegerValue(value);
-	let type_id = context.type_store.integer_type_id();
-	Expression {
-		span,
-		type_id,
-		is_mutable: true,
-		yields: false,
-		returns: false,
-		kind,
-		debug_location: span.debug_location(context.parsed_files),
-	}
-}
-
-fn validate_float_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::FloatLiteral, span: Span) -> Expression<'a> {
-	let value = DecimalValue::new(literal.value.item, literal.value.span);
-	let kind = ExpressionKind::DecimalValue(value);
-	let type_id = context.type_store.decimal_type_id();
+fn validate_number_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree::NumberLiteral, span: Span) -> Expression<'a> {
+	let value = NumberValue::new(literal.value.item, literal.value.span);
+	let kind = ExpressionKind::NumberValue(value);
+	let type_id = context.type_store.number_type_id();
 	Expression {
 		span,
 		type_id,
@@ -4050,12 +4029,8 @@ fn validate_array_literal<'a>(
 	let pointee_type_id = if let Some(pointee_type_id) = pointee_type_id {
 		pointee_type_id
 	} else if let Some(first) = expressions.first() {
-		if first.type_id.is_untyped_integer(context.type_store) {
-			let error = error!("Cannot infer array type from untyped integer first item");
-			context.message(error.span(first.span));
-			context.type_store.any_collapse_type_id()
-		} else if first.type_id.is_untyped_decimal(context.type_store) {
-			let error = error!("Cannot infer array type from untyped decimal first item");
+		if first.type_id.is_untyped_number(context.type_store) {
+			let error = error!("Cannot infer array type from untyped number first item");
 			context.message(error.span(first.span));
 			context.type_store.any_collapse_type_id()
 		} else {
@@ -4370,10 +4345,8 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 		let mut vararg_error = false;
 		let remaining_arguments = &arguments[specialization_parameters.len()..];
 		for argument in remaining_arguments {
-			let is_integer = argument.type_id.is_untyped_integer(context.type_store);
-			let is_decimal = argument.type_id.is_untyped_decimal(context.type_store);
-			if is_integer || is_decimal {
-				let error = error!("Cannot pass untyped numeral as vararg, try casting it to a concrete type first");
+			if argument.type_id.is_untyped_number(context.type_store) {
+				let error = error!("Cannot pass untyped number as vararg, try casting it to a concrete type first");
 				context.message(error.span(argument.span));
 				vararg_error = true;
 			}
@@ -4846,14 +4819,9 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 
 			let constant = &context.constants.read()[constant_index];
 			let (kind, type_id) = match constant {
-				ConstantValue::IntegerValue(value) => {
-					let kind = ExpressionKind::IntegerValue(IntegerValue::new(*value, span));
-					(kind, context.type_store.integer_type_id())
-				}
-
-				ConstantValue::DecimalValue(value) => {
-					let kind = ExpressionKind::DecimalValue(DecimalValue::new(*value, span));
-					(kind, context.type_store.decimal_type_id())
+				ConstantValue::NumberValue(value) => {
+					let kind = ExpressionKind::NumberValue(NumberValue::new(*value, span));
+					(kind, context.type_store.number_type_id())
 				}
 
 				ConstantValue::CodepointLiteral(value) => {
@@ -5392,13 +5360,7 @@ fn validate_unary_operation<'a>(
 	};
 
 	match (&op, &mut expression.kind) {
-		(UnaryOperator::Negate, ExpressionKind::IntegerValue(value)) => {
-			value.negate(context.messages, span);
-			expression.span += span;
-			return expression;
-		}
-
-		(UnaryOperator::Negate, ExpressionKind::DecimalValue(value)) => {
+		(UnaryOperator::Negate, ExpressionKind::NumberValue(value)) => {
 			value.negate(span);
 			expression.span += span;
 			return expression;
@@ -5418,8 +5380,8 @@ fn validate_unary_operation<'a>(
 	let returns = expression.returns;
 
 	if matches!(op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
-		if type_id.is_untyped_integer(context.type_store) || type_id.is_untyped_decimal(context.type_store) {
-			let error = error!("Cannot take address of untyped numeral, try casting it to a concrete type first");
+		if type_id.is_untyped_number(context.type_store) {
+			let error = error!("Cannot take address of untyped number, try casting it to a concrete type first");
 			context.message(error.span(span));
 			return Expression::any_collapse(context.type_store, span);
 		}
@@ -5564,22 +5526,16 @@ fn validate_cast<'a>(
 	let to_pointer = to_type_id.is_pointer(context.type_store);
 
 	if from_numeric && to_numeric {
-		let from_untyped_integer = from_type_id.is_untyped_integer(context.type_store);
-		let from_untyped_decimal = from_type_id.is_untyped_decimal(context.type_store);
-		let from_untyped = from_untyped_integer || from_untyped_decimal;
-
-		let to_untyped_integer = to_type_id.is_untyped_integer(context.type_store);
-		let to_untyped_decimal = to_type_id.is_untyped_decimal(context.type_store);
-		let to_untyped = to_untyped_integer || to_untyped_decimal;
-
+		let from_untyped = from_type_id.is_untyped_number(context.type_store);
+		let to_untyped = to_type_id.is_untyped_number(context.type_store);
 		if from_untyped && !to_untyped {
 			_ = context.collapse_to(to_type_id, &mut expression);
 		}
 	} else if from_pointer && to_pointer {
 	} else if from_pointer && to_numeric {
 	} else if from_numeric && to_pointer {
-		if from_type_id.is_untyped_decimal(context.type_store) {
-			let error = error!("Cannot cast untyped decimal to a pointer");
+		if matches!(&expression.kind, ExpressionKind::NumberValue(number) if !number.is_integer()) {
+			let error = error!("Cannot cast untyped number decimal to a pointer");
 			context.message(error.span(span));
 		} else {
 			let is_i64 = context
@@ -5594,12 +5550,12 @@ fn validate_cast<'a>(
 			let is_usize = context
 				.type_store
 				.direct_match(from_type_id, context.type_store.usize_type_id());
-			let is_untyped_integer = from_type_id.is_untyped_integer(context.type_store);
+			let is_untyped_number = from_type_id.is_untyped_number(context.type_store);
 
-			if !is_i64 && !is_u64 && !is_isize && !is_usize && !is_untyped_integer {
+			if !is_i64 && !is_u64 && !is_isize && !is_usize && !is_untyped_number {
 				let error = error!("Cannot cast {} to a pointer as it is too small", context.type_name(from_type_id));
 				context.message(error.span(span));
-			} else if from_type_id.is_untyped_integer(context.type_store) {
+			} else if from_type_id.is_untyped_number(context.type_store) {
 				_ = context.collapse_to(context.type_store.usize_type_id(), &mut expression);
 			}
 		}
@@ -5789,7 +5745,7 @@ fn validate_binary_operation<'a>(
 	if !left.type_id.is_any_collapse(context.type_store) {
 		match op {
 			BinaryOperator::Modulo | BinaryOperator::ModuloAssign => {
-				if !left.type_id.is_integer(context.type_store) {
+				if !left.type_id.is_integer(context.type_store, &left) {
 					let found = context.type_name(left.type_id);
 					let error = error!("Cannot perform modulo on non-integer type {found}");
 					context.message(error.span(span));
@@ -5803,7 +5759,7 @@ fn validate_binary_operation<'a>(
 			| BinaryOperator::BitwiseOrAssign
 			| BinaryOperator::BitwiseXor
 			| BinaryOperator::BitwiseXorAssign => {
-				if !left.type_id.is_bool(context.type_store) && !left.type_id.is_integer(context.type_store) {
+				if !left.type_id.is_bool(context.type_store) && !left.type_id.is_integer(context.type_store, &left) {
 					let found = context.type_name(left.type_id);
 					let error = error!("Cannot perform bitwise operation on {found}, type must be integer or boolean");
 					context.message(error.span(span));
@@ -5831,7 +5787,7 @@ fn validate_binary_operation<'a>(
 			| BinaryOperator::BitshiftLeftAssign
 			| BinaryOperator::BitshiftRight
 			| BinaryOperator::BitshiftRightAssign => {
-				if !left.type_id.is_integer(context.type_store) {
+				if !left.type_id.is_integer(context.type_store, &left) {
 					let found = context.type_name(left.type_id);
 					let error = error!("Cannot perform bitshift on non-integer type {found}");
 					context.message(error.span(span));
@@ -5963,66 +5919,63 @@ fn perform_constant_binary_operation<'a>(
 	right_expression: &Expression,
 	op: BinaryOperator,
 ) -> Option<Expression<'a>> {
-	if let ExpressionKind::IntegerValue(left) = &left_expression.kind {
+	if let ExpressionKind::NumberValue(left) = &left_expression.kind {
 		let right = match &right_expression.kind {
-			ExpressionKind::IntegerValue(right) => *right,
-			ExpressionKind::DecimalValue(..) => unreachable!(),
+			ExpressionKind::NumberValue(right) => *right,
 			_ => return None,
 		};
 
-		let value = match op {
-			BinaryOperator::Add => left.add(context.messages, right)?,
-			BinaryOperator::Sub => left.sub(context.messages, right)?,
-			BinaryOperator::Mul => left.mul(context.messages, right)?,
-			BinaryOperator::Div => left.div(context.messages, right)?,
-			BinaryOperator::Modulo => left.modulo(context.messages, right)?,
-			BinaryOperator::BitwiseAnd => left.bitwise_and(right),
-			BinaryOperator::BitwiseOr => left.bitwise_or(right),
-			BinaryOperator::BitwiseXor => left.bitwise_xor(right),
-			_ => return None,
-		};
+		if left.is_integer() {
+			assert!(right.is_integer(), "{right:?}");
 
-		let span = value.span();
-		let kind = ExpressionKind::IntegerValue(value);
-		let type_id = context.type_store.integer_type_id();
-		return Some(Expression {
-			span,
-			type_id,
-			is_mutable: true,
-			yields: false,
-			returns: false,
-			kind,
-			debug_location: span.debug_location(context.parsed_files),
-		});
-	}
+			let value = match op {
+				BinaryOperator::Add => left.add(context.messages, right)?,
+				BinaryOperator::Sub => left.sub(context.messages, right)?,
+				BinaryOperator::Mul => left.mul(context.messages, right)?,
+				BinaryOperator::Div => left.div(context.messages, right)?,
+				BinaryOperator::Modulo => left.modulo(context.messages, right)?,
+				BinaryOperator::BitwiseAnd => left.bitwise_and(right),
+				BinaryOperator::BitwiseOr => left.bitwise_or(right),
+				BinaryOperator::BitwiseXor => left.bitwise_xor(right),
+				_ => return None,
+			};
 
-	if let ExpressionKind::DecimalValue(left) = &left_expression.kind {
-		let right = match &right_expression.kind {
-			ExpressionKind::DecimalValue(right) => *right,
-			ExpressionKind::IntegerValue(..) => unreachable!(),
-			_ => return None,
-		};
+			let span = value.span();
+			let kind = ExpressionKind::NumberValue(value);
+			let type_id = context.type_store.number_type_id();
+			return Some(Expression {
+				span,
+				type_id,
+				is_mutable: true,
+				yields: false,
+				returns: false,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			});
+		} else {
+			assert!(!right.is_integer(), "{right:?}");
 
-		let value = match op {
-			BinaryOperator::Add => left.add(right),
-			BinaryOperator::Sub => left.sub(right),
-			BinaryOperator::Mul => left.mul(right),
-			BinaryOperator::Div => left.div(right),
-			_ => return None,
-		};
+			let value = match op {
+				BinaryOperator::Add => left.add(context.messages, right)?,
+				BinaryOperator::Sub => left.sub(context.messages, right)?,
+				BinaryOperator::Mul => left.mul(context.messages, right)?,
+				BinaryOperator::Div => left.div(context.messages, right)?,
+				_ => return None,
+			};
 
-		let span = value.span();
-		let kind = ExpressionKind::DecimalValue(value);
-		let type_id = context.type_store.decimal_type_id();
-		return Some(Expression {
-			span,
-			type_id,
-			is_mutable: true,
-			yields: false,
-			returns: false,
-			kind,
-			debug_location: span.debug_location(context.parsed_files),
-		});
+			let span = value.span();
+			let kind = ExpressionKind::NumberValue(value);
+			let type_id = context.type_store.number_type_id();
+			return Some(Expression {
+				span,
+				type_id,
+				is_mutable: true,
+				yields: false,
+				returns: false,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			});
+		}
 	}
 
 	if let ExpressionKind::BooleanLiteral(left) = &left_expression.kind {

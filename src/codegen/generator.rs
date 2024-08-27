@@ -1,3 +1,5 @@
+use rust_decimal::Decimal;
+
 use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, For, Function, FunctionId, IfElseChain, Match};
@@ -80,9 +82,7 @@ pub trait Generator {
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	);
 
-	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding;
-
-	fn generate_decimal_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: f64) -> Self::Binding;
+	fn generate_number_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: Decimal) -> Self::Binding;
 
 	fn generate_boolean_literal(&mut self, type_store: &TypeStore, literal: bool) -> Self::Binding;
 

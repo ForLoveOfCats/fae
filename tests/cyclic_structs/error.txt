@@ -8,6 +8,6 @@ Note: ./tests/cyclic_structs/cyclic_structs.fae, line 2: Via field `field_a` in 
   2|     field_a: B
          ^^^^^^^^^^
 
-Validation error: ./tests/cyclic_structs/cyclic_structs.fae, line 13: Field intializer type mismatch, expected `B` but got `untyped integer` instead
+Validation error: ./tests/cyclic_structs/cyclic_structs.fae, line 13: Field intializer type mismatch, expected `B` but got `untyped number` instead
   13|                 field_a: 4
                       ^^^^^^^^^^

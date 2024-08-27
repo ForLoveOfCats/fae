@@ -30,6 +30,8 @@ use llvm_sys::{
 	LLVMAttributeFunctionIndex, LLVMIntPredicate::*, LLVMLinkage, LLVMRealPredicate, LLVMTypeKind::*, LLVMUnnamedAddr,
 	LLVMVisibility,
 };
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
@@ -169,10 +171,7 @@ impl LLVMTypes {
 
 				PrimativeKind::Void => self.void_struct,
 
-				PrimativeKind::AnyCollapse
-				| PrimativeKind::NoReturn
-				| PrimativeKind::UntypedInteger
-				| PrimativeKind::UntypedDecimal => unreachable!("{kind:?}"),
+				PrimativeKind::AnyCollapse | PrimativeKind::NoReturn | PrimativeKind::UntypedNumber => unreachable!("{kind:?}"),
 			},
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
@@ -1243,39 +1242,32 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.end_block();
 	}
 
-	fn generate_integer_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: i128) -> Self::Binding {
+	fn generate_number_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: Decimal) -> Self::Binding {
 		let value = unsafe {
 			match type_id.numeric_kind(type_store).unwrap() {
-				NumericKind::I8 | NumericKind::U8 => LLVMConstInt(LLVMInt8TypeInContext(self.context), value as u64, false as _),
+				NumericKind::I8 => LLVMConstInt(LLVMInt8TypeInContext(self.context), value.to_i64().unwrap() as u64, false as _),
+				NumericKind::U8 => LLVMConstInt(LLVMInt8TypeInContext(self.context), value.to_u64().unwrap(), false as _),
 
-				NumericKind::I16 | NumericKind::U16 => {
-					LLVMConstInt(LLVMInt16TypeInContext(self.context), value as u64, false as _)
+				NumericKind::I16 => {
+					LLVMConstInt(LLVMInt16TypeInContext(self.context), value.to_i64().unwrap() as u64, false as _)
+				}
+				NumericKind::U16 => LLVMConstInt(LLVMInt16TypeInContext(self.context), value.to_u64().unwrap(), false as _),
+
+				NumericKind::I32 => {
+					LLVMConstInt(LLVMInt32TypeInContext(self.context), value.to_i64().unwrap() as u64, false as _)
+				}
+				NumericKind::U32 => LLVMConstInt(LLVMInt32TypeInContext(self.context), value.to_u64().unwrap(), false as _),
+
+				NumericKind::I64 | NumericKind::ISize => {
+					LLVMConstInt(LLVMInt64TypeInContext(self.context), value.to_i64().unwrap() as u64, false as _)
+				}
+				NumericKind::U64 | NumericKind::USize => {
+					LLVMConstInt(LLVMInt64TypeInContext(self.context), value.to_u64().unwrap(), false as _)
 				}
 
-				NumericKind::I32 | NumericKind::U32 => {
-					LLVMConstInt(LLVMInt32TypeInContext(self.context), value as u64, false as _)
-				}
+				NumericKind::F32 => LLVMConstReal(LLVMFloatTypeInContext(self.context), value.to_f64().unwrap()),
 
-				NumericKind::I64 | NumericKind::U64 | NumericKind::ISize | NumericKind::USize => {
-					LLVMConstInt(LLVMInt64TypeInContext(self.context), value as u64, false as _)
-				}
-
-				NumericKind::F32 => LLVMConstReal(LLVMFloatTypeInContext(self.context), value as f64),
-
-				NumericKind::F64 => LLVMConstReal(LLVMDoubleTypeInContext(self.context), value as f64),
-			}
-		};
-
-		let kind = BindingKind::Value(value);
-		Binding { type_id, kind }
-	}
-
-	fn generate_decimal_value(&mut self, type_store: &TypeStore, type_id: TypeId, value: f64) -> Self::Binding {
-		let value = unsafe {
-			match type_id.numeric_kind(type_store).unwrap() {
-				NumericKind::F32 => LLVMConstReal(LLVMFloatTypeInContext(self.context), value),
-				NumericKind::F64 => LLVMConstReal(LLVMDoubleTypeInContext(self.context), value),
-				kind => unreachable!("{kind}"),
+				NumericKind::F64 => LLVMConstReal(LLVMDoubleTypeInContext(self.context), value.to_f64().unwrap()),
 			}
 		};
 

@@ -10,10 +10,10 @@ Validation warning: ./tests/cast_failure/cast_failure.fae, line 9: Unnecessary c
   9|     mutable.(&i32)
          ^^^^^^^^^^^^^^
 
-Validation error: ./tests/cast_failure/cast_failure.fae, line 11: Cannot cast untyped decimal to a pointer
+Validation error: ./tests/cast_failure/cast_failure.fae, line 11: Cannot cast untyped number decimal to a pointer
   11|     0.1.(&mut u8)
           ^^^^^^^^^^^^^
 
-Validation error: ./tests/cast_failure/cast_failure.fae, line 12: Constant integer -1 is negative and so cannot be represented as `usize`
+Validation error: ./tests/cast_failure/cast_failure.fae, line 12: Constant number -1 is negative and so cannot be represented as `usize`
   12|     (-1).(&mut u8) // TODO: Support negative literals natively
            ^^

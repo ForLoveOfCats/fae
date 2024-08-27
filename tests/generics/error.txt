@@ -6,7 +6,7 @@ Validation error: ./tests/generics/generics.fae, line 28: Field intializer type 
   28|         below: Below<f32> {
               ^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/generics/generics.fae, line 37: Expected argument of type `u64`, got `untyped decimal`
+Validation error: ./tests/generics/generics.fae, line 37: Constant number 44.5 is a decimal and so cannot be represented as `u64`
   37|     above<u64>(44.5, Below<i64> {
                      ^^^^
 

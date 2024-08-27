@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
@@ -474,8 +476,7 @@ pub enum ExpressionKind<'a> {
 	IfElseChain(Box<IfElseChain<'a>>),
 	Match(Box<Match<'a>>),
 
-	IntegerValue(IntegerValue),
-	DecimalValue(DecimalValue),
+	NumberValue(NumberValue),
 
 	BooleanLiteral(bool),
 	CodepointLiteral(CodepointLiteral),
@@ -510,8 +511,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::Block(_) => "block",
 			ExpressionKind::IfElseChain(_) => "if expression",
 			ExpressionKind::Match(_) => "match expression",
-			ExpressionKind::IntegerValue(_) => "untyped integer",
-			ExpressionKind::DecimalValue(_) => "untyped decimal",
+			ExpressionKind::NumberValue(_) => "untyped number",
 			ExpressionKind::BooleanLiteral(_) => "boolean literal",
 			ExpressionKind::CodepointLiteral(_) => "codepoint literal",
 			ExpressionKind::ByteCodepointLiteral(_) => "byte codepoint literal",
@@ -541,8 +541,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::IfElseChain(_) => "a if expression",
 			ExpressionKind::Match(_) => "a match expression",
-			ExpressionKind::IntegerValue(_) => "an untyped integer",
-			ExpressionKind::DecimalValue(_) => "an untyped decimal",
+			ExpressionKind::NumberValue(_) => "an untyped number",
 			ExpressionKind::BooleanLiteral(_) => "a boolean literal",
 			ExpressionKind::CodepointLiteral(_) => "a codepoint literal",
 			ExpressionKind::ByteCodepointLiteral(_) => "a byte codepoint literal",
@@ -567,8 +566,7 @@ impl<'a> ExpressionKind<'a> {
 
 #[derive(Debug, Clone)]
 pub enum ConstantValue<'a> {
-	IntegerValue(i128),
-	DecimalValue(f64),
+	NumberValue(Decimal),
 	CodepointLiteral(char),
 	StringLiteral(Cow<'a, str>),
 }
@@ -581,170 +579,27 @@ fn assert_not_collapsed(collapse: Option<TypeId>) {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct IntegerValue {
-	value: i128,
+pub struct NumberValue {
+	value: Decimal,
 	span: Span,
 	collapse: Option<TypeId>,
 }
 
-impl IntegerValue {
-	pub fn new(value: i128, span: Span) -> IntegerValue {
-		IntegerValue { value, span, collapse: None }
+impl NumberValue {
+	pub fn new(value: Decimal, span: Span) -> NumberValue {
+		NumberValue { value, span, collapse: None }
 	}
 
-	pub fn new_collapsed(value: i128, span: Span, collapse: TypeId) -> IntegerValue {
-		IntegerValue { value, span, collapse: Some(collapse) }
+	pub fn new_collapsed(value: Decimal, span: Span, collapse: TypeId) -> NumberValue {
+		NumberValue { value, span, collapse: Some(collapse) }
 	}
 
-	pub fn value(&self) -> i128 {
+	pub fn value(&self) -> Decimal {
 		self.value
 	}
 
-	pub fn span(&self) -> Span {
-		self.span
-	}
-
-	pub fn collapse(&mut self, type_id: TypeId) {
-		assert_not_collapsed(self.collapse);
-		self.collapse = Some(type_id);
-	}
-
-	pub fn collapsed(&self) -> TypeId {
-		self.collapse.unwrap()
-	}
-
-	pub fn negate(&mut self, messages: &mut Messages, sign_span: Span) {
-		assert_not_collapsed(self.collapse);
-
-		let Some(value) = self.value.checked_neg() else {
-			let value = self.value;
-			let err = error!("Constant integer {value} overflows compiler representation if inverted");
-			messages.message(err.span(self.span));
-			return;
-		};
-
-		self.value = value;
-		self.span += sign_span;
-	}
-
-	pub fn add(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
-		let span = self.span + other.span;
-
-		let Some(value) = self.value.checked_add(other.value) else {
-			let err = error!("Overflow or underflow in constant addition");
-			messages.message(err.span(span));
-			return None;
-		};
-
-		Some(IntegerValue { value, span, collapse: None })
-	}
-
-	pub fn sub(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
-
-		let span = self.span + other.span;
-
-		let Some(value) = self.value.checked_sub(other.value) else {
-			let err = error!("Overflow or underflow in constant subtraction");
-			messages.message(err.span(span));
-			return None;
-		};
-
-		Some(IntegerValue { value, span, collapse: None })
-	}
-
-	pub fn mul(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
-		let span = self.span + other.span;
-
-		let Some(value) = self.value.checked_mul(other.value) else {
-			let err = error!("Overflow or underflow in constant multiplication");
-			messages.message(err.span(span));
-			return None;
-		};
-
-		Some(IntegerValue { value, span, collapse: None })
-	}
-
-	pub fn div(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
-		let span = self.span + other.span;
-
-		let Some(value) = self.value.checked_div(other.value) else {
-			let err = error!("Overflow or underflow in constant division");
-			messages.message(err.span(span));
-			return None;
-		};
-
-		Some(IntegerValue { value, span, collapse: None })
-	}
-
-	// TODO: These error messages should be thought out a bit better
-	pub fn modulo(self, messages: &mut Messages, other: IntegerValue) -> Option<IntegerValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
-		let span = self.span + other.span;
-
-		let truncated_remainder = self.value % other.value;
-		let value = if truncated_remainder < 0 {
-			let Some(abs) = other.value.checked_abs() else {
-				let err = error!("Absolute value failure in constant modulo");
-				messages.message(err.span(span));
-				return None;
-			};
-
-			let Some(added) = truncated_remainder.checked_add(abs) else {
-				let err = error!("Addition failure in constant modulo");
-				messages.message(err.span(span));
-				return None;
-			};
-
-			added
-		} else {
-			truncated_remainder
-		};
-
-		Some(IntegerValue { value, span, collapse: None })
-	}
-
-	pub fn bitwise_and(self, other: IntegerValue) -> IntegerValue {
-		let value = self.value & other.value;
-		let span = self.span + other.span;
-		IntegerValue { value, span, collapse: None }
-	}
-
-	pub fn bitwise_or(self, other: IntegerValue) -> IntegerValue {
-		let value = self.value | other.value;
-		let span = self.span + other.span;
-		IntegerValue { value, span, collapse: None }
-	}
-
-	pub fn bitwise_xor(self, other: IntegerValue) -> IntegerValue {
-		let value = self.value ^ other.value;
-		let span = self.span + other.span;
-		IntegerValue { value, span, collapse: None }
-	}
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct DecimalValue {
-	value: f64,
-	span: Span,
-	collapse: Option<TypeId>,
-}
-
-impl DecimalValue {
-	pub fn new(value: f64, span: Span) -> DecimalValue {
-		DecimalValue { value, span, collapse: None }
-	}
-
-	pub fn value(&self) -> f64 {
-		self.value
+	pub fn is_integer(&self) -> bool {
+		self.value.is_integer()
 	}
 
 	pub fn span(&self) -> Span {
@@ -762,45 +617,109 @@ impl DecimalValue {
 
 	pub fn negate(&mut self, sign_span: Span) {
 		assert_not_collapsed(self.collapse);
-
-		self.value = -self.value;
+		self.value.set_sign_positive(self.value.is_sign_negative());
 		self.span += sign_span;
 	}
 
-	pub fn add(self, other: DecimalValue) -> DecimalValue {
+	pub fn add(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
-
 		let span = self.span + other.span;
-		let value = self.value + other.value;
-		DecimalValue { value, span, collapse: None }
+
+		let Some(value) = self.value.checked_add(other.value) else {
+			let err = error!("Overflow or underflow in constant addition");
+			messages.message(err.span(span));
+			return None;
+		};
+
+		Some(NumberValue { value, span, collapse: None })
 	}
 
-	pub fn sub(self, other: DecimalValue) -> DecimalValue {
+	pub fn sub(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
 
 		let span = self.span + other.span;
-		let value = self.value - other.value;
-		DecimalValue { value, span, collapse: None }
+
+		let Some(value) = self.value.checked_sub(other.value) else {
+			let err = error!("Overflow or underflow in constant subtraction");
+			messages.message(err.span(span));
+			return None;
+		};
+
+		Some(NumberValue { value, span, collapse: None })
 	}
 
-	pub fn mul(self, other: DecimalValue) -> DecimalValue {
+	pub fn mul(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
-
 		let span = self.span + other.span;
-		let value = self.value * other.value;
-		DecimalValue { value, span, collapse: None }
+
+		let Some(value) = self.value.checked_mul(other.value) else {
+			let err = error!("Overflow or underflow in constant multiplication");
+			messages.message(err.span(span));
+			return None;
+		};
+
+		Some(NumberValue { value, span, collapse: None })
 	}
 
-	pub fn div(self, other: DecimalValue) -> DecimalValue {
+	pub fn div(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
 		assert_not_collapsed(self.collapse);
 		assert_not_collapsed(other.collapse);
-
 		let span = self.span + other.span;
-		let value = self.value / other.value;
-		DecimalValue { value, span, collapse: None }
+
+		let Some(value) = self.value.checked_div(other.value) else {
+			let err = error!("Overflow or underflow in constant division");
+			messages.message(err.span(span));
+			return None;
+		};
+
+		Some(NumberValue { value, span, collapse: None })
+	}
+
+	// TODO: These error messages should be thought out a bit better
+	pub fn modulo(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
+		assert_not_collapsed(self.collapse);
+		assert_not_collapsed(other.collapse);
+		let span = self.span + other.span;
+
+		let truncated_remainder = self.value % other.value;
+		let value = if truncated_remainder.is_sign_negative() {
+			let abs = other.value.abs();
+			let Some(added) = truncated_remainder.checked_add(abs) else {
+				let err = error!("Addition failure in constant modulo");
+				messages.message(err.span(span));
+				return None;
+			};
+
+			added
+		} else {
+			truncated_remainder
+		};
+
+		Some(NumberValue { value, span, collapse: None })
+	}
+
+	pub fn bitwise_and(self, other: NumberValue) -> NumberValue {
+		let result = self.value.to_i128().unwrap() & other.value.to_i128().unwrap();
+		let value = Decimal::from(result);
+		let span = self.span + other.span;
+		NumberValue { value, span, collapse: None }
+	}
+
+	pub fn bitwise_or(self, other: NumberValue) -> NumberValue {
+		let result = self.value.to_i128().unwrap() | other.value.to_i128().unwrap();
+		let value = Decimal::from(result);
+		let span = self.span + other.span;
+		NumberValue { value, span, collapse: None }
+	}
+
+	pub fn bitwise_xor(self, other: NumberValue) -> NumberValue {
+		let result = self.value.to_i128().unwrap() ^ other.value.to_i128().unwrap();
+		let value = Decimal::from(result);
+		let span = self.span + other.span;
+		NumberValue { value, span, collapse: None }
 	}
 }
 

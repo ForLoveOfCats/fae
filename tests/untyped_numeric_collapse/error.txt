@@ -1,19 +1,15 @@
-Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 3: Constant integer -1 is negative and so cannot be represented as `u32`
+Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 3: Constant number -1 is negative and so cannot be represented as `u32`
   3|     let _: u32 = -1 // negative
                       ^^
 
-Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 6: Constant integer 256 is too large to be represented as `u8`
+Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 6: Constant number 256 is too large to be represented as `u8`
   6|     let _: u8 = 256 // to large
                      ^^^
 
-Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 9: Constant integer 128 is too large to be represented as `i8`
+Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 9: Constant number 128 is too large to be represented as `i8`
   9|     let _: i8 = 128 // to large
                      ^^^
 
-Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 11: Constant integer -129 is too small to be represented as `i8`
+Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 11: Constant number -129 is too small to be represented as `i8`
   11|     let _: i8 = -129 // to small
                       ^^^^
-
-Validation error: ./tests/untyped_numeric_collapse/untyped_numeric_collapse.fae, line 14: Constant decimal 2.2 cannot be represented as `f32` without a loss in precision
-  14|     let _: f32 = 2.2 // loss of precision
-                       ^^^
