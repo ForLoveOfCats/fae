@@ -248,7 +248,7 @@ pub fn build_project(
 	assert!(!codegen_messages.any_messages());
 
 	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
-		message_output.alertln("        Built binary", format_args!("{}", binary_path.display()));
+		message_output.alertln("    Built executable", format_args!("{}", binary_path.display()));
 	}
 
 	#[cfg(not(feature = "measure-lock-contention"))]

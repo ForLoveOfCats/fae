@@ -68,7 +68,7 @@ impl<'a> WriteFmt for StderrOutput<'a> {
 	fn alertln(&mut self, prefix: &str, trailing: std::fmt::Arguments) {
 		use crate::color::{BOLD_GREEN, RESET};
 		if self.supports_color {
-			writeln!(self.stderr, "{BOLD_GREEN}{prefix}:{RESET} {trailing}").unwrap();
+			writeln!(self.stderr, "{BOLD_GREEN}{prefix}{RESET} {trailing}").unwrap();
 		} else {
 			writeln!(self.stderr, "{prefix}: {trailing}").unwrap();
 		}

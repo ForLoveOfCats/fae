@@ -62,7 +62,7 @@ fn main() {
 
 	if cli_arguments.command == CompileCommand::Run {
 		if cli_arguments.loud {
-			eprintln!("  {BOLD_GREEN}Running executable{RESET}");
+			eprintln!("     {BOLD_GREEN}Running project{RESET}");
 		}
 
 		let mut command = Command::new(binary_path);
