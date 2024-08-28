@@ -1,6 +1,8 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+use crate::color::{BOLD_RED, BOLD_YELLOW, RESET};
+
 #[derive(Debug)]
 pub struct CliArguments {
 	pub project_path: Option<PathBuf>,
@@ -77,6 +79,7 @@ pub fn parse_arguments() -> CliArguments {
 	}
 
 	if any_errors {
+		eprintln!("{BOLD_YELLOW}Usage hint:{RESET} To view commands and options try \"--help\"");
 		std::process::exit(-1);
 	}
 
@@ -175,7 +178,7 @@ fn parse_tack_option(
 		Some("--") => parse_child_arguments(cli_arguments, iterator),
 
 		_ => {
-			eprintln!("Unknown cli option {arg:?}");
+			eprintln!("{BOLD_RED}Usage error:{RESET} Unknown cli option {arg:?}");
 			*any_errors = true;
 		}
 	}
