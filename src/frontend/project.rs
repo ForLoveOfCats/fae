@@ -64,8 +64,8 @@ pub fn build_project(
 		}
 	}
 
-	let project_config = if let Some(test_config) = test_config {
-		test_config
+	let (binary_name, project_config) = if let Some(test_config) = test_config {
+		(String::from("fae_compiler_test_suite"), test_config)
 	} else {
 		let config_path = project_path.join("fae.toml");
 		let Ok(config_file) = std::fs::read_to_string(&config_path) else {
@@ -73,7 +73,7 @@ pub fn build_project(
 		};
 
 		match toml::from_str::<ProjectConfig>(&config_file) {
-			Ok(config) => config,
+			Ok(config) => (config.project_name.clone(), config),
 			Err(err) => usage_error!("Project config parse error {config_path:?}\n{err}"),
 		}
 	};
@@ -117,7 +117,7 @@ pub fn build_project(
 			CompileCommand::Build | CompileCommand::Run => {
 				message_output.alertln("    Building project", format_args!("{root_name}"))
 			}
-			CompileCommand::CompilerTest => {}
+			CompileCommand::Clean | CompileCommand::CompilerTest => {}
 		}
 	}
 
@@ -233,6 +233,7 @@ pub fn build_project(
 			cli_arguments,
 			&project_config,
 			project_path,
+			&binary_name,
 			&parsed_files,
 			&mut codegen_messages,
 			&lang_items.read(),

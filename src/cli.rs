@@ -25,6 +25,7 @@ pub enum CompileCommand {
 	Check,
 	Build,
 	Run,
+	Clean,
 	CompilerTest,
 }
 
@@ -36,7 +37,7 @@ pub enum CodegenBackend {
 #[macro_export]
 macro_rules! usage_error {
 	($($arg:tt)*) => {{
-		eprint!("Usage error: ");
+		eprint!("{}Usage error:{} ", crate::color::BOLD_RED, crate::color::RESET);
 		eprintln!($( $arg )*);
 		std::process::exit(-1);
 	}}
@@ -93,34 +94,25 @@ fn parse_command(
 	};
 
 	match arg {
-		"parse" | "p" => {
-			cli_arguments.command = CompileCommand::Parse;
-			true
-		}
+		"parse" | "p" => cli_arguments.command = CompileCommand::Parse,
 
-		"check" | "c" => {
-			cli_arguments.command = CompileCommand::Check;
-			true
-		}
+		"check" | "c" => cli_arguments.command = CompileCommand::Check,
 
-		"build" | "b" => {
-			cli_arguments.command = CompileCommand::Build;
-			true
-		}
+		"build" | "b" => cli_arguments.command = CompileCommand::Build,
 
-		"run" | "r" => {
-			cli_arguments.command = CompileCommand::Run;
-			true
-		}
+		"run" | "r" => cli_arguments.command = CompileCommand::Run,
+
+		"clean" => cli_arguments.command = CompileCommand::Clean,
 
 		"ct" => {
 			cli_arguments.command = CompileCommand::CompilerTest;
 			parse_test_names(cli_arguments, any_errors, iterator);
-			true
 		}
 
-		_ => false,
+		_ => return false,
 	}
+
+	true
 }
 
 fn parse_tack_option(
@@ -140,6 +132,7 @@ fn parse_tack_option(
 			eprintln!("  check, c: Check targeted project");
 			eprintln!("  build, b: Build targeted project (default)");
 			eprintln!("  run, r: Build and run targeted project");
+			eprintln!("  clean: Remove the current target directory");
 			#[cfg(not(feature = "bundled"))]
 			eprintln!("  ct: Run compiler test suite");
 			eprintln!();

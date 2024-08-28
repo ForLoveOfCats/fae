@@ -7,6 +7,7 @@ mod tracy;
 #[macro_use]
 mod cli;
 
+mod clean;
 mod codegen;
 mod color;
 mod frontend;
@@ -18,14 +19,16 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Command;
 
-use cli::{parse_arguments, CompileCommand};
-use color::{BOLD_GREEN, RESET};
-use frontend::error::StderrOutput;
-use frontend::project::build_project;
+use crate::cli::{parse_arguments, CompileCommand};
+use crate::color::{BOLD_GREEN, RESET};
+use crate::frontend::error::StderrOutput;
+use crate::frontend::project::build_project;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+pub const TARGET_DIR: &str = "./fae_target";
 
 fn main() {
 	#[cfg(feature = "tracy-profile")]
@@ -34,6 +37,8 @@ fn main() {
 	let cli_arguments = parse_arguments();
 	if cli_arguments.command == CompileCommand::CompilerTest {
 		test::run_tests(cli_arguments);
+	} else if cli_arguments.command == CompileCommand::Clean {
+		clean::clean_workspace();
 	}
 
 	let supports_color = cli_arguments.color_messages;

@@ -26,11 +26,13 @@ use crate::frontend::project::ProjectConfig;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree;
 use crate::frontend::type_store::TypeStore;
+use crate::TARGET_DIR;
 
 pub fn generate_code<'a>(
 	cli_arguments: &CliArguments,
 	project_config: &ProjectConfig,
 	project_path: &Path,
+	name: &str,
 	parsed_files: &[tree::File],
 	messages: &mut Messages<'a>,
 	lang_items: &LangItems,
@@ -38,6 +40,8 @@ pub fn generate_code<'a>(
 	function_store: &FunctionStore<'a>,
 	statics: &Statics,
 ) -> PathBuf {
+	let object_name = format!("{name}.o");
+
 	#[cfg(target_os = "linux")]
 	let architecture = unsafe {
 		llvm_sys::target::LLVMInitializeX86Target();
@@ -142,12 +146,14 @@ pub fn generate_code<'a>(
 		}
 	}
 
-	_ = std::fs::create_dir("./fae_target");
+	_ = std::fs::create_dir(TARGET_DIR);
+
 	if cli_arguments.dump_llvm_ir {
 		unsafe {
-			let path = c"./fae_target/fae.ll".as_ptr();
+			let formatted_path = format!("{TARGET_DIR}/{name}.ll");
+			let path = CString::new(formatted_path).unwrap();
 			let mut error_string = MaybeUninit::uninit();
-			if LLVMPrintModuleToFile(generator.module, path, error_string.as_mut_ptr()) == 1 {
+			if LLVMPrintModuleToFile(generator.module, path.as_ptr(), error_string.as_mut_ptr()) == 1 {
 				let error = CStr::from_ptr(error_string.assume_init());
 				panic!("{error:?}");
 			}
@@ -166,9 +172,9 @@ pub fn generate_code<'a>(
 		}
 	}
 
-	let object_path = Path::new("./fae_target/fae_object.o");
+	let object_path = format!("{TARGET_DIR}/{object_name}");
 	unsafe {
-		let object_path = CString::from(c"./fae_target/fae_object.o");
+		let object_path = CString::new(object_path.as_bytes()).unwrap();
 		let mut error_string = MaybeUninit::uninit();
 		LLVMTargetMachineEmitToFile(
 			machine,
@@ -193,7 +199,7 @@ pub fn generate_code<'a>(
 			Vec::new()
 		};
 
-		let executable_path = PathBuf::from("./fae_target/fae_executable.x64");
+		let executable_path = PathBuf::from(format!("{TARGET_DIR}")).join(name);
 
 		let mut command = Command::new(linker)
 			.arg("-export-dynamic")
@@ -236,7 +242,7 @@ pub fn generate_code<'a>(
 			Vec::new()
 		};
 
-		let executable_path = PathBuf::from("./fae_target/fae_executable.aarch64");
+		let executable_path = PathBuf::from(format!("{TARGET_DIR}")).join(name);
 
 		let sdk_version = call_xcrun("--show-sdk-version");
 
