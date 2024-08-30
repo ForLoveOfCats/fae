@@ -159,7 +159,9 @@ impl FileWalker {
 					let entry_file_name = entry.file_name();
 					let full_name = entry_file_name.to_string_lossy();
 					let file_name = full_name[..full_name.len() - extension_len].to_owned();
-					module_path.push(file_name);
+					if module_path.last().as_deref() != Some(&file_name) {
+						module_path.push(file_name);
+					}
 
 					let file = File::open(&path)?;
 					let walked_file = WalkedFile { file, path, module_path };

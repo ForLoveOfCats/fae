@@ -1,5 +1,5 @@
 import fae::collections::list::List
-import fae::string::string::String
+import fae::string::String
 import fae::libc::StdInDescriptor, open, read, close
 import fae::memory::allocate_slice_space, copy_slice_into, free_slice
 
