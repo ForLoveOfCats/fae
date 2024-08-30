@@ -1,0 +1,31 @@
+fn main() {
+	let float = function<f64>(8)
+	println(f"f64: {float}")
+	let int = function<i32>(-75)
+	println(f"i32: {int}")
+}
+
+generic T
+fn function(t: T): T {
+	struct Struct {
+		t: T
+	}
+
+	method Struct
+	fn returns_t(): T {
+		method Struct
+		fn inner_method(): T {
+			return self.t
+		}
+
+		method Struct
+		fn inner_method_calling_outer(): T {
+			return self.returns_t()
+		}
+
+		return self.inner_method()
+	}
+
+	let a = Struct{ t }
+	return a.inner_method_calling_outer()
+}

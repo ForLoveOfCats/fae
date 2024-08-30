@@ -2226,16 +2226,18 @@ fn create_block_functions<'a>(
 
 			let explicit_generics_len = explicit_generics.len();
 			let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
-			for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
-				let generic_index = explicit_generics_len + index;
-				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-				let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
-				generic_parameters.push_implicit(parameter);
+			if statement.method_attribute.is_none() {
+				for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+					let generic_index = explicit_generics_len + index;
+					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
+					let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+					generic_parameters.push_implicit(parameter);
 
-				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
-				let span = Some(parent_parameter.name.span);
-				let symbol = Symbol { name: parent_parameter.name.item, kind, span, used: true };
-				scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
+					let span = Some(parent_parameter.name.span);
+					let symbol = Symbol { name: parent_parameter.name.item, kind, span, used: true };
+					scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+				}
 			}
 
 			let mut base_type_arguments;
@@ -2275,7 +2277,7 @@ fn create_block_functions<'a>(
 					root_layers,
 					scope.symbols,
 					function_initial_symbols_length,
-					enclosing_generic_parameters,
+					&generic_parameters,
 					parsed_type,
 				);
 
@@ -2338,7 +2340,7 @@ fn create_block_functions<'a>(
 					root_layers,
 					scope.symbols,
 					function_initial_symbols_length,
-					enclosing_generic_parameters,
+					&generic_parameters,
 					&parameter.item.parsed_type,
 				);
 
