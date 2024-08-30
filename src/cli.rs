@@ -2,6 +2,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use crate::color::{BOLD_RED, BOLD_YELLOW, RESET};
+use crate::version::version;
 
 #[derive(Debug)]
 pub struct CliArguments {
@@ -126,7 +127,7 @@ fn parse_tack_option(
 ) {
 	match arg.to_str() {
 		Some("--help") => {
-			eprintln!("Fae programming language compiler");
+			eprintln!("Fae programming language compiler {}", version());
 			eprintln!("Usage: fae [optional command] [zero or more options] [optional path]");
 			eprintln!("Arguments after lone \"--\" are passed to launched executablek");
 			eprintln!();
@@ -141,6 +142,7 @@ fn parse_tack_option(
 			eprintln!();
 			eprintln!("Options:");
 			eprintln!("  --help: Print this help message");
+			eprintln!("  --version: Print the version string");
 			eprintln!("  --quiet: Silence compilation progress messages");
 			eprintln!("  --release: Build artifacts with optimizations enabled");
 			eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
@@ -154,6 +156,11 @@ fn parse_tack_option(
 				eprintln!("  --debug-type-ids: Print types as their internal type id index value");
 				eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
 			}
+			std::process::exit(0);
+		}
+
+		Some("--version") => {
+			eprintln!("Fae programming language compiler {}", version());
 			std::process::exit(0);
 		}
 

@@ -14,6 +14,7 @@ mod frontend;
 mod lock;
 mod reference;
 mod test;
+mod version;
 
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
