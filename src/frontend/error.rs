@@ -322,7 +322,7 @@ impl Message {
 		}
 	}
 
-	//This is a big ball of mess
+	// This is a big ball of mess
 	fn print_file_message(
 		output: &mut impl WriteFmt,
 		sources: &[SourceFile],

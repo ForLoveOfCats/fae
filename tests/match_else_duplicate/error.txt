@@ -1,0 +1,3 @@
+Validation warning: ./tests/match_else_duplicate/match_else_duplicate.fae, line 14: Match expression else arm will never execute, all enum variants are already covered
+  14|         else => println("else")
+              ^^^^

@@ -13,11 +13,3 @@ Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 10: A
 Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 11: A static definition does not allow lang attribute
   11| #lang "made_up_lang_item"
       ^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Validation error: Duplicate declarations for extern `made_up_symbol`
-Note: ./tests/extern_static_failure/extern_static_failure.fae, line 2: Declaration here
-  2| static EXTERNAL_STATIC: i32
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Note: ./tests/extern_static_failure/extern_static_failure.fae, line 5: Declaration here
-  5| static DUPLICATE: i32
-     ^^^^^^^^^^^^^^^^^^^^^

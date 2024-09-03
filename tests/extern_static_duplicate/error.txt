@@ -1,0 +1,7 @@
+Validation error: Duplicate declarations for extern `made_up_symbol`
+Note: ./tests/extern_static_duplicate/extern_static_duplicate.fae, line 2: Declaration here
+  2| static EXTERNAL_STATIC: i32
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Note: ./tests/extern_static_duplicate/extern_static_duplicate.fae, line 5: Declaration here
+  5| static DUPLICATE: i32
+     ^^^^^^^^^^^^^^^^^^^^^

@@ -125,7 +125,6 @@ pub fn build_project(
 	let mut any_messages = false;
 	let mut root_messages = RootMessages::new(&files);
 
-	//Parallelizable
 	let bump = bumpalo::Bump::new();
 	let parse_start = Instant::now();
 	let mut parsed_files = Vec::new();
@@ -139,11 +138,16 @@ pub fn build_project(
 		tokens_vec = tokens.tear_down();
 	}
 
-	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
+	any_errors |= root_messages.any_errors();
+	any_messages |= root_messages.any_messages();
+	root_messages.print_messages(message_output, "Parse");
+	root_messages.reset();
+
+	if !any_errors && cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Parsed all files", format_args!("took {} ms", parse_start.elapsed().as_millis()));
 	}
 
-	if cli_arguments.command == CompileCommand::Parse {
+	if any_errors || cli_arguments.command == CompileCommand::Parse {
 		#[cfg(not(feature = "measure-lock-contention"))]
 		if !in_compiler_test {
 			std::mem::forget(parsed_files);
@@ -153,11 +157,6 @@ pub fn build_project(
 		return BuiltProject { binary_path: None, any_messages };
 	}
 
-	any_errors |= root_messages.any_errors();
-	any_messages |= root_messages.any_messages();
-	root_messages.print_messages(message_output, "Parse");
-	root_messages.reset();
-
 	// TODO: Cross compilation support
 	#[cfg(target_os = "linux")]
 	let target_platform = TargetPlatform::Linux;
@@ -166,7 +165,6 @@ pub fn build_project(
 
 	let when_context = WhenContext { target_platform, in_compiler_test };
 
-	//Partially parallelizable
 	let validate_start = Instant::now();
 	let herd = bumpalo_herd::Herd::new();
 	let lang_items = RwLock::new(LangItems::new());
@@ -209,7 +207,7 @@ pub fn build_project(
 		return BuiltProject { binary_path: None, any_messages };
 	}
 
-	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
+	if !any_errors && cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("   Validated project", format_args!("took {} ms", validate_start.elapsed().as_millis()));
 	}
 
@@ -225,7 +223,6 @@ pub fn build_project(
 		return BuiltProject { binary_path: None, any_messages };
 	}
 
-	//Not parallelizable
 	let codegen_start = Instant::now();
 	let mut codegen_messages = Messages::new(&[]);
 	let binary_path = match cli_arguments.codegen_backend {

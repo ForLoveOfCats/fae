@@ -1,0 +1,7 @@
+extern "made_up_symbol"
+static EXTERNAL_STATIC: i32
+
+extern "made_up_symbol"
+static DUPLICATE: i32
+
+fn main() {}

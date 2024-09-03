@@ -1,0 +1,23 @@
+fn main() {
+	func(Enum.A)
+	func(Enum.B)
+	func(Enum.C)
+	func(Enum.D)
+}
+
+fn func(arg: Enum) {
+	match arg {
+		A => println("A")
+		C => println("C")
+		B => println("B")
+		D => println("D")
+		else => println("else")
+	}
+}
+
+enum Enum {
+	A
+	B
+	C
+	D
+}
