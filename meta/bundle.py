@@ -47,6 +47,7 @@ def linux_main():
 
 	shutil.copy("./target/x86_64-unknown-linux-musl/bundled/fae", "./target/bundle/fae/fae")
 	shutil.copytree("./lib", "./target/bundle/fae/lib")
+	shutil.copy("./meta/bundle_license.txt", "./target/bundle/fae/license.txt")
 
 	print("Archiving bundle")
 
@@ -76,6 +77,7 @@ def macos_main(args):
 
 	shutil.copy("./target/bundled/fae", "./target/bundle/fae/fae")
 	shutil.copytree("./lib", "./target/bundle/fae/lib")
+	shutil.copy("./meta/bundle_license.txt", "./target/bundle/fae/license.txt")
 
 	if args.identity_uuid is not None:
 		print("Signing executable")
