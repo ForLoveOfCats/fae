@@ -126,7 +126,7 @@ fn parse_tack_option(
 	iterator: &mut impl Iterator<Item = OsString>,
 ) {
 	match arg.to_str() {
-		Some("--help") => {
+		Some("--help" | "-h") => {
 			eprintln!("Fae programming language compiler {}", version());
 			eprintln!("Usage: fae [optional command] [zero or more options] [optional path]");
 			eprintln!("Arguments after lone \"--\" are passed to launched executablek");
@@ -141,10 +141,10 @@ fn parse_tack_option(
 			eprintln!("  ct: Run compiler test suite");
 			eprintln!();
 			eprintln!("Options:");
-			eprintln!("  --help: Print this help message");
-			eprintln!("  --version: Print the version string");
-			eprintln!("  --quiet: Silence compilation progress messages");
-			eprintln!("  --release: Build artifacts with optimizations enabled");
+			eprintln!("  --help, -h: Print this help message");
+			eprintln!("  --version, -v: Print the version string");
+			eprintln!("  --quiet, -q: Silence compilation progress messages");
+			eprintln!("  --release, -r: Build artifacts with optimizations enabled");
 			eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
 			eprintln!("  --dump-llvm-ir: Dump LLVM IR to a file");
 			if !cfg!(feature = "bundled") {
@@ -159,14 +159,14 @@ fn parse_tack_option(
 			std::process::exit(0);
 		}
 
-		Some("--version") => {
+		Some("--version" | "-v") => {
 			eprintln!("Fae programming language compiler {}", version());
 			std::process::exit(0);
 		}
 
-		Some("--quiet") => cli_arguments.loud = false,
+		Some("--quiet" | "-q") => cli_arguments.loud = false,
 
-		Some("--release") => cli_arguments.optimize_artifacts = true,
+		Some("--release" | "-r") => cli_arguments.optimize_artifacts = true,
 
 		Some("--parallel-validator") => cli_arguments.parallel_validator = true,
 
