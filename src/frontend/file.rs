@@ -46,7 +46,12 @@ pub fn load_single_file(path: PathBuf, files: &mut Vec<SourceFile>) -> Result<St
 	Ok(file_name)
 }
 
-pub fn load_all_files(error_output: &mut impl WriteFmt, path: &Path, files: &mut Vec<SourceFile>) -> Result<bool> {
+pub fn load_all_files(
+	error_output: &mut impl WriteFmt,
+	path: &Path,
+	files: &mut Vec<SourceFile>,
+	in_compiler_test: bool,
+) -> Result<bool> {
 	struct DisallowedModulePath {
 		path: PathBuf,
 		module_path: Vec<String>,
@@ -90,13 +95,20 @@ pub fn load_all_files(error_output: &mut impl WriteFmt, path: &Path, files: &mut
 
 	let errored = !disallowed.is_empty();
 	disallowed.sort_by(|a, b| a.module_path.cmp(&b.module_path));
+	let mut print_newline_above = !in_compiler_test;
 	for disallowed in disallowed {
 		for index in disallowed.disallowed_indicies {
+			if print_newline_above {
+				writeln!(error_output);
+			}
+
 			let reserved = &disallowed.module_path[index];
 			let module_path = disallowed.module_path.join("::");
 			let path = &disallowed.path;
 			let error = error!("Reserved word `{reserved}` may not be part of module path `{module_path}` for file {path:?}");
 			error.print(error_output, &[], "Project");
+
+			print_newline_above = true;
 		}
 	}
 

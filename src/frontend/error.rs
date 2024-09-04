@@ -162,31 +162,32 @@ impl<'a> RootMessages<'a> {
 		self.any_errors = true;
 	}
 
-	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str) {
+	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str, externs: &Externs, in_compiler_test: bool) -> bool {
 		// Very important that this be a stable sort as different passes in the validator
 		// can emit separate message packages for the same file and we need to maintain
 		// their relative order
 		self.file_messages.sort_by(|a, b| a.module_path.cmp(&b.module_path));
 
+		let mut print_newline_above = !in_compiler_test;
+
 		for file_messages in &self.file_messages {
 			for message in &file_messages.messages {
+				if print_newline_above {
+					writeln!(output);
+				}
 				message.print(output, self.sources, stage);
+				print_newline_above = true;
 			}
 		}
 
-		if self.missing_main {
-			let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
-			error.print(output, self.sources, stage);
-		}
-
-		self.file_messages.clear();
-	}
-
-	pub fn print_duplicate_externs_messages(&self, output: &mut impl WriteFmt, stage: &str, externs: &Externs) -> bool {
 		let mut has_duplicates: Vec<_> = externs.externs.iter().filter(|(_, externs)| externs.len() > 1).collect();
 		has_duplicates.sort_by_key(|(name, _)| *name);
 
 		for duplicates in &has_duplicates {
+			if print_newline_above {
+				writeln!(output);
+			}
+
 			let mut externs = duplicates.1.clone();
 			externs.sort_by_key(|e| e.module_path);
 
@@ -195,6 +196,15 @@ impl<'a> RootMessages<'a> {
 				error = error.note(note!(duplicate.span, "Declaration here"));
 			}
 
+			error.print(output, self.sources, stage);
+			print_newline_above = true;
+		}
+
+		if self.missing_main {
+			if print_newline_above {
+				writeln!(output);
+			}
+			let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
 			error.print(output, self.sources, stage);
 		}
 
@@ -293,8 +303,6 @@ impl Message {
 		for note in &self.notes {
 			Self::print_file_message(output, sources, None, note.span, &note.text, "Note");
 		}
-
-		writeln!(output);
 	}
 
 	fn print_message(&self, output: &mut impl WriteFmt, sources: &[SourceFile], stage: &str) {

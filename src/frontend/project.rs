@@ -57,7 +57,7 @@ pub fn build_project(
 
 	if cli_arguments.std_enabled {
 		let std_path = std_path();
-		match load_all_files(message_output, &std_path, &mut files) {
+		match load_all_files(message_output, &std_path, &mut files, in_compiler_test) {
 			Ok(false) => {}
 			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
 			Err(err) => usage_error!("Failed to load standard library files at {std_path:?}: {}", err),
@@ -94,7 +94,7 @@ pub fn build_project(
 			.map(|dir| Path::new("./").join(dir))
 			.unwrap_or(source_directory);
 
-		match load_all_files(message_output, &source_directory, &mut files) {
+		match load_all_files(message_output, &source_directory, &mut files, in_compiler_test) {
 			Ok(false) => {}
 			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
 			Err(err) => usage_error!("Failed to load source files: {}", err),
@@ -138,9 +138,11 @@ pub fn build_project(
 		tokens_vec = tokens.tear_down();
 	}
 
+	let externs = RwLock::new(Externs::new());
+
 	any_errors |= root_messages.any_errors();
 	any_messages |= root_messages.any_messages();
-	root_messages.print_messages(message_output, "Parse");
+	root_messages.print_messages(message_output, "Parse", &externs.read(), in_compiler_test);
 	root_messages.reset();
 
 	if !any_errors && cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
@@ -171,7 +173,6 @@ pub fn build_project(
 	let mut root_layers = RootLayers::new(root_name);
 	let mut type_store = TypeStore::new(cli_arguments.debug_generics, cli_arguments.debug_type_ids);
 	let function_store = FunctionStore::new();
-	let externs = RwLock::new(Externs::new());
 	let statics = RwLock::new(Statics::new());
 	validate(
 		cli_arguments,
@@ -189,8 +190,7 @@ pub fn build_project(
 
 	any_errors |= root_messages.any_errors();
 	any_messages |= root_messages.any_messages();
-	root_messages.print_messages(message_output, "Validation");
-	let had_duplicate_externs = root_messages.print_duplicate_externs_messages(message_output, "Validation", &externs.read());
+	let had_duplicate_externs = root_messages.print_messages(message_output, "Validation", &externs.read(), in_compiler_test);
 	any_errors |= had_duplicate_externs;
 	any_messages |= had_duplicate_externs;
 	root_messages.reset();
