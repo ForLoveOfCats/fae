@@ -59,6 +59,19 @@ fn panicf(message: fstr): noreturn {
 	fae::runtime::panic_impl(message)
 }
 
+fn exit_success() {
+	fae::libc::exit(0)
+}
+
+fn error(): noreturn {
+	fae::libc::exit(-1)
+}
+
+fn errorf(message: fstr): noreturn {
+	eprintln(message)
+	fae::libc::exit(-1)
+}
+
 fn assert(value: bool) {
 	if value.! => panicf("Assertion failed")
 }

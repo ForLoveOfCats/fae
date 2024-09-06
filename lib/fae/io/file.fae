@@ -1,14 +1,26 @@
 import fae::collections::list::List
 import fae::string::String
-import fae::libc::StdInDescriptor, open, read, close
+import fae::libc::StdInDescriptor, open, read, write, close
+import fae::libc::O_RDONLY, O_RDWR, O_CREAT, O_APPEND, O_TRUNC
 import fae::memory::allocate_slice_space, copy_slice_into, free_slice
 
 struct File {
 	file_descriptor: i32 readonly
 }
 
+enum WriteMode {
+	ReadOnly
+	Append
+	Overwrite
+}
+
+enum CreateMode {
+	Create
+	NoCreate
+}
+
 method static File
-fn open(path: []u8, write: bool, create: bool): Option<File> {
+fn open(path: []u8, write: WriteMode, create: CreateMode): Option<File> {
 	// TODO: Do like Rust and have an API for doing this on the stack
 	// if the result will be short enough to fit
 	let space = allocate_slice_space<u8>(path.length + 1)
@@ -17,9 +29,12 @@ fn open(path: []u8, write: bool, create: bool): Option<File> {
 	space[path.length] = 0
 
 	mut flags: i32 = 0
-	if write => flags |= 2 // O_RDWR
-	else => flags |= 0 // O_RDONLY
-	if create => flags |= 64 // O_CREAT
+	match write {
+		ReadOnly =>flags |= O_RDONLY
+		Append => flags |= O_RDWR | O_APPEND 
+		Overwrite => flags |= O_RDWR | O_TRUNC 
+	}
+	if create is Create => flags |= O_CREAT
 
 	let mode: i32 = 1638 // 0x666
 
@@ -43,6 +58,13 @@ method mut File
 fn close() {
 	// TODO: This should report failure to the caller
 	close(self.file_descriptor)
+}
+
+method mut File
+fn write(data: []u8) {
+	if data.length <= 0 => return
+	// TODO: This should report failure to the caller
+	write(self.file_descriptor, data.pointer, data.length.(usize))
 }
 
 method File
