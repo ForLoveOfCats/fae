@@ -160,7 +160,7 @@ fn parse_tack_option(
 		}
 
 		Some("--version" | "-v") => {
-			eprintln!("Fae programming language compiler {}", version());
+			eprintln!("Fae {}", version());
 			std::process::exit(0);
 		}
 

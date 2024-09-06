@@ -12,5 +12,5 @@ const BUNDLED: &str = "-bunded";
 const BUNDLED: &str = "";
 
 pub fn version() -> String {
-	format!("{BASE_VERSION}-{OS}-{ARCH}-{GIT}{BUNDLED}")
+	format!("{BASE_VERSION}-{GIT}{BUNDLED} on {OS} {ARCH}")
 }
