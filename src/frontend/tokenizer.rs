@@ -190,6 +190,22 @@ impl<'a> Tokens<'a> {
 	}
 
 	#[inline]
+	pub fn peek_maybe_after_newline(&mut self) -> ParseResult<Token<'a>> {
+		if self.index >= self.tokens.len() {
+			return Err(());
+		}
+
+		if self.tokens[self.index].kind == TokenKind::Newline {
+			self.index += 1;
+			if self.index >= self.tokens.len() {
+				return Err(());
+			}
+		}
+
+		Ok(self.tokens[self.index])
+	}
+
+	#[inline]
 	pub fn next(&mut self, messages: &mut Messages) -> ParseResult<Token<'a>> {
 		if self.index >= self.tokens.len() {
 			let error = error!("Ran out of tokens to parse");

@@ -49,7 +49,7 @@ pub fn parse_block<'a>(
 			BumpVec::new_in(bump)
 		};
 
-		let newline = tokens.expect(messages, TokenKind::Newline)?;
+		let newline = tokens.expect_peek(messages, TokenKind::Newline)?;
 
 		let block = Block { statements: statements.into_bump_slice() };
 		let span = fat_arrow.span + newline.span;
@@ -1007,7 +1007,7 @@ fn parse_when_else_chain<'a>(
 	span += body.span;
 	entries.push(WhenElseChainEntry { condition, body });
 
-	while let Ok(Token { text: "else", .. }) = tokens.peek() {
+	while let Ok(Token { text: "else", .. }) = tokens.peek_maybe_after_newline() {
 		tokens.next(messages)?;
 
 		if let Ok(Token { text: "when", .. }) = tokens.peek() {
@@ -1045,7 +1045,7 @@ fn parse_if_else_chain<'a>(
 	span += body.span;
 	entries.push(IfElseChainEntry { condition, body });
 
-	while let Ok(Token { text: "else", .. }) = tokens.peek() {
+	while let Ok(Token { text: "else", .. }) = tokens.peek_maybe_after_newline() {
 		tokens.next(messages)?;
 
 		if let Ok(Token { text: "if", .. }) = tokens.peek() {
@@ -1956,7 +1956,7 @@ fn parse_const_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &m
 	tokens.expect(messages, TokenKind::Equal)?;
 
 	let expression = parse_expression(bump, messages, tokens, true)?;
-	tokens.expect(messages, TokenKind::Newline)?;
+	tokens.expect_peek(messages, TokenKind::Newline)?;
 
 	let span = const_token.span + expression.span;
 	let item = Const { name, parsed_type, expression };
@@ -1978,7 +1978,7 @@ fn parse_static_statement<'a>(
 	tokens.expect(messages, TokenKind::Colon)?;
 	let parsed_type = parse_type(bump, messages, tokens)?;
 
-	tokens.expect(messages, TokenKind::Newline)?;
+	tokens.expect_peek(messages, TokenKind::Newline)?;
 
 	let span = keyword_token.span + parsed_type.span;
 	let item = Static {

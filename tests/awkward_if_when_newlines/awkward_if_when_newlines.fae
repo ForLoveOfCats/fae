@@ -1,0 +1,22 @@
+when InCompilerTest {
+	const A = 1
+}
+else {
+	const A = 2
+}
+when InCompilerTest => const B = 3
+else => const B = 4
+
+fn main() {
+	mut a: i32 = 40
+	if true => a += 2
+	else => a += 3
+	println(f"{A.(i32)}")
+	if false {
+		println("if")
+	}
+	else {
+		println("else")
+	}
+	println(f"{B.(i32)}")
+}
