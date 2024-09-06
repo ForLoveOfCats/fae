@@ -1008,6 +1008,7 @@ fn parse_when_else_chain<'a>(
 	entries.push(WhenElseChainEntry { condition, body });
 
 	while let Ok(Token { text: "else", .. }) = tokens.peek_maybe_after_newline() {
+		tokens.consume_newlines();
 		tokens.next(messages)?;
 
 		if let Ok(Token { text: "when", .. }) = tokens.peek() {
@@ -1046,6 +1047,7 @@ fn parse_if_else_chain<'a>(
 	entries.push(IfElseChainEntry { condition, body });
 
 	while let Ok(Token { text: "else", .. }) = tokens.peek_maybe_after_newline() {
+		tokens.consume_newlines();
 		tokens.next(messages)?;
 
 		if let Ok(Token { text: "if", .. }) = tokens.peek() {

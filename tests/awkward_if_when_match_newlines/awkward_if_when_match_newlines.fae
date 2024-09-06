@@ -7,6 +7,11 @@ else {
 when InCompilerTest => const B = 3
 else => const B = 4
 
+enum Enum {
+	D
+	E
+}
+
 fn main() {
 	mut a: i32 = 40
 	if true => a += 2
@@ -19,4 +24,10 @@ fn main() {
 		println("else")
 	}
 	println(f"{B.(i32)}")
+
+	let en: Enum = .E
+	match en {
+		D => println("D")
+		E => if true => println("E")
+	}
 }

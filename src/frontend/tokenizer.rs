@@ -196,10 +196,11 @@ impl<'a> Tokens<'a> {
 		}
 
 		if self.tokens[self.index].kind == TokenKind::Newline {
-			self.index += 1;
-			if self.index >= self.tokens.len() {
+			if self.index + 1 >= self.tokens.len() {
 				return Err(());
 			}
+
+			return Ok(self.tokens[self.index + 1]);
 		}
 
 		Ok(self.tokens[self.index])
