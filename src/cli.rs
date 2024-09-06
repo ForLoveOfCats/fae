@@ -145,8 +145,6 @@ fn parse_tack_option(
 			eprintln!("  --version, -v: Print the version string");
 			eprintln!("  --quiet, -q: Silence compilation progress messages");
 			eprintln!("  --release, -r: Build artifacts with optimizations enabled");
-			eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
-			eprintln!("  --dump-llvm-ir: Dump LLVM IR to a file");
 			if !cfg!(feature = "bundled") {
 				eprintln!();
 				eprintln!("Compiler Debugging Options:");
@@ -155,6 +153,8 @@ fn parse_tack_option(
 				eprintln!("  --debug-generics: Include useful debug information when printing types");
 				eprintln!("  --debug-type-ids: Print types as their internal type id index value");
 				eprintln!("  --disable-std: Avoid compiling the Fae standard library (will not successfully link)");
+				eprintln!("  --disable-llvm-verification: Skip running LLVM IR validation step");
+				eprintln!("  --dump-llvm-ir: Dump LLVM IR to a file");
 			}
 			std::process::exit(0);
 		}
