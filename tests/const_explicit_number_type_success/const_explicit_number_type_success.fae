@@ -1,0 +1,7 @@
+const A: i32 = -42
+const B: f64 = 4.2
+
+fn main() {
+	println(f"{A}")
+	println(f"{B}")
+}

@@ -1,0 +1,11 @@
+const A: i32 = -42
+const B: f64 = 4.2
+
+struct Struct {
+	field: i64
+}
+
+fn main() {
+	Struct { field: A }
+	A + B
+}

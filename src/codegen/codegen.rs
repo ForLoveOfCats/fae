@@ -506,7 +506,7 @@ fn generate_for<'a, 'b, G: Generator>(
 }
 
 fn generate_number_value<G: Generator>(context: &Context, generator: &mut G, value: &NumberValue) -> Option<G::Binding> {
-	Some(generator.generate_number_value(context.type_store, value.collapsed(), value.value()))
+	Some(generator.generate_number_value(context.type_store, value.collapsed().unwrap(), value.value()))
 }
 
 fn generate_boolean_literal<G: Generator>(context: &Context, generator: &mut G, literal: bool) -> Option<G::Binding> {
@@ -557,7 +557,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 		match item {
 			FormatStringItem::Text(text) => {
 				let variant_type_id = context.type_store.string_type_id();
-				let variant_index = variant_type_id.format_item_variant_index(context.type_store);
+				let variant_index = variant_type_id.format_item_variant_index(context.type_store, None);
 
 				let variant_binding = generator.generate_string_literal(context.type_store, text);
 
@@ -575,7 +575,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 
 			FormatStringItem::Expression(expression) => {
 				let variant_type_id = context.specialize_type_id(expression.type_id);
-				let variant_index = variant_type_id.format_item_variant_index(context.type_store);
+				let variant_index = variant_type_id.format_item_variant_index(context.type_store, Some(expression));
 
 				let variant_binding = generate_expression(context, generator, expression);
 				let wrapped = generator.generate_enum_variant_to_enum(
@@ -945,7 +945,7 @@ fn generate_string_to_format_string<'a, 'b, G: Generator>(
 	};
 
 	let variant_type_id = context.type_store.string_type_id();
-	let variant_index = variant_type_id.format_item_variant_index(context.type_store);
+	let variant_index = variant_type_id.format_item_variant_index(context.type_store, None);
 
 	let wrapped = generator.generate_enum_variant_to_enum(
 		context.type_store,

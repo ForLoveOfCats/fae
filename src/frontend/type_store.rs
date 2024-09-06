@@ -69,15 +69,32 @@ impl TypeId {
 		type_store.direct_match(self, type_store.format_string_type_id)
 	}
 
-	pub fn is_formattable(self, type_store: &TypeStore) -> bool {
+	pub fn is_formattable(self, type_store: &TypeStore, expression: &Expression) -> bool {
 		let range = type_store.i8_type_id.entry..=type_store.format_string_type_id.entry;
-		range.contains(&self.entry) || self.is_any_collapse(type_store)
+		range.contains(&self.entry)
+			|| self.is_any_collapse(type_store)
+			|| match &expression.kind {
+				ExpressionKind::NumberValue(value) => match dbg!(value.collapsed()) {
+					Some(collapsed) => range.contains(&collapsed.entry),
+					None => false,
+				},
+				_ => false,
+			}
 	}
 
-	pub fn format_item_variant_index(self, type_store: &TypeStore) -> usize {
+	pub fn format_item_variant_index(self, type_store: &TypeStore, expression: Option<&Expression>) -> usize {
+		let entry = match expression {
+			Some(Expression { kind: ExpressionKind::NumberValue(value), .. }) => match value.collapsed() {
+				Some(collapsed) => collapsed.entry,
+				None => self.entry,
+			},
+
+			_ => self.entry,
+		};
+
 		let range = type_store.i8_type_id.entry..=type_store.format_string_type_id.entry;
-		assert!(range.contains(&self.entry), "{range:?}, {}", self.entry);
-		(self.entry - type_store.i8_type_id.entry) as usize
+		assert!(range.contains(&entry), "{range:?}, {}", entry);
+		(entry - type_store.i8_type_id.entry) as usize
 	}
 
 	pub fn numeric_kind(self, type_store: &TypeStore) -> Option<NumericKind> {
@@ -947,8 +964,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant number -> float of large enough
-				from_value.collapse(to);
-				return Ok(true);
+				return Ok(from_value.collapse(self, to));
 			}
 
 			let (to_signed, to_unsigned, bit_count) = match to.entry {
@@ -993,8 +1009,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant number -> signed of large enough
-				from_value.collapse(to);
-				return Ok(true);
+				return Ok(from_value.collapse(self, to));
 			}
 
 			if to_unsigned {
@@ -1019,8 +1034,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant number -> unsigned of large enough if not negative
-				from_value.collapse(to);
-				return Ok(true);
+				return Ok(from_value.collapse(self, to));
 			}
 		}
 

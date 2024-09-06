@@ -567,7 +567,7 @@ impl<'a> ExpressionKind<'a> {
 #[derive(Debug, Clone)]
 pub enum ConstantValue<'a> {
 	AnyCollapse,
-	NumberValue(Decimal),
+	NumberValue(NumberValue),
 	CodepointLiteral(char),
 	StringLiteral(Cow<'a, str>),
 }
@@ -607,13 +607,18 @@ impl NumberValue {
 		self.span
 	}
 
-	pub fn collapse(&mut self, type_id: TypeId) {
-		assert_not_collapsed(self.collapse);
+	pub fn collapse(&mut self, type_store: &TypeStore, type_id: TypeId) -> bool {
+		let mut success = true;
+		if let Some(collapsed) = self.collapse {
+			success = type_store.direct_match(collapsed, type_id);
+		}
+
 		self.collapse = Some(type_id);
+		success
 	}
 
-	pub fn collapsed(&self) -> TypeId {
-		self.collapse.unwrap()
+	pub fn collapsed(&self) -> Option<TypeId> {
+		self.collapse
 	}
 
 	pub fn negate(&mut self, sign_span: Span) {

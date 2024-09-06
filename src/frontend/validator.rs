@@ -3220,7 +3220,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	}
 
 	let value = match &expression.kind {
-		ExpressionKind::NumberValue(value) => ConstantValue::NumberValue(value.value()),
+		ExpressionKind::NumberValue(value) => ConstantValue::NumberValue(*value),
 		ExpressionKind::StringLiteral(literal) => ConstantValue::StringLiteral(literal.value.clone()),
 		ExpressionKind::CodepointLiteral(literal) => ConstantValue::CodepointLiteral(literal.value),
 
@@ -3980,7 +3980,7 @@ fn validate_format_string_literal<'a>(
 
 			tree::FormatStringItem::Expression(expression) => {
 				let expression = validate_expression(context, expression);
-				if !expression.type_id.is_formattable(context.type_store) {
+				if !expression.type_id.is_formattable(context.type_store, &expression) {
 					let found = context.type_name(expression.type_id);
 					let error = error!("Cannot format expression of type {found}");
 					// TODO: Add hint system
@@ -4824,8 +4824,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			let constant = &context.constants.read()[constant_index];
 			let (kind, type_id) = match constant {
 				ConstantValue::NumberValue(value) => {
-					let kind = ExpressionKind::NumberValue(NumberValue::new(*value, span));
-					(kind, context.type_store.number_type_id())
+					let kind = ExpressionKind::NumberValue(*value);
+					(kind, value.collapsed().unwrap_or(context.type_store.number_type_id()))
 				}
 
 				ConstantValue::CodepointLiteral(value) => {
