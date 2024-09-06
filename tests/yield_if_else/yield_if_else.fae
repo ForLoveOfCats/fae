@@ -8,6 +8,10 @@ fn main() {
 	bare_if_else(true)
 	bare_if_else(false)
 	bare_if_else(true)
+
+	let a = if false => yield "if"
+	else => fae::libc::exit(0)
+	println(a)
 }
 
 fn within_block(arg: bool) {

@@ -4370,6 +4370,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	}
 
 	if return_type.is_noreturn(context.type_store) {
+		yields = true;
 		returns = true;
 	}
 
