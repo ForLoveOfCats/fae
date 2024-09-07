@@ -34,6 +34,7 @@ Just as the language and compiler are immature, so too is this document. Please 
   - [Field access modifiers](#field-access-modifiers)
   - [Zero size types](#zero-size-types)
   - [`if-else` expression](#if-else-expression)
+  - [`when` statement](#when-statement)
   - [Single line blocks](#single-line-blocks)
   - [`is` operator](#is-operator)
   - [`match` expression](#match-expression)
@@ -525,6 +526,23 @@ let name = "Doris"
 let greeting: fstr = f"Hello {name}!"
 ```
 
+The types of expressions which may be included in a format string are:
+- `i8`
+- `i16`
+- `i32`
+- `i64`
+- `u8`
+- `u16`
+- `u32`
+- `u64`
+- `isize`
+- `usize`
+- `f32`
+- `f64`
+- `bool`
+- `str`
+- `fstr`
+
 A format string literal describes a string formatting operation, but *does not* perform the formatting itself. Instead it is a slice of formattable items which code may walk and format at runtime. The standard library provides a set of `print`/`println` and `eprint`/`eprintln` functions to format a format string to stdout and stderr respectively.
 ```
 let name = "Tina"
@@ -821,9 +839,32 @@ if foo() {
 ```
 
 
+## `when` statement
+
+The `when` statement enables limited conditional compilation, where code which is "compiled out" will be parsed by the compiler, but not validated nor included in the final binary. Syntactically the `when` statement resembles an `if-else` expression which is evaluated at compile time. Conceptually whichever branch is "taken" is merged into the containing block. So constructs like `const` or `struct` defined within are accessable outside the `when` statement, assuming the construct is present in the branch which is chosen.
+```
+when PlatformLinux {
+    const MagicNumber = 1
+} else when PlatformDarwin {
+    const MagicNumber = 2
+} else {
+    const MagicNumber = 3
+}
+
+println(f"{MagicNumber}") // Prints a different value depending on the target platform
+```
+
+The `when` statement's condition may contain a single word predicate which the compiler evaluates the truthiness of at compile time. It may *not* include operators such as `and` or `or`. The list of allowed predicates are:
+- `PlatformLinux` (the target platform is Linux based, such as desktop GNU/Linux)
+- `PlatformDarwin` (the target platform is Darwin based, such as macOS)
+- `InCompilerTest` (the code is being compiled in the context of a compiler test)
+
+**Note**: It is planned for `when` to gain the ability to evaulate arbitrary compile time expressions, replacing the compiler built in word predicates.
+
+
 ## Single line blocks
 
-Constructs such as `if-else`, `match`, `while`, and `for` all have body blocks which may be written either as braced `{}` blocks or *single line* blocks with `=>`.
+Constructs such as `when`, `if-else`, `match`, `while`, and `for` all have body blocks which may be written either as braced `{}` blocks or *single line* blocks with `=>`.
 ```
 if true => println("if")
 else if false => println("else if")
