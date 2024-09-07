@@ -41,7 +41,7 @@ def linux_main():
 	print("Copying files")
 
 	shutil.rmtree("./target/bundle", ignore_errors=True)
-	try: os.remove("./target/Fae.tar.gz")
+	try: os.remove("./target/Fae-Linux.tar.gz")
 	except: pass
 	os.makedirs("./target/bundle/fae", exist_ok=True)
 
@@ -53,9 +53,9 @@ def linux_main():
 	print("Archiving bundle")
 
 	os.chdir("./target")
-	shutil.make_archive("Fae", "gztar", "./bundle")
+	shutil.make_archive("Fae-Linux", "gztar", "./bundle")
 
-	print("Produced `./target/Fae.tar.gz`")
+	print("Produced `./target/Fae-Linux.tar.gz`")
 
 def macos_main(args):
 	print("Building Fae compiler in release mode")
@@ -72,7 +72,7 @@ def macos_main(args):
 	print("Copying files")
 
 	shutil.rmtree("./target/bundle", ignore_errors=True)
-	try: os.remove("./target/Fae.dmg")
+	try: os.remove("./target/Fae-macOS.dmg")
 	except: pass
 	os.makedirs("./target/bundle/fae", exist_ok=True)
 
@@ -95,21 +95,20 @@ def macos_main(args):
 	print("Archiving bundle")
 
 	os.chdir("./target")
-	# shutil.make_archive("fae", "zip", "./bundle")
 	subprocess.run([
 		"hdiutil",
 		"create",
 		"-volname",
-		"Fae",
+		"Fae macOS",
 		"-srcfolder",
 		"./bundle/fae",
 		"-ov",
 		"-format",
 		"UDZO",
-		"Fae.dmg",
+		"Fae-macOS.dmg",
 	])
 
-	print("Produced `./target/Fae.dmg`")
+	print("Produced `./target/Fae-macOS.dmg`")
 
 	if args.notarization_keychain_profile is not None:
 		print("Notarizing bundle")
@@ -117,7 +116,7 @@ def macos_main(args):
 			"xcrun",
 			"notarytool",
 			"submit",
-			"./Fae.dmg",
+			"./Fae-macOS.dmg",
 			"--keychain-profile",
 			args.notarization_keychain_profile,
 			"--wait",
@@ -128,7 +127,7 @@ def macos_main(args):
 			"xcrun",
 			"stapler",
 			"staple",
-			"./Fae.dmg",
+			"./Fae-macOS.dmg",
 		])
 
 def call_external(args):
