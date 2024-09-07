@@ -850,11 +850,13 @@ impl<'a> Tokenizer<'a> {
 					if matches!(
 						self.bytes[self.offset],
 						b' ' | b'\t'
-							| b'\n' | b'\r' | b'(' | b')'
-							| b'{' | b'}' | b'[' | b']' | b'+'
-							| b'-' | b'*' | b'/' | b'=' | b'>'
-							| b'<' | b':' | b';' | b'.' | b','
-							| b'\'' | b'"' | b'!' | b'&' | b'|'
+							| b'\n' | b'\r' | b'('
+							| b')' | b'{' | b'}' | b'['
+							| b']' | b'+' | b'-' | b'*'
+							| b'/' | b'=' | b'>' | b'<'
+							| b':' | b';' | b'.' | b','
+							| b'\'' | b'"' | b'!' | b'&'
+							| b'|'
 					) {
 						let on_period = self.bytes[self.offset] == b'.';
 						let has_next = self.offset + 1 < self.source.len();
