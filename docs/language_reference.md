@@ -4,9 +4,11 @@ This document attempts to meaningfully describe the current state of the Fae pro
 
 Just as the language and compiler are immature, so too is this document. Please report any issues encountered with factual accuracy or where where additional detail is required.
 
+
 # Table of Contents
 - [Fae Language Reference](#fae-language-reference)
 - [Table of Contents](#table-of-contents)
+- [Project structure](#project-structure)
 - [Lexical Structure](#lexical-structure)
     - [File encoding](#file-encoding)
     - [Keywords](#keywords)
@@ -51,11 +53,36 @@ Just as the language and compiler are immature, so too is this document. Please 
   - [Prelude](#prelude)
   - [Intrinsic functions](#intrinsic-functions)
 
+
+# Project structure
+
+The root of every Fae project must contain a `fae.toml` file written with the `TOML` syntax. It *must* contain the following entries:
+- `project_name` (string) Indicates the name of the project
+- `source_directory` (string) Indicates the path to the root of the project code
+
+And it *may* contain the following entries:
+- `linux_linker` (string) Indicates the executable name of the linker to be used on Linux
+- `linux_additional_linker_objects` (array of string) Indicates a list of object file paths to link into the project on Linux
+- `darwin_linker` (string) Indicates the executable name of the linker to be used on Darwin (macOS)
+- `darwin_additional_linker_objects` (array of string) Indicates a list of object file paths to link into the project on Darwin (macOS)
+
+The project's `main` function must be located in a `.fae` file named the same as the project, located in the root of the source directory. So for a project named "hello_world" and the source directory "./src", the `main` function must be located in "./src/hello_world.fae" relative to the project root. This `main` function must have the following signature.
+```
+fn main()
+```
+
+**Note**: It is planned to replace the `fae.toml` file with build scripts written in Fae, the `toml` file is a temporary solution.
+
+
 # Lexical Structure
 
 ### File encoding
+
 Fae files are represented with the UTF-8 encoding using Unix newlines, and projects must be stored on a hierarchical file system to preserve module structure.
+
+
 ### Keywords
+
 The Fae language contains four keywords different categories, each allowed in different contexts. All keyword, except for private attributes and field access modifiers, are reserved words which may not be used as identifier names.
 
 **Statement keywords** start new statements in block scopes.
@@ -150,6 +177,7 @@ let a: i32 = function()
 let b = function()
 const C = 299792458
 ```
+
 
 # Semantics
 
