@@ -70,6 +70,10 @@ These are the core set of intended supported platforms. Supporting each of these
 
 Primitive syntax support for VSCode is available with [this extension](https://marketplace.visualstudio.com/items?itemName=fae-lang.vscode-fae), though it lacks code formatting and language server support as those components remain to be built.
 
+## Building
+
+See the [Build Instructions](./docs/build_instructions.md) for directions on how to get up and running with a development build of the Fae language toolchain.
+
 ## Licenses
 
 The Fae compiler, associated tests, scripts, and supporting infrastructure code, *excluding* the standard library, are licensed under the 3-Clause BSD license.
