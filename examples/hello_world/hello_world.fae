@@ -1,15 +1,8 @@
-import fae::collections::list::List
-
 fn main() {
-	mut list = List<str>.new()
-	defer list.free()
+	println("Hello world")
+	println(f"Welcome to {language()}!")
+}
 
-	list.push("Hello")
-	list.push("World!")
-
-	for item, _, is_last in list.items {
-		print(item)
-		if is_last.! => print(", ")
-	}
-	println("")
+fn language(): str {
+	return "Fae"
 }

@@ -15,7 +15,7 @@ fn main() {
     defer list.free()
 
     list.push("Hello")
-    list.push("World!")
+    list.push("There!")
 
     for item, _, is_last in list.items {
         print(item)
@@ -25,13 +25,14 @@ fn main() {
 }
 
 >>> fae run --quiet
-Hello, World!
+Hello, There!
 ```
 
 ```
 >>> cat main.fae
 fn main() {
-    println(f"Wecome to {language()}!")
+    println("Hello world")
+    println(f"Welcome to {language()}!")
 }
 
 fn language(): str {
@@ -39,6 +40,7 @@ fn language(): str {
 }
 
 >>> fae run --quiet
+Hello world
 Welcome to Fae!
 ```
 

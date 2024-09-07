@@ -1,0 +1,15 @@
+import fae::collections::list::List
+
+fn main() {
+	mut list = List<str>.new()
+	defer list.free()
+
+	list.push("Hello")
+	list.push("There!")
+
+	for item, _, is_last in list.items {
+		print(item)
+		if is_last.! => print(", ")
+	}
+	println("")
+}
