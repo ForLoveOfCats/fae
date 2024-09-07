@@ -61,11 +61,11 @@ Join the Fae project [Discord server](https://discord.gg/uAufKTVYeB) to particip
 The Fae compiler is immature and incomplete but it can be installed and experimented with today. Here there be dragons, *please open an issue* when you encounter bugs!
 
 - **Linux x64**: Current primary supported platform, binaries available on the [releases](https://github.com/ForLoveOfCats/fae/releases) page.
-    Statically linked compiler, should run on any recent Linux system
-    By default expects GNU `ld` to be in the path
+    <br/>Statically linked compiler, should run on any recent Linux system
+    <br/>By default expects GNU `ld` to be in the path
 - **macOS AArch64**: Secondary supported platform, binaries available on the [releases](https://github.com/ForLoveOfCats/fae/releases) page.
-    Tested on macOS 12-14 (may work on 11)
-    By default expects platform shipped `ld` to be in the path
+    <br/>Tested on macOS 12-14 (may work on 11)
+    <br/>By default expects platform shipped `ld` to be in the path
 - **Windows x64**: Untested and unsupported as of yet. *Extremely high priority* to support in the near future.
 
 These are the core set of intended supported platforms. Supporting each of these operating systems on the opposite architectures is a goal but lower priority at present.
