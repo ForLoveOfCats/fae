@@ -56,7 +56,7 @@ Just as the language and compiler are immature, so too is this document. Please 
 ### File encoding
 Fae files are represented with the UTF-8 encoding using Unix newlines, and projects must be stored on a hierarchical file system to preserve module structure.
 ### Keywords
-The Fae language contains four keywords different categories, each allowed in different contexts. Each keyword, except for private attribute keywords, are reserved words which may not be used as identifier names.
+The Fae language contains four keywords different categories, each allowed in different contexts. All keyword, except for private attributes and field access modifiers, are reserved words which may not be used as identifier names.
 
 **Statement keywords** start new statements in block scopes.
 - `when`
@@ -103,7 +103,7 @@ The Fae language contains four keywords different categories, each allowed in di
 - `intrinsic`
 - `lang`
 
-**Field access modifiers** may optionally follow `struct` and `enum` fields.
+**Field access modifiers** may optionally follow `struct` and `enum` fields and are not reserved words.
 - `readable`
 - `readonly`
 - `internal`
