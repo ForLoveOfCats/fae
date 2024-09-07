@@ -2,7 +2,7 @@
 
 Fae is a relatively small, unsafe, systems programming language with a focus on utility, comfort, and tooling. It steals with flattery from such languages as Rust, Zig, Odin, and Swift. Read the [language reference](./docs/language_reference.md) for a detailed snapshot of the *current* status of the Fae language.
 
- - **Small Yet Comfortably Useful**: Language features are chosen in an attempt to maximize the ratio of utility to language complexity while remaining pleasant to write and reason about
+ - **Comfortably Useful**: Language features are chosen in an attempt to maximize the ratio of utility to language complexity while remaining pleasant to write and reason about
  - **Unsafe**: Fae is an unsafe language and allows for deep developer control over memory at the cost of compile time safety guarantees
  - **High Quality Tooling**: A language is only half the experience; having fast, accurate, and pleasant tooling is crucial
 
@@ -49,6 +49,10 @@ Browse a selection of example programs [here](./examples)
 The Fae compiler and standard library are *very* incomplete, missing features include traits, allocator system, error system, unions, and much more.
 
 Read the [language reference](./docs/language_reference.md) for a detailed snapshot of the *current* status of the Fae language.
+
+## Community
+
+Join the Fae project [Discord server](https://discord.gg/uAufKTVYeB) to participate in discussion and ask questions. While not ideal, Discord was chosen to maximize approachability and accessiblity.
 
 ## Installation
 
