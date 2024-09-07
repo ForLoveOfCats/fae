@@ -10,7 +10,7 @@ fn alignment_of(): isize
 
 generic T
 fn null_pointer(): &mut T {
-	return 0.(&mut T)	
+	return 0.(&mut T)
 }
 
 generic T
