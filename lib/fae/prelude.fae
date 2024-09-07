@@ -59,15 +59,15 @@ fn panicf(message: fstr): noreturn {
 	fae::runtime::panic_impl(message)
 }
 
-fn exit_success() {
+fn exit_success(): noreturn {
 	fae::libc::exit(0)
 }
 
-fn error(): noreturn {
+fn exit_error(): noreturn {
 	fae::libc::exit(-1)
 }
 
-fn errorf(message: fstr): noreturn {
+fn exit_errorf(message: fstr): noreturn {
 	eprintln(message)
 	fae::libc::exit(-1)
 }

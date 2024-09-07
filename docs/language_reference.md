@@ -1402,7 +1402,7 @@ generic T
 fn offset_pointer(pointer: &T, by_bytes: isize): &T
 ```
 
-**Offset a mutable pointer by specified signed byte distance
+**Offset a mutable pointer by specified signed byte distance**
 ```
 generic T
 fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T
@@ -1428,14 +1428,29 @@ fn eprint(message: fstr)
 fn eprintln(message: fstr)
 ```
 
-**Terminate the application immediately**
+**Terminate the application immediately** _with_ a stack trace
 ```
 fn panic(): noreturn
 ```
 
-**Print a formatted message to stderr and terminate the application**
+**Print a formatted _failure_ message to stderr and terminate the application** _with_ a stack trace
 ```
 fn panicf(message: fstr): noreturn
+```
+
+**Terminate the application** with a success code _without_ a stack trace
+```
+fn exit_success(): noreturn
+```
+
+**Terminate the application** with a failure code _without_ a stack trace
+```
+fn exit_error(): noreturn
+```
+
+**Print a formatted _user error_ message to stderr and terminate the application** _without_ a stack trace
+```
+fn exit_errorf(message: fstr): noreturn
 ```
 
 **If the value is false, terminate the application**, included in all build configurations
