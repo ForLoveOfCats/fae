@@ -1322,7 +1322,7 @@ impl<'a> TypeStore<'a> {
 						self.calculate_layout(field_type_id);
 						let field_layout = self.type_layout(field_type_id);
 
-						if size != 0 && size % alignment != 0 {
+						if (size / field_layout.alignment) * field_layout.alignment < size {
 							size = (size / field_layout.alignment) * field_layout.alignment + field_layout.alignment;
 						}
 
@@ -1330,7 +1330,7 @@ impl<'a> TypeStore<'a> {
 						alignment = alignment.max(field_layout.alignment);
 					}
 
-					if size != 0 && size % alignment != 0 {
+					if (size / alignment) * alignment < size {
 						size = (size / alignment) * alignment + alignment;
 					}
 

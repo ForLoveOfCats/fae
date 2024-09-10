@@ -18,6 +18,14 @@ struct Nested {
 	b: u8
 }
 
+struct Image {
+	data: isize
+	width: i32
+	height: i32
+	mipmaps: i32
+	format: i32
+}
+
 generic T
 fn generic_func() {
 	println(f"{size_of<T>()}")
@@ -40,9 +48,13 @@ fn main() {
 
 	println(f"{size_of<Nested>()}") // 32
 
+	println(f"{size_of<Image>()}") // 24
+
 	generic_func<u8>() // 1
 
 	generic_func<isize>() // 8
 
 	generic_func<u16>() // 2
+
+	generic_func<Image>() // 24
 }
