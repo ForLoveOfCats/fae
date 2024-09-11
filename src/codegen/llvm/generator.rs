@@ -16,7 +16,8 @@ use llvm_sys::core::{
 	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
 	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMRemoveBasicBlockFromParent,
 	LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility,
-	LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVoidTypeInContext,
+	LLVMStructCreateNamed, LLVMStructGetTypeAtIndex, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeOf,
+	LLVMVoidTypeInContext,
 };
 use llvm_sys::debuginfo::{
 	LLVMCreateDIBuilder, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction,
@@ -484,24 +485,25 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 
 			let actual = unsafe {
-				LLVMStructTypeInContext(
-					self.context,
-					field_types_buffer.as_mut_ptr(),
-					field_types_buffer.len() as u32,
-					false as _,
-				)
+				let name = CString::new(user_type.name).unwrap();
+				let named = LLVMStructCreateNamed(self.context, name.as_ptr());
+				LLVMStructSetBody(named, field_types_buffer.as_mut_ptr(), field_types_buffer.len() as u32, false as _);
+				named
 			};
 
 			let as_enum_shared_fields = unsafe {
 				if shared_field_types_buffer.is_empty() {
 					None
 				} else {
-					Some(LLVMStructTypeInContext(
-						self.context,
+					let name = CString::new(format!("{}.as_enum_shared_fields", user_type.name)).unwrap();
+					let named = LLVMStructCreateNamed(self.context, name.as_ptr());
+					LLVMStructSetBody(
+						named,
 						shared_field_types_buffer.as_mut_ptr(),
 						shared_field_types_buffer.len() as u32,
 						false as _,
-					))
+					);
+					Some(named)
 				}
 			};
 
