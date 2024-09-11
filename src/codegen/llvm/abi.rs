@@ -1,13 +1,14 @@
 use std::ffi::CString;
+use std::u32;
 
 use llvm_sys::core::{
-	LLVMAddAttributeAtIndex, LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAlloca, LLVMBuildCall2, LLVMBuildFPCast,
-	LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSExt, LLVMBuildStore, LLVMBuildStructGEP2,
-	LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateTypeAttribute, LLVMDoubleTypeInContext,
-	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetParam, LLVMHalfTypeInContext, LLVMInt16TypeInContext, LLVMInt1TypeInContext,
-	LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMIntTypeInContext, LLVMPointerTypeInContext,
-	LLVMPositionBuilderAtEnd, LLVMSetLinkage, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType,
-	LLVMVoidTypeInContext,
+	LLVMAddAttributeAtIndex, LLVMAddCallSiteAttribute, LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAlloca,
+	LLVMBuildCall2, LLVMBuildFPCast, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSExt,
+	LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateTypeAttribute,
+	LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetParam, LLVMHalfTypeInContext,
+	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
+	LLVMIntTypeInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetLinkage, LLVMStructGetTypeAtIndex,
+	LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType, LLVMVoidTypeInContext,
 };
 use llvm_sys::prelude::*;
 use llvm_sys::{self, LLVMLinkage};
@@ -41,6 +42,7 @@ where
 		&mut self,
 		generator: &LLVMGenerator<Self>,
 		type_store: &mut TypeStore,
+		attribute_kinds: &AttributeKinds,
 		function: &DefinedFunction,
 		arguments: &[Option<generator::Binding>],
 	) -> Option<generator::Binding>
@@ -192,8 +194,10 @@ impl SysvAbi {
 		type_store: &mut TypeStore,
 		context: LLVMContextRef,
 		llvm_types: &LLVMTypes,
+		attribute_kinds: &AttributeKinds,
 		parameter_type_id: TypeId,
 		is_mutable: bool,
+		index: Option<u32>,
 	) -> Option<ParameterInformation> {
 		let layout = type_store.type_layout(parameter_type_id);
 		if layout.size <= 0 {
@@ -222,6 +226,12 @@ impl SysvAbi {
 		} else if is_by_pointer {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			let pointed_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
+
+			if let Some(index) = index {
+				let attribute = unsafe { LLVMCreateTypeAttribute(context, attribute_kinds.byval, pointed_type) };
+				self.attribute_buffer.push(ParameterAttribute { index, attribute });
+			}
+
 			Some(ParameterInformation::ByPointer {
 				pointed_type,
 				pointed_type_id: parameter_type_id,
@@ -247,8 +257,10 @@ impl SysvAbi {
 	fn generate_argument(
 		&mut self,
 		generator: &LLVMGenerator<Self>,
+		attribute_kinds: &AttributeKinds,
 		value: generator::Binding,
 		information: &ParameterInformation,
+		index: Option<u32>,
 	) {
 		let composition = match information {
 			ParameterInformation::Composition(composition) => composition,
@@ -272,6 +284,11 @@ impl SysvAbi {
 						self.argument_value_buffer.push(alloca);
 					}
 				};
+
+				if let Some(index) = index {
+					let attribute = unsafe { LLVMCreateTypeAttribute(generator.context, attribute_kinds.byval, pointed_type) };
+					self.attribute_buffer.push(ParameterAttribute { index, attribute });
+				}
 
 				return;
 			}
@@ -389,12 +406,22 @@ impl LLVMAbi for SysvAbi {
 			FunctionReturnType::Void
 		};
 
+		let has_sret = matches!(return_type, FunctionReturnType::ByPointer { .. });
+		let maybe_sret = if has_sret { 1 } else { 0 };
+
 		self.parameter_composition_field_type_buffer.clear();
 		self.parameter_information_buffer.clear();
 
-		for parameter in &function.parameters {
-			let information =
-				self.construct_parameter_information(type_store, context, llvm_types, parameter.type_id, parameter.is_mutable);
+		for (index, parameter) in function.parameters.iter().enumerate() {
+			let information = self.construct_parameter_information(
+				type_store,
+				context,
+				llvm_types,
+				attribute_kinds,
+				parameter.type_id,
+				parameter.is_mutable,
+				Some(index as u32 + maybe_sret),
+			);
 			self.parameter_information_buffer.push(information);
 		}
 
@@ -572,10 +599,12 @@ impl LLVMAbi for SysvAbi {
 		&mut self,
 		generator: &LLVMGenerator<Self>,
 		type_store: &mut TypeStore,
+		attribute_kinds: &AttributeKinds,
 		function: &DefinedFunction,
 		arguments: &[Option<generator::Binding>],
 	) -> Option<generator::Binding> {
 		self.argument_value_buffer.clear();
+		self.attribute_buffer.clear();
 		let context = generator.context;
 
 		let sret_alloca = if let FunctionReturnType::ByPointer { pointed_type, .. } = function.return_type {
@@ -585,6 +614,7 @@ impl LLVMAbi for SysvAbi {
 		} else {
 			None
 		};
+		let maybe_sret = if sret_alloca.is_some() { 1 } else { 0 };
 
 		if function.c_varargs {
 			assert!(arguments.len() >= function.parameter_information.len());
@@ -592,13 +622,13 @@ impl LLVMAbi for SysvAbi {
 			assert_eq!(arguments.len(), function.parameter_information.len());
 		}
 
-		for (&value, information) in arguments.iter().zip(function.parameter_information.iter()) {
+		for ((index, &value), information) in arguments.iter().enumerate().zip(function.parameter_information.iter()) {
 			let (Some(value), Some(information)) = (value, information) else {
 				assert_eq!(value.is_none(), information.is_none(), "{value:?}, {information:?}");
 				continue;
 			};
 
-			self.generate_argument(generator, value, information);
+			self.generate_argument(generator, attribute_kinds, value, information, Some(index as u32 + maybe_sret));
 		}
 
 		if function.c_varargs {
@@ -609,7 +639,15 @@ impl LLVMAbi for SysvAbi {
 				};
 
 				let llvm_types = &generator.llvm_types;
-				let constructed = self.construct_parameter_information(type_store, context, llvm_types, argument.type_id, false);
+				let constructed = self.construct_parameter_information(
+					type_store,
+					context,
+					llvm_types,
+					attribute_kinds,
+					argument.type_id,
+					false,
+					None,
+				);
 				let information = constructed.unwrap();
 
 				// Some numeric varargs need to be widened before passing
@@ -661,7 +699,7 @@ impl LLVMAbi for SysvAbi {
 					}
 				}
 
-				self.generate_argument(generator, argument, &information);
+				self.generate_argument(generator, attribute_kinds, argument, &information, None);
 			}
 		}
 
@@ -675,6 +713,10 @@ impl LLVMAbi for SysvAbi {
 				c"".as_ptr(),
 			)
 		};
+
+		for attribute in &self.attribute_buffer {
+			unsafe { LLVMAddCallSiteAttribute(callsite_value, attribute.index + 1, attribute.attribute) };
+		}
 
 		let type_id = function.return_type_id;
 		match function.return_type {

@@ -49,6 +49,7 @@ use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, Typ
 pub struct AttributeKinds {
 	pub sret: u32,
 	pub noinline: u32,
+	pub byval: u32,
 }
 
 impl AttributeKinds {
@@ -59,7 +60,11 @@ impl AttributeKinds {
 			kind
 		}
 
-		AttributeKinds { sret: kind("sret"), noinline: kind("noinline") }
+		AttributeKinds {
+			sret: kind("sret"),
+			noinline: kind("noinline"),
+			byval: kind("byval"),
+		}
 	}
 }
 
@@ -1411,7 +1416,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let function = maybe_function.as_ref().unwrap();
 
 		let mut abi = self.abi.take().unwrap();
-		let binding = abi.call_function(self, type_store, function, arguments);
+		let binding = abi.call_function(self, type_store, &self.attribute_kinds, function, arguments);
 		self.abi = Some(abi);
 
 		binding
@@ -1462,7 +1467,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		arguments[0] = Some(first_argument);
 
 		let mut abi = self.abi.take().unwrap();
-		let binding = abi.call_function(self, type_store, function, arguments);
+		let binding = abi.call_function(self, type_store, &self.attribute_kinds, function, arguments);
 		self.abi = Some(abi);
 
 		binding

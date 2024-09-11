@@ -1,0 +1,23 @@
+fn function(_: Object, x: i32) {
+	println(f"{x}")
+}
+
+struct Object {
+	id: u32
+	width: i32
+	height: i32
+	mipmaps: i32
+	format: i32
+}
+
+fn main() {
+	let object = Object {
+		id: 1
+		width: 2
+		height: 3
+		mipmaps: 4
+		format: 5
+	}
+
+	function(object, 42)
+}
