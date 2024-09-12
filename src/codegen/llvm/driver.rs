@@ -148,7 +148,7 @@ pub fn generate_code<'a>(
 
 	_ = std::fs::create_dir(TARGET_DIR);
 
-	if cli_arguments.dump_llvm_ir {
+	if cli_arguments.emit_llvm_ir {
 		unsafe {
 			let formatted_path = format!("{TARGET_DIR}/{name}.ll");
 			let path = CString::new(formatted_path).unwrap();
