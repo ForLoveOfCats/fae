@@ -1,23 +1,34 @@
-fn function(_: Object, x: i32) {
-	println(f"{x}")
+fn function(mut object: Object, x: i32) {
+	object.a += 1
+	object.b -= 1
+	object.c = 100
+	println(f"x: {x}, values: [{object.a}, {object.b}, {object.c}]")
 }
 
 struct Object {
-	id: u32
-	width: i32
-	height: i32
-	mipmaps: i32
-	format: i32
+	a: u32
+	b: i32
+	c: i32
+	d: i32
+	e: i32
+	f: i32
+	g: i32
+	h: i32
 }
 
 fn main() {
 	let object = Object {
-		id: 1
-		width: 2
-		height: 3
-		mipmaps: 4
-		format: 5
+		a: 1
+		b: 2
+		c: 3
+		d: 4
+		e: 5
+		f: 6
+		g: 7
+		h: 8
 	}
 
+	println(f"values: [{object.a}, {object.b}, {object.c}]")
 	function(object, 42)
+	println(f"values: [{object.a}, {object.b}, {object.c}]")
 }

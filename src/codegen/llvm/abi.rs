@@ -97,7 +97,6 @@ pub enum ParameterInformation {
 	ByPointer {
 		pointed_type: LLVMTypeRef,
 		pointed_type_id: TypeId,
-		layout: Layout,
 		needs_alloca: bool,
 	},
 
@@ -235,7 +234,6 @@ impl SysvAbi {
 			Some(ParameterInformation::ByPointer {
 				pointed_type,
 				pointed_type_id: parameter_type_id,
-				layout,
 				needs_alloca: is_mutable,
 			})
 		} else {
@@ -265,7 +263,7 @@ impl SysvAbi {
 		let composition = match information {
 			ParameterInformation::Composition(composition) => composition,
 
-			&ParameterInformation::ByPointer { pointed_type, layout, .. } => {
+			&ParameterInformation::ByPointer { pointed_type, .. } => {
 				match value.kind {
 					generator::BindingKind::Value(value) => {
 						let alloca = generator.build_alloca(pointed_type, c"generate_argument.by_pointer.from_value");
@@ -275,13 +273,7 @@ impl SysvAbi {
 
 					generator::BindingKind::Pointer { pointer, pointed_type: ty } => {
 						assert_eq!(pointed_type, ty);
-						let alloca = generator.build_alloca(pointed_type, c"generate_argument.by_pointer.from_implicit_pointer");
-						unsafe {
-							let size = LLVMConstInt(LLVMInt64TypeInContext(generator.context), layout.size as u64, false as _);
-							let align = layout.alignment as u32;
-							LLVMBuildMemCpy(generator.builder, alloca, align, pointer, align, size);
-						}
-						self.argument_value_buffer.push(alloca);
+						self.argument_value_buffer.push(pointer);
 					}
 				};
 
@@ -723,7 +715,6 @@ impl LLVMAbi for SysvAbi {
 			FunctionReturnType::Void => None,
 
 			FunctionReturnType::ByValue { value_type, .. } => {
-				// TODO: Why does this alloca?
 				let alloca = generator.build_alloca(value_type, c"call_function.return_value.by_value");
 				unsafe { LLVMBuildStore(generator.builder, callsite_value, alloca) };
 
