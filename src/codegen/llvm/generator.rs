@@ -638,7 +638,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					LLVMSetSubprogram(defined_function.llvm_function, subroutine);
 
 					if !optimizing {
-						let attribute = LLVMCreateEnumAttribute(self.context, self.attribute_kinds.noinline, 1);
+						let attribute = LLVMCreateEnumAttribute(self.context, self.attribute_kinds.noinline, 0);
 						LLVMAddAttributeAtIndex(defined_function.llvm_function, LLVMAttributeFunctionIndex, attribute);
 					}
 				}
@@ -2669,10 +2669,19 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let pointer = LLVMBuildIntToPtr(self.builder, one, pointer_type, c"non_null_invalid_slice.pointer".as_ptr());
 			let length = length.to_value(self.builder);
 
-			let fields = &mut [pointer, length];
-			let slice = LLVMConstNamedStruct(self.llvm_types.slice_struct, fields.as_mut_ptr(), fields.len() as u32);
+			let llvm_type = self.llvm_types.slice_struct;
+			let alloca = self.build_alloca(llvm_type, c"generate_non_null_invalid_slice.slice_alloca");
 
-			let kind = BindingKind::Value(slice);
+			let pointer_name = c"generate_non_null_invalid_slice.pointer_pointer".as_ptr();
+			let pointer_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, pointer_name);
+
+			let length_name = c"generate_non_null_invalid_slice.length_pointer".as_ptr();
+			let length_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, length_name);
+
+			LLVMBuildStore(self.builder, pointer, pointer_pointer);
+			LLVMBuildStore(self.builder, length, length_pointer);
+
+			let kind = BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type };
 			Binding { type_id: slice_type_id, kind }
 		}
 	}
@@ -2689,8 +2698,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let assembly = "int 3; nop";
 
 				let void = LLVMVoidTypeInContext(self.context);
+				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
+
 				let value = LLVMGetInlineAsm(
-					void,
+					function_type,
 					assembly.as_ptr() as _,
 					assembly.len(),
 					"".as_ptr() as _,
@@ -2701,7 +2712,6 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					false as _, // can throw
 				);
 
-				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
 				LLVMBuildCall2(self.builder, function_type, value, std::ptr::null_mut(), 0, c"".as_ptr());
 			}
 		} else if self.architecture == Architecture::Aarch64 {
@@ -2711,8 +2721,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let assembly = "brk 0; nop";
 
 				let void = LLVMVoidTypeInContext(self.context);
+				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
+
 				let value = LLVMGetInlineAsm(
-					void,
+					function_type,
 					assembly.as_ptr() as _,
 					assembly.len(),
 					"".as_ptr() as _,
@@ -2723,7 +2735,6 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					false as _, // can throw
 				);
 
-				let function_type = LLVMFunctionType(void, std::ptr::null_mut(), 0, false as _);
 				LLVMBuildCall2(self.builder, function_type, value, std::ptr::null_mut(), 0, c"".as_ptr());
 			}
 		}
