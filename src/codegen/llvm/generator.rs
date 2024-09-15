@@ -116,7 +116,7 @@ pub struct LLVMTypes {
 	pub slice_struct: LLVMTypeRef,
 	pub range_struct: LLVMTypeRef,
 
-	user_type_structs: Vec<Vec<Option<UserTypeStruct>>>,
+	user_type_structs: Vec<Vec<UserTypeStruct>>,
 }
 
 impl LLVMTypes {
@@ -181,8 +181,7 @@ impl LLVMTypes {
 			},
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				let struct_type = self.user_type_structs[shape_index][specialization_index];
-				struct_type.unwrap().actual
+				self.user_type_structs[shape_index][specialization_index].actual
 			}
 
 			TypeEntryKind::Pointer { .. } => self.opaque_pointer,
@@ -427,94 +426,123 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
-		for shape in type_store.user_types.read().iter() {
-			let specialization_count = match &shape.read().kind {
+		for user_type in type_store.user_types.read().iter() {
+			let user_type = user_type.read();
+			let specialization_count = match &user_type.kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
 				UserTypeKind::Enum { shape } => shape.specializations.len(),
 			};
 
-			let specializations = Vec::from_iter((0..specialization_count).map(|_| None));
+			let specializations = Vec::from_iter((0..specialization_count).map(|_| {
+				let name = CString::new(user_type.name).unwrap();
+				let named = unsafe { LLVMStructCreateNamed(self.context, name.as_ptr()) };
+				UserTypeStruct { actual: named, as_enum_shared_fields: None }
+			}));
 			self.llvm_types.user_type_structs.push(specializations);
 		}
 
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
 
-		let user_type_generate_order = type_store.user_type_generate_order.clone();
-		let user_types = type_store.user_types.clone();
-		for &description in user_type_generate_order.read().iter() {
-			field_types_buffer.clear();
-			shared_field_types_buffer.clear();
+		let mut enum_specializations = Vec::new();
 
-			let user_type = user_types.read()[description.shape_index].clone();
-			let user_type = user_type.read();
+		let user_type_len = type_store.user_types.read().len();
+		for shape_index in 0..user_type_len {
+			let user_type_lock = type_store.user_types.read()[shape_index].clone();
+			let user_type = user_type_lock.read();
 			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
-					let specialization = &shape.specializations[description.specialization_index];
-					for field in specialization.fields.iter() {
-						let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
-						field_types_buffer.push(llvm_type);
+					for (specialization_index, specialization) in shape.specializations.iter().enumerate() {
+						if specialization.generic_poisoned {
+							continue;
+						}
+
+						field_types_buffer.clear();
+						for field in specialization.fields.iter() {
+							let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
+							field_types_buffer.push(llvm_type);
+						}
+
+						let user_type_struct = self.llvm_types.user_type_structs[shape_index][specialization_index];
+
+						unsafe {
+							LLVMStructSetBody(
+								user_type_struct.actual,
+								field_types_buffer.as_mut_ptr(),
+								field_types_buffer.len() as u32,
+								false as _,
+							);
+						}
 					}
 				}
 
 				UserTypeKind::Enum { shape } => {
-					let specialization = &shape.specializations[description.specialization_index];
-					let layout = specialization.layout.unwrap();
-					let tag_memory_size = specialization.tag_memory_size.unwrap();
+					enum_specializations.clear();
+					enum_specializations.extend_from_slice(&shape.specializations);
+					let name = user_type.name;
+					drop(user_type);
 
-					let tag = LLVMTypes::size_to_int_type(self.context, tag_memory_size);
-					field_types_buffer.push(tag);
-
-					let variants_size = layout.size - tag_memory_size;
-					assert!(variants_size >= 0);
-
-					if variants_size > 0 {
-						assert_eq!(variants_size % layout.alignment, 0);
-						let count = variants_size / layout.alignment;
-						let item = LLVMTypes::size_to_int_type(self.context, layout.alignment);
-						for _ in 0..count {
-							field_types_buffer.push(item);
-						}
-					}
-
-					for (index, field) in specialization.shared_fields.iter().enumerate() {
-						if index == 0 {
-							shared_field_types_buffer.push(tag);
+					for (specialization_index, specialization) in enum_specializations.iter().enumerate() {
+						if specialization.generic_poisoned {
 							continue;
 						}
 
-						let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
-						shared_field_types_buffer.push(llvm_type);
+						field_types_buffer.clear();
+						shared_field_types_buffer.clear();
+
+						let layout = type_store.type_layout(specialization.type_id);
+						let tag_memory_size = layout.tag_memory_size();
+
+						let tag = LLVMTypes::size_to_int_type(self.context, tag_memory_size);
+						field_types_buffer.push(tag);
+
+						let variants_size = layout.size - tag_memory_size;
+						assert!(variants_size >= 0);
+
+						if variants_size > 0 {
+							assert_eq!(variants_size % layout.alignment, 0);
+							let count = variants_size / layout.alignment;
+							let item = LLVMTypes::size_to_int_type(self.context, layout.alignment);
+							for _ in 0..count {
+								field_types_buffer.push(item);
+							}
+						}
+
+						for (index, field) in specialization.shared_fields.iter().enumerate() {
+							if index == 0 {
+								shared_field_types_buffer.push(tag);
+								continue;
+							}
+
+							let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
+							shared_field_types_buffer.push(llvm_type);
+						}
+
+						let user_type_struct = &mut self.llvm_types.user_type_structs[shape_index][specialization_index];
+
+						unsafe {
+							LLVMStructSetBody(
+								user_type_struct.actual,
+								field_types_buffer.as_mut_ptr(),
+								field_types_buffer.len() as u32,
+								false as _,
+							);
+						}
+
+						unsafe {
+							let name = CString::new(format!("{}.as_enum_shared_fields", name)).unwrap();
+							let named = LLVMStructCreateNamed(self.context, name.as_ptr());
+							LLVMStructSetBody(
+								named,
+								shared_field_types_buffer.as_mut_ptr(),
+								shared_field_types_buffer.len() as u32,
+								false as _,
+							);
+							user_type_struct.as_enum_shared_fields = Some(named);
+						};
 					}
 				}
 			}
-
-			let actual = unsafe {
-				let name = CString::new(user_type.name).unwrap();
-				let named = LLVMStructCreateNamed(self.context, name.as_ptr());
-				LLVMStructSetBody(named, field_types_buffer.as_mut_ptr(), field_types_buffer.len() as u32, false as _);
-				named
-			};
-
-			let as_enum_shared_fields = unsafe {
-				if shared_field_types_buffer.is_empty() {
-					None
-				} else {
-					let name = CString::new(format!("{}.as_enum_shared_fields", user_type.name)).unwrap();
-					let named = LLVMStructCreateNamed(self.context, name.as_ptr());
-					LLVMStructSetBody(
-						named,
-						shared_field_types_buffer.as_mut_ptr(),
-						shared_field_types_buffer.len() as u32,
-						false as _,
-					);
-					Some(named)
-				}
-			};
-
-			let user_type_struct = UserTypeStruct { actual, as_enum_shared_fields };
-			let specializations = &mut self.llvm_types.user_type_structs[description.shape_index];
-			specializations[description.specialization_index] = Some(user_type_struct);
 		}
 	}
 
@@ -850,7 +878,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 						self.readables.push(None);
 					} else {
 						let shape = &self.llvm_types.user_type_structs[enum_shape_index];
-						let llvm_struct = shape[enum_specialization_index].unwrap().actual;
+						let llvm_struct = shape[enum_specialization_index].actual;
 						let variant_pointer = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"".as_ptr());
 
 						let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
@@ -1380,9 +1408,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 	) -> Self::Binding {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
-		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index]
-			.unwrap()
-			.actual;
+		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].actual;
 
 		let alloca = self.build_alloca(struct_type, c"generate_struct_literal.alloca");
 		for (index, field) in fields.iter().enumerate() {
@@ -1521,7 +1547,6 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 					UserTypeKind::Enum { shape } => {
 						pointed_type = self.llvm_types.user_type_structs[shape_index][specialization_index]
-							.unwrap()
 							.as_enum_shared_fields
 							.unwrap();
 
@@ -2457,7 +2482,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				self.readables.push(None);
 			} else {
 				let shape = &self.llvm_types.user_type_structs[enum_shape_index];
-				let llvm_struct = shape[enum_specialization_index].unwrap().actual;
+				let llvm_struct = shape[enum_specialization_index].actual;
 				let variant_pointer = unsafe {
 					let original_block = LLVMGetInsertBlock(self.builder);
 					LLVMPositionBuilderAtEnd(self.builder, context.if_condition_binding_block.unwrap());
@@ -2487,7 +2512,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		variant_binding: Option<Binding>,
 	) -> Self::Binding {
 		let shape = &self.llvm_types.user_type_structs[enum_shape_index];
-		let enum_type = shape[enum_specialization_index].unwrap().actual;
+		let enum_type = shape[enum_specialization_index].actual;
 
 		let alloca = self.build_alloca(enum_type, c"generate_enum_variant_to_enum.enum_alloca");
 

@@ -193,6 +193,15 @@ pub struct Layout {
 	pub alignment: i64,
 }
 
+impl Layout {
+	pub fn tag_memory_size(self) -> i64 {
+		// The one is the single guarenteed byte
+		// TODO: Update this once user can request larger tag
+		// Maybe it should just be a field, we'll see
+		self.alignment.max(1)
+	}
+}
+
 #[derive(Debug)]
 pub struct StructShape<'a> {
 	/* A race condition can occur if one thread attempts to create a new specialization while
@@ -243,6 +252,7 @@ pub struct FieldShape<'a> {
 #[derive(Debug, Clone)]
 pub struct Struct<'a> {
 	pub type_id: TypeId,
+	pub generic_poisoned: bool,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
 	pub fields: SliceRef<Field<'a>>,
@@ -297,13 +307,13 @@ pub struct EnumVariantShape<'a> {
 #[derive(Debug, Clone)]
 pub struct Enum<'a> {
 	pub type_id: TypeId,
+	pub generic_poisoned: bool,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
 	pub shared_fields: SliceRef<Field<'a>>,
 	pub variants: SliceRef<EnumVariant>,
 	pub variants_by_name: Ref<FxHashMap<&'a str, usize>>, // Index into variants vec
 	pub layout: Option<Layout>,
-	pub tag_memory_size: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1299,119 +1309,99 @@ impl<'a> TypeStore<'a> {
 		self.type_entries.push_entry(type_entry)
 	}
 
-	pub fn calculate_layout(&mut self, type_id: TypeId) {
-		let entry = self.type_entries.get(type_id);
-		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
-			let lock = self.user_types.read()[shape_index].clone();
-			let user_type = lock.read();
-			match &user_type.kind {
-				UserTypeKind::Struct { shape } => {
-					let specialization = &shape.specializations[specialization_index];
-					if specialization.layout.is_some() {
-						return;
-					}
-
-					// Belch
-					let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
-					drop(user_type);
-
-					let mut size = 0;
-					let mut alignment = 1;
-
-					for field_type_id in field_types {
-						self.calculate_layout(field_type_id);
-						let field_layout = self.type_layout(field_type_id);
-
-						if (size / field_layout.alignment) * field_layout.alignment < size {
-							size = (size / field_layout.alignment) * field_layout.alignment + field_layout.alignment;
-						}
-
-						size += field_layout.size;
-						alignment = alignment.max(field_layout.alignment);
-					}
-
-					if (size / alignment) * alignment < size {
-						size = (size / alignment) * alignment + alignment;
-					}
-
-					if !entry.generic_poisoned {
-						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.write().push(description);
-					}
-
-					let layout = Layout { size, alignment };
-					let mut user_type = lock.write();
-					match &mut user_type.kind {
-						UserTypeKind::Struct { shape } => {
-							shape.specializations[specialization_index].layout = Some(layout);
-						}
-
-						kind => unreachable!("{kind:?}"),
-					}
-				}
-
-				UserTypeKind::Enum { shape } => {
-					let specialization = &shape.specializations[specialization_index];
-					if specialization.layout.is_some() {
-						return;
-					}
-
-					let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
-					drop(user_type);
-
-					let mut size = 0;
-					let mut alignment = 1;
-
-					for variant in variants {
-						self.calculate_layout(variant);
-						let variant_layout = self.type_layout(variant);
-
-						size = size.max(variant_layout.size);
-						alignment = alignment.max(variant_layout.alignment);
-					}
-
-					if !entry.generic_poisoned {
-						let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-						self.user_type_generate_order.write().push(description);
-					}
-
-					let tag_memory_size = alignment.max(1);
-					size += tag_memory_size;
-
-					let layout = Layout { size, alignment };
-					let mut user_type = lock.write();
-					match &mut user_type.kind {
-						UserTypeKind::Enum { shape } => {
-							let specialization = &mut shape.specializations[specialization_index];
-							specialization.layout = Some(layout);
-							specialization.tag_memory_size = Some(tag_memory_size);
-						}
-
-						kind => unreachable!("{kind:?}"),
-					}
-				}
-			}
-		}
-	}
-
 	pub fn type_layout(&mut self, type_id: TypeId) -> Layout {
-		match self.type_entries.get(type_id).kind {
+		let entry = self.type_entries.get(type_id);
+		match entry.kind {
 			TypeEntryKind::BuiltinType { kind } => kind.layout(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index } => {
-				match &self.user_types.read()[shape_index].read().kind {
+				let lock = self.user_types.read()[shape_index].clone();
+				let user_type = lock.read();
+				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
 						let specialization = &shape.specializations[specialization_index];
-						specialization
-							.layout
-							.expect("should have called `calculate_layout` before `type_layout`")
+						if let Some(layout) = specialization.layout {
+							return layout;
+						}
+						assert!(specialization.been_filled);
+
+						// Belch
+						let field_types: Vec<_> = specialization.fields.iter().map(|f| f.type_id).collect();
+						drop(user_type);
+
+						let mut size = 0;
+						let mut alignment = 1;
+
+						for field_type_id in field_types {
+							let field_layout = self.type_layout(field_type_id);
+
+							if (size / field_layout.alignment) * field_layout.alignment < size {
+								size = (size / field_layout.alignment) * field_layout.alignment + field_layout.alignment;
+							}
+
+							size += field_layout.size;
+							alignment = alignment.max(field_layout.alignment);
+						}
+
+						if (size / alignment) * alignment < size {
+							size = (size / alignment) * alignment + alignment;
+						}
+
+						if !entry.generic_poisoned {
+							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+							self.user_type_generate_order.write().push(description);
+						}
+
+						let layout = Layout { size, alignment };
+						let mut user_type = lock.write();
+						match &mut user_type.kind {
+							UserTypeKind::Struct { shape } => {
+								shape.specializations[specialization_index].layout = Some(layout);
+								layout
+							}
+
+							kind => unreachable!("{kind:?}"),
+						}
 					}
 
 					UserTypeKind::Enum { shape } => {
 						let specialization = &shape.specializations[specialization_index];
-						specialization
-							.layout
-							.expect("should have called `calculate_layout` before `type_layout`")
+						if let Some(layout) = specialization.layout {
+							return layout;
+						}
+						assert!(specialization.been_filled);
+
+						let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
+						drop(user_type);
+
+						let mut size = 0;
+						let mut alignment = 1;
+
+						for variant in variants {
+							let variant_layout = self.type_layout(variant);
+
+							size = size.max(variant_layout.size);
+							alignment = alignment.max(variant_layout.alignment);
+						}
+
+						if !entry.generic_poisoned {
+							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
+							self.user_type_generate_order.write().push(description);
+						}
+
+						let mut layout = Layout { size, alignment };
+						layout.size += layout.tag_memory_size();
+
+						let mut user_type = lock.write();
+						match &mut user_type.kind {
+							UserTypeKind::Enum { shape } => {
+								let specialization = &mut shape.specializations[specialization_index];
+								specialization.layout = Some(layout);
+								layout
+							}
+
+							kind => unreachable!("{kind:?}"),
+						}
 					}
 				}
 			}
@@ -1827,6 +1817,7 @@ impl<'a> TypeStore<'a> {
 		let been_filled = shape.been_filled;
 		let specialization = Struct {
 			type_id: TypeId::unusable(),
+			generic_poisoned: type_arguments_generic_poisoned,
 			type_arguments: type_arguments.clone(),
 			been_filled,
 			fields: SliceRef::from(fields),
@@ -1851,10 +1842,6 @@ impl<'a> TypeStore<'a> {
 		if type_arguments_generic_poisoned {
 			let usage = GenericUsage::UserType { type_arguments, shape_index };
 			generic_usages.push(usage)
-		}
-
-		if been_filled {
-			self.calculate_layout(type_id);
 		}
 
 		Some(type_id)
@@ -2012,13 +1999,13 @@ impl<'a> TypeStore<'a> {
 		let been_filled = shape.been_filled;
 		let specialization = Enum {
 			type_id: TypeId::unusable(),
+			generic_poisoned: type_arguments_generic_poisoned,
 			type_arguments: type_arguments.clone(),
 			been_filled,
 			shared_fields: SliceRef::from(shared_fields),
 			variants: SliceRef::from(variants),
 			variants_by_name: Ref::new(variants_by_name),
 			layout: None,
-			tag_memory_size: None,
 		};
 		let specialization_index = shape.specializations.len();
 		shape.specializations.push(specialization);
@@ -2045,10 +2032,6 @@ impl<'a> TypeStore<'a> {
 		if type_arguments_generic_poisoned {
 			let usage = GenericUsage::UserType { type_arguments, shape_index: enum_shape_index };
 			generic_usages.push(usage)
-		}
-
-		if been_filled {
-			self.calculate_layout(type_id);
 		}
 
 		Some(type_id)

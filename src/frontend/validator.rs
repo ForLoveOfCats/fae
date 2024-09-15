@@ -1998,30 +1998,24 @@ fn fill_pre_existing_struct_specializations<'a>(
 	drop(user_type);
 	let user_type = lock.read();
 
-	let mut type_ids = Vec::new();
 	match &user_type.kind {
 		UserTypeKind::Struct { shape } => {
 			let specializations = shape.specializations.clone();
 			drop(user_type);
-
-			type_ids.reserve(specializations.len());
 
 			for specialization in &specializations {
 				let type_id = specialization.type_id;
 				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
-				} else {
-					type_ids.push(type_id);
+				} else if let Some(layout) = specialization.layout {
+					let name = lock.read().name;
+					panic!("{name}: {:?}", layout);
 				}
 			}
 		}
 
 		kind => unreachable!("{kind:?}"),
-	}
-
-	for type_id in type_ids {
-		type_store.calculate_layout(type_id);
 	}
 }
 
@@ -2111,15 +2105,17 @@ fn fill_pre_existing_enum_specializations<'a>(
 	let user_type = lock.read();
 	match &user_type.kind {
 		UserTypeKind::Enum { shape } => {
-			let type_ids: Vec<_> = shape.specializations.iter().map(|s| s.type_id).collect();
+			let specializations: Vec<_> = shape.specializations.clone();
 			drop(user_type);
 
-			for &type_id in &type_ids {
+			for specialization in specializations {
+				let type_id = specialization.type_id;
 				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
 				if let Some(chain) = chain {
 					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
-				} else {
-					type_store.calculate_layout(type_id);
+				} else if let Some(layout) = specialization.layout {
+					let name = lock.read().name;
+					panic!("{name}: {:?}", layout);
 				}
 			}
 		}
