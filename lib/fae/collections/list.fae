@@ -92,6 +92,24 @@ fn has_items(): bool {
 }
 
 method List
+fn first(): Option<T> {
+	if self.is_empty() => return .None
+	return .Some(self.items[0])
+}
+
+method List
+fn first_ref(): Option<&T> {
+	if self.is_empty() => return .None
+	return .Some(self.items[0].&)
+}
+
+method mut List
+fn first_mut(): Option<&mut T> {
+	if self.is_empty() => return .None
+	return .Some(self.items[0].&mut)
+}
+
+method List
 fn last(): Option<T> {
 	if self.is_empty() => return .None
 	let value = self.items[self.items.length - 1]
@@ -109,6 +127,14 @@ method mut List
 fn last_mut(): Option<&mut T> {
 	if self.is_empty() => return .None
 	let value = self.items[self.items.length - 1].&mut
+	return .Some(value)
+}
+
+method mut List
+fn pop(): Option<T> {
+	if self.is_empty() => return .None
+	let value = self.items[self.items.length - 1]
+	self.items.length -= 1
 	return .Some(value)
 }
 
