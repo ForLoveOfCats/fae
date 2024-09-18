@@ -1,0 +1,45 @@
+struct Struct {
+	a: i32
+	b: bool
+	c: f32
+}
+
+enum Enum {
+	shared: str
+
+	A { one: i32 }
+	B { one: f64, two: bool }
+}
+
+fn main() {
+	let s = Struct {
+
+		a: 1
+
+		b: true
+
+		c: 3.14
+
+	}
+	println(f"{s.a}, {s.b}, {s.c}")
+
+
+	let ea = Enum::A {
+
+		shared: "Hello"
+
+		one: 99
+
+	}
+	println(f"{ea.shared}, {ea.one}")
+
+	let eb = Enum::B {
+
+		shared: "World"
+
+		one: 6.5
+
+		two: false
+	}
+	println(f"{eb.shared}, {eb.one}, {eb.two}")
+}

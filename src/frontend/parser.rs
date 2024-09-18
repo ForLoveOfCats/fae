@@ -1272,11 +1272,11 @@ fn parse_struct_initializer<'a>(
 ) -> ParseResult<Node<StructInitializer<'a>>> {
 	let open_brace_token = tokens.expect(messages, TokenKind::OpenBrace)?;
 
-	tokens.consume_newlines();
-
 	let mut field_initializers = BumpVec::new_in(bump);
 
 	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+		tokens.consume_newlines();
+
 		let name_token = tokens.expect(messages, TokenKind::Word)?;
 		check_not_reserved(messages, name_token, "field name")?;
 		let name = Node::from_token(name_token.text, name_token);
@@ -1298,10 +1298,10 @@ fn parse_struct_initializer<'a>(
 
 		if tokens.peek_kind() == Ok(TokenKind::Comma) {
 			tokens.next(messages)?;
-			tokens.consume_newlines();
 		} else {
 			tokens.expect(messages, TokenKind::Newline)?;
 		}
+		tokens.consume_newlines();
 	}
 
 	let close_brace_token = tokens.expect(messages, TokenKind::CloseBrace)?;
