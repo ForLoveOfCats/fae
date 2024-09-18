@@ -2,6 +2,13 @@ import fae::intrinsics::create_slice_mut, create_str, create_non_null_invalid_po
 import fae::libc::malloc, memcpy, memmove
 
 generic T
+fn swap(a: &mut T, b: &mut T) {
+	let temp = b.*
+	b.* = a.*
+	a.* = temp
+}
+
+generic T
 fn allocate_space(): &mut T {
 	if size_of<T>() <= 0 {
 		return create_non_null_invalid_pointer<T>()
