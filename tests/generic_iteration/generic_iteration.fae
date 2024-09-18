@@ -1,0 +1,29 @@
+generic T
+struct A {}
+
+method A
+fn a() {}
+
+generic T
+struct B {
+	slice: []A<T>
+}
+
+method B
+fn b() {
+	for a, index, last in self.slice {
+		println(f"{index}, {last}")
+		a.a()
+	}
+	for a, index, last of self.slice {
+		println(f"{index}, {last}")
+		a.a()
+	}
+}
+
+fn main() {
+	let b = B<bool> {
+		slice: []{ A<bool> {} }
+	}
+	b.b()
+}

@@ -989,9 +989,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		self.start_block();
 
-		let sliced_type_id = statement
-			.initializer
-			.type_id
+		let sliced_type_id = context
+			.specialize_type_id(statement.initializer.type_id)
 			.as_slice(&mut context.type_store.type_entries)
 			.unwrap()
 			.type_id;
@@ -1027,13 +1026,14 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let iteration_alloca = self.build_alloca(i64_type, c"for_slice.iteration_alloca");
 			LLVMBuildStore(self.builder, zero, iteration_alloca);
 
+			let item_type_id = context.specialize_type_id(statement.item.type_id);
 			let item_type = self
 				.llvm_types
-				.type_to_llvm_type(self.context, context.type_store, statement.item.type_id);
+				.type_to_llvm_type(self.context, context.type_store, item_type_id);
 
 			let item_alloca = self.build_alloca(item_type, c"for_slice.item");
 			let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
-			let binding = Binding { type_id: statement.item.type_id, kind };
+			let binding = Binding { type_id: item_type_id, kind };
 			assert_eq!(self.readables.len(), statement.item.readable_index);
 			self.readables.push(Some(binding));
 
