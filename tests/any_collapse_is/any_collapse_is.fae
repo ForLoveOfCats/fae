@@ -1,0 +1,6 @@
+fn main() {
+	let slice = []{ false, true }
+	if unknown_function() is index: Some {
+		println(f"{slice[index]}")
+	}
+}

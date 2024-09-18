@@ -6148,7 +6148,33 @@ fn perform_constant_binary_operation<'a>(
 
 fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::CheckIs<'a>, span: Span) -> Expression<'a> {
 	let left = validate_expression(context, &check.left);
+
+	let binding_name = if !context.can_is_bind {
+		if let Some(binding_name) = check.binding_name {
+			// TODO: Figure out how to explain this to the user better
+			let error = error!("Cannot bind `is` check to a name in the current context");
+			context.message(error.span(binding_name.span));
+		}
+		None
+	} else if let Some(binding_name) = check.binding_name {
+		Some(binding_name)
+	} else if let ExpressionKind::Read(read) = &left.kind {
+		if check.variant_names.len() == 1 {
+			Some(Node::new(read.name, left.span))
+		} else {
+			None
+		}
+	} else {
+		None
+	};
+
 	if left.type_id.is_any_collapse(context.type_store) {
+		if let Some(binding_name) = binding_name {
+			let type_id = context.type_store.any_collapse_type_id();
+			let used = check.binding_name.is_none();
+			context.push_readable(binding_name, type_id, ReadableKind::Mut, used, left.is_pointer_access_mutable);
+		}
+
 		return Expression::any_collapse(context.type_store, span);
 	}
 
@@ -6228,25 +6254,6 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		}
 		encountered_variants[variant_index] = Some(variant_name.span);
 	}
-
-	let binding_name = if !context.can_is_bind {
-		if let Some(binding_name) = check.binding_name {
-			// TODO: Figure out how to explain this to the user better
-			let error = error!("Cannot bind `is` check to a name in the current context");
-			context.message(error.span(binding_name.span));
-		}
-		None
-	} else if let Some(binding_name) = check.binding_name {
-		Some(binding_name)
-	} else if let ExpressionKind::Read(read) = &left.kind {
-		if check.variant_names.len() == 1 {
-			Some(Node::new(read.name, left.span))
-		} else {
-			None
-		}
-	} else {
-		None
-	};
 
 	let binding = if let Some(binding_name) = binding_name {
 		assert_eq!(check.variant_names.len(), 1);
