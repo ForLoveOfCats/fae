@@ -1,0 +1,31 @@
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 18: Cannot assign to immutable memory location
+  18|         instance_ptr.ptr.* += 2 // Invalid
+              ^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 21: Expected yield type of `&mut i32`, got `&i32`
+  21|             yield instance_ptr.ptr // Invalid
+                  ^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 28: Cannot assign to immutable memory location
+  28|         instance_ptr.*.ptr.* += 4 // Invalid 
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 31: Expected yield type of `&mut i32`, got `&i32`
+  31|             yield instance_ptr.*.ptr // Invalid
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 40: Cannot assign to index of immutable slice
+  40|         instance_ptr.slice[0] += 2 // Invalid
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 43: Expected yield type of `[]mut i32`, got `[]i32`
+  43|             yield instance_ptr.slice // Invalid
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 57: Cannot assign to immutable memory location
+  57|         slice[0].ptr.* += 1 // Invalid
+              ^^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/mutable_through_immutable/mutable_through_immutable.fae, line 59: Cannot assign to index of immutable slice
+  59|         slice[0].slice[0] += 1 // Invalid
+              ^^^^^^^^^^^^^^^^^^^^^^

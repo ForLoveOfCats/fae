@@ -6,6 +6,6 @@ Validation error: ./tests/pointer_failure/pointer_failure.fae, line 5: Cannot de
   5|     5.*
          ^^^
 
-Validation error: ./tests/pointer_failure/pointer_failure.fae, line 8: Cannot assign immutable memory location
+Validation error: ./tests/pointer_failure/pointer_failure.fae, line 8: Cannot assign to immutable memory location
   8|     ptr.* = 6
          ^^^^^^^^^

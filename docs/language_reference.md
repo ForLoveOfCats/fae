@@ -434,7 +434,7 @@ A pointer to a mutable value may not be used to modify the value when accessed i
 mut value = false
 let ptr = value.&mut
 let ptr_ptr: &&mut bool = ptr.&
-ptr.*.* = true // COMPILE ERROR! 
+ptr_ptr.*.* = true // Error: Cannot assign to immutable memory location 
 ```
 
 When pointing to a value with fields, the pointer may be *implicitly* dereferenced when accessing the fields through the normal dot access.
@@ -799,14 +799,16 @@ Field visibility:
  - `internal` restricts field access and initialization to within *non-extension* methods on the type containing the field.
 
 Field mutability:
- - `readable` prevents the field from being mutated or initialized from outside *non-extension* methods on the type containing the field.
- - `readonly` prevents all mutation of the field after initialization.
+ - `readable` prevents the field from *itself* being mutated or initialized from outside *non-extension* methods on the type containing the field.
+ - `readonly` prevents all mutation of the field *itself* after initialization.
 
 They may be composed in the following combinations:
  - `internal`
  - `readable`
  - `readonly`
  - `internal readonly`
+
+When a field's mutation is disallowed due to `readable` or `readonly`, that does not prevent mutation of values pointed to with a mutable pointer or mutable slice contained *within* the field which may not itself be mutated. This mirrors how a mutable pointer may be stored in a `let` binding while still allowing the pointed data to be mutated.
 
 ```
 struct MyStruct {

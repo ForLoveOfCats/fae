@@ -700,7 +700,7 @@ fn generate_method_call<'a, 'b, G: Generator>(
 	} else {
 		context
 			.type_store
-			.pointer_to(method_call.base.type_id, method_call.base.is_mutable)
+			.pointer_to(method_call.base.type_id, method_call.base.is_itself_mutable)
 	};
 
 	let base = generate_expression(context, generator, &method_call.base)

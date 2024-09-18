@@ -330,6 +330,7 @@ pub struct Readable<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
 	pub kind: ReadableKind,
+	pub is_pointer_access_mutable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,9 +354,10 @@ impl<'a> Readables<'a> {
 		self.readables.len()
 	}
 
-	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind) -> usize {
+	pub fn push(&mut self, name: &'a str, type_id: TypeId, kind: ReadableKind, is_pointer_access_mutable: bool) -> usize {
 		let index = self.readables.len() - self.starting_index;
-		self.readables.push(Readable { name, type_id, kind });
+		let readable = Readable { name, type_id, kind, is_pointer_access_mutable };
+		self.readables.push(readable);
 		index
 	}
 

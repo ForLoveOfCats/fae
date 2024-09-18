@@ -227,8 +227,15 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			.push_symbol(self.messages, self.function_initial_symbols_length, symbol);
 	}
 
-	pub fn push_readable(&mut self, name: tree::Node<&'a str>, type_id: TypeId, kind: ReadableKind, used: bool) -> usize {
-		let readable_index = self.readables.push(name.item, type_id, kind);
+	pub fn push_readable(
+		&mut self,
+		name: tree::Node<&'a str>,
+		type_id: TypeId,
+		kind: ReadableKind,
+		used: bool,
+		is_pointer_access_mutable: bool,
+	) -> usize {
+		let readable_index = self.readables.push(name.item, type_id, kind, is_pointer_access_mutable);
 
 		let span = Some(name.span);
 		let name = name.item;
@@ -2320,7 +2327,7 @@ fn create_block_functions<'a>(
 						type_store.any_collapse_type_id()
 					};
 
-					let readable_index = readables.push("self", type_id, ReadableKind::Let);
+					let readable_index = readables.push("self", type_id, ReadableKind::Let, mutable);
 					assert_eq!(readable_index, 0);
 					parameters.push(ParameterShape { type_id, readable_index, is_mutable: false });
 				}
@@ -2351,7 +2358,7 @@ fn create_block_functions<'a>(
 				};
 
 				let name = parameter.item.name.item;
-				let readable_index = readables.push(name, type_id, readable_kind);
+				let readable_index = readables.push(name, type_id, readable_kind, true);
 				assert_eq!(readable_index, index + maybe_self);
 
 				let is_mutable = parameter.item.is_mutable;
@@ -2985,14 +2992,15 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			scope.is_extension_method = scope_id != base_scope_id;
 		}
 
-		let is_method = match method_attribute.item.kind {
-			MethodKind::ImmutableSelf | MethodKind::MutableSelf => true,
-			MethodKind::Static => false,
+		let (is_method, is_mutable) = match method_attribute.item.kind {
+			MethodKind::ImmutableSelf => (true, false),
+			MethodKind::MutableSelf => (true, true),
+			MethodKind::Static => (false, false),
 		};
 
 		if is_method {
 			let type_id = shape.parameters[0].type_id;
-			let readable_index = scope.readables.push("self", type_id, ReadableKind::Let);
+			let readable_index = scope.readables.push("self", type_id, ReadableKind::Let, is_mutable);
 			let kind = SymbolKind::Let { readable_index };
 			let symbol = Symbol { name: "self", kind, span: None, used: true };
 
@@ -3014,7 +3022,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			false => ReadableKind::Let,
 			true => ReadableKind::Mut,
 		};
-		let readable_index = scope.readables.push(parameter.name.item, parameter_shape_type_id, kind);
+		let readable_index = scope.readables.push(parameter.name.item, parameter_shape_type_id, kind, true);
 		assert_eq!(readable_index, stored_readable_index);
 		let kind = match parameter.is_mutable {
 			false => SymbolKind::Let { readable_index },
@@ -3310,7 +3318,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 		true => ReadableKind::Mut,
 		false => ReadableKind::Let,
 	};
-	let readable_index = context.push_readable(statement.item.name, type_id, kind, false);
+	let readable_index = context.push_readable(statement.item.name, type_id, kind, false, true);
 
 	let name = statement.item.name.item;
 	Some(Binding { name, type_id, expression, readable_index })
@@ -3462,7 +3470,8 @@ fn validate_block_expression<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -3552,7 +3561,8 @@ fn validate_if_else_chain_expression<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -3573,7 +3583,7 @@ fn validate_match_expression<'a>(
 
 	let (expression_type_id, is_mutable) = match expression.type_id.as_pointed(context.type_store) {
 		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
-		None => (expression.type_id, expression.is_mutable),
+		None => (expression.type_id, expression.is_itself_mutable),
 	};
 
 	let report_not_enum_error = |context: &mut Context| {
@@ -3697,7 +3707,7 @@ fn validate_match_expression<'a>(
 				false => ReadableKind::Let,
 			};
 
-			let readable_index = scope.push_readable(binding_name, type_id, kind, false);
+			let readable_index = scope.push_readable(binding_name, type_id, kind, false, expression.is_pointer_access_mutable);
 			Some(ResultBinding { type_id, readable_index })
 		} else {
 			None
@@ -3768,7 +3778,8 @@ fn validate_match_expression<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable,
+		is_itself_mutable: is_mutable,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -3828,32 +3839,44 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 		ForKind::InSlice => {
 			let slice = slice.unwrap();
 			let type_id = slice.type_id;
-			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false);
+			let readable_index = scope.push_readable(
+				statement.item.item,
+				type_id,
+				ReadableKind::Let,
+				false,
+				initializer.is_pointer_access_mutable,
+			);
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::OfSlice => {
 			let slice = slice.unwrap();
 			let type_id = scope.type_store.pointer_to(slice.type_id, slice.mutable);
-			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false);
+			let readable_index = scope.push_readable(
+				statement.item.item,
+				type_id,
+				ReadableKind::Let,
+				false,
+				initializer.is_pointer_access_mutable,
+			);
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::Range => {
 			let type_id = scope.type_store.isize_type_id();
-			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false);
+			let readable_index = scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false, true);
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::AnyCollapse => {
-			let readable_index = scope.push_readable(statement.item.item, any_collapse, ReadableKind::Mut, false);
+			let readable_index = scope.push_readable(statement.item.item, any_collapse, ReadableKind::Mut, false, true);
 			ResultBinding { type_id: any_collapse, readable_index }
 		}
 	};
 
 	let index = if let Some(index) = statement.item.index {
 		let type_id = scope.type_store.isize_type_id();
-		let readable_index = scope.push_readable(index, type_id, ReadableKind::Let, false);
+		let readable_index = scope.push_readable(index, type_id, ReadableKind::Let, false, true);
 		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None
@@ -3867,7 +3890,7 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 		}
 
 		let type_id = scope.type_store.bool_type_id();
-		let readable_index = scope.push_readable(is_last, type_id, ReadableKind::Let, false);
+		let readable_index = scope.push_readable(is_last, type_id, ReadableKind::Let, false, true);
 		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None
@@ -3887,7 +3910,8 @@ fn validate_number_literal<'a>(context: &mut Context<'a, '_, '_>, literal: &tree
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields: false,
 		returns: false,
 		kind,
@@ -3901,7 +3925,8 @@ fn validate_bool_literal<'a>(context: &mut Context<'a, '_, '_>, literal: bool, s
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields: false,
 		returns: false,
 		kind,
@@ -3919,7 +3944,8 @@ fn validate_codepoint_literal<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields: false,
 		returns: false,
 		kind,
@@ -3937,7 +3963,8 @@ fn validate_byte_codepoint_literal<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields: false,
 		returns: false,
 		kind,
@@ -3955,7 +3982,8 @@ fn validate_string_literal<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: false,
+		is_itself_mutable: false,
+		is_pointer_access_mutable: true,
 		yields: false,
 		returns: false,
 		kind,
@@ -3996,7 +4024,8 @@ fn validate_format_string_literal<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: false,
+		is_itself_mutable: false,
+		is_pointer_access_mutable: true,
 		yields: false,
 		returns: false,
 		kind,
@@ -4059,7 +4088,8 @@ fn validate_array_literal<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -4125,7 +4155,8 @@ fn validate_struct_literal<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -4375,7 +4406,8 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	Expression {
 		span,
 		type_id: return_type,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -4541,7 +4573,9 @@ fn validate_method_call<'a>(
 
 	let entry = context.type_store.type_entries.get(base.type_id);
 	let (base_shape_index, base_specialization_index, base_mutable) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index, base.is_mutable),
+		TypeEntryKind::UserType { shape_index, specialization_index } => {
+			(shape_index, specialization_index, base.is_itself_mutable)
+		}
 
 		TypeEntryKind::Pointer { type_id, mutable } => {
 			let entry = context.type_store.type_entries.get(type_id);
@@ -4552,7 +4586,7 @@ fn validate_method_call<'a>(
 				return Expression::any_collapse(context.type_store, span);
 			};
 
-			(shape_index, specialization_index, mutable)
+			(shape_index, specialization_index, mutable && base.is_pointer_access_mutable)
 		}
 
 		TypeEntryKind::BuiltinType { kind } if kind == PrimativeKind::AnyCollapse => {
@@ -4633,7 +4667,8 @@ fn validate_method_call<'a>(
 	Expression {
 		span,
 		type_id: return_type,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -4719,7 +4754,8 @@ fn validate_static_method_call<'a>(
 					return Expression {
 						span,
 						type_id,
-						is_mutable: true,
+						is_itself_mutable: true,
+						is_pointer_access_mutable: true,
 						yields,
 						returns,
 						kind,
@@ -4791,7 +4827,8 @@ fn validate_static_method_call<'a>(
 	Expression {
 		span,
 		type_id: return_type,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -4841,7 +4878,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			return Expression {
 				span,
 				type_id,
-				is_mutable: false,
+				is_itself_mutable: false,
+				is_pointer_access_mutable: true,
 				yields: false,
 				returns: false,
 				kind,
@@ -4860,7 +4898,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			return Expression {
 				span,
 				type_id,
-				is_mutable: false,
+				is_itself_mutable: false,
+				is_pointer_access_mutable: true,
 				yields: false,
 				returns: false,
 				kind,
@@ -4878,7 +4917,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				return Expression {
 					span,
 					type_id,
-					is_mutable: false,
+					is_itself_mutable: false,
+					is_pointer_access_mutable: false,
 					yields: false,
 					returns: false,
 					kind,
@@ -4908,7 +4948,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			return Expression {
 				span,
 				type_id,
-				is_mutable: false,
+				is_itself_mutable: false,
+				is_pointer_access_mutable: false,
 				yields: false,
 				returns: false,
 				kind,
@@ -4926,7 +4967,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		panic!("Symbol pointed to unknown readable index {readable_index}, {read:?}");
 	};
 
-	let is_mutable = readable.kind == ReadableKind::Mut;
+	let is_itself_mutable = readable.kind == ReadableKind::Mut;
+	let is_pointer_access_mutable = readable.is_pointer_access_mutable;
 	let read = Read { name: readable.name, readable_index };
 
 	let type_id = readable.type_id;
@@ -4934,7 +4976,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 	Expression {
 		span,
 		type_id,
-		is_mutable,
+		is_itself_mutable,
+		is_pointer_access_mutable,
 		yields: false,
 		returns: false,
 		kind,
@@ -4943,27 +4986,13 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 }
 
 fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tree::DotAccess<'a>, span: Span) -> Expression<'a> {
-	let base = validate_expression(context, &dot_access.base);
-	context.expected_type = None;
-	if base.type_id.is_any_collapse(context.type_store) {
-		return Expression::any_collapse(context.type_store, span);
-	}
-
-	if let ExpressionKind::Type(base) = base.kind {
-		return validate_dot_access_enum_literal(context, base, dot_access, span);
-	}
-
-	let (type_id, mutable) = match base.type_id.as_pointed(context.type_store) {
-		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
-		None => (base.type_id, base.is_mutable),
-	};
-
 	// Dumb name, this structure is forced to make the lock scope juggling not horrid
 	fn handle_fields<'a>(
 		context: &mut Context<'a, '_, '_>,
 		dot_access: &tree::DotAccess<'a>,
 		base: Expression<'a>,
-		mutable: bool,
+		is_itself_mutable: bool,
+		is_pointer_access_mutable: bool,
 		fields: &[Field<'a>],
 		external_access: bool,
 		span: Span,
@@ -4988,13 +5017,33 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			return Expression::any_collapse(context.type_store, span);
 		}
 
-		let type_id = field.type_id;
-		let (is_mutable, reason) = if external_access && is_readable {
-			(false, Some(FieldReadImmutableReason::Readable))
+		let (is_itself_mutable, is_pointer_access_mutable, reason) = if external_access && is_readable {
+			(false, true, Some(FieldReadImmutableReason::Readable))
 		} else if is_read_only {
-			(false, Some(FieldReadImmutableReason::ReadOnly))
+			(false, true, Some(FieldReadImmutableReason::ReadOnly))
 		} else {
-			(mutable, None)
+			(is_itself_mutable, is_pointer_access_mutable, None)
+		};
+
+		let field_entry = context.type_store.type_entries.get(field.type_id);
+		let type_id = match field_entry.kind {
+			TypeEntryKind::Pointer { type_id: pointed, .. } => {
+				if is_pointer_access_mutable {
+					field.type_id
+				} else {
+					context.type_store.pointer_to(pointed, false)
+				}
+			}
+
+			TypeEntryKind::Slice(slice) => {
+				if is_pointer_access_mutable {
+					field.type_id
+				} else {
+					context.type_store.slice_of(slice.type_id, false)
+				}
+			}
+
+			_ => field.type_id,
 		};
 
 		let field_read = FieldRead {
@@ -5007,13 +5056,29 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		Expression {
 			span,
 			type_id,
-			is_mutable,
+			is_itself_mutable,
+			is_pointer_access_mutable,
 			yields: false,
 			returns: false,
 			kind,
 			debug_location: span.debug_location(context.parsed_files),
 		}
 	}
+
+	let base = validate_expression(context, &dot_access.base);
+	context.expected_type = None;
+	if base.type_id.is_any_collapse(context.type_store) {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	if let ExpressionKind::Type(base) = base.kind {
+		return validate_dot_access_enum_literal(context, base, dot_access, span);
+	}
+
+	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base.type_id.as_pointed(context.type_store) {
+		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
+		None => (base.type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
+	};
 
 	let type_entry = context.type_store.type_entries.get(type_id);
 	match type_entry.kind {
@@ -5026,14 +5091,32 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 					let fields = shape.specializations[specialization_index].fields.clone();
 					drop(user_type);
 					let external_access = context.check_is_external_access(shape_index);
-					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
+					return handle_fields(
+						context,
+						dot_access,
+						base,
+						is_itself_mutable,
+						is_pointer_access_mutable,
+						&fields,
+						external_access,
+						span,
+					);
 				}
 
 				UserTypeKind::Enum { shape } => {
 					let fields = shape.specializations[specialization_index].shared_fields.clone();
 					drop(user_type);
 					let external_access = context.check_is_external_access(shape_index);
-					return handle_fields(context, dot_access, base, mutable, &fields, external_access, span);
+					return handle_fields(
+						context,
+						dot_access,
+						base,
+						is_itself_mutable,
+						is_pointer_access_mutable,
+						&fields,
+						external_access,
+						span,
+					);
 				}
 			}
 		}
@@ -5058,7 +5141,17 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				read_only: false,
 			},
 		];
-		return handle_fields(context, dot_access, base, mutable, slice_fields, false, span);
+		let is_pointer_access_mutable = is_pointer_access_mutable && as_slice.mutable;
+		return handle_fields(
+			context,
+			dot_access,
+			base,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			slice_fields,
+			false,
+			span,
+		);
 	} else if type_id.is_string(context.type_store) {
 		let u8_type_id = context.type_store.u8_type_id();
 		let str_fields = &[
@@ -5084,7 +5177,16 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				read_only: true,
 			},
 		];
-		return handle_fields(context, dot_access, base, mutable, str_fields, false, span);
+		return handle_fields(
+			context,
+			dot_access,
+			base,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			str_fields,
+			false,
+			span,
+		);
 	} else if type_id.is_format_string(context.type_store) {
 		let item_type_id = context.lang_items.read().format_string_item_type.unwrap();
 		let fstr_fields = &[Field {
@@ -5094,7 +5196,16 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			attribute: None,
 			read_only: true,
 		}];
-		return handle_fields(context, dot_access, base, mutable, fstr_fields, false, span);
+		return handle_fields(
+			context,
+			dot_access,
+			base,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			fstr_fields,
+			false,
+			span,
+		);
 	} else {
 		let on = base.kind.name_with_article();
 		let found = context.type_name(base.type_id);
@@ -5156,7 +5267,8 @@ fn validate_inferred_enum<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
 				yields,
 				returns,
 				kind,
@@ -5199,7 +5311,8 @@ fn validate_dot_access_enum_literal<'a>(
 	Expression {
 		span,
 		type_id: variant_type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -5402,7 +5515,8 @@ fn validate_unary_operation<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
 				yields,
 				returns,
 				kind,
@@ -5423,7 +5537,8 @@ fn validate_unary_operation<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
 				yields,
 				returns,
 				kind,
@@ -5437,7 +5552,8 @@ fn validate_unary_operation<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: false,
 				yields,
 				returns,
 				kind,
@@ -5446,7 +5562,7 @@ fn validate_unary_operation<'a>(
 		}
 
 		UnaryOperator::AddressOfMut => {
-			if !expression.is_mutable {
+			if !expression.is_itself_mutable {
 				let error = error!("Cannot take mutable address of immutable value");
 				context.message(error.span(span));
 				return Expression::any_collapse(context.type_store, span);
@@ -5457,7 +5573,8 @@ fn validate_unary_operation<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
 				yields,
 				returns,
 				kind,
@@ -5472,11 +5589,13 @@ fn validate_unary_operation<'a>(
 				return Expression::any_collapse(context.type_store, span);
 			};
 
+			let is_mutable = is_mutable && expression.is_pointer_access_mutable;
 			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
 			return Expression {
 				span,
 				type_id,
-				is_mutable,
+				is_itself_mutable: is_mutable,
+				is_pointer_access_mutable: is_mutable,
 				yields,
 				returns,
 				kind,
@@ -5585,6 +5704,11 @@ fn validate_cast<'a>(
 		context.message(error.span(span));
 	}
 
+	let is_pointer_access_mutable = match to_type_id.as_pointed(context.type_store) {
+		Some(pointed) => pointed.mutable,
+		None => true,
+	};
+
 	let type_id = to_type_id;
 	let yields = expression.yields;
 	let returns = expression.returns;
@@ -5593,7 +5717,8 @@ fn validate_cast<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable,
 		yields,
 		returns,
 		kind,
@@ -5611,9 +5736,12 @@ fn validate_bracket_index<'a>(
 	let range_type_id = context.lang_items.read().range_type.unwrap();
 	let is_range = context.type_store.direct_match(index_expression.type_id, range_type_id);
 
-	let (type_id, is_mutable) = if let Some((sliced, is_mutable)) = context.type_store.sliced_of(expression.type_id) {
+	let sliced_of = context.type_store.sliced_of(expression.type_id);
+	let (type_id, is_mutable) = if let Some((sliced, sliced_mutable)) = sliced_of {
+		let is_pointer_access_mutable = sliced_mutable && expression.is_pointer_access_mutable;
+
 		if is_range {
-			let type_id = context.type_store.slice_of(sliced, is_mutable);
+			let type_id = context.type_store.slice_of(sliced, sliced_mutable);
 			let yields = expression.yields || index_expression.yields;
 			let returns = expression.returns || index_expression.returns;
 			let op = UnaryOperator::RangeIndex { index_expression };
@@ -5621,7 +5749,8 @@ fn validate_bracket_index<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable,
+				is_itself_mutable: sliced_mutable,
+				is_pointer_access_mutable,
 				yields,
 				returns,
 				kind,
@@ -5629,7 +5758,7 @@ fn validate_bracket_index<'a>(
 			};
 		}
 
-		(sliced, is_mutable)
+		(sliced, is_pointer_access_mutable)
 	} else if expression.type_id.is_string(context.type_store) {
 		if is_range {
 			let type_id = context.type_store.string_type_id();
@@ -5640,7 +5769,8 @@ fn validate_bracket_index<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_mutable: false,
+				is_itself_mutable: false,
+				is_pointer_access_mutable: false,
 				yields,
 				returns,
 				kind,
@@ -5669,7 +5799,8 @@ fn validate_bracket_index<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable,
+		is_itself_mutable: is_mutable,
+		is_pointer_access_mutable: is_mutable,
 		yields,
 		returns,
 		kind,
@@ -5722,7 +5853,8 @@ fn validate_binary_operation<'a>(
 		return Expression {
 			span,
 			type_id,
-			is_mutable: true,
+			is_itself_mutable: true,
+			is_pointer_access_mutable: true,
 			yields,
 			returns,
 			kind,
@@ -5853,7 +5985,7 @@ fn validate_binary_operation<'a>(
 				}
 			} else if let ExpressionKind::StaticRead(_) = &left.kind {
 			} else if let ExpressionKind::FieldRead(field_read) = &left.kind {
-				if !left.is_mutable {
+				if !left.is_itself_mutable {
 					let name = field_read.name;
 					let base = context.type_name(field_read.base.type_id);
 					let error = match field_read.immutable_reason {
@@ -5870,12 +6002,12 @@ fn validate_binary_operation<'a>(
 				}
 			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Dereference, .. }))
 			{
-				if !left.is_mutable {
-					context.message(error!("Cannot assign immutable memory location").span(span));
+				if !left.is_itself_mutable {
+					context.message(error!("Cannot assign to immutable memory location").span(span));
 				}
 			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
 			{
-				if !left.is_mutable {
+				if !left.is_itself_mutable {
 					context.message(error!("Cannot assign to index of immutable slice").span(span));
 				}
 			} else if !matches!(left.kind, ExpressionKind::AnyCollapse) {
@@ -5908,7 +6040,8 @@ fn validate_binary_operation<'a>(
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,
@@ -5949,7 +6082,8 @@ fn perform_constant_binary_operation<'a>(
 			return Some(Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
 				yields: false,
 				returns: false,
 				kind,
@@ -5972,7 +6106,8 @@ fn perform_constant_binary_operation<'a>(
 			return Some(Expression {
 				span,
 				type_id,
-				is_mutable: true,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
 				yields: false,
 				returns: false,
 				kind,
@@ -5999,7 +6134,8 @@ fn perform_constant_binary_operation<'a>(
 		return Some(Expression {
 			span,
 			type_id,
-			is_mutable: true,
+			is_itself_mutable: true,
+			is_pointer_access_mutable: true,
 			yields: false,
 			returns: false,
 			kind,
@@ -6018,7 +6154,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 
 	let (left_type_id, is_mutable) = match left.type_id.as_pointed(context.type_store) {
 		Some(as_pointer) => (as_pointer.type_id, as_pointer.mutable),
-		None => (left.type_id, left.is_mutable),
+		None => (left.type_id, left.is_itself_mutable),
 	};
 
 	let report_not_enum = |context: &mut Context| {
@@ -6136,7 +6272,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		};
 
 		let used = check.binding_name.is_none();
-		let readable_index = context.push_readable(binding_name, type_id, kind, used);
+		let readable_index = context.push_readable(binding_name, type_id, kind, used, left.is_pointer_access_mutable);
 		Some(ResultBinding { type_id, readable_index })
 	} else {
 		None
@@ -6150,7 +6286,8 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	Expression {
 		span,
 		type_id,
-		is_mutable: true,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
 		yields,
 		returns,
 		kind,

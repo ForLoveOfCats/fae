@@ -1083,7 +1083,8 @@ impl<'a> TypeStore<'a> {
 					*from = Expression {
 						span,
 						type_id,
-						is_mutable: false,
+						is_itself_mutable: false,
+						is_pointer_access_mutable: false,
 						yields,
 						returns,
 						kind,
@@ -1107,7 +1108,8 @@ impl<'a> TypeStore<'a> {
 			*from = Expression {
 				span,
 				type_id: to,
-				is_mutable: false,
+				is_itself_mutable: false,
+				is_pointer_access_mutable: false,
 				yields,
 				returns,
 				kind,
@@ -1142,12 +1144,14 @@ impl<'a> TypeStore<'a> {
 								let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
 								let yields = expression.yields;
 								let returns = expression.returns;
+								let is_pointer_access_mutable = expression.is_pointer_access_mutable;
 								let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
 								let kind = ExpressionKind::EnumVariantToEnum(conversion);
 								*from = Expression {
 									span: from.span,
 									type_id: to,
-									is_mutable: false,
+									is_itself_mutable: false,
+									is_pointer_access_mutable,
 									yields,
 									returns,
 									kind,

@@ -433,7 +433,8 @@ pub struct Return<'a> {
 pub struct Expression<'a> {
 	pub span: Span,
 	pub type_id: TypeId,
-	pub is_mutable: bool,
+	pub is_itself_mutable: bool,
+	pub is_pointer_access_mutable: bool,
 	pub yields: bool,
 	pub returns: bool,
 	pub kind: ExpressionKind<'a>,
@@ -445,7 +446,8 @@ impl<'a> Expression<'a> {
 		Expression {
 			span,
 			type_id: type_store.any_collapse_type_id(),
-			is_mutable: true,
+			is_itself_mutable: true,
+			is_pointer_access_mutable: true,
 			yields: true,
 			returns: true,
 			kind: ExpressionKind::AnyCollapse,
@@ -457,7 +459,8 @@ impl<'a> Expression<'a> {
 		Expression {
 			span,
 			type_id: type_store.void_type_id(),
-			is_mutable: true,
+			is_itself_mutable: true,
+			is_pointer_access_mutable: true,
 			yields: false,
 			returns: false,
 			kind: ExpressionKind::Void,
