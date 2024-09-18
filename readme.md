@@ -1,6 +1,6 @@
 # Fae, a friendly and useful systems language
 
-Fae is a relatively small, unsafe, systems programming language with a focus on utility, comfort, and tooling. It steals with flattery from such languages as Rust, Zig, Odin, and Swift. Read the [language reference](./docs/language_reference.md) for a detailed snapshot of the *current* status of the Fae language.
+Fae is an unsafe systems programming language with a focus on utility, comfort, and tooling. It steals with flattery from such languages as Rust, Zig, Odin, and Swift. Read the [language reference](./docs/language_reference.md) for a detailed snapshot of the *current* status of the Fae language.
 
  - **Comfortably Useful**: Language features are chosen in an attempt to maximize the ratio of utility to language complexity while remaining pleasant to write and reason about
  - **Unsafe**: Fae is an unsafe language and allows for deep developer control over memory at the cost of compile time safety guarantees
