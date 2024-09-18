@@ -1,23 +1,23 @@
-Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 2: Cannot use reserved word "in" as for loop item name
+Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 2: Cannot use reserved word "in" as `for` loop item name
   2|     for in, match, while in 0..10 {}
              ^^
 
-Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 2: Cannot use reserved word "match" as for loop index name
+Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 2: Cannot use reserved word "match" as `for` loop index name
   2|     for in, match, while in 0..10 {}
                  ^^^^^
 
-Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 2: Cannot use reserved word "while" as for loop last item flag name
+Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 2: Cannot use reserved word "while" as `for` loop last item flag name
   2|     for in, match, while in 0..10 {}
                         ^^^^^
 
-Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 3: Cannot use reserved word "struct" as for loop item name
+Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 3: Cannot use reserved word "struct" as `for` loop item name
   3|     for struct, enum, import of 0..10 {}
              ^^^^^^
 
-Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 3: Cannot use reserved word "enum" as for loop index name
+Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 3: Cannot use reserved word "enum" as `for` loop index name
   3|     for struct, enum, import of 0..10 {}
                      ^^^^
 
-Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 3: Cannot use reserved word "import" as for loop last item flag name
+Parse error: ./tests/for_loop_reserved_words/for_loop_reserved_words.fae, line 3: Cannot use reserved word "import" as `for` loop last item flag name
   3|     for struct, enum, import of 0..10 {}
                            ^^^^^^

@@ -1,0 +1,5 @@
+fn main() {
+	let value: Option<str> = .Some("Hello")
+	if value is fn: Some {}
+	if value is match: Some {}
+}

@@ -1,0 +1,7 @@
+Parse error: ./tests/check_is_reserved_words/check_is_reserved_words.fae, line 3: Cannot use reserved word "fn" as `is` operator binding name
+  3|     if value is fn: Some {}
+                     ^^
+
+Parse error: ./tests/check_is_reserved_words/check_is_reserved_words.fae, line 4: Cannot use reserved word "match" as `is` operator binding name
+  4|     if value is match: Some {}
+                     ^^^^^

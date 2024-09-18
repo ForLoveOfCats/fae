@@ -420,6 +420,7 @@ fn parse_expression_climb<'a>(
 					tokens.next(messages)?;
 					let variant_name = tokens.expect(messages, TokenKind::Word)?;
 					let binding_name = Some(Node::from_token(first.text, first));
+					check_not_reserved(messages, first, "`is` operator binding name")?;
 					let variant_name = Node::from_token(variant_name.text, variant_name);
 					(binding_name, bump_vec![in bump; variant_name].into_bump_slice())
 				} else {
@@ -1157,13 +1158,13 @@ fn parse_for_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut
 	let for_token = tokens.expect_word(messages, "for")?;
 
 	let item_token = tokens.expect(messages, TokenKind::Word)?;
-	let mut reserved = check_not_reserved(messages, item_token, "for loop item name").is_err();
+	let mut reserved = check_not_reserved(messages, item_token, "`for` loop item name").is_err();
 	let item = Node::from_token(item_token.text, item_token);
 
 	let index = if tokens.peek_kind() == Ok(TokenKind::Comma) {
 		tokens.next(messages)?;
 		let index_token = tokens.expect(messages, TokenKind::Word)?;
-		reserved |= check_not_reserved(messages, index_token, "for loop index name").is_err();
+		reserved |= check_not_reserved(messages, index_token, "`for` loop index name").is_err();
 		Some(Node::from_token(index_token.text, index_token))
 	} else {
 		None
@@ -1172,7 +1173,7 @@ fn parse_for_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut
 	let is_last = if tokens.peek_kind() == Ok(TokenKind::Comma) {
 		tokens.next(messages)?;
 		let is_last_token = tokens.expect(messages, TokenKind::Word)?;
-		reserved |= check_not_reserved(messages, is_last_token, "for loop last item flag name").is_err();
+		reserved |= check_not_reserved(messages, is_last_token, "`for` loop last item flag name").is_err();
 		Some(Node::from_token(is_last_token.text, is_last_token))
 	} else {
 		None
