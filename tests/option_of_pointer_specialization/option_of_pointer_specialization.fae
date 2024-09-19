@@ -1,0 +1,12 @@
+fn main() {
+	let value = true
+	if function<bool>(value.&) is ptr: Some {
+		let read: bool = ptr.*
+		println(f"{read}")
+	}
+}
+
+generic T
+fn function(arg: &T): Option<&T> {
+	return .Some(arg)
+}

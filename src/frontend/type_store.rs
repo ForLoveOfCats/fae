@@ -2210,29 +2210,15 @@ impl<'a> TypeStore<'a> {
 						drop(user_type);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
-							let entry = self.type_entries.get(*struct_type_argument);
-							match entry.kind {
-								TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
-
-								TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
-									assert_eq!(function_shape_index, shape_index);
-									*struct_type_argument = function_type_arguments.ids[generic_index];
-								}
-
-								TypeEntryKind::UserType { .. } => {
-									*struct_type_argument = self.specialize_with_function_generics(
-										messages,
-										function_store,
-										module_path,
-										generic_usages,
-										function_shape_index,
-										function_type_arguments,
-										*struct_type_argument,
-									);
-								}
-
-								_ => {}
-							}
+							*struct_type_argument = self.specialize_with_function_generics(
+								messages,
+								function_store,
+								module_path,
+								generic_usages,
+								function_shape_index,
+								function_type_arguments,
+								*struct_type_argument,
+							);
 						}
 
 						self.get_or_add_struct_shape_specialization(
@@ -2249,32 +2235,20 @@ impl<'a> TypeStore<'a> {
 
 					UserTypeKind::Enum { shape } => {
 						let specialization = &shape.specializations[*specialization_index];
-						let any_function_generic = specialization
-							.type_arguments
-							.ids
-							.iter()
-							.any(|t| matches!(self.type_entries.get(*t).kind, TypeEntryKind::FunctionGeneric { .. }));
-
-						if !any_function_generic {
-							return type_id;
-						}
-
 						let type_arguments = specialization.type_arguments.clone();
 						drop(user_type);
 
 						let mut new_enum_type_arguments = TypeArguments::clone(&type_arguments);
 						for enum_type_argument in &mut new_enum_type_arguments.ids {
-							let entry = self.type_entries.get(*enum_type_argument);
-							match &entry.kind {
-								TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
-
-								TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
-									assert_eq!(function_shape_index, *shape_index);
-									*enum_type_argument = function_type_arguments.ids[*generic_index];
-								}
-
-								_ => {}
-							}
+							*enum_type_argument = self.specialize_with_function_generics(
+								messages,
+								function_store,
+								module_path,
+								generic_usages,
+								function_shape_index,
+								function_type_arguments,
+								*enum_type_argument,
+							);
 						}
 
 						self.get_or_add_enum_shape_specialization(
