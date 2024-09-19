@@ -93,6 +93,9 @@ fn memcpy(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
 extern "memmove"
 fn memmove(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
 
+extern "memset"
+fn memset(destination: &mut u8, value: u8, byte_count: usize): &mut u8
+
 extern "open"
 fn open(pathname: &u8, flags: i32, ...): i32
 

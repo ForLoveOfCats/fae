@@ -1,5 +1,5 @@
 import fae::intrinsics::create_slice_mut, create_str, create_non_null_invalid_pointer, create_non_null_invalid_slice
-import fae::libc::malloc, memcpy, memmove
+import fae::libc::malloc, memcpy, memmove, memset
 
 generic T
 fn swap(a: &mut T, b: &mut T) {
@@ -81,6 +81,12 @@ fn allocate_slice_space(length: isize): []mut T {
 }
 
 generic T
+fn allocate_slice_filled(length: isize, value: T) {
+	let slice = allocate_slice_space<T>(length)
+	for ptr of slice => ptr.* = value
+}
+
+generic T
 fn allocate_slice_copied(source: []T): []mut T {
 	if size_of<T>() <= 0 {
 		return create_non_null_invalid_slice<T>(source.length)
@@ -116,6 +122,11 @@ fn allocate_string_copied(source: str): str {
 
 fn free_str(string: str) {
 	free<u8>(string.pointer)
+}
+
+generic T
+fn set_slice_bytes(destination: []mut T, value: u8) {
+	memset(destination.pointer.(&mut u8), value, destination.length.(usize))
 }
 
 generic T
