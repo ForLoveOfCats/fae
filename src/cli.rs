@@ -129,7 +129,7 @@ fn parse_tack_option(
 		Some("--help" | "-h") => {
 			eprintln!("Fae programming language compiler {}", version());
 			eprintln!("Usage: fae [optional command] [zero or more options] [optional path]");
-			eprintln!("Arguments after lone \"--\" are passed to launched executablek");
+			eprintln!("Arguments after lone \"--\" are passed to launched executable");
 			eprintln!();
 			eprintln!("Commands:");
 			eprintln!("  parse, p: Parse targeted project");
