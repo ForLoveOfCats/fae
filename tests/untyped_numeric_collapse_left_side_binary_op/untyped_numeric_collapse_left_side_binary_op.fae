@@ -9,7 +9,9 @@ fn returns_float(): f32 {
 fn main() {
 	let a = 5 + returns_int()
 	let b = 10 - returns_float()
+	let d = 0 < returns_int()
 
 	println(f"{a}")
 	println(f"{b}")
+	println(f"{d}")
 }

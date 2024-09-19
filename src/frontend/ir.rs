@@ -610,6 +610,7 @@ impl NumberValue {
 		self.span
 	}
 
+	// Return value indicates success if true
 	pub fn collapse(&mut self, type_store: &TypeStore, type_id: TypeId) -> bool {
 		let mut success = true;
 		if let Some(collapsed) = self.collapse {

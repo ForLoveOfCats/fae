@@ -974,6 +974,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant number -> float of large enough
+				from.type_id = to;
 				return Ok(from_value.collapse(self, to));
 			}
 
@@ -1019,6 +1020,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant number -> signed of large enough
+				from.type_id = to;
 				return Ok(from_value.collapse(self, to));
 			}
 
