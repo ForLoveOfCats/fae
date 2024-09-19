@@ -41,6 +41,11 @@ fn set_length(to_length: isize) {
 	self.items.length = to_length
 }
 
+method List
+fn length(): isize {
+	return self.items.length
+}
+
 method mut List
 fn reserve_exact(new_capacity: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
