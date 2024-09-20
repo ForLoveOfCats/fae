@@ -126,7 +126,8 @@ fn free_str(string: str) {
 
 generic T
 fn set_slice_bytes(destination: []mut T, value: u8) {
-	memset(destination.pointer.(&mut u8), value, destination.length.(usize))
+	let byte_count = destination.length * size_of<T>()
+	memset(destination.pointer.(&mut u8), value, byte_count.(usize))
 }
 
 generic T
