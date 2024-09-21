@@ -86,6 +86,26 @@ struct Range {
 	end: isize
 }
 
+method Range
+fn length(): isize {
+	return self.end - self.start
+}
+
+method Range
+fn is_empty(): bool {
+	return self.start >= self.end
+}
+
+method Range
+fn is_not_empty(): bool {
+	return self.start < self.end
+}
+
+method Range
+fn contains(index: isize): bool {
+	return self.start <= index and index < self.end
+}
+
 // TODO: This is temporary intermediate tool until there is "blessed" optional semantics
 // baked into the language itself
 generic T
