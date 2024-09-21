@@ -81,9 +81,10 @@ fn allocate_slice_space(length: isize): []mut T {
 }
 
 generic T
-fn allocate_slice_filled(length: isize, value: T) {
+fn allocate_slice_filled(length: isize, value: T): []mut T {
 	let slice = allocate_slice_space<T>(length)
 	for ptr of slice => ptr.* = value
+	return slice
 }
 
 generic T
