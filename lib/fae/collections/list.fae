@@ -27,6 +27,22 @@ fn push(item: T) {
 }
 
 method mut List
+fn insert(item: T, index: isize) {
+	self.reserve_at_least(self.items.length + 1)
+
+	let original_length = self.items.length
+	self.items.length += 1
+
+	if (index..original_length).is_not_empty() {
+		let source = self.items[index..original_length]
+		let destination = self.items[index + 1..self.items.length]
+		copy_slice_overlapping<T>(source, destination)
+	}
+
+	self.items[index] = item
+}
+
+method mut List
 fn clear() {
 	self.items.length = 0
 }
@@ -65,7 +81,7 @@ fn reserve_at_least(mut new_capacity: isize) {
 	if new_capacity < self.capacity * GrowthFactor {
 		new_capacity = self.capacity * GrowthFactor
 	}
-
+	
 	reallocate_region<T>(self.items.pointer.&mut, new_capacity)
 	self.capacity = new_capacity
 }
@@ -79,21 +95,13 @@ fn extend_from_slice(slice: []T) {
 	self.items.length = result_length
 }
 
-method mut List
-fn remove_range(range: Range) {
-	let source = self.items[range.end..self.items.length]
-	let destination = self.items[range.start..self.items.length]
-	copy_slice_overlapping<T>(source, destination)
-	self.truncate(range.start + source.length)
-}
-
 method List
 fn is_empty(): bool {
 	return self.items.length <= 0
 }
 
 method List
-fn has_items(): bool {
+fn is_not_empty(): bool {
 	return self.items.length > 0
 }
 
@@ -142,6 +150,22 @@ fn pop(): Option<T> {
 	let value = self.items[self.items.length - 1]
 	self.items.length -= 1
 	return .Some(value)
+}
+
+method mut List
+fn remove(index: isize) {
+	let source = self.items[index + 1..self.items.length]
+	let destination = self.items[index..self.items.length]
+	copy_slice_overlapping<T>(source, destination)
+	self.truncate(self.items.length - 1)
+}
+
+method mut List
+fn remove_range(range: Range) {
+	let source = self.items[range.end..self.items.length]
+	let destination = self.items[range.start..self.items.length]
+	copy_slice_overlapping<T>(source, destination)
+	self.truncate(range.start + source.length)
 }
 
 method List
