@@ -1,4 +1,5 @@
 import fae::memory::free_slice, reallocate_region
+import fae::memory::copy_slice_nonoverlapping, copy_slice_overlapping
 
 const GrowthFactor = 2
 const InitialGrowth = 8
@@ -74,7 +75,7 @@ fn extend_from_slice(slice: []T) {
 	let result_length = self.items.length + slice.length
 	self.reserve_at_least(result_length)
 	let destination = self.items[self.items.length..result_length]
-	fae::memory::copy_slice_into<T>(slice, destination)
+	copy_slice_nonoverlapping<T>(slice, destination)
 	self.items.length = result_length
 }
 
@@ -82,7 +83,7 @@ method mut List
 fn remove_range(range: Range) {
 	let source = self.items[range.end..self.items.length]
 	let destination = self.items[range.start..self.items.length]
-	fae::memory::move_slice_into<T>(source, destination)
+	copy_slice_overlapping<T>(source, destination)
 	self.truncate(range.start + source.length)
 }
 

@@ -131,7 +131,7 @@ fn set_slice_bytes(destination: []mut T, value: u8) {
 }
 
 generic T
-fn copy_slice_into(source: []T, destination: []mut T) {
+fn copy_slice_nonoverlapping(source: []T, destination: []mut T) {
 	let message = f"source length {source.length} greater than destination length {destination.length}"
 	assertf(destination.length >= source.length, message)
 	if size_of<T>() <= 0 => return
@@ -141,7 +141,7 @@ fn copy_slice_into(source: []T, destination: []mut T) {
 }
 
 generic T
-fn move_slice_into(source: []T, destination: []mut T) {
+fn copy_slice_overlapping(source: []T, destination: []mut T) {
 	let message = f"source length {source.length} greater than destination length {destination.length}"
 	assertf(destination.length >= source.length, message)
 	if size_of<T>() <= 0 => return
