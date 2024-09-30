@@ -15,11 +15,11 @@ fn birthday_happened() {
 
 generic T
 struct List {
-	pointer: &T
+	pointer: *T
 }
 
 method static List
-fn from_pointer(pointer: &T): List<T> {
+fn from_pointer(pointer: *T): List<T> {
 	return List<T> { pointer: pointer }
 }
 

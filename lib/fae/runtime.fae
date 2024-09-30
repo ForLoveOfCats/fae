@@ -1,8 +1,8 @@
 static ArgC: i32
-static ArgV: &&u8
+static ArgV: **u8
 
 export "main"
-fn fae_main(argc: i32, argv: &&u8): i32 {
+fn fae_main(argc: i32, argv: **u8): i32 {
 	ArgC = argc
 	ArgV = argv
 
@@ -49,7 +49,7 @@ fn panic_impl(message: fstr): noreturn {
 
 	let null = null_pointer<void>()
 	// 50 items
-	let addresses = []&void {
+	let addresses = []*void {
 		null, null, null, null, null, null, null, null, null, null,
 		null, null, null, null, null, null, null, null, null, null,
 		null, null, null, null, null, null, null, null, null, null,
@@ -82,7 +82,7 @@ fn panic_impl(message: fstr): noreturn {
 	let symbols = symbols[0..symbol_count]
 
 	mut longest_width: isize = 0
-	fn handle_width(longest_width: &mut isize, width: isize) {
+	fn handle_width(longest_width: *mut isize, width: isize) {
 		if width > longest_width.* => longest_width.* = width
 	}
 

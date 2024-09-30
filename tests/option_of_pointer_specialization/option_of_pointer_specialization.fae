@@ -7,6 +7,6 @@ fn main() {
 }
 
 generic T
-fn function(arg: &T): Option<&T> {
+fn function(arg: *T): Option<*T> {
 	return .Some(arg)
 }

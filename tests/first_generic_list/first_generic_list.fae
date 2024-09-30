@@ -1,13 +1,13 @@
 import fae::libc::realloc, free
 
 generic T
-fn null_reference(): &mut T {
-	return 0.(&mut T)
+fn null_reference(): *mut T {
+	return 0.(*mut T)
 }
 
 generic T
 struct List {
-	ptr: &mut T
+	ptr: *mut T
 	length: isize
 	capacity: isize
 }
@@ -22,7 +22,7 @@ fn list_new(): List<T> {
 }
 
 generic T
-fn list_push(list: &mut List<T>, item: T) {
+fn list_push(list: *mut List<T>, item: T) {
 	// I really want auto-deref for pointers
 	if list.*.length + 1 >= list.*.capacity {
 		mut new_capacity = list.*.capacity * 2
@@ -31,24 +31,24 @@ fn list_push(list: &mut List<T>, item: T) {
 		}
 
 		let new_size = size_of<T>() * new_capacity
-		let ptr = realloc(list.*.ptr.(&mut u8), new_size.(usize))
+		let ptr = realloc(list.*.ptr.(*mut u8), new_size.(usize))
 		if ptr.(usize) != list.*.ptr.(usize) {
-			free(list.*.ptr.(&mut u8))
+			free(list.*.ptr.(*mut u8))
 		}
 
-		list.*.ptr = ptr.(&mut T)
+		list.*.ptr = ptr.(*mut T)
 		list.*.capacity = new_capacity
 	}
 
 	mut offset = list.*.ptr.(usize)
 	offset = offset + size_of<T>().(usize) * list.*.length.(usize)
-	offset.(&mut T).* = item
+	offset.(*mut T).* = item
 
 	list.*.length = list.*.length + 1
 }
 
 generic T
-fn list_get(list: &mut List<T>, index: isize): &mut T {
+fn list_get(list: *mut List<T>, index: isize): *mut T {
 	if index < 0 or list.*.length <= index {
 		// such a scuffed panic lmao
 		println(f"Index {index} out of range of list with length {list.*.length}")
@@ -57,7 +57,7 @@ fn list_get(list: &mut List<T>, index: isize): &mut T {
 
 	mut offset = list.*.ptr.(usize)
 	offset = offset + size_of<T>().(usize) * index.(usize)
-	return offset.(&mut T)
+	return offset.(*mut T)
 }
 
 fn main() {

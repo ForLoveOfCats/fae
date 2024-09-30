@@ -1,19 +1,19 @@
 Validation error: ./tests/cast_failure/cast_failure.fae, line 3: Cannot cast `u8` to a pointer as it is too small
-  3|     let _null = a.(&u8)
+  3|     let _null = a.(*u8)
                      ^^^^^^^
 
-Validation error: ./tests/cast_failure/cast_failure.fae, line 5: Cannot cast from immutable pointer `&u8` to mutable pointer `&mut u8`
-  5|     let _ptr = a.&.(&mut u8)
+Validation error: ./tests/cast_failure/cast_failure.fae, line 5: Cannot cast from immutable pointer `*u8` to mutable pointer `*mut u8`
+  5|     let _ptr = a.&.(*mut u8)
                     ^^^^^^^^^^^^^
 
-Validation warning: ./tests/cast_failure/cast_failure.fae, line 9: Unnecessary cast from mutable pointer `&mut i32` to immutable pointer `&i32`
-  9|     mutable.(&i32)
+Validation warning: ./tests/cast_failure/cast_failure.fae, line 9: Unnecessary cast from mutable pointer `*mut i32` to immutable pointer `*i32`
+  9|     mutable.(*i32)
          ^^^^^^^^^^^^^^
 
 Validation error: ./tests/cast_failure/cast_failure.fae, line 11: Cannot cast untyped number decimal to a pointer
-  11|     0.1.(&mut u8)
+  11|     0.1.(*mut u8)
           ^^^^^^^^^^^^^
 
 Validation error: ./tests/cast_failure/cast_failure.fae, line 12: Constant number -1 is negative and so cannot be represented as `usize`
-  12|     (-1).(&mut u8) // TODO: Support negative literals natively
+  12|     (-1).(*mut u8) // TODO: Support negative literals natively
            ^^

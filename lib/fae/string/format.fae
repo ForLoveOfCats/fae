@@ -23,8 +23,8 @@ enum FormatStringItem {
 	FormatString(fstr)
 }
 
-fn print_to_file_handle(handle: &FileHandle, message: fstr) {
-	fn print_fstr(handle: &FileHandle, message: fstr) {
+fn print_to_file_handle(handle: *FileHandle, message: fstr) {
+	fn print_fstr(handle: *FileHandle, message: fstr) {
 		for item in message.items => match item {
 			I8 => fprintf(handle, "%hhd".pointer, item)
 			I16 => fprintf(handle, "%hd".pointer, item)

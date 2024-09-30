@@ -1,8 +1,8 @@
-Validation error: ./tests/field_visibility/field_visibility.fae, line 22: Cannot assign to readonly field `readonly_field` on type `&mut MyStruct`
+Validation error: ./tests/field_visibility/field_visibility.fae, line 22: Cannot assign to readonly field `readonly_field` on type `*mut MyStruct`
   22|     self.readonly_field += 1
           ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/field_visibility/field_visibility.fae, line 23: Cannot assign to readonly field `internal_readonly_field` on type `&mut MyStruct`
+Validation error: ./tests/field_visibility/field_visibility.fae, line 23: Cannot assign to readonly field `internal_readonly_field` on type `*mut MyStruct`
   23|     self.internal_readonly_field += 1
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

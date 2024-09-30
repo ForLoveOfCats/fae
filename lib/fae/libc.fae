@@ -4,13 +4,13 @@ const StdErrDescriptor: i32 = 2
 
 when PlatformLinux {
 	extern "stdin"
-	static StdInFile: &FileHandle
+	static StdInFile: *FileHandle
 
 	extern "stdout"
-	static StdOutFile: &FileHandle
+	static StdOutFile: *FileHandle
 
 	extern "stderr"
-	static StdErrFile: &FileHandle
+	static StdErrFile: *FileHandle
 
 	const O_RDONLY = 0
 	const O_RDWR = 2
@@ -19,13 +19,13 @@ when PlatformLinux {
 	const O_TRUNC = 512
 } else when PlatformDarwin {
 	extern "__stdinp"
-	static StdInFile: &FileHandle
+	static StdInFile: *FileHandle
 
 	extern "__stdoutp"
-	static StdOutFile: &FileHandle
+	static StdOutFile: *FileHandle
 
 	extern "__stderrp"
-	static StdErrFile: &FileHandle
+	static StdErrFile: *FileHandle
 
 	const O_RDONLY = 0
 	const O_RDWR = 2
@@ -35,11 +35,11 @@ when PlatformLinux {
 }
 
 struct DlInfo {
-	dli_fname: &u8
-	dli_fbase: &void
+	dli_fname: *u8
+	dli_fbase: *void
 
-	dli_sname: &u8
-	dli_saddr: &void
+	dli_sname: *u8
+	dli_saddr: *void
 }
 
 struct FileHandle {}
@@ -49,70 +49,70 @@ struct TimeT {
 }
 
 extern "atoi"
-fn atoi(string: &u8): i32
+fn atoi(string: *u8): i32
 
 extern "atol"
-fn atol(string: &u8): i64
+fn atol(string: *u8): i64
 
 extern "backtrace"
-fn backtrace(address_buffer: &mut &void, size: i32): i32
+fn backtrace(address_buffer: *mut *void, size: i32): i32
 
 extern "backtrace_symbols"
-fn backtrace_symbols(addresses: &&void, address_count: i32): &&u8
+fn backtrace_symbols(addresses: **void, address_count: i32): **u8
 
 extern "backtrace_symbols_fd"
-fn backtrace_symbols_fd(addresses: &&void, address_count: i32, fd: i32)
+fn backtrace_symbols_fd(addresses: **void, address_count: i32, fd: i32)
 
 extern "close"
 fn close(file_descriptor: i32): i32
 
 extern "dladdr"
-fn dladdr(address: &void, info: &mut DlInfo): i32
+fn dladdr(address: *void, info: *mut DlInfo): i32
 
 extern "exit"
 fn exit(code: i32): noreturn
 
 extern "fflush"
-fn fflush(stream: &FileHandle)
+fn fflush(stream: *FileHandle)
 
 extern "fprintf"
-fn fprintf(stream: &FileHandle, pointer: &u8, ...)
+fn fprintf(stream: *FileHandle, pointer: *u8, ...)
 
 extern "free"
-fn free(ptr: &u8)
+fn free(ptr: *u8)
 
 extern "fwrite"
-fn fwrite(data: &u8, size: usize, count: usize, stream: &FileHandle): usize
+fn fwrite(data: *u8, size: usize, count: usize, stream: *FileHandle): usize
 
 extern "malloc"
-fn malloc(size: usize): &mut u8
+fn malloc(size: usize): *mut u8
 
 extern "memcpy"
-fn memcpy(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
+fn memcpy(destination: *mut u8, source: *u8, byte_count: usize): *mut u8
 
 extern "memmove"
-fn memmove(destination: &mut u8, source: &u8, byte_count: usize): &mut u8
+fn memmove(destination: *mut u8, source: *u8, byte_count: usize): *mut u8
 
 extern "memset"
-fn memset(destination: &mut u8, value: u8, byte_count: usize): &mut u8
+fn memset(destination: *mut u8, value: u8, byte_count: usize): *mut u8
 
 extern "open"
-fn open(pathname: &u8, flags: i32, ...): i32
+fn open(pathname: *u8, flags: i32, ...): i32
 
 extern "printf"
-fn printf(pointer: &u8, ...)
+fn printf(pointer: *u8, ...)
 
 extern "puts"
-fn puts(pointer: &u8)
+fn puts(pointer: *u8)
 
 extern "rand"
 fn rand(): i32
 
 extern "read"
-fn read(fd: i32, buffer: &mut u8, count: usize): isize
+fn read(fd: i32, buffer: *mut u8, count: usize): isize
 
 extern "realloc"
-fn realloc(ptr: &mut u8, new_size: usize): &mut u8
+fn realloc(ptr: *mut u8, new_size: usize): *mut u8
 
 extern "sleep"
 fn sleep(seconds: u32): u32
@@ -124,10 +124,10 @@ extern "sqrt"
 fn sqrt(arg: f64): f64
 
 extern "strlen"
-fn strlen(string: &u8): usize
+fn strlen(string: *u8): usize
 
 extern "time"
-fn time(tloc: &mut TimeT): TimeT
+fn time(tloc: *mut TimeT): TimeT
 
 extern "write"
-fn write(fd: i32, buffer: &u8, count: usize): isize
+fn write(fd: i32, buffer: *u8, count: usize): isize

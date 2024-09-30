@@ -9,8 +9,8 @@ generic T
 fn alignment_of(): isize
 
 generic T
-fn null_pointer(): &mut T {
-	return 0.(&mut T)
+fn null_pointer(): *mut T {
+	return 0.(*mut T)
 }
 
 generic T
@@ -20,13 +20,13 @@ fn null_slice(): []mut T {
 }
 
 generic T
-fn offset_pointer(pointer: &T, by_bytes: isize): &T {
-	return (pointer.(isize) + by_bytes).(&T)
+fn offset_pointer(pointer: *T, by_bytes: isize): *T {
+	return (pointer.(isize) + by_bytes).(*T)
 }
 
 generic T
-fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T {
-	return (pointer.(isize) + by_bytes).(&mut T)
+fn offset_pointer_mut(pointer: *mut T, by_bytes: isize): *mut T {
+	return (pointer.(isize) + by_bytes).(*mut T)
 }
 
 fn print(message: fstr) {

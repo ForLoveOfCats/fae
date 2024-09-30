@@ -81,7 +81,7 @@ fn read_all_string(): String {
 }
 
 method File
-fn read_all_into(buffer: &mut List<u8>) {
+fn read_all_into(buffer: *mut List<u8>) {
 	const ChunkSize = 20
 
 	while true {

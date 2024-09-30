@@ -1,5 +1,5 @@
 struct Struct {
-	ptr: &mut i32
+	ptr: *mut i32
 	slice: []mut i32
 }
 
@@ -17,7 +17,7 @@ fn main() {
 	{
 		instance_ptr.ptr.* += 2 // Invalid
 
-		let smuggled: &mut i32 = {
+		let smuggled: *mut i32 = {
 			yield instance_ptr.ptr // Invalid
 		}
 		smuggled.* += 3
@@ -27,7 +27,7 @@ fn main() {
 	{
 		instance_ptr.*.ptr.* += 4 // Invalid 
 
-		let smuggled: &mut i32 = {
+		let smuggled: *mut i32 = {
 			yield instance_ptr.*.ptr // Invalid
 		}
 		smuggled.* += 5

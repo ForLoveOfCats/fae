@@ -112,13 +112,13 @@ fn first(): Option<T> {
 }
 
 method List
-fn first_ref(): Option<&T> {
+fn first_ref(): Option<*T> {
 	if self.is_empty() => return .None
 	return .Some(self.items[0].&)
 }
 
 method mut List
-fn first_mut(): Option<&mut T> {
+fn first_mut(): Option<*mut T> {
 	if self.is_empty() => return .None
 	return .Some(self.items[0].&mut)
 }
@@ -131,14 +131,14 @@ fn last(): Option<T> {
 }
 
 method List
-fn last_ref(): Option<&T> {
+fn last_ref(): Option<*T> {
 	if self.is_empty() => return .None
 	let value = self.items[self.items.length - 1].&
 	return .Some(value)
 }
 
 method mut List
-fn last_mut(): Option<&mut T> {
+fn last_mut(): Option<*mut T> {
 	if self.is_empty() => return .None
 	let value = self.items[self.items.length - 1].&mut
 	return .Some(value)
@@ -174,12 +174,12 @@ fn get(index: isize): T {
 }
 
 method List
-fn get_ref(index: isize): &T {
+fn get_ref(index: isize): *T {
 	return self.items[index].&
 }
 
 method mut List
-fn get_mut(index: isize): &mut T {
+fn get_mut(index: isize): *mut T {
 	return self.items[index].&mut
 }
 

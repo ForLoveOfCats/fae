@@ -1574,8 +1574,8 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 			Node::from_token(Type::Void, token)
 		}
 
-		Token { kind: TokenKind::Ampersand, .. } => {
-			let ampersand = tokens.next(messages)?;
+		Token { kind: TokenKind::Mul, .. } => {
+			let asterisk = tokens.next(messages)?;
 
 			let mutable = if matches!(tokens.peek(), Ok(Token { kind: TokenKind::Word, text: "mut", .. })) {
 				tokens.next(messages)?;
@@ -1585,7 +1585,7 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 			};
 
 			let pointee = bump.alloc(parse_type(bump, messages, tokens)?);
-			let span = ampersand.span + pointee.span;
+			let span = asterisk.span + pointee.span;
 			Node::new(Type::Pointer { pointee, mutable }, span)
 		}
 

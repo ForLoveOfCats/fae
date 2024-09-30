@@ -18,7 +18,7 @@ fn func_b(c: ContainsMultiple): ContainsA {
 	return contains
 }
 
-fn func_c(ptr: &mut A) {
+fn func_c(ptr: *mut A) {
 	ptr.* = A {}
 }
 

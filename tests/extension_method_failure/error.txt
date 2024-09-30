@@ -1,11 +1,11 @@
-Validation error: ./tests/extension_method_failure/extension_method_failure.fae, line 5: Cannot publicly access internal field `private` on type `&Struct`
+Validation error: ./tests/extension_method_failure/extension_method_failure.fae, line 5: Cannot publicly access internal field `private` on type `*Struct`
   5|     println(f"{self.public}, {self.publically_readable}, {self.private}")
                                                                     ^^^^^^^
 
-Validation error: ./tests/extension_method_failure/extension_method_failure.fae, line 6: Cannot publicly assign to readable field `publically_readable` on type `&Struct`
+Validation error: ./tests/extension_method_failure/extension_method_failure.fae, line 6: Cannot publicly assign to readable field `publically_readable` on type `*Struct`
   6|     self.publically_readable = false
          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/extension_method_failure/extension_method_failure.fae, line 7: Cannot publicly access internal field `private` on type `&Struct`
+Validation error: ./tests/extension_method_failure/extension_method_failure.fae, line 7: Cannot publicly access internal field `private` on type `*Struct`
   7|     self.private += 1
               ^^^^^^^

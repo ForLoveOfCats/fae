@@ -3,11 +3,11 @@ Validation error: ./tests/main_signature_mismatch/main_signature_mismatch.fae, l
              ^^^^
 
 Validation error: ./tests/main_signature_mismatch/main_signature_mismatch.fae, line 2: Main function may not have any parameters
-  2| fn main(_argc: i32, _argv: &&u8): i32 {
+  2| fn main(_argc: i32, _argv: **u8): i32 {
              ^^^^^^^^^^^^^^^^^^^^^^^
 
 Validation error: ./tests/main_signature_mismatch/main_signature_mismatch.fae, line 2: Main function may not have a non-void return type
-  2| fn main(_argc: i32, _argv: &&u8): i32 {
+  2| fn main(_argc: i32, _argv: **u8): i32 {
                                        ^^^
 
 Validation error: Project has no main function, is it missing or in the wrong file for project name?

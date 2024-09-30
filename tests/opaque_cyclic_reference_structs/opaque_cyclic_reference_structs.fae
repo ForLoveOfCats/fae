@@ -3,11 +3,11 @@ struct A1 {
 }
 
 struct B1 {
-	b_field: &A1
+	b_field: *A1
 }
 
 struct A2 {
-	a_field: &B2
+	a_field: *B2
 }
 
 struct B2 {

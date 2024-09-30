@@ -2393,8 +2393,8 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Pointer { type_id, mutable } => {
 				let inner = self.internal_type_name(function_store, _module_path, type_id, debug_generics, debug_type_ids);
 				match mutable {
-					true => format!("&mut {}", inner),
-					false => format!("&{}", inner),
+					true => format!("*mut {}", inner),
+					false => format!("*{}", inner),
 				}
 			}
 

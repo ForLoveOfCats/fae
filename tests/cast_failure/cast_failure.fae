@@ -1,13 +1,13 @@
 fn main() {
 	let a: u8 = 0
-	let _null = a.(&u8)
+	let _null = a.(*u8)
 
-	let _ptr = a.&.(&mut u8)
+	let _ptr = a.&.(*mut u8)
 
 	mut b: i32 = 5
 	let mutable = b.&mut
-	mutable.(&i32)
+	mutable.(*i32)
 
-	0.1.(&mut u8)
-	(-1).(&mut u8) // TODO: Support negative literals natively
+	0.1.(*mut u8)
+	(-1).(*mut u8) // TODO: Support negative literals natively
 }

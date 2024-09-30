@@ -15,7 +15,7 @@ fn main() {
 	println("")
 
 	let pointer = malloc(10)
-	let slice = fae::intrinsics::create_slice_mut<u16>(pointer.(&mut u16), 5)
+	let slice = fae::intrinsics::create_slice_mut<u16>(pointer.(*mut u16), 5)
 	slice[0] = 500
 	slice[1] = 511
 	slice[2] = 522
@@ -33,9 +33,9 @@ fn main() {
 	println("")
 
 	let pointer = malloc(10 * 4)
-	let slice = fae::intrinsics::create_slice_mut<i32>(pointer.(&mut i32), 10)
+	let slice = fae::intrinsics::create_slice_mut<i32>(pointer.(*mut i32), 10)
 	let source = []i32 { -800, -700, -600, -500, -400, -300, -200, -100, 0, 100 }
-	memcpy(slice.pointer.(&mut u8), source.pointer.(&mut u8), 10 * 4)
+	memcpy(slice.pointer.(*mut u8), source.pointer.(*mut u8), 10 * 4)
 
 	mut index: isize = 0
 	while index < slice.length {

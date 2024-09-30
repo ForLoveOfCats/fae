@@ -1,17 +1,17 @@
 #intrinsic
 generic T
-fn create_slice(pointer: &T, length: isize): []T
+fn create_slice(pointer: *T, length: isize): []T
 
 #intrinsic
 generic T
-fn create_slice_mut(pointer: &mut T, length: isize): []mut T
+fn create_slice_mut(pointer: *mut T, length: isize): []mut T
 
 #intrinsic
-fn create_str(pointer: &u8, length: isize): str
+fn create_str(pointer: *u8, length: isize): str
 
 #intrinsic
 generic T
-fn create_non_null_invalid_pointer(): &mut T
+fn create_non_null_invalid_pointer(): *mut T
 
 #intrinsic
 generic T

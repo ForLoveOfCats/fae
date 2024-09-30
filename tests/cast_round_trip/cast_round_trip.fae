@@ -1,6 +1,6 @@
 fn main() {
-	let pointer = 999.(i64).(&void)
-	let other = pointer.(&i32)
+	let pointer = 999.(i64).(*void)
+	let other = pointer.(*i32)
 	println(f"{other.(u64)}")
 
 
