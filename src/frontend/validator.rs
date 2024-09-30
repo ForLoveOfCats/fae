@@ -5813,7 +5813,7 @@ fn validate_binary_operation<'a>(
 	operation: &'a tree::BinaryOperation<'a>,
 	span: Span,
 ) -> Expression<'a> {
-	let op = operation.op.item;
+	let mut op = operation.op.item;
 
 	let original_can_is_bind = context.can_is_bind;
 	if op != BinaryOperator::LogicalAnd {
@@ -5951,7 +5951,7 @@ fn validate_binary_operation<'a>(
 				}
 			}
 
-			BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
+			BinaryOperator::LogicalAnd | BinaryOperator::LogicalIsAnd | BinaryOperator::LogicalOr => {
 				let boolean = context.type_store.bool_type_id();
 				if !context.type_store.direct_match(left.type_id, boolean) {
 					let found = context.type_name(left.type_id);
@@ -6032,6 +6032,18 @@ fn validate_binary_operation<'a>(
 
 		_ => collapsed,
 	};
+
+	if op == BinaryOperator::LogicalAnd {
+		fn contains_is(expression: &Expression) -> bool {
+			use {BinaryOperator::*, ExpressionKind::*};
+			let kind = &expression.kind;
+			matches!(kind, CheckIs(..)) || matches!(kind, BinaryOperation(o) if matches!(o.op, LogicalIsAnd))
+		}
+
+		if contains_is(&left) || contains_is(&right) {
+			op = BinaryOperator::LogicalIsAnd;
+		}
+	}
 
 	let yields = left.yields || right.yields;
 	let returns = left.returns || right.returns;

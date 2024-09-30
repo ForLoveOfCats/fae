@@ -1,4 +1,3 @@
-use llvm_sys::prelude::LLVMBasicBlockRef;
 use rust_decimal::Decimal;
 
 use crate::codegen::generator::Generator;
@@ -88,9 +87,6 @@ pub struct Context<'a, 'b> {
 	defer_stack: Vec<&'b Statement<'a>>,
 	loop_stack: Vec<DeferMarker>,
 	yield_target_stack: Vec<DeferMarker>,
-
-	// TODO: Merge codegen and llvm/generator ASAP, way too many details have leaked
-	pub if_condition_binding_block: Option<LLVMBasicBlockRef>,
 }
 
 impl<'a, 'b> Context<'a, 'b> {
@@ -149,7 +145,6 @@ pub fn generate_function<'a, G: Generator>(
 		defer_stack: Vec::new(),
 		loop_stack: Vec::new(),
 		yield_target_stack: Vec::new(),
-		if_condition_binding_block: None,
 	};
 
 	generate_block(&mut context, generator, block.as_ref());

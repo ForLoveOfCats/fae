@@ -348,6 +348,7 @@ pub enum BinaryOperator {
 	LessThanEquals,
 
 	LogicalAnd,
+	LogicalIsAnd,
 	LogicalOr,
 
 	Range,
@@ -389,7 +390,7 @@ impl BinaryOperator {
 			BinaryOperator::LessThan => "Less Than",
 			BinaryOperator::LessThanEquals => "Less Than Equals",
 
-			BinaryOperator::LogicalAnd => "Logical And",
+			BinaryOperator::LogicalAnd | Self::LogicalIsAnd => "Logical And",
 			BinaryOperator::LogicalOr => "Logical Or",
 
 			BinaryOperator::Range => "Range",
@@ -406,7 +407,7 @@ impl BinaryOperator {
 
 			Range => 1,
 
-			LogicalAnd | LogicalOr => 2,
+			LogicalAnd | LogicalIsAnd | LogicalOr => 2,
 
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => 3,
 
@@ -434,7 +435,7 @@ impl BinaryOperator {
 
 			Equals | NotEquals | GreaterThan | GreaterThanEquals | LessThan | LessThanEquals => Associativity::Left,
 
-			LogicalAnd | LogicalOr => Associativity::Left,
+			LogicalAnd | LogicalIsAnd | LogicalOr => Associativity::Left,
 		}
 	}
 }

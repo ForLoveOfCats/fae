@@ -14,10 +14,9 @@ use llvm_sys::core::{
 	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
 	LLVMGetEnumAttributeKindForName, LLVMGetInlineAsm, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
 	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
-	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMRemoveBasicBlockFromParent,
-	LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility,
-	LLVMStructCreateNamed, LLVMStructGetTypeAtIndex, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeOf,
-	LLVMVoidTypeInContext,
+	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetGlobalConstant,
+	LLVMSetInitializer, LLVMSetLinkage, LLVMSetUnnamedAddress, LLVMSetValueName2, LLVMSetVisibility, LLVMStructCreateNamed,
+	LLVMStructGetTypeAtIndex, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeOf, LLVMVoidTypeInContext,
 };
 use llvm_sys::debuginfo::{
 	LLVMCreateDIBuilder, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction,
@@ -222,6 +221,13 @@ struct YieldBinding {
 	pointed_type: LLVMTypeRef,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum InCheckIs {
+	None,
+	IfElse,
+	WhileLoop,
+}
+
 pub struct LLVMGenerator<ABI: LLVMAbi> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
@@ -241,6 +247,8 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	yield_targets: Vec<YieldTarget>,
 	loop_condition_blocks: Vec<LLVMBasicBlockRef>,
 	loop_follow_blocks: Vec<LLVMBasicBlockRef>,
+	if_follow_blocks: Vec<LLVMBasicBlockRef>,
+	in_check_is: InCheckIs,
 	functions: Vec<Vec<Option<DefinedFunction>>>,
 	statics: Vec<Binding>,
 	readables: Vec<Option<Binding>>,
@@ -302,6 +310,8 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			yield_targets: Vec::new(),
 			loop_condition_blocks: Vec::new(),
 			loop_follow_blocks: Vec::new(),
+			if_follow_blocks: Vec::new(),
+			in_check_is: InCheckIs::None,
 			functions: Vec::new(),
 			statics: Vec::new(),
 			readables: Vec::new(),
@@ -758,32 +768,28 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
 		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.following".as_ptr()) };
 
-		let mut next_condition_block =
-			unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition".as_ptr()) };
-		let mut next_condition_binding_block =
-			unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition_binding_block".as_ptr()) };
-
-		unsafe { LLVMBuildBr(self.builder, next_condition_binding_block) };
+		let mut next_condition_block = unsafe {
+			let condition_block = LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition".as_ptr());
+			LLVMBuildBr(self.builder, condition_block);
+			condition_block
+		};
 
 		for entry in &chain_expression.entries {
 			let condition_block = next_condition_block;
-			let condition_binding_block = next_condition_binding_block;
-			let previous_condition_binding_block = context.if_condition_binding_block;
-			context.if_condition_binding_block = Some(condition_binding_block);
-
 			next_condition_block =
 				unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition".as_ptr()) };
-			next_condition_binding_block =
-				unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.condition_binding_block".as_ptr()) };
+
+			let old_in_check_is = self.in_check_is;
+			self.in_check_is = InCheckIs::IfElse;
+			self.if_follow_blocks.push(next_condition_block);
 
 			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_block) };
 			let condition = condition_callback(context, self, &entry.condition);
 			let final_condition_block = unsafe { LLVMGetInsertBlock(self.builder) };
 			let condition = condition.to_value(self.builder);
 
-			unsafe { LLVMPositionBuilderAtEnd(self.builder, condition_binding_block) };
-			unsafe { LLVMBuildBr(self.builder, condition_block) };
-			context.if_condition_binding_block = previous_condition_binding_block;
+			self.if_follow_blocks.pop().unwrap();
+			self.in_check_is = old_in_check_is;
 
 			let if_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"if_else.if".as_ptr()) };
 
@@ -791,7 +797,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				LLVMPositionBuilderAtEnd(self.builder, final_condition_block);
 				let zero = LLVMConstNull(LLVMTypeOf(condition));
 				let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"if_else.flag".as_ptr());
-				LLVMBuildCondBr(self.builder, flag, if_block, next_condition_binding_block);
+				LLVMBuildCondBr(self.builder, flag, if_block, next_condition_block);
 			};
 
 			unsafe { LLVMPositionBuilderAtEnd(self.builder, if_block) };
@@ -806,8 +812,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		if let Some(body) = &chain_expression.else_body {
-			unsafe { LLVMRemoveBasicBlockFromParent(next_condition_block) };
-			let block = next_condition_binding_block;
+			let block = next_condition_block;
 			let else_name = "if_else.else";
 			unsafe { LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len()) };
 
@@ -821,8 +826,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 		} else {
-			unsafe { LLVMRemoveBasicBlockFromParent(next_condition_block) };
-			let block = next_condition_binding_block;
+			let block = next_condition_block;
 			let else_name = "if_else.non_existant_else";
 			unsafe {
 				LLVMSetValueName2(LLVMBasicBlockAsValue(block), else_name.as_ptr() as _, else_name.len());
@@ -939,22 +943,23 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"while.following".as_ptr()) };
 		self.loop_follow_blocks.push(following_block);
+		let old_in_check_is = self.in_check_is;
+		self.in_check_is = InCheckIs::WhileLoop;
 
 		unsafe {
 			LLVMBuildBr(self.builder, condition_block);
 			LLVMPositionBuilderAtEnd(self.builder, condition_block);
 		}
 
-		let previous_condition_binding_block = context.if_condition_binding_block;
-		context.if_condition_binding_block = Some(condition_block);
 		let condition_binding = condition_callback(context, self);
-		context.if_condition_binding_block = previous_condition_binding_block;
 		let condition = condition_binding.to_value(self.builder);
 		unsafe {
 			let zero = LLVMConstNull(LLVMTypeOf(condition));
 			let flag = LLVMBuildICmp(self.builder, LLVMIntNE, condition, zero, c"while.flag".as_ptr());
 			LLVMBuildCondBr(self.builder, flag, while_block, following_block);
 		}
+
+		self.in_check_is = old_in_check_is;
 
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, while_block) };
 		body_callback(context, self);
@@ -967,8 +972,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
-		self.loop_condition_blocks.pop();
-		self.loop_follow_blocks.pop();
+		self.loop_condition_blocks.pop().unwrap();
+		self.loop_follow_blocks.pop().unwrap();
 
 		self.end_block();
 	}
@@ -2057,7 +2062,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			return None;
 		}
 
-		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr) {
+		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalIsAnd | BinaryOperator::LogicalOr) {
 			unsafe {
 				let current_block = LLVMGetInsertBlock(self.builder);
 				let function = LLVMGetBasicBlockParent(current_block);
@@ -2085,7 +2090,19 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 				match op {
 					BinaryOperator::LogicalAnd => LLVMBuildCondBr(self.builder, left, right_block, following_block),
+
+					BinaryOperator::LogicalIsAnd => {
+						let following_block = match self.in_check_is {
+							InCheckIs::IfElse => self.if_follow_blocks.last().unwrap(),
+							InCheckIs::WhileLoop => self.loop_follow_blocks.last().unwrap(),
+							InCheckIs::None => unreachable!(),
+						};
+
+						LLVMBuildCondBr(self.builder, left, right_block, *following_block)
+					}
+
 					BinaryOperator::LogicalOr => LLVMBuildCondBr(self.builder, left, following_block, right_block),
+
 					_ => unreachable!("{op:?}"),
 				};
 
@@ -2105,14 +2122,19 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				LLVMBuildBr(self.builder, following_block);
 
 				LLVMPositionBuilderAtEnd(self.builder, following_block);
-				let phi = LLVMBuildPhi(
-					self.builder,
-					LLVMInt1TypeInContext(self.context),
-					c"binary_operation.logical.result_phi".as_ptr(),
-				);
-				LLVMAddIncoming(phi, [left, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
+				let value = if op == BinaryOperator::LogicalIsAnd {
+					right
+				} else {
+					let phi = LLVMBuildPhi(
+						self.builder,
+						LLVMInt1TypeInContext(self.context),
+						c"binary_operation.logical.result_phi".as_ptr(),
+					);
+					LLVMAddIncoming(phi, [left, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
+					phi
+				};
 
-				let kind = BindingKind::Value(phi);
+				let kind = BindingKind::Value(value);
 				return Some(Binding { type_id: result_type_id, kind });
 			}
 		}
@@ -2382,6 +2404,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::BitwiseOrAssign
 				| BinaryOperator::BitwiseXorAssign
 				| BinaryOperator::LogicalAnd
+				| BinaryOperator::LogicalIsAnd
 				| BinaryOperator::LogicalOr
 				| BinaryOperator::Range => unreachable!(),
 			}
@@ -2427,6 +2450,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::BitwiseXor
 				| BinaryOperator::BitwiseXorAssign
 				| BinaryOperator::LogicalAnd
+				| BinaryOperator::LogicalIsAnd
 				| BinaryOperator::LogicalOr
 				| BinaryOperator::Range => unreachable!(),
 			}
@@ -2483,13 +2507,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			} else {
 				let shape = &self.llvm_types.user_type_structs[enum_shape_index];
 				let llvm_struct = shape[enum_specialization_index].actual;
-				let variant_pointer = unsafe {
-					let original_block = LLVMGetInsertBlock(self.builder);
-					LLVMPositionBuilderAtEnd(self.builder, context.if_condition_binding_block.unwrap());
-					let ptr = LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"check_is.variant_pointer".as_ptr());
-					LLVMPositionBuilderAtEnd(self.builder, original_block);
-					ptr
-				};
+				let variant_pointer =
+					unsafe { LLVMBuildStructGEP2(self.builder, llvm_struct, pointer, 1, c"check_is.variant_pointer".as_ptr()) };
 
 				let pointed_type = self.llvm_types.type_to_llvm_type(self.context, context.type_store, type_id);
 				let kind = BindingKind::Pointer { pointer: variant_pointer, pointed_type };
