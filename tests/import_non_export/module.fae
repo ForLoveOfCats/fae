@@ -1,0 +1,14 @@
+import origin::Pi, MyStatic, MyStruct, MyEnum, my_function
+
+fn do_something() {
+	MyStatic = "Hello world!"
+
+	let s = MyStruct { field: Pi }
+	println(f"{s.field}")
+
+	let e: MyEnum = .B
+	if e is A => println("It is A")
+	else if e is B => println("It is B")
+
+	println(f"{my_function(true)}")
+}

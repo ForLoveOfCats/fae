@@ -65,7 +65,7 @@ pub fn load_all_files(
 		let walked_file = match walker.next_file() {
 			Ok(Some(file)) => file,
 			Ok(None) => break,
-			Err(_) => break, //TODO: Report this error
+			Err(_) => break, // TODO: Report this error
 		};
 
 		let mut file = walked_file.file;

@@ -1,0 +1,16 @@
+const Pi = 3.14
+
+static MyStatic: str
+
+struct MyStruct {
+	field: f64
+}
+
+enum MyEnum {
+	A
+	B
+}
+
+fn my_function(arg: bool): bool {
+	return arg.!
+}

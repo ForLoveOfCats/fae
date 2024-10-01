@@ -245,7 +245,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		};
 
 		if name != "_" {
-			self.push_symbol(Symbol { name, kind, span, used });
+			self.push_symbol(Symbol { name, kind, span, used, imported: false });
 		}
 
 		readable_index
@@ -1160,7 +1160,7 @@ fn resolve_import_for_block_non_types<'a>(
 				let span = Some(name.span);
 				let name = name.item;
 				let kind = SymbolKind::Module { layer: layer.clone() };
-				let importing = Symbol { name, kind, span, used: false };
+				let importing = Symbol { name, kind, span, used: false, imported: true };
 				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
 			} else {
 				let error = error!("No importable module `{}`", name.item);
@@ -1213,7 +1213,7 @@ fn resolve_import_for_block_non_types<'a>(
 				let span = Some(name.span);
 				let name = name.item;
 				let kind = SymbolKind::Module { layer: layer.clone() };
-				let importing = Symbol { name, kind, span, used: false };
+				let importing = Symbol { name, kind, span, used: false, imported: true };
 				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
 			} else {
 				let error = error!("Cannot find symbol `{}` to import", name.item);
@@ -1387,7 +1387,7 @@ fn create_block_struct<'a>(
 	}
 
 	let kind = SymbolKind::Type { shape_index };
-	let symbol = Symbol { name, kind, span: Some(span), used: true };
+	let symbol = Symbol { name, kind, span: Some(span), used: true, imported: false };
 	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	shape_index
 }
@@ -1503,7 +1503,7 @@ fn create_block_enum<'a>(
 	}
 
 	let kind = SymbolKind::Type { shape_index };
-	let symbol = Symbol { name, kind, span: Some(span), used: true };
+	let symbol = Symbol { name, kind, span: Some(span), used: true, imported: false };
 	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	shape_index
 }
@@ -1607,6 +1607,7 @@ fn fill_block_struct<'a>(
 			kind,
 			span: Some(generic.name.span),
 			used: true,
+			imported: false,
 		};
 		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	}
@@ -1705,6 +1706,7 @@ fn fill_block_enum<'a>(
 			kind,
 			span: Some(generic.name.span),
 			used: true,
+			imported: false,
 		};
 		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	}
@@ -1824,6 +1826,7 @@ fn fill_struct_like_enum_variant<'a>(
 			kind,
 			span: Some(generic.name.span),
 			used: true,
+			imported: false,
 		};
 		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	}
@@ -2223,6 +2226,7 @@ fn create_block_functions<'a>(
 					kind,
 					span: Some(generic.span),
 					used: true,
+					imported: false,
 				};
 				scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 			}
@@ -2238,7 +2242,13 @@ fn create_block_functions<'a>(
 
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(parent_parameter.name.span);
-					let symbol = Symbol { name: parent_parameter.name.item, kind, span, used: true };
+					let symbol = Symbol {
+						name: parent_parameter.name.item,
+						kind,
+						span,
+						used: true,
+						imported: false,
+					};
 					scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 				}
 			}
@@ -2257,7 +2267,13 @@ fn create_block_functions<'a>(
 
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(base_type_parameter.name.span);
-					let symbol = Symbol { name: base_type_parameter.name.item, kind, span, used: true };
+					let symbol = Symbol {
+						name: base_type_parameter.name.item,
+						kind,
+						span,
+						used: true,
+						imported: false,
+					};
 					scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 				}
 
@@ -2435,7 +2451,7 @@ fn create_block_functions<'a>(
 
 				let kind = SymbolKind::Function { function_shape_index };
 				let span = Some(statement.name.span);
-				let symbol = Symbol { name: name.item, kind, span, used: true };
+				let symbol = Symbol { name: name.item, kind, span, used: true, imported: false };
 				symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 			}
 
@@ -2977,6 +2993,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			kind,
 			span: Some(generic.name.span),
 			used: true,
+			imported: false,
 		};
 		scope.push_symbol(symbol);
 	}
@@ -3002,7 +3019,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 			let type_id = shape.parameters[0].type_id;
 			let readable_index = scope.readables.push("self", type_id, ReadableKind::Let, is_mutable);
 			let kind = SymbolKind::Let { readable_index };
-			let symbol = Symbol { name: "self", kind, span: None, used: true };
+			let symbol = Symbol { name: "self", kind, span: None, used: true, imported: false };
 
 			scope.push_symbol(symbol);
 			maybe_self = 1;
@@ -3030,7 +3047,7 @@ fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree:
 		};
 
 		let name = parameter.name.item;
-		scope.push_symbol(Symbol { name, kind, span: Some(span), used: false });
+		scope.push_symbol(Symbol { name, kind, span: Some(span), used: false, imported: false });
 
 		let previous = &statement.parameters.parameters[..index];
 		if let Some(existing) = previous.iter().find(|f| f.item.name.item == name) {
@@ -3245,7 +3262,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	let name = statement.item.name.item;
 	let kind = SymbolKind::Const { constant_index };
 	let span = Some(statement.span + expression.span);
-	let symbol = Symbol { name, kind, span, used: true };
+	let symbol = Symbol { name, kind, span, used: true, imported: false };
 	context.push_symbol(symbol);
 
 	Some(())
@@ -3270,7 +3287,7 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 
 	let kind = SymbolKind::Static { static_index: index };
 	let span = Some(statement.span);
-	context.push_symbol(Symbol { name, kind, span, used: true });
+	context.push_symbol(Symbol { name, kind, span, used: true, imported: false });
 
 	Some(())
 }

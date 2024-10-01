@@ -667,7 +667,7 @@ impl<'a> TypeStore<'a> {
 
 			if let Some(name) = name {
 				let kind = SymbolKind::BuiltinType { type_id };
-				let symbol = Symbol { name, kind, span: None, used: true };
+				let symbol = Symbol { name, kind, span: None, used: true, imported: false };
 				primative_type_symbols.push(symbol);
 			}
 

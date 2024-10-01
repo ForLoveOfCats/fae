@@ -1,0 +1,17 @@
+import module::Pi, MyStatic, MyStruct, MyEnum, my_function, do_something
+
+fn main() {
+	do_something()
+
+	module::MyStatic = "Hello world!"
+
+	let _: f32 = module::Pi
+	let s = module::MyStruct { field: 1 }
+	println(f"{s.field}")
+
+	let e: module::MyEnum = .B
+	if e is A => println("It is A")
+	else if e is B => println("It is B")
+
+	println(f"{module::my_function(true)}")
+}

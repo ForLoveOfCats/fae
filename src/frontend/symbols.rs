@@ -16,6 +16,7 @@ pub struct Symbol<'a> {
 	pub kind: SymbolKind<'a>,
 	pub span: Option<Span>,
 	pub used: bool,
+	pub imported: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +111,7 @@ impl<'a> Symbols<'a> {
 			);
 		} else {
 			symbol.used = is_prelude;
+			symbol.imported = true;
 			if let Some(import_span) = import_span {
 				symbol.span = Some(import_span);
 			}
@@ -223,7 +225,7 @@ impl<'a> Symbols<'a> {
 
 				let kind = SymbolKind::Type { shape_index: variant_shape.struct_shape_index };
 				let span = Some(variant_shape.span);
-				let symbol = Symbol { name: second.item, kind, span, used: true };
+				let symbol = Symbol { name: second.item, kind, span, used: true, imported: false };
 				return Some(symbol);
 			}
 

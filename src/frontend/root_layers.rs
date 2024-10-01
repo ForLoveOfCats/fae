@@ -111,15 +111,17 @@ impl<'a> RootLayer<'a> {
 
 		let segment = &segments[0];
 		let name = segment.item;
-		let mut found = self.symbols.symbols.iter_mut().find(|symbol| symbol.name == name);
+		let found = self.symbols.symbols.iter_mut().find(|symbol| symbol.name == name);
 
-		if let Some(found) = &mut found {
-			found.used = true;
-		} else {
-			messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
+		if let Some(found) = found {
+			if found.imported == false {
+				found.used = true;
+				return Some(found.clone());
+			}
 		}
 
-		found.cloned()
+		messages.message(error!("No symbol `{name}` in root of module `{}`", self.name).span(segment.span));
+		None
 	}
 }
 
