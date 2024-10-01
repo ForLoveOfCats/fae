@@ -624,7 +624,6 @@ pub struct TypeStore<'a> {
 
 	pub type_entries: TypeEntries,
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
-	pub user_type_generate_order: Ref<RwLock<Vec<UserTypeSpecializationDescription>>>,
 
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
@@ -707,7 +706,6 @@ impl<'a> TypeStore<'a> {
 			primative_type_symbols: SliceRef::from(primative_type_symbols),
 			type_entries,
 			user_types: Ref::new(RwLock::new(Vec::new())),
-			user_type_generate_order: Ref::new(RwLock::new(Vec::new())),
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -1361,11 +1359,6 @@ impl<'a> TypeStore<'a> {
 							size = (size / alignment) * alignment + alignment;
 						}
 
-						if !entry.generic_poisoned {
-							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-							self.user_type_generate_order.write().push(description);
-						}
-
 						let layout = Layout { size, alignment };
 						let mut user_type = lock.write();
 						match &mut user_type.kind {
@@ -1396,11 +1389,6 @@ impl<'a> TypeStore<'a> {
 
 							size = size.max(variant_layout.size);
 							alignment = alignment.max(variant_layout.alignment);
-						}
-
-						if !entry.generic_poisoned {
-							let description = UserTypeSpecializationDescription { shape_index, specialization_index };
-							self.user_type_generate_order.write().push(description);
 						}
 
 						let mut layout = Layout { size, alignment };
