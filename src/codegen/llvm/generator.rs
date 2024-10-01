@@ -2,16 +2,16 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
-	LLVMAddAttributeAtIndex, LLVMAddCase, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext, LLVMArrayType2,
-	LLVMBasicBlockAsValue, LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr, LLVMBuildCall2,
-	LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast, LLVMBuildFPToSI,
-	LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr, LLVMBuildLShr,
-	LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul, LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt,
-	LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildStore,
-	LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem,
-	LLVMBuildUnreachable, LLVMBuildXor, LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct, LLVMConstNull,
-	LLVMConstReal, LLVMConstStringInContext, LLVMCreateBuilderInContext, LLVMCreateEnumAttribute, LLVMDoubleTypeInContext,
-	LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
+	LLVMAddAttributeAtIndex, LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext,
+	LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr,
+	LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast,
+	LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr,
+	LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul, LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi,
+	LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl,
+	LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP,
+	LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor, LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct,
+	LLVMConstNull, LLVMConstReal, LLVMConstStringInContext, LLVMCreateBuilderInContext, LLVMCreateEnumAttribute,
+	LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
 	LLVMGetEnumAttributeKindForName, LLVMGetInlineAsm, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
 	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
 	LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetGlobalConstant,
@@ -192,6 +192,74 @@ impl LLVMTypes {
 	}
 }
 
+#[derive(Clone, Copy)]
+pub struct LLVMIntrinsicFunction {
+	fn_type: LLVMTypeRef,
+	llvm_function: LLVMValueRef,
+}
+
+pub struct LLVMIntrinsics {
+	pub min32: LLVMIntrinsicFunction,
+	pub min64: LLVMIntrinsicFunction,
+
+	pub max32: LLVMIntrinsicFunction,
+	pub max64: LLVMIntrinsicFunction,
+
+	pub round32: LLVMIntrinsicFunction,
+	pub round64: LLVMIntrinsicFunction,
+}
+
+impl LLVMIntrinsics {
+	fn new(context: LLVMContextRef, module: LLVMModuleRef) -> LLVMIntrinsics {
+		let float = unsafe { LLVMFloatTypeInContext(context) };
+		let double = unsafe { LLVMDoubleTypeInContext(context) };
+
+		LLVMIntrinsics {
+			min32: unsafe {
+				let mut parameters = [float, float];
+				let fn_type = LLVMFunctionType(float, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+				let llvm_function = LLVMAddFunction(module, c"llvm.minnum.f32".as_ptr(), fn_type);
+				LLVMIntrinsicFunction { fn_type, llvm_function }
+			},
+
+			min64: unsafe {
+				let mut parameters = [double, double];
+				let fn_type = LLVMFunctionType(double, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+				let llvm_function = LLVMAddFunction(module, c"llvm.minnum.f64".as_ptr(), fn_type);
+				LLVMIntrinsicFunction { fn_type, llvm_function }
+			},
+
+			max32: unsafe {
+				let mut parameters = [float, float];
+				let fn_type = LLVMFunctionType(float, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+				let llvm_function = LLVMAddFunction(module, c"llvm.maxnum.f32".as_ptr(), fn_type);
+				LLVMIntrinsicFunction { fn_type, llvm_function }
+			},
+
+			max64: unsafe {
+				let mut parameters = [double, double];
+				let fn_type = LLVMFunctionType(double, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+				let llvm_function = LLVMAddFunction(module, c"llvm.maxnum.f64".as_ptr(), fn_type);
+				LLVMIntrinsicFunction { fn_type, llvm_function }
+			},
+
+			round32: unsafe {
+				let mut parameters = [float];
+				let fn_type = LLVMFunctionType(float, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+				let llvm_function = LLVMAddFunction(module, c"llvm.round.f32".as_ptr(), fn_type);
+				LLVMIntrinsicFunction { fn_type, llvm_function }
+			},
+
+			round64: unsafe {
+				let mut parameters = [double];
+				let fn_type = LLVMFunctionType(double, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+				let llvm_function = LLVMAddFunction(module, c"llvm.round.f64".as_ptr(), fn_type);
+				LLVMIntrinsicFunction { fn_type, llvm_function }
+			},
+		}
+	}
+}
+
 struct BlockFrame {
 	intial_readables_len: usize,
 }
@@ -238,6 +306,7 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	abi: Option<ABI>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
 	pub llvm_types: LLVMTypes,
+	pub llvm_intrinsics: LLVMIntrinsics,
 
 	scope_stack: Vec<LLVMMetadataRef>,
 	file: Option<DebugFile>,
@@ -261,6 +330,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		let module = unsafe { LLVMModuleCreateWithNameInContext(c"fae_translation_unit_module".as_ptr(), context) };
 		let builder = unsafe { LLVMCreateBuilderInContext(context) };
 		let llvm_types = LLVMTypes::new(context);
+		let llvm_intrinsics = LLVMIntrinsics::new(context, module);
 
 		let di_builder = unsafe {
 			let di_builder = LLVMCreateDIBuilder(module);
@@ -301,6 +371,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			abi: Some(ABI::new()),
 			attribute_kinds: AttributeKinds::new(),
 			llvm_types,
+			llvm_intrinsics,
 
 			file: None,
 			scope_stack: Vec::new(),
@@ -2781,6 +2852,144 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 				LLVMBuildCall2(self.builder, function_type, value, std::ptr::null_mut(), 0, c"".as_ptr());
 			}
+		}
+	}
+
+	fn generate_min32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let intrinsic = self.llvm_intrinsics.min32;
+		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
+		unsafe {
+			let value = LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			);
+			let kind = BindingKind::Value(value);
+			Binding { type_id: type_store.f32_type_id(), kind }
+		}
+	}
+
+	fn generate_min64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let intrinsic = self.llvm_intrinsics.min64;
+		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
+		unsafe {
+			let value = LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			);
+			let kind = BindingKind::Value(value);
+			Binding { type_id: type_store.f64_type_id(), kind }
+		}
+	}
+
+	fn generate_max32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let intrinsic = self.llvm_intrinsics.max32;
+		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
+		unsafe {
+			let value = LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			);
+			let kind = BindingKind::Value(value);
+			Binding { type_id: type_store.f32_type_id(), kind }
+		}
+	}
+
+	fn generate_max64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let intrinsic = self.llvm_intrinsics.max64;
+		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
+		unsafe {
+			let value = LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			);
+			let kind = BindingKind::Value(value);
+			Binding { type_id: type_store.f64_type_id(), kind }
+		}
+	}
+
+	fn generate_round32(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let intrinsic = self.llvm_intrinsics.round32;
+		let mut arguments = [input.to_value(self.builder)];
+		unsafe {
+			let value = LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			);
+			let kind = BindingKind::Value(value);
+			Binding { type_id: type_store.f32_type_id(), kind }
+		}
+	}
+
+	fn generate_round64(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let intrinsic = self.llvm_intrinsics.round64;
+		let mut arguments = [input.to_value(self.builder)];
+		unsafe {
+			let value = LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			);
+			let kind = BindingKind::Value(value);
+			Binding { type_id: type_store.f64_type_id(), kind }
 		}
 	}
 

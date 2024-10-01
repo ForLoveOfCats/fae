@@ -1,0 +1,17 @@
+#intrinsic
+fn min32(a: f32, b: f32): f32
+
+#intrinsic
+fn min64(a: f64, b: f64): f64
+
+#intrinsic
+fn max32(a: f32, b: f32): f32
+
+#intrinsic
+fn max64(a: f64, b: f64): f64
+
+#intrinsic
+fn round32(input: f32): f32
+
+#intrinsic
+fn round64(input: f64): f64

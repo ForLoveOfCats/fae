@@ -773,6 +773,14 @@ impl<'a> TypeStore<'a> {
 		self.usize_type_id
 	}
 
+	pub fn f32_type_id(&self) -> TypeId {
+		self.f32_type_id
+	}
+
+	pub fn f64_type_id(&self) -> TypeId {
+		self.f64_type_id
+	}
+
 	pub fn bool_type_id(&self) -> TypeId {
 		self.bool_type_id
 	}

@@ -264,6 +264,42 @@ pub trait Generator {
 
 	fn generate_debugger_break(&mut self, debug_location: DebugLocation);
 
+	fn generate_min32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_round32(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding;
+
+	fn generate_round64(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding;
+
 	// TODO: Remove this in favor of a "end_function"
 	fn finalize_generator(&mut self);
 }

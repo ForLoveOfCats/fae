@@ -1103,6 +1103,62 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 			None
 		}
 
+		"min32" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 2);
+
+			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+			Some(generator.generate_min32(context.type_store, a, b, debug_location))
+		}
+
+		"min64" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 2);
+
+			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+			Some(generator.generate_min64(context.type_store, a, b, debug_location))
+		}
+
+		"max32" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 2);
+
+			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+			Some(generator.generate_max32(context.type_store, a, b, debug_location))
+		}
+
+		"max64" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 2);
+
+			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+			Some(generator.generate_max64(context.type_store, a, b, debug_location))
+		}
+
+		"round32" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 1);
+
+			let input = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			Some(generator.generate_round32(context.type_store, input, debug_location))
+		}
+
+		"round64" => {
+			assert_eq!(specialization.type_arguments.explicit_len, 0);
+			assert_eq!(specialization.parameters.len(), 1);
+
+			let input = generate_expression(context, generator, &call.arguments[0]).unwrap();
+			Some(generator.generate_round64(context.type_store, input, debug_location))
+		}
+
 		_ => unreachable!(),
 	}
 }

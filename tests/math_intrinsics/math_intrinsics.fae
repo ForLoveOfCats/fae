@@ -1,0 +1,16 @@
+import fae::math::min32, min64, max32, max64, round32, round64
+
+fn main() {
+	println(f"{min32(5, 6.4)}") // 5
+	println(f"{min64(9.9, -100)}") // -100
+
+	println("")
+
+	println(f"{max32(-10, 100)}") // 100
+	println(f"{max64(4444, -8)}") // 4444
+
+	println("")
+
+	println(f"{round32(99.6)}") // 100
+	println(f"{round64(2.111)}") // 2
+}
