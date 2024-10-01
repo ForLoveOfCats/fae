@@ -887,6 +887,8 @@ println(f"{MagicNumber}") // Prints a different value depending on the target pl
 The `when` statement's condition may contain a single word predicate which the compiler evaluates the truthiness of at compile time. It may *not* include operators such as `and` or `or`. The list of allowed predicates are:
 - `PlatformLinux` (the target platform is Linux based, such as desktop GNU/Linux)
 - `PlatformDarwin` (the target platform is Darwin based, such as macOS)
+- `DebugBuild` (the project is being built in debug mode)
+- `ReleaseBuild` (the project is being built in release mode)
 - `InCompilerTest` (the code is being compiled in the context of a compiler test)
 
 **Note**: It is planned for `when` to gain the ability to evaulate arbitrary compile time expressions, replacing the compiler built in word predicates.

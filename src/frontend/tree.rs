@@ -195,7 +195,6 @@ pub struct Function<'a> {
 	pub parameters: Parameters<'a>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub block: Option<Node<Block<'a>>>,
-	pub index_in_block: usize,
 }
 
 #[derive(Debug)]

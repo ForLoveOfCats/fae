@@ -36,7 +36,7 @@ pub fn parse_block<'a>(
 	if allow_braceless && tokens.peek_kind() == Ok(TokenKind::FatArrow) {
 		let fat_arrow = tokens.next(messages)?;
 
-		let statement = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank());
+		let statement = parse_statement(bump, messages, tokens, Attributes::blank());
 		if let Some(Statement::Block(_)) = &statement {
 			let warning =
 				warning!("A single statement block is extraneous if it only contains another block, consider removing the `=>`");
@@ -67,7 +67,6 @@ pub fn parse_block<'a>(
 
 pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> &'a [Statement<'a>] {
 	let mut items = BumpVec::new_in(bump);
-	let mut next_function_index = 0;
 
 	loop {
 		while let Ok(token) = tokens.peek() {
@@ -100,7 +99,7 @@ pub fn parse_statements<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 			break;
 		}
 
-		if let Some(statement) = parse_statement(bump, messages, tokens, &mut next_function_index, attributes) {
+		if let Some(statement) = parse_statement(bump, messages, tokens, attributes) {
 			items.push(statement);
 		}
 	}
@@ -112,7 +111,6 @@ fn parse_statement<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
-	next_function_index: &mut usize,
 	attributes: Attributes<'a>,
 ) -> Option<Statement<'a>> {
 	let peeked = tokens.peek().ok()?;
@@ -172,12 +170,9 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "fn", .. } => {
-			let index = *next_function_index;
-			*next_function_index += 1;
-			if let Ok(statement) = parse_function_declaration(bump, messages, tokens, attributes, index) {
+			if let Ok(statement) = parse_function_declaration(bump, messages, tokens, attributes) {
 				return Some(Statement::Function(bump.alloc(statement)));
 			} else {
-				*next_function_index -= 1;
 				consume_error_syntax(messages, tokens);
 			}
 		}
@@ -1644,7 +1639,6 @@ fn parse_function_declaration<'a>(
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	attributes: Attributes<'a>,
-	index_in_block: usize,
 ) -> ParseResult<Function<'a>> {
 	let generics = match attributes.generic_attribute {
 		Some(attribute) => attribute.item.names,
@@ -1690,7 +1684,6 @@ fn parse_function_declaration<'a>(
 		parameters,
 		parsed_type,
 		block,
-		index_in_block,
 	})
 }
 
@@ -2039,7 +2032,7 @@ fn parse_binding_statement<'a>(
 fn parse_defer_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Defer<'a>>> {
 	let defer_token = tokens.expect_word(messages, "defer")?;
 
-	let Some(statement) = parse_statement(bump, messages, tokens, &mut 0, Attributes::blank()) else {
+	let Some(statement) = parse_statement(bump, messages, tokens, Attributes::blank()) else {
 		return Err(());
 	};
 

@@ -80,6 +80,20 @@ fn assertf(value: bool, message: fstr) {
 	if value.! => panicf(f"Assertion failed: {message}")
 }
 
+when DebugBuild {
+	fn debug_assert(value: bool) {
+		if value.! => panicf("Debug assertion failed")
+	}
+
+	fn debug_assertf(value: bool, message: fstr) {
+		if value.! => panicf(f"Debug assertion failed: {message}")
+	}
+} else when ReleaseBuild {
+	fn debug_assert(_value: bool) {}
+
+	fn debug_assertf(_value: bool, _message: fstr) {}
+}
+
 #lang "range_type"
 struct Range {
 	start: isize

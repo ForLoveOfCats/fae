@@ -2572,7 +2572,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	};
 
 	let should_import_prelude = is_root && context.cli_arguments.std_enabled;
-	let block = validate_block_in_context(&mut context, block, scope_id, is_root, should_import_prelude);
+	let block = validate_block_in_context(&mut context, block, &mut 0, scope_id, is_root, should_import_prelude);
 	if is_root {
 		let scope = &context.symbols_scope.symbols.symbols;
 		crate::frontend::symbols::report_unused(scope, context.messages);
@@ -2586,6 +2586,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 fn validate_block_in_context<'a>(
 	context: &mut Context<'a, '_, '_>,
 	block: &'a tree::Block<'a>,
+	index_in_block: &mut usize,
 	scope_id: ScopeId,
 	is_root: bool,
 	should_import_prelude: bool,
@@ -2674,7 +2675,8 @@ fn validate_block_in_context<'a>(
 	let mut statements = Vec::with_capacity(block.statements.len());
 
 	for statement in block.statements {
-		if let Some(statement) = validate_statement(context, scope_id, statement, &mut yields, &mut returns, is_root) {
+		let statement = validate_statement(context, scope_id, statement, &mut yields, &mut returns, index_in_block, is_root);
+		if let Some(statement) = statement {
 			statements.push(statement);
 		}
 	}
@@ -2696,6 +2698,7 @@ fn validate_statement<'a>(
 	statement: &'a tree::Statement<'a>,
 	yields: &mut bool,
 	returns: &mut bool,
+	index_in_block: &mut usize,
 	is_root: bool,
 ) -> Option<Statement<'a>> {
 	context.expected_type = None;
@@ -2740,7 +2743,7 @@ fn validate_statement<'a>(
 		}
 
 		tree::Statement::WhenElseChain(statement) => {
-			if let Some(block) = validate_when(context, statement, scope_id, is_root) {
+			if let Some(block) = validate_when(context, statement, index_in_block, scope_id, is_root) {
 				*yields |= block.yields;
 				*returns |= block.returns;
 				let kind = StatementKind::When(block);
@@ -2795,7 +2798,11 @@ fn validate_statement<'a>(
 
 		tree::Statement::Enum(..) => {}
 
-		tree::Statement::Function(statement) => validate_function(context, statement, scope_id),
+		tree::Statement::Function(statement) => {
+			let index = *index_in_block;
+			*index_in_block += 1;
+			validate_function(context, statement, index, scope_id)
+		}
 
 		tree::Statement::Const(..) => {}
 
@@ -2822,7 +2829,8 @@ fn validate_statement<'a>(
 			let scope_id = ScopeId { file_index: scope.file_index, scope_index: scope.scope_index };
 
 			let statement = &statement.item.statement;
-			let Some(statement) = validate_statement(&mut scope, scope_id, statement, &mut false, &mut false, false) else {
+			let Some(statement) = validate_statement(&mut scope, scope_id, statement, &mut false, &mut false, &mut 0, false)
+			else {
 				return None;
 			};
 
@@ -2958,23 +2966,29 @@ fn validate_statement<'a>(
 fn validate_when<'a>(
 	context: &mut Context<'a, '_, '_>,
 	statement: &'a Node<tree::WhenElseChain<'a>>,
+	index_in_block: &mut usize,
 	scope_id: ScopeId,
 	is_root: bool,
 ) -> Option<Block<'a>> {
 	if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
-		Some(validate_block_in_context(context, &body.item, scope_id, is_root, false))
+		Some(validate_block_in_context(context, &body.item, index_in_block, scope_id, is_root, false))
 	} else {
 		None
 	}
 }
 
-fn validate_function<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Function<'a>, scope_id: ScopeId) {
+fn validate_function<'a>(
+	context: &mut Context<'a, '_, '_>,
+	statement: &'a tree::Function<'a>,
+	index_in_block: usize,
+	scope_id: ScopeId,
+) {
 	if statement.extern_attribute.is_some() || statement.intrinsic_attribute.is_some() {
 		// Note: Signature has already been checked in `create_block_functions`
 		return;
 	}
 
-	let function_shape_index = context.local_function_shape_index(statement.index_in_block);
+	let function_shape_index = context.local_function_shape_index(index_in_block);
 	let lock = context.function_store.shapes.read()[function_shape_index]
 		.as_ref()
 		.unwrap()

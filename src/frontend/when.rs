@@ -5,6 +5,7 @@ use crate::frontend::tree::{Block, Node, WhenElseChain};
 #[derive(Debug)]
 pub struct WhenContext {
 	pub target_platform: TargetPlatform,
+	pub release_mode: bool,
 	pub in_compiler_test: bool,
 }
 
@@ -28,6 +29,10 @@ impl WhenContext {
 			"PlatformLinux" => self.target_platform == TargetPlatform::Linux,
 
 			"PlatformDarwin" => self.target_platform == TargetPlatform::Darwin,
+
+			"DebugBuild" => !self.release_mode,
+
+			"ReleaseBuild" => self.release_mode,
 
 			"InCompilerTest" => self.in_compiler_test,
 

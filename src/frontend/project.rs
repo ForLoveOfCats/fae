@@ -165,7 +165,11 @@ pub fn build_project(
 	#[cfg(target_os = "macos")]
 	let target_platform = TargetPlatform::Darwin;
 
-	let when_context = WhenContext { target_platform, in_compiler_test };
+	let when_context = WhenContext {
+		target_platform,
+		release_mode: cli_arguments.optimize_artifacts,
+		in_compiler_test,
+	};
 
 	let validate_start = Instant::now();
 	let herd = bumpalo_herd::Herd::new();
