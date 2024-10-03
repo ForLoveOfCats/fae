@@ -29,3 +29,15 @@ Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_fa
 Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 17: Expected enum `Enum` has no variant named `Nope`
   17|     let _: OtherEnum = .Variant { shared: .A, unshared: .Nope }
                                                                ^^^^
+
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 19: Expected enum `Enum` has no variant named `Abc`
+  19|     value.first = .Abc
+                         ^^^
+
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 21: Cannot infer enum type for variant, there is no specific expected type in this context
+  21|     let _ = if true => yield .A
+                                   ^^
+
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 22: Cannot infer enum type for variant, the expected type is not an enum
+  22|     else => yield .B
+                        ^^

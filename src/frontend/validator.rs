@@ -2965,7 +2965,10 @@ fn validate_statement<'a>(
 
 			let debug_location = statement.span.debug_location(context.parsed_files);
 			let statement = if let Some(yield_target_index) = context.current_yield_target_index {
+				let original_expected_type = context.expected_type;
+				context.expected_type = context.yield_targets.get(yield_target_index).type_id;
 				let mut expression = validate_expression(context, &statement.item.expression);
+				context.expected_type = original_expected_type;
 
 				let target_type = context.yield_targets.get_mut(yield_target_index);
 				if let Some(expected) = target_type.type_id {
@@ -5936,9 +5939,17 @@ fn validate_binary_operation<'a>(
 	if op != BinaryOperator::LogicalAnd {
 		context.can_is_bind = false;
 	}
+
 	let mut left = validate_expression(context, &operation.left);
+
+	let original_expected_type = context.expected_type;
+	if op == BinaryOperator::Assign {
+		context.expected_type = Some(left.type_id);
+	}
 	let mut right = validate_expression(context, &operation.right);
+
 	context.can_is_bind = original_can_is_bind;
+	context.expected_type = original_expected_type;
 
 	if let BinaryOperator::Range = op {
 		let isize_type_id = context.type_store.isize_type_id();

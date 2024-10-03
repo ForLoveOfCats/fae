@@ -15,6 +15,11 @@ fn main() {
 	value = Struct.new(.Abc { another: 6.4 }, -8)
 
 	let _: OtherEnum = .Variant { shared: .A, unshared: .Nope }
+
+	value.first = .Abc
+
+	let _ = if true => yield .A
+	else => yield .B
 }
 
 fn dump_enum(arg: Enum) {

@@ -33,6 +33,12 @@ fn main() {
 	dump_enum(value.first)
 	println(f"{value.second}")
 	dump_enum(value.third)
+	value.first = .B
+	dump_enum(value.first)
+
+	value.first = if true => yield .A
+	else => yield .B
+	dump_enum(value.first)
 
 	println("")
 
@@ -46,6 +52,12 @@ fn main() {
 	let other: OtherEnum = .Variant { shared: .A, unshared: .B }
 	dump_enum(other.shared)
 	if other is Variant => dump_enum(other.unshared)
+
+	println("")
+
+	let value: Enum = if false => yield .A
+	else => yield .B
+	dump_enum(value)
 }
 
 fn dump_enum(arg: Enum) {
