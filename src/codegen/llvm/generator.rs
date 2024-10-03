@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
@@ -199,58 +199,110 @@ pub struct LLVMIntrinsicFunction {
 }
 
 pub struct LLVMIntrinsics {
-	pub min32: LLVMIntrinsicFunction,
-	pub min64: LLVMIntrinsicFunction,
+	pub min_i8: LLVMIntrinsicFunction,
+	pub min_i16: LLVMIntrinsicFunction,
+	pub min_i32: LLVMIntrinsicFunction,
+	pub min_i64: LLVMIntrinsicFunction,
 
-	pub max32: LLVMIntrinsicFunction,
-	pub max64: LLVMIntrinsicFunction,
+	pub min_u8: LLVMIntrinsicFunction,
+	pub min_u16: LLVMIntrinsicFunction,
+	pub min_u32: LLVMIntrinsicFunction,
+	pub min_u64: LLVMIntrinsicFunction,
 
-	pub round32: LLVMIntrinsicFunction,
-	pub round64: LLVMIntrinsicFunction,
+	pub min_isize: LLVMIntrinsicFunction,
+	pub min_usize: LLVMIntrinsicFunction,
+
+	pub min_f32: LLVMIntrinsicFunction,
+	pub min_f64: LLVMIntrinsicFunction,
+
+	pub max_i8: LLVMIntrinsicFunction,
+	pub max_i16: LLVMIntrinsicFunction,
+	pub max_i32: LLVMIntrinsicFunction,
+	pub max_i64: LLVMIntrinsicFunction,
+
+	pub max_u8: LLVMIntrinsicFunction,
+	pub max_u16: LLVMIntrinsicFunction,
+	pub max_u32: LLVMIntrinsicFunction,
+	pub max_u64: LLVMIntrinsicFunction,
+
+	pub max_isize: LLVMIntrinsicFunction,
+	pub max_usize: LLVMIntrinsicFunction,
+
+	pub max_f32: LLVMIntrinsicFunction,
+	pub max_f64: LLVMIntrinsicFunction,
+
+	pub round_f32: LLVMIntrinsicFunction,
+	pub round_f64: LLVMIntrinsicFunction,
 }
 
 impl LLVMIntrinsics {
 	fn new(context: LLVMContextRef, module: LLVMModuleRef) -> LLVMIntrinsics {
+		let t_i8 = unsafe { LLVMInt8TypeInContext(context) };
+		let t_i16 = unsafe { LLVMInt16TypeInContext(context) };
+		let t_i32 = unsafe { LLVMInt32TypeInContext(context) };
+		let t_i64 = unsafe { LLVMInt64TypeInContext(context) };
+
 		let float = unsafe { LLVMFloatTypeInContext(context) };
 		let double = unsafe { LLVMDoubleTypeInContext(context) };
 
+		let make_min_max =
+			|parameters: &mut [LLVMTypeRef], return_type: LLVMTypeRef, llvm_name: &CStr| -> LLVMIntrinsicFunction {
+				unsafe {
+					let fn_type = LLVMFunctionType(return_type, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
+					let llvm_function = LLVMAddFunction(module, llvm_name.as_ptr(), fn_type);
+					LLVMIntrinsicFunction { fn_type, llvm_function }
+				}
+			};
+
+		let min_i64 = make_min_max(&mut [t_i64, t_i64], t_i64, c"llvm.smin.i64");
+		let min_u64 = make_min_max(&mut [t_i64, t_i64], t_i64, c"llvm.umin.i64");
+
+		let max_i64 = make_min_max(&mut [t_i64, t_i64], t_i64, c"llvm.smax.i64");
+		let max_u64 = make_min_max(&mut [t_i64, t_i64], t_i64, c"llvm.umax.i64");
+
 		LLVMIntrinsics {
-			min32: unsafe {
-				let mut parameters = [float, float];
-				let fn_type = LLVMFunctionType(float, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
-				let llvm_function = LLVMAddFunction(module, c"llvm.minnum.f32".as_ptr(), fn_type);
-				LLVMIntrinsicFunction { fn_type, llvm_function }
-			},
+			min_i8: make_min_max(&mut [t_i8, t_i8], t_i8, c"llvm.smin.i8"),
+			min_i16: make_min_max(&mut [t_i16, t_i16], t_i16, c"llvm.smin.i16"),
+			min_i32: make_min_max(&mut [t_i32, t_i32], t_i32, c"llvm.smin.i32"),
+			min_i64,
 
-			min64: unsafe {
-				let mut parameters = [double, double];
-				let fn_type = LLVMFunctionType(double, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
-				let llvm_function = LLVMAddFunction(module, c"llvm.minnum.f64".as_ptr(), fn_type);
-				LLVMIntrinsicFunction { fn_type, llvm_function }
-			},
+			min_u8: make_min_max(&mut [t_i8, t_i8], t_i8, c"llvm.umin.i8"),
+			min_u16: make_min_max(&mut [t_i16, t_i16], t_i16, c"llvm.umin.i16"),
+			min_u32: make_min_max(&mut [t_i32, t_i32], t_i32, c"llvm.umin.i32"),
+			min_u64,
 
-			max32: unsafe {
-				let mut parameters = [float, float];
-				let fn_type = LLVMFunctionType(float, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
-				let llvm_function = LLVMAddFunction(module, c"llvm.maxnum.f32".as_ptr(), fn_type);
-				LLVMIntrinsicFunction { fn_type, llvm_function }
-			},
+			// TODO: Handle other pointer sizes
+			min_isize: min_i64,
+			min_usize: min_u64,
 
-			max64: unsafe {
-				let mut parameters = [double, double];
-				let fn_type = LLVMFunctionType(double, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
-				let llvm_function = LLVMAddFunction(module, c"llvm.maxnum.f64".as_ptr(), fn_type);
-				LLVMIntrinsicFunction { fn_type, llvm_function }
-			},
+			min_f32: make_min_max(&mut [float, float], float, c"llvm.minnum.f32"),
+			min_f64: make_min_max(&mut [double, double], double, c"llvm.minnum.f64"),
 
-			round32: unsafe {
+			max_i8: make_min_max(&mut [t_i8, t_i8], t_i8, c"llvm.smax.i8"),
+			max_i16: make_min_max(&mut [t_i16, t_i16], t_i16, c"llvm.smax.i16"),
+			max_i32: make_min_max(&mut [t_i32, t_i32], t_i32, c"llvm.smax.i32"),
+			max_i64,
+
+			max_u8: make_min_max(&mut [t_i8, t_i8], t_i8, c"llvm.umax.i8"),
+			max_u16: make_min_max(&mut [t_i16, t_i16], t_i16, c"llvm.umax.i16"),
+			max_u32: make_min_max(&mut [t_i32, t_i32], t_i32, c"llvm.umax.i32"),
+			max_u64,
+
+			// TODO: Handle other pointer sizes
+			max_isize: max_i64,
+			max_usize: max_u64,
+
+			max_f32: make_min_max(&mut [float, float], float, c"llvm.maxnum.f32"),
+			max_f64: make_min_max(&mut [double, double], double, c"llvm.maxnum.f64"),
+
+			round_f32: unsafe {
 				let mut parameters = [float];
 				let fn_type = LLVMFunctionType(float, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
 				let llvm_function = LLVMAddFunction(module, c"llvm.round.f32".as_ptr(), fn_type);
 				LLVMIntrinsicFunction { fn_type, llvm_function }
 			},
 
-			round64: unsafe {
+			round_f64: unsafe {
 				let mut parameters = [double];
 				let fn_type = LLVMFunctionType(double, parameters.as_mut_ptr(), parameters.len() as u32, false as _);
 				let llvm_function = LLVMAddFunction(module, c"llvm.round.f64".as_ptr(), fn_type);
@@ -498,6 +550,32 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 				}
 			},
 		}
+	}
+
+	fn generate_min_max_intrinsic(
+		&self,
+		a: Binding,
+		b: Binding,
+		intrinsic: LLVMIntrinsicFunction,
+		type_id: TypeId,
+		debug_location: DebugLocation,
+	) -> Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
+		let value = unsafe {
+			LLVMBuildCall2(
+				self.builder,
+				intrinsic.fn_type,
+				intrinsic.llvm_function,
+				arguments.as_mut_ptr(),
+				arguments.len() as u32,
+				c"".as_ptr(),
+			)
+		};
+
+		let kind = BindingKind::Value(value);
+		Binding { type_id, kind }
 	}
 }
 
@@ -2855,110 +2933,255 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_min32(
+	fn generate_min_i8(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
 		b: Self::Binding,
 		debug_location: DebugLocation,
 	) -> Self::Binding {
-		let _debug_scope = self.create_debug_scope(debug_location);
-
-		let intrinsic = self.llvm_intrinsics.min32;
-		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
-		unsafe {
-			let value = LLVMBuildCall2(
-				self.builder,
-				intrinsic.fn_type,
-				intrinsic.llvm_function,
-				arguments.as_mut_ptr(),
-				arguments.len() as u32,
-				c"".as_ptr(),
-			);
-			let kind = BindingKind::Value(value);
-			Binding { type_id: type_store.f32_type_id(), kind }
-		}
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_i8, type_store.i8_type_id(), debug_location);
 	}
 
-	fn generate_min64(
+	fn generate_min_i16(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
 		b: Self::Binding,
 		debug_location: DebugLocation,
 	) -> Self::Binding {
-		let _debug_scope = self.create_debug_scope(debug_location);
-
-		let intrinsic = self.llvm_intrinsics.min64;
-		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
-		unsafe {
-			let value = LLVMBuildCall2(
-				self.builder,
-				intrinsic.fn_type,
-				intrinsic.llvm_function,
-				arguments.as_mut_ptr(),
-				arguments.len() as u32,
-				c"".as_ptr(),
-			);
-			let kind = BindingKind::Value(value);
-			Binding { type_id: type_store.f64_type_id(), kind }
-		}
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_i16, type_store.i16_type_id(), debug_location);
 	}
 
-	fn generate_max32(
+	fn generate_min_i32(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
 		b: Self::Binding,
 		debug_location: DebugLocation,
 	) -> Self::Binding {
-		let _debug_scope = self.create_debug_scope(debug_location);
-
-		let intrinsic = self.llvm_intrinsics.max32;
-		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
-		unsafe {
-			let value = LLVMBuildCall2(
-				self.builder,
-				intrinsic.fn_type,
-				intrinsic.llvm_function,
-				arguments.as_mut_ptr(),
-				arguments.len() as u32,
-				c"".as_ptr(),
-			);
-			let kind = BindingKind::Value(value);
-			Binding { type_id: type_store.f32_type_id(), kind }
-		}
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_i32, type_store.i32_type_id(), debug_location);
 	}
 
-	fn generate_max64(
+	fn generate_min_i64(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
 		b: Self::Binding,
 		debug_location: DebugLocation,
 	) -> Self::Binding {
-		let _debug_scope = self.create_debug_scope(debug_location);
-
-		let intrinsic = self.llvm_intrinsics.max64;
-		let mut arguments = [a.to_value(self.builder), b.to_value(self.builder)];
-		unsafe {
-			let value = LLVMBuildCall2(
-				self.builder,
-				intrinsic.fn_type,
-				intrinsic.llvm_function,
-				arguments.as_mut_ptr(),
-				arguments.len() as u32,
-				c"".as_ptr(),
-			);
-			let kind = BindingKind::Value(value);
-			Binding { type_id: type_store.f64_type_id(), kind }
-		}
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_i64, type_store.i64_type_id(), debug_location);
 	}
 
-	fn generate_round32(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding {
+	fn generate_min_u8(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_u8, type_store.u8_type_id(), debug_location);
+	}
+
+	fn generate_min_u16(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_u16, type_store.u16_type_id(), debug_location);
+	}
+
+	fn generate_min_u32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_u32, type_store.u32_type_id(), debug_location);
+	}
+
+	fn generate_min_u64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_u64, type_store.u64_type_id(), debug_location);
+	}
+
+	fn generate_min_isize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_isize, type_store.isize_type_id(), debug_location);
+	}
+
+	fn generate_min_usize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_usize, type_store.usize_type_id(), debug_location);
+	}
+
+	fn generate_min_f32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_f32, type_store.f32_type_id(), debug_location);
+	}
+
+	fn generate_min_f64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.min_f64, type_store.f64_type_id(), debug_location);
+	}
+
+	fn generate_max_i8(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_i8, type_store.i8_type_id(), debug_location);
+	}
+
+	fn generate_max_i16(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_i16, type_store.i16_type_id(), debug_location);
+	}
+
+	fn generate_max_i32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_i32, type_store.i32_type_id(), debug_location);
+	}
+
+	fn generate_max_i64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_i64, type_store.i64_type_id(), debug_location);
+	}
+
+	fn generate_max_u8(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_u8, type_store.u8_type_id(), debug_location);
+	}
+
+	fn generate_max_u16(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_u16, type_store.u16_type_id(), debug_location);
+	}
+
+	fn generate_max_u32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_u32, type_store.u32_type_id(), debug_location);
+	}
+
+	fn generate_max_u64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_u64, type_store.u64_type_id(), debug_location);
+	}
+
+	fn generate_max_isize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_isize, type_store.isize_type_id(), debug_location);
+	}
+
+	fn generate_max_usize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_usize, type_store.usize_type_id(), debug_location);
+	}
+
+	fn generate_max_f32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_f32, type_store.f32_type_id(), debug_location);
+	}
+
+	fn generate_max_f64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		return self.generate_min_max_intrinsic(a, b, self.llvm_intrinsics.max_f64, type_store.f64_type_id(), debug_location);
+	}
+
+	fn generate_round_f32(
+		&mut self,
+		type_store: &TypeStore,
+		input: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
-		let intrinsic = self.llvm_intrinsics.round32;
+		let intrinsic = self.llvm_intrinsics.round_f32;
 		let mut arguments = [input.to_value(self.builder)];
 		unsafe {
 			let value = LLVMBuildCall2(
@@ -2974,10 +3197,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
-	fn generate_round64(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding {
+	fn generate_round_f64(
+		&mut self,
+		type_store: &TypeStore,
+		input: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
-		let intrinsic = self.llvm_intrinsics.round64;
+		let intrinsic = self.llvm_intrinsics.round_f64;
 		let mut arguments = [input.to_value(self.builder)];
 		unsafe {
 			let value = LLVMBuildCall2(

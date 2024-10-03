@@ -5,9 +5,10 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
-	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, FunctionId,
-	FunctionShape, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable, Statement, StatementKind,
-	StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, While,
+	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, Function,
+	FunctionId, FunctionShape, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable, Statement,
+	StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
+	While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -1027,6 +1028,27 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 	let shape = lock.read();
 	let specialization = &shape.specializations[function_id.specialization_index];
 
+	fn generate_min_max<'a, 'b, G, F>(
+		context: &mut Context<'a, 'b>,
+		generator: &mut G,
+		specialization: &Function,
+		call: &'b Call<'a>,
+		function: F,
+		debug_location: DebugLocation,
+	) -> Option<G::Binding>
+	where
+		G: Generator,
+		F: FnOnce(&mut G, &TypeStore, G::Binding, G::Binding, DebugLocation) -> G::Binding,
+	{
+		assert_eq!(specialization.type_arguments.explicit_len, 0);
+		assert_eq!(specialization.parameters.len(), 2);
+
+		let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
+		let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+
+		Some(function(generator, context.type_store, a, b, debug_location))
+	}
+
 	match call.name {
 		"size_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 1);
@@ -1105,60 +1127,52 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 			None
 		}
 
-		"min32" => {
-			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			assert_eq!(specialization.parameters.len(), 2);
+		"min_i8" => generate_min_max(context, generator, specialization, call, G::generate_min_i8, debug_location),
+		"min_i16" => generate_min_max(context, generator, specialization, call, G::generate_min_i16, debug_location),
+		"min_i32" => generate_min_max(context, generator, specialization, call, G::generate_min_i32, debug_location),
+		"min_i64" => generate_min_max(context, generator, specialization, call, G::generate_min_i64, debug_location),
 
-			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
-			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+		"min_u8" => generate_min_max(context, generator, specialization, call, G::generate_min_u8, debug_location),
+		"min_u16" => generate_min_max(context, generator, specialization, call, G::generate_min_u16, debug_location),
+		"min_u32" => generate_min_max(context, generator, specialization, call, G::generate_min_u32, debug_location),
+		"min_u64" => generate_min_max(context, generator, specialization, call, G::generate_min_u64, debug_location),
 
-			Some(generator.generate_min32(context.type_store, a, b, debug_location))
-		}
+		"min_isize" => generate_min_max(context, generator, specialization, call, G::generate_min_isize, debug_location),
+		"min_usize" => generate_min_max(context, generator, specialization, call, G::generate_min_usize, debug_location),
 
-		"min64" => {
-			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			assert_eq!(specialization.parameters.len(), 2);
+		"min_f32" => generate_min_max(context, generator, specialization, call, G::generate_min_f32, debug_location),
+		"min_f64" => generate_min_max(context, generator, specialization, call, G::generate_min_f64, debug_location),
 
-			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
-			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+		"max_i8" => generate_min_max(context, generator, specialization, call, G::generate_max_i8, debug_location),
+		"max_i16" => generate_min_max(context, generator, specialization, call, G::generate_max_i16, debug_location),
+		"max_i32" => generate_min_max(context, generator, specialization, call, G::generate_max_i32, debug_location),
+		"max_i64" => generate_min_max(context, generator, specialization, call, G::generate_max_i64, debug_location),
 
-			Some(generator.generate_min64(context.type_store, a, b, debug_location))
-		}
+		"max_u8" => generate_min_max(context, generator, specialization, call, G::generate_max_u8, debug_location),
+		"max_u16" => generate_min_max(context, generator, specialization, call, G::generate_max_u16, debug_location),
+		"max_u32" => generate_min_max(context, generator, specialization, call, G::generate_max_u32, debug_location),
+		"max_u64" => generate_min_max(context, generator, specialization, call, G::generate_max_u64, debug_location),
 
-		"max32" => {
-			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			assert_eq!(specialization.parameters.len(), 2);
+		"max_isize" => generate_min_max(context, generator, specialization, call, G::generate_max_isize, debug_location),
+		"max_usize" => generate_min_max(context, generator, specialization, call, G::generate_max_usize, debug_location),
 
-			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
-			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
+		"max_f32" => generate_min_max(context, generator, specialization, call, G::generate_max_f32, debug_location),
+		"max_f64" => generate_min_max(context, generator, specialization, call, G::generate_max_f64, debug_location),
 
-			Some(generator.generate_max32(context.type_store, a, b, debug_location))
-		}
-
-		"max64" => {
-			assert_eq!(specialization.type_arguments.explicit_len, 0);
-			assert_eq!(specialization.parameters.len(), 2);
-
-			let a = generate_expression(context, generator, &call.arguments[0]).unwrap();
-			let b = generate_expression(context, generator, &call.arguments[1]).unwrap();
-
-			Some(generator.generate_max64(context.type_store, a, b, debug_location))
-		}
-
-		"round32" => {
+		"round_f32" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
 			assert_eq!(specialization.parameters.len(), 1);
 
 			let input = generate_expression(context, generator, &call.arguments[0]).unwrap();
-			Some(generator.generate_round32(context.type_store, input, debug_location))
+			Some(generator.generate_round_f32(context.type_store, input, debug_location))
 		}
 
-		"round64" => {
+		"round_f64" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
 			assert_eq!(specialization.parameters.len(), 1);
 
 			let input = generate_expression(context, generator, &call.arguments[0]).unwrap();
-			Some(generator.generate_round64(context.type_store, input, debug_location))
+			Some(generator.generate_round_f64(context.type_store, input, debug_location))
 		}
 
 		_ => unreachable!(),

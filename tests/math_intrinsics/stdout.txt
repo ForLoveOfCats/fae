@@ -1,8 +1,42 @@
-5.000000
--100.000000
+Min:
 
-100.000000
-4444.000000
+i8 min: -3
+i16 min: -500
+i32 min: 0
+i64 min: 1024
 
-100.000000
-2.000000
+u8 min: 3
+u16 min: 88
+u32 min: 0
+u64 min: 1024
+
+isize min: 53
+usize min: 0
+
+f32 min: 1.000000
+f64 min: 9.000000
+
+
+Max:
+
+i8 max: 10
+i16 max: 88
+i32 max: 99999
+i64 max: 1025
+
+u8 max: 10
+u16 max: 500
+u32 max: 99999
+u64 max: 1025
+
+isize max: 54
+usize max: 100
+
+f32 max: 1.100000
+f64 max: 9.500000
+
+
+Round:
+
+f32 max: -6.000000
+f64 max: 10.000000

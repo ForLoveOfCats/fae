@@ -1,16 +1,87 @@
-import fae::math::min32, min64, max32, max64, round32, round64
-
 fn main() {
-	println(f"{min32(5, 6.4)}") // 5
-	println(f"{min64(9.9, -100)}") // -100
+	println("Min:")
+	println("")
+
+	let value: i8 = 10
+	println(f"i8 min: {value.min(-3)}") // -3
+	let value: i16 = -500
+	println(f"i16 min: {value.min(88)}") // -500
+	let value: i32 = 99999
+	println(f"i32 min: {value.min(0)}") // 0
+	let value: i64 = 1024
+	println(f"i64 min: {value.min(1025)}") // 1024
 
 	println("")
 
-	println(f"{max32(-10, 100)}") // 100
-	println(f"{max64(4444, -8)}") // 4444
+	let value: u8 = 10
+	println(f"u8 min: {value.min(3)}") // 3
+	let value: u16 = 500
+	println(f"u16 min: {value.min(88)}") // 88
+	let value: u32 = 99999
+	println(f"u32 min: {value.min(0)}") // 0
+	let value: u64 = 1024
+	println(f"u64 min: {value.min(1025)}") // 1024
 
 	println("")
 
-	println(f"{round32(99.6)}") // 100
-	println(f"{round64(2.111)}") // 2
+	let value: isize = 53
+	println(f"isize min: {value.min(54)}") // 53
+	let value: usize = 0
+	println(f"usize min: {value.min(100)}") // 0
+
+	println("")
+
+	let value: f32 = 1
+	println(f"f32 min: {value.min(1.1)}") // 1
+	let value: f64 = 9.5
+	println(f"f64 min: {value.min(9)}") // 9
+
+	println("")
+	println("")
+	println("Max:")
+	println("")
+
+	let value: i8 = 10
+	println(f"i8 max: {value.max(-3)}") // 10
+	let value: i16 = -500
+	println(f"i16 max: {value.max(88)}") // 88
+	let value: i32 = 99999
+	println(f"i32 max: {value.max(0)}") // 99999
+	let value: i64 = 1024
+	println(f"i64 max: {value.max(1025)}") // 1025
+
+	println("")
+
+	let value: u8 = 10
+	println(f"u8 max: {value.max(3)}") // 10
+	let value: u16 = 500
+	println(f"u16 max: {value.max(88)}") // 500
+	let value: u32 = 99999
+	println(f"u32 max: {value.max(0)}") // 99999
+	let value: u64 = 1024
+	println(f"u64 max: {value.max(1025)}") // 1025
+
+	println("")
+
+	let value: isize = 53
+	println(f"isize max: {value.max(54)}") // 54
+	let value: usize = 0
+	println(f"usize max: {value.max(100)}") // 100
+
+	println("")
+
+	let value: f32 = 1
+	println(f"f32 max: {value.max(1.1)}") // 1.1
+	let value: f64 = 9.5
+	println(f"f64 max: {value.max(9)}") // 9.5
+
+	println("")
+	println("")
+	println("Round:")
+	println("")
+
+	let value: f32 = -5.9
+	println(f"f32 max: {value.round()}") // -6
+	let value: f64 = 9.5
+	println(f"f64 max: {value.round()}") // 10
 }

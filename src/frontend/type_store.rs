@@ -786,16 +786,32 @@ impl<'a> TypeStore<'a> {
 		self.number_type_id
 	}
 
-	pub fn u8_type_id(&self) -> TypeId {
-		self.u8_type_id
+	pub fn i8_type_id(&self) -> TypeId {
+		self.i8_type_id
 	}
 
-	pub fn u32_type_id(&self) -> TypeId {
-		self.u32_type_id
+	pub fn i16_type_id(&self) -> TypeId {
+		self.i16_type_id
+	}
+
+	pub fn i32_type_id(&self) -> TypeId {
+		self.i32_type_id
 	}
 
 	pub fn i64_type_id(&self) -> TypeId {
 		self.i64_type_id
+	}
+
+	pub fn u8_type_id(&self) -> TypeId {
+		self.u8_type_id
+	}
+
+	pub fn u16_type_id(&self) -> TypeId {
+		self.u16_type_id
+	}
+
+	pub fn u32_type_id(&self) -> TypeId {
+		self.u32_type_id
 	}
 
 	pub fn u64_type_id(&self) -> TypeId {

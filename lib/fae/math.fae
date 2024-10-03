@@ -1,17 +1,223 @@
-#intrinsic
-fn min32(a: f32, b: f32): f32
+// Min functions
 
 #intrinsic
-fn min64(a: f64, b: f64): f64
+fn min_i8(a: i8, b: i8): i8
+
+method i8
+fn min(other: i8): i8 {
+	return min_i8(self.*, other)
+}
 
 #intrinsic
-fn max32(a: f32, b: f32): f32
+fn min_i16(a: i16, b: i16): i16
+
+method i16
+fn min(other: i16): i16 {
+	return min_i16(self.*, other)
+}
 
 #intrinsic
-fn max64(a: f64, b: f64): f64
+fn min_i32(a: i32, b: i32): i32
+
+method i32
+fn min(other: i32): i32 {
+	return min_i32(self.*, other)
+}
 
 #intrinsic
-fn round32(input: f32): f32
+fn min_i64(a: i64, b: i64): i64
+
+method i64
+fn min(other: i64): i64 {
+	return min_i64(self.*, other)
+}
+
 
 #intrinsic
-fn round64(input: f64): f64
+fn min_u8(a: u8, b: u8): u8
+
+method u8
+fn min(other: u8): u8 {
+	return min_u8(self.*, other)
+}
+
+#intrinsic
+fn min_u16(a: u16, b: u16): u16
+
+method u16
+fn min(other: u16): u16 {
+	return min_u16(self.*, other)
+}
+
+#intrinsic
+fn min_u32(a: u32, b: u32): u32
+
+method u32
+fn min(other: u32): u32 {
+	return min_u32(self.*, other)
+}
+
+#intrinsic
+fn min_u64(a: u64, b: u64): u64
+
+method u64
+fn min(other: u64): u64 {
+	return min_u64(self.*, other)
+}
+
+
+#intrinsic
+fn min_isize(a: isize, b: isize): isize
+
+method isize
+fn min(other: isize): isize {
+	return min_isize(self.*, other)
+}
+
+#intrinsic
+fn min_usize(a: usize, b: usize): usize
+
+method usize
+fn min(other: usize): usize {
+	return min_usize(self.*, other)
+}
+
+
+#intrinsic
+fn min_f32(a: f32, b: f32): f32
+
+method f32
+fn min(other: f32): f32 {
+	return min_f32(self.*, other)
+}
+
+#intrinsic
+fn min_f64(a: f64, b: f64): f64
+
+method f64
+fn min(other: f64): f64 {
+	return min_f64(self.*, other)
+}
+
+
+
+// Max functions
+
+#intrinsic
+fn max_i8(a: i8, b: i8): i8
+
+method i8
+fn max(other: i8): i8 {
+	return max_i8(self.*, other)
+}
+
+#intrinsic
+fn max_i16(a: i16, b: i16): i16
+
+method i16
+fn max(other: i16): i16 {
+	return max_i16(self.*, other)
+}
+
+#intrinsic
+fn max_i32(a: i32, b: i32): i32
+
+method i32
+fn max(other: i32): i32 {
+	return max_i32(self.*, other)
+}
+
+#intrinsic
+fn max_i64(a: i64, b: i64): i64
+
+method i64
+fn max(other: i64): i64 {
+	return max_i64(self.*, other)
+}
+
+
+#intrinsic
+fn max_u8(a: u8, b: u8): u8
+
+method u8
+fn max(other: u8): u8 {
+	return max_u8(self.*, other)
+}
+
+#intrinsic
+fn max_u16(a: u16, b: u16): u16
+
+method u16
+fn max(other: u16): u16 {
+	return max_u16(self.*, other)
+}
+
+#intrinsic
+fn max_u32(a: u32, b: u32): u32
+
+method u32
+fn max(other: u32): u32 {
+	return max_u32(self.*, other)
+}
+
+#intrinsic
+fn max_u64(a: u64, b: u64): u64
+
+method u64
+fn max(other: u64): u64 {
+	return max_u64(self.*, other)
+}
+
+
+#intrinsic
+fn max_isize(a: isize, b: isize): isize
+
+method isize
+fn max(other: isize): isize {
+	return max_isize(self.*, other)
+}
+
+#intrinsic
+fn max_usize(a: usize, b: usize): usize
+
+method usize
+fn max(other: usize): usize {
+	return max_usize(self.*, other)
+}
+
+
+#intrinsic
+fn max_f32(a: f32, b: f32): f32
+
+method f32
+fn max(other: f32): f32 {
+	return max_f32(self.*, other)
+}
+
+#intrinsic
+fn max_f64(a: f64, b: f64): f64
+
+method f64
+fn max(other: f64): f64 {
+	return max_f64(self.*, other)
+}
+
+
+
+// Round functions
+
+#intrinsic
+fn round_f32(input: f32): f32
+
+method f32
+fn round(): f32 {
+	return round_f32(self.*)
+}
+
+#intrinsic
+fn round_f64(input: f64): f64
+
+method f64
+fn round(): f64 {
+	return round_f64(self.*)
+}

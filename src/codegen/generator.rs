@@ -264,7 +264,7 @@ pub trait Generator {
 
 	fn generate_debugger_break(&mut self, debug_location: DebugLocation);
 
-	fn generate_min32(
+	fn generate_min_i8(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
@@ -272,7 +272,7 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
-	fn generate_min64(
+	fn generate_min_i16(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
@@ -280,7 +280,7 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
-	fn generate_max32(
+	fn generate_min_i32(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
@@ -288,7 +288,7 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
-	fn generate_max64(
+	fn generate_min_i64(
 		&mut self,
 		type_store: &TypeStore,
 		a: Self::Binding,
@@ -296,9 +296,179 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
-	fn generate_round32(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding;
+	fn generate_min_u8(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
-	fn generate_round64(&mut self, type_store: &TypeStore, input: Self::Binding, debug_location: DebugLocation) -> Self::Binding;
+	fn generate_min_u16(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min_u32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min_u64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min_isize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min_usize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min_f32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_min_f64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_i8(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_i16(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_i32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_i64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_u8(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_u16(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_u32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_u64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_isize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_usize(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_f32(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_max_f64(
+		&mut self,
+		type_store: &TypeStore,
+		a: Self::Binding,
+		b: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_round_f32(
+		&mut self,
+		type_store: &TypeStore,
+		input: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_round_f64(
+		&mut self,
+		type_store: &TypeStore,
+		input: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
 	// TODO: Remove this in favor of a "end_function"
 	fn finalize_generator(&mut self);
