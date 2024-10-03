@@ -155,7 +155,7 @@ impl LLVMTypes {
 		let entry = type_store.type_entries.get(type_id);
 
 		match entry.kind {
-			TypeEntryKind::BuiltinType { kind } => match kind {
+			TypeEntryKind::BuiltinType { kind, .. } => match kind {
 				PrimativeKind::Numeric(numeric_kind) => {
 					use NumericKind::*;
 					unsafe {
@@ -179,7 +179,7 @@ impl LLVMTypes {
 				PrimativeKind::AnyCollapse | PrimativeKind::NoReturn | PrimativeKind::UntypedNumber => unreachable!("{kind:?}"),
 			},
 
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				self.user_type_structs[shape_index][specialization_index].actual
 			}
 
@@ -1601,7 +1601,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let entry = type_store.type_entries.get(type_id);
 		let type_id = match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				let user_type = type_store.user_types.read()[shape_index].clone();
 				let user_type = user_type.read();
 				match &user_type.kind {
@@ -1653,7 +1653,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::String } => {
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::String, .. } => {
 				if index == 2 {
 					field_type = self.llvm_types.slice_struct;
 					field_pointer = pointer;
@@ -1674,7 +1674,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::FormatString } => {
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::FormatString, .. } => {
 				assert_eq!(index, 0);
 				field_type = self.llvm_types.slice_struct;
 				field_pointer = pointer;

@@ -148,7 +148,7 @@ impl TypeId {
 
 		let entry = type_store.type_entries.get(self);
 		match entry.kind {
-			TypeEntryKind::BuiltinType { kind: Void | UntypedNumber | Bool | Numeric(_) } => true,
+			TypeEntryKind::BuiltinType { kind: Void | UntypedNumber | Bool | Numeric(_), .. } => true,
 			TypeEntryKind::Pointer { .. } => true,
 			_ => false,
 		}
@@ -156,7 +156,7 @@ impl TypeId {
 
 	pub fn as_struct<'a, R, F: FnOnce(&StructShape, &Struct) -> R>(self, type_store: &mut TypeStore<'a>, func: F) -> Option<R> {
 		let entry = type_store.type_entries.get(self);
-		if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+		if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
 			let lock = type_store.user_types.read()[shape_index].clone();
 			let user_type = lock.read();
 			if let UserTypeKind::Struct { shape } = &user_type.kind {
@@ -200,6 +200,11 @@ impl Layout {
 		// Maybe it should just be a field, we'll see
 		self.alignment.max(1)
 	}
+}
+
+pub struct RegisterTypeResult {
+	pub shape_index: usize,
+	pub methods_index: usize,
 }
 
 #[derive(Debug)]
@@ -301,6 +306,7 @@ pub struct EnumVariantShape<'a> {
 	pub span: Span,
 	pub variant_index: usize,
 	pub struct_shape_index: usize,
+	pub methods_index: usize,
 	pub is_transparent: bool,
 }
 
@@ -329,11 +335,22 @@ pub struct UserType<'a> {
 	pub span: Span,
 	pub scope_id: ScopeId,
 	pub generic_parameters: GenericParameters<'a>,
-	pub methods: FxHashMap<&'a str, MethodInfo>,
+	pub methods_index: usize,
 	pub kind: UserTypeKind<'a>,
 }
 
 #[derive(Debug)]
+pub struct MethodCollection<'a> {
+	pub methods: FxHashMap<&'a str, MethodInfo>,
+}
+
+impl<'a> MethodCollection<'a> {
+	pub fn new() -> Self {
+		MethodCollection { methods: FxHashMap::default() }
+	}
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct MethodInfo {
 	pub function_shape_index: usize,
 	pub kind: tree::MethodKind,
@@ -474,7 +491,7 @@ impl TypeEntry {
 		let generic_poisoned = match kind {
 			TypeEntryKind::BuiltinType { .. } => false,
 
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				let user_type = type_store.user_types.read()[shape_index].clone();
 				let user_type = user_type.read();
 				match &user_type.kind {
@@ -512,12 +529,28 @@ impl TypeEntry {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TypeEntryKind {
-	BuiltinType { kind: PrimativeKind },
-	UserType { shape_index: usize, specialization_index: usize },
-	Pointer { type_id: TypeId, mutable: bool },
+	BuiltinType {
+		kind: PrimativeKind,
+		methods_index: usize,
+	},
+	UserType {
+		shape_index: usize,
+		specialization_index: usize,
+		methods_index: usize,
+	},
+	Pointer {
+		type_id: TypeId,
+		mutable: bool,
+	},
 	Slice(Slice),
-	UserTypeGeneric { shape_index: usize, generic_index: usize },
-	FunctionGeneric { function_shape_index: usize, generic_index: usize },
+	UserTypeGeneric {
+		shape_index: usize,
+		generic_index: usize,
+	},
+	FunctionGeneric {
+		function_shape_index: usize,
+		generic_index: usize,
+	},
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -624,6 +657,7 @@ pub struct TypeStore<'a> {
 
 	pub type_entries: TypeEntries,
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
+	pub method_collections: Ref<RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>>,
 
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
@@ -658,14 +692,18 @@ impl<'a> TypeStore<'a> {
 	pub fn new(debug_generics: bool, debug_type_ids: bool) -> Self {
 		let mut primative_type_symbols = Vec::new();
 		let mut type_entries = TypeEntries::new();
+		let mut method_collections = Vec::new();
 
 		let mut push_primative = |name: Option<&'a str>, kind| {
-			let kind = TypeEntryKind::BuiltinType { kind };
+			let methods_index = method_collections.len();
+			method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+
+			let kind = TypeEntryKind::BuiltinType { kind, methods_index };
 			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
 			let type_id = type_entries.push_entry(type_entry);
 
 			if let Some(name) = name {
-				let kind = SymbolKind::BuiltinType { type_id };
+				let kind = SymbolKind::BuiltinType { type_id, methods_index };
 				let symbol = Symbol { name, kind, span: None, used: true, imported: false };
 				primative_type_symbols.push(symbol);
 			}
@@ -706,6 +744,7 @@ impl<'a> TypeStore<'a> {
 			primative_type_symbols: SliceRef::from(primative_type_symbols),
 			type_entries,
 			user_types: Ref::new(RwLock::new(Vec::new())),
+			method_collections: Ref::new(RwLock::new(method_collections)),
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -1137,7 +1176,7 @@ impl<'a> TypeStore<'a> {
 				if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
 					let variant_index = shape.variant_index.unwrap();
 
-					if let TypeEntryKind::UserType { shape_index, specialization_index } = to_entry.kind {
+					if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = to_entry.kind {
 						if shape_index == parent_enum_shape_index {
 							let parent_shape = user_types[shape_index].read();
 							let UserTypeKind::Enum { shape: parent_shape } = &parent_shape.kind else {
@@ -1270,7 +1309,7 @@ impl<'a> TypeStore<'a> {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
 			TypeEntryKind::Pointer { type_id, mutable } => Some((type_id, mutable)),
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, false)),
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, false)),
 			_ => None,
 		}
 	}
@@ -1280,33 +1319,38 @@ impl<'a> TypeStore<'a> {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => Some((type_id, mutable)),
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse } => Some((self.any_collapse_type_id, true)),
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, true)),
 			_ => None,
 		}
 	}
 
 	pub fn register_type(
 		user_types: &mut Vec<Ref<RwLock<UserType<'a>>>>,
+		method_collections: &RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>,
 		name: &'a str,
 		generic_parameters: GenericParameters<'a>,
 		kind: UserTypeKind<'a>,
 		scope_id: ScopeId,
 		span: Span,
-	) -> usize {
+	) -> RegisterTypeResult {
 		// Type entry gets added during specialization
 
 		let shape_index = user_types.len();
+		let mut method_collections = method_collections.write();
+		let methods_index = method_collections.len();
 		let user_type = UserType {
 			name,
 			span,
 			scope_id,
 			generic_parameters,
-			methods: FxHashMap::default(),
+			methods_index,
 			kind,
 		};
-		user_types.push(Ref::new(RwLock::new(user_type)));
 
-		shape_index
+		user_types.push(Ref::new(RwLock::new(user_type)));
+		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+
+		RegisterTypeResult { shape_index, methods_index }
 	}
 
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {
@@ -1324,9 +1368,9 @@ impl<'a> TypeStore<'a> {
 	pub fn type_layout(&mut self, type_id: TypeId) -> Layout {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
-			TypeEntryKind::BuiltinType { kind } => kind.layout(),
+			TypeEntryKind::BuiltinType { kind, .. } => kind.layout(),
 
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				let lock = self.user_types.read()[shape_index].clone();
 				let user_type = lock.read();
 				match &user_type.kind {
@@ -1421,7 +1465,7 @@ impl<'a> TypeStore<'a> {
 	pub fn find_user_type_dependency_chain(&mut self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
 		let entry = self.type_entries.get(from);
 		let (shape_index, specialization_index) = match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 			_ => return None,
 		};
 
@@ -1539,7 +1583,7 @@ impl<'a> TypeStore<'a> {
 
 		let symbol = symbols.lookup_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
 		let shape_index = match symbol.kind {
-			SymbolKind::BuiltinType { type_id } => {
+			SymbolKind::BuiltinType { type_id, .. } => {
 				if !type_arguments.is_empty() {
 					messages.message(error!("Builtin types do not accept type arguments").span(parsed_type.span));
 					return None;
@@ -1548,7 +1592,7 @@ impl<'a> TypeStore<'a> {
 				return Some(type_id);
 			}
 
-			SymbolKind::Type { shape_index } => shape_index,
+			SymbolKind::Type { shape_index, .. } => shape_index,
 
 			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
 				let user_type = &self.user_types.read()[shape_index];
@@ -1604,7 +1648,7 @@ impl<'a> TypeStore<'a> {
 		let user_types = self.user_types.read();
 
 		let (lock, specialization_index) = match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				(user_types[shape_index].clone(), specialization_index)
 			}
 
@@ -1811,6 +1855,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		let mut user_type = lock.write();
+		let methods_index = user_type.methods_index;
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Struct { shape } => shape,
 			kind => unreachable!("{kind:?}"),
@@ -1832,7 +1877,7 @@ impl<'a> TypeStore<'a> {
 			.specializations_by_type_arguments
 			.insert(type_arguments.clone(), specialization_index);
 		let entry = TypeEntry {
-			kind: TypeEntryKind::UserType { shape_index, specialization_index },
+			kind: TypeEntryKind::UserType { shape_index, specialization_index, methods_index },
 			reference_entries: None,
 			generic_poisoned: type_arguments_generic_poisoned,
 		};
@@ -2015,7 +2060,12 @@ impl<'a> TypeStore<'a> {
 			.specializations_by_type_arguments
 			.insert(type_arguments.clone(), specialization_index);
 
-		let kind = TypeEntryKind::UserType { shape_index: enum_shape_index, specialization_index };
+		let methods_index = user_type.methods_index;
+		let kind = TypeEntryKind::UserType {
+			shape_index: enum_shape_index,
+			specialization_index,
+			methods_index,
+		};
 		let entry = TypeEntry {
 			kind,
 			reference_entries: None,
@@ -2053,7 +2103,7 @@ impl<'a> TypeStore<'a> {
 		match &entry.kind {
 			TypeEntryKind::BuiltinType { .. } => type_id,
 
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				let user_type = self.user_types.read()[*shape_index].clone();
 				let user_type = user_type.read();
 				match &user_type.kind {
@@ -2198,7 +2248,7 @@ impl<'a> TypeStore<'a> {
 		match &entry.kind {
 			TypeEntryKind::BuiltinType { .. } => type_id,
 
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				let user_type = self.user_types.read()[*shape_index].clone();
 				let user_type = user_type.read();
 				match &user_type.kind {
@@ -2330,9 +2380,9 @@ impl<'a> TypeStore<'a> {
 
 		let type_entry = self.type_entries.get(type_id);
 		match type_entry.kind {
-			TypeEntryKind::BuiltinType { kind } => kind.name().to_owned(),
+			TypeEntryKind::BuiltinType { kind, .. } => kind.name().to_owned(),
 
-			TypeEntryKind::UserType { shape_index, specialization_index } => {
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 				let user_type = self.user_types.read()[shape_index].clone();
 				let user_type = user_type.read();
 				let user_type_name = user_type.name;

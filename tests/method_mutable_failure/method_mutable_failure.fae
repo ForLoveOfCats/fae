@@ -1,0 +1,22 @@
+struct MyStruct {
+	field: i32
+}
+
+method mut MyStruct
+fn increment() {
+	self.field += 1
+}
+
+method mut i32
+fn increment() {
+	self.* += 1
+}
+
+fn main() {
+	let instance = MyStruct{ field: 2 }
+	instance.increment()
+
+	let value: i32 = 4
+	value.increment()
+}
+

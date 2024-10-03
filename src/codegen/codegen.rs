@@ -436,6 +436,7 @@ fn generate_match<'a, 'b, G: Generator>(
 	let TypeEntryKind::UserType {
 		shape_index: enum_shape_index,
 		specialization_index: enum_specialization_index,
+		..
 	} = entry.kind
 	else {
 		unreachable!("{:?}", entry.kind);
@@ -543,7 +544,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 
 	let enum_entry = context.type_store.type_entries.get(pointee_type_id);
 	let (enum_shape_index, enum_specialization_index) = match enum_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 		_ => unreachable!("{:?}", enum_entry.kind),
 	};
 
@@ -641,7 +642,7 @@ fn generate_struct_literal<'a, 'b, G: Generator>(
 
 		let entry = context.type_store.type_entries.get(type_id);
 		let (shape_index, specialization_index) = match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+			TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 			_ => unreachable!("{:?}", entry.kind),
 		};
 
@@ -738,7 +739,7 @@ fn generate_field_read<'a, 'b, G: Generator>(
 
 	let type_id = context.specialize_type_id(read.base.type_id);
 	let entry = &context.type_store.type_entries.get(type_id);
-	if let TypeEntryKind::UserType { shape_index, specialization_index } = entry.kind {
+	if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
 		let user_type = context.type_store.user_types.read()[shape_index].clone();
 		let user_type = user_type.read();
 		match &user_type.kind {
@@ -906,6 +907,7 @@ fn generate_check_is<'a, 'b, G: Generator>(
 	let TypeEntryKind::UserType {
 		shape_index: enum_shape_index,
 		specialization_index: enum_specialization_index,
+		..
 	} = entry.kind
 	else {
 		unreachable!("{:?}", entry.kind);
@@ -935,7 +937,7 @@ fn generate_string_to_format_string<'a, 'b, G: Generator>(
 
 	let enum_entry = context.type_store.type_entries.get(pointee_type_id);
 	let (enum_shape_index, enum_specialization_index) = match enum_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 		_ => unreachable!("{:?}", enum_entry.kind),
 	};
 
@@ -976,7 +978,7 @@ fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
 	let type_id = context.specialize_type_id(conversion.type_id);
 	let entry = context.type_store.type_entries.get(type_id);
 	let (shape_index, specialization_index) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index } => (shape_index, specialization_index),
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 		_ => unreachable!("{:?}", entry.kind),
 	};
 

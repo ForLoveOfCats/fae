@@ -1,0 +1,47 @@
+method u8
+fn add(): u8 {
+	return self.* + 1
+}
+
+method i32
+fn add(): i32 {
+	return self.* + 2
+}
+
+method mut i32
+fn modify() {
+	self.* *= 2
+}
+
+method bool
+fn op_and(other: bool): bool {
+	return self.* & other
+}
+
+method bool
+fn op_or(other: bool): bool {
+	return self.* | other
+}
+
+method static str
+fn new_hello(): str {
+	return "Hello!"
+}
+
+fn main() {
+	let value: u8 = 41
+	println(f"u8 add: {value.add()}")
+
+	mut value: i32 = 4
+	println(f"i32 add: {value.add()}")
+
+	value.modify()
+	println(f"i32 modified: {value}")
+
+	let value = true
+	println(f"bool and: {value.op_and(true)}, {value.op_and(false)}")
+
+	println(f"bool or: {true.op_or(true)}, {true.op_or(false)}, {false.op_or(true)}, {false.op_or(false)}")
+
+	println(f"str static method: {str.new_hello()}")
+}

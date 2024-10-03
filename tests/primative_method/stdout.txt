@@ -1,0 +1,6 @@
+u8 add: 42
+i32 add: 6
+i32 modified: 8
+bool and: true, false
+bool or: true, true, true, false
+str static method: Hello!

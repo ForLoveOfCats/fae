@@ -21,8 +21,8 @@ pub struct Symbol<'a> {
 
 #[derive(Debug, Clone)]
 pub enum SymbolKind<'a> {
-	BuiltinType { type_id: TypeId },
-	Type { shape_index: usize },
+	BuiltinType { type_id: TypeId, methods_index: usize },
+	Type { shape_index: usize, methods_index: usize },
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 	Function { function_shape_index: usize },
@@ -198,7 +198,7 @@ impl<'a> Symbols<'a> {
 
 				let mut lock = layer.write();
 				return lock.lookup_root_symbol(messages, &[*segments.last().unwrap()]);
-			} else if let SymbolKind::Type { shape_index } = found.kind {
+			} else if let SymbolKind::Type { shape_index, .. } = found.kind {
 				let lock = type_store.user_types.read()[shape_index].clone();
 				let guard = lock.read();
 				let shape = match &guard.kind {
@@ -223,7 +223,10 @@ impl<'a> Symbols<'a> {
 					return None;
 				}
 
-				let kind = SymbolKind::Type { shape_index: variant_shape.struct_shape_index };
+				let kind = SymbolKind::Type {
+					shape_index: variant_shape.struct_shape_index,
+					methods_index: variant_shape.methods_index,
+				};
 				let span = Some(variant_shape.span);
 				let symbol = Symbol { name: second.item, kind, span, used: true, imported: false };
 				return Some(symbol);

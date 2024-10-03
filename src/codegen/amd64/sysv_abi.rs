@@ -47,7 +47,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 	let entry = type_store.type_entries.get(type_id);
 
 	match entry.kind {
-		TypeEntryKind::BuiltinType { kind } => match kind {
+		TypeEntryKind::BuiltinType { kind, .. } => match kind {
 			PrimativeKind::Numeric(kind) => {
 				let class = match kind {
 					NumericKind::I8 | NumericKind::U8 => Class { kind: ClassKind::Integer, size: 1 },
@@ -81,7 +81,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 			}
 		},
 
-		TypeEntryKind::UserType { shape_index, specialization_index } => {
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 			let aggregate_layout = type_store.type_layout(type_id);
 
 			// 1. If the size of an object is larger than eight eightbytes, or it contains unaligned fields, it has class MEMORY.
