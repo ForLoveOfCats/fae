@@ -231,7 +231,7 @@ pub fn generate_code<'a>(
 	#[cfg(target_os = "macos")]
 	{
 		let linker = project_config.darwin_linker.as_deref().unwrap_or("ld");
-		let additional_objects = if let Some(objects) = &project_config.linux_additional_linker_objects {
+		let additional_objects = if let Some(objects) = &project_config.darwin_additional_linker_objects {
 			let mut additional_objects = Vec::with_capacity(objects.len());
 			for object in objects {
 				let path = project_path.join(object);
