@@ -94,8 +94,10 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 		project_name: test_name.to_string(),
 		source_directory: PathBuf::from(""),
 		linux_linker: None,
+		linux_additional_linker_flags: None,
 		linux_additional_linker_objects: None,
 		darwin_linker: None,
+		darwin_additional_linker_flags: None,
 		darwin_additional_linker_objects: None,
 	};
 	let built_project = build_project(cli_arguments, &mut error_output, &entry.path(), Some(test_config));

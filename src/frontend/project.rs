@@ -32,10 +32,14 @@ pub struct ProjectConfig {
 	#[allow(dead_code)]
 	pub linux_linker: Option<String>,
 	#[allow(dead_code)]
+	pub linux_additional_linker_flags: Option<Vec<String>>,
+	#[allow(dead_code)]
 	pub linux_additional_linker_objects: Option<Vec<String>>,
 
 	#[allow(dead_code)]
 	pub darwin_linker: Option<String>,
+	#[allow(dead_code)]
+	pub darwin_additional_linker_flags: Option<Vec<String>>,
 	#[allow(dead_code)]
 	pub darwin_additional_linker_objects: Option<Vec<String>>,
 }

@@ -62,8 +62,10 @@ The root of every Fae project must contain a `fae.toml` file written with the `T
 
 And it *may* contain the following entries:
 - `linux_linker` (string) Indicates the executable name of the linker to be used on Linux
+- `linux_additional_linker_flags` (array of string) Indicates a list of flags to pass to the linker on Linux
 - `linux_additional_linker_objects` (array of string) Indicates a list of object file paths to link into the project on Linux
 - `darwin_linker` (string) Indicates the executable name of the linker to be used on Darwin (macOS)
+- `darwin_additional_linker_flags` (array of string) Indicates a list of flags to pass to the linker on Darwin (macOS)
 - `darwin_additional_linker_objects` (array of string) Indicates a list of object file paths to link into the project on Darwin (macOS)
 
 The project's `main` function must be located in a `.fae` file named the same as the project, located in the root of the source directory. So for a project named "hello_world" and the source directory "./src", the `main` function must be located in "./src/hello_world.fae" relative to the project root. This `main` function must have the following signature.

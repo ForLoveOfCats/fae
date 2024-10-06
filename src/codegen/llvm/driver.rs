@@ -188,6 +188,7 @@ pub fn generate_code<'a>(
 	#[cfg(target_os = "linux")]
 	{
 		let linker = project_config.linux_linker.as_deref().unwrap_or("ld");
+		let additional_flags = project_config.linux_additional_linker_flags.clone().unwrap_or(Vec::new());
 		let additional_objects = if let Some(objects) = &project_config.linux_additional_linker_objects {
 			let mut additional_objects = Vec::with_capacity(objects.len());
 			for object in objects {
@@ -216,6 +217,7 @@ pub fn generate_code<'a>(
 			.arg("/usr/lib/crtn.o")
 			.arg("-dynamic-linker")
 			.arg("/lib64/ld-linux-x86-64.so.2")
+			.args(additional_flags)
 			.arg("-o")
 			.arg(&executable_path)
 			.args(additional_objects)
@@ -231,6 +233,7 @@ pub fn generate_code<'a>(
 	#[cfg(target_os = "macos")]
 	{
 		let linker = project_config.darwin_linker.as_deref().unwrap_or("ld");
+		let additional_flags = project_config.darwin_additional_linker_flags.clone().unwrap_or(Vec::new());
 		let additional_objects = if let Some(objects) = &project_config.darwin_additional_linker_objects {
 			let mut additional_objects = Vec::with_capacity(objects.len());
 			for object in objects {
@@ -256,6 +259,7 @@ pub fn generate_code<'a>(
 			.args(["-platform_version", "macos", &sdk_version, &sdk_version])
 			.args(["-arch", "arm64"])
 			.arg(sdk_path)
+			.args(additional_flags)
 			.arg("-o")
 			.arg(&executable_path)
 			.args(additional_objects)
