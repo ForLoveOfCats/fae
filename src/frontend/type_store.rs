@@ -2422,7 +2422,7 @@ impl<'a> TypeStore<'a> {
 							if explicit_generic_parameters_len == 0 {
 								format!("{enum_name}.{}", user_type_name)
 							} else {
-								format!("{enum_name}.{}<{}>", user_type_name, type_arguments)
+								format!("{enum_name}::{}<{}>", user_type_name, type_arguments)
 							}
 						} else {
 							if explicit_generic_parameters_len == 0 {
