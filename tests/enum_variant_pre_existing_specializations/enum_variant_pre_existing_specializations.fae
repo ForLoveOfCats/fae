@@ -1,0 +1,13 @@
+struct Struct {
+	variant: *Enum::Variant
+}
+
+enum Enum {
+	Variant { field: i32 }
+}
+
+fn main() {
+	let variant = Enum::Variant { field: 3 }
+	let instance = Struct { variant: variant.& }
+	println(f"{instance.variant.field}")
+}

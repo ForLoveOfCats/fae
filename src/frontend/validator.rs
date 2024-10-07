@@ -1958,6 +1958,20 @@ fn fill_struct_like_enum_variant<'a>(
 			shape.fields = fields;
 			assert!(!shape.been_filled);
 			shape.been_filled = true;
+
+			let has_specializations = !shape.specializations.is_empty();
+			drop(user_type);
+
+			if has_specializations {
+				fill_pre_existing_struct_specializations(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					module_path,
+					variant_shape.struct_shape_index,
+				);
+			}
 		}
 
 		UserTypeKind::Enum { .. } => unreachable!(),
@@ -2069,20 +2083,8 @@ fn fill_pre_existing_enum_specializations<'a>(
 	};
 
 	let shared_fields_shapes = shape.shared_fields.clone();
-	let variant_shapes = shape.variant_shapes.clone();
 	let mut specializations = shape.specializations.clone(); // Belch
 	drop(user_type);
-
-	for variant_shape in variant_shapes.iter() {
-		fill_pre_existing_struct_specializations(
-			messages,
-			type_store,
-			function_store,
-			generic_usages,
-			module_path,
-			variant_shape.struct_shape_index,
-		);
-	}
 
 	for specialization in &mut specializations {
 		assert!(!specialization.been_filled);
