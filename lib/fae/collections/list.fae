@@ -184,6 +184,25 @@ fn get_mut(index: isize): *mut T {
 }
 
 method List
+fn get_unchecked(index: isize): T {
+	let offset = index * size_of<T>()
+	let pointer = offset_pointer<T>(self.items.pointer, offset)	
+	return pointer.*
+}
+
+method List
+fn get_ref_unchecked(index: isize): *T {
+	let offset = index * size_of<T>()
+	return offset_pointer<T>(self.items.pointer, offset)	
+}
+
+method mut List
+fn get_mut_unchecked(index: isize): *mut T {
+	let offset = index * size_of<T>()
+	return offset_pointer_mut<T>(self.items.pointer, offset)	
+}
+
+method List
 fn slice(range: Range): []T {
 	return self.items[range]
 }
