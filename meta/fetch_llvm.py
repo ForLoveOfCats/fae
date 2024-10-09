@@ -296,7 +296,7 @@ def clone_llvm():
 		"--depth",
 		"1",
 		"--branch",
-		"llvmorg-18.1.8",
+		"llvmorg-19.1.1",
 		"https://github.com/llvm/llvm-project.git",
 		"llvm",
 	])
