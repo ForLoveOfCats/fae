@@ -10,7 +10,7 @@ use llvm_sys::core::{
 	LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl,
 	LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP,
 	LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildXor, LLVMClearInsertionPosition, LLVMConstInt, LLVMConstNamedStruct,
-	LLVMConstNull, LLVMConstReal, LLVMConstStringInContext, LLVMCreateBuilderInContext, LLVMCreateEnumAttribute,
+	LLVMConstNull, LLVMConstReal, LLVMConstStringInContext2, LLVMCreateBuilderInContext, LLVMCreateEnumAttribute,
 	LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
 	LLVMGetEnumAttributeKindForName, LLVMGetInlineAsm, LLVMGetInsertBlock, LLVMGetIntTypeWidth, LLVMGetTypeKind,
 	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
@@ -1472,7 +1472,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding {
 		unsafe {
-			let array = LLVMConstStringInContext(self.context, text.as_ptr() as _, text.len() as u32, false as _);
+			let array = LLVMConstStringInContext2(self.context, text.as_ptr() as _, text.len(), false as _);
 			let global = LLVMAddGlobal(self.module, LLVMTypeOf(array), c"string_literal.global".as_ptr());
 			LLVMSetInitializer(global, array);
 			LLVMSetGlobalConstant(global, true as _);
