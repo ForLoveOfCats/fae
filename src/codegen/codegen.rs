@@ -380,9 +380,11 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 
 		ExpressionKind::EnumVariantToEnum(conversion) => generate_enum_variant_to_enum(context, generator, conversion),
 
-		ExpressionKind::Void => None,
+		ExpressionKind::Void | ExpressionKind::Type { .. } => None,
 
-		ExpressionKind::AnyCollapse | ExpressionKind::Type(_) => unreachable!("{:?}", &expression.kind),
+		ExpressionKind::AnyCollapse | ExpressionKind::ModuleLayer(_) => {
+			unreachable!("{:?}", &expression.kind)
+		}
 	}
 }
 

@@ -1,4 +1,4 @@
-import fae::libc::FileHandle, fprintf, fwrite, fflush
+import fae.libc.FileHandle, fprintf, fwrite, fflush
 
 #lang "format_string_item_type"
 enum FormatStringItem {

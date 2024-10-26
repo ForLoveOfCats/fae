@@ -271,9 +271,15 @@ pub struct ArrayLiteral<'a> {
 
 #[derive(Debug)]
 pub struct StructLiteral<'a> {
-	pub parsed_type: Node<Type<'a>>,
+	pub base: Node<Expression<'a>>,
 	pub initializer: Node<StructInitializer<'a>>,
 }
+
+// #[derive(Debug)]
+// pub struct StructlikeEnumLiteral<'a> {
+// 	pub base: Node<Expression<'a>>,
+// 	pub initializer: Node<StructInitializer<'a>>,
+// }
 
 #[derive(Debug)]
 pub struct StructInitializer<'a> {
@@ -455,22 +461,22 @@ pub struct CheckIs<'a> {
 
 #[derive(Debug)]
 pub struct Call<'a> {
-	pub path_segments: Node<PathSegments<'a>>,
-	pub type_arguments: &'a [Node<Type<'a>>],
-	pub arguments: &'a [Node<Expression<'a>>],
-}
-
-#[derive(Debug)]
-pub struct MethodCall<'a> {
-	pub base: Node<Expression<'a>>,
+	pub base: Option<Node<Expression<'a>>>,
 	pub name: Node<&'a str>,
 	pub type_arguments: &'a [Node<Type<'a>>],
 	pub arguments: &'a [Node<Expression<'a>>],
 }
 
+// #[derive(Debug)]
+// pub struct MethodCall<'a> {
+// 	pub base: Node<Expression<'a>>,
+// 	pub name: Node<&'a str>,
+// 	pub arguments: &'a [Node<Expression<'a>>],
+// }
+
 #[derive(Debug)]
 pub struct Read<'a> {
-	pub path_segments: Node<PathSegments<'a>>,
+	pub name: Node<&'a str>,
 	pub type_arguments: &'a [Node<Type<'a>>],
 }
 
@@ -478,20 +484,26 @@ pub struct Read<'a> {
 pub struct DotAccess<'a> {
 	pub base: Node<Expression<'a>>,
 	pub name: Node<&'a str>,
-	pub enum_initializer: Option<&'a EnumInitializer<'a>>,
+	pub type_arguments: &'a [Node<Type<'a>>],
 }
 
 #[derive(Debug)]
-pub struct InferredEnum<'a> {
+pub struct DotInfer<'a> {
 	pub name: Node<&'a str>,
-	pub initializer: Option<&'a EnumInitializer<'a>>,
+	pub type_arguments: &'a [Node<Type<'a>>],
 }
 
 #[derive(Debug)]
-pub enum EnumInitializer<'a> {
-	StructLike { struct_initializer: Node<StructInitializer<'a>> },
-	Transparent { expression: Node<Expression<'a>> },
+pub struct DotInferCall<'a> {
+	pub name: Node<&'a str>,
+	pub arguments: &'a [Node<Expression<'a>>],
 }
+
+// #[derive(Debug)]
+// pub enum EnumInitializer<'a> {
+// 	StructLike { struct_initializer: Node<StructInitializer<'a>> },
+// 	Transparent { expression: Node<Expression<'a>> },
+// }
 
 #[derive(Debug)]
 pub struct Defer<'a> {
@@ -685,14 +697,14 @@ pub enum Expression<'a> {
 	FormatStringLiteral(FormatStringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),
-	StructLiteral(StructLiteral<'a>),
-
-	Call(Call<'a>),
-	MethodCall(&'a MethodCall<'a>),
+	StructLiteral(&'a StructLiteral<'a>),
+	// StructlikeEnumLiteral(&'a StructlikeEnumLiteral<'a>),
+	Call(&'a Call<'a>),
+	// MethodCall(&'a MethodCall<'a>),
 	Read(Read<'a>),
-	DotAcccess(&'a DotAccess<'a>),
-
-	InferredEnum(&'a InferredEnum<'a>),
+	DotAccess(&'a DotAccess<'a>),
+	DotInfer(&'a DotInfer<'a>),
+	DotInferCall(&'a DotInferCall<'a>),
 
 	UnaryOperation(&'a UnaryOperation<'a>),
 	BinaryOperation(&'a BinaryOperation<'a>),

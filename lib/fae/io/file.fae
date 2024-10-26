@@ -1,8 +1,8 @@
-import fae::collections::list::List
-import fae::string::String
-import fae::libc::StdInDescriptor, open, read, write, close
-import fae::libc::O_RDONLY, O_RDWR, O_CREAT, O_APPEND, O_TRUNC
-import fae::memory::allocate_slice_space, copy_slice_nonoverlapping, free_slice
+import fae.collections.list.List
+import fae.string.String
+import fae.libc.StdInDescriptor, open, read, write, close
+import fae.libc.O_RDONLY, O_RDWR, O_CREAT, O_APPEND, O_TRUNC
+import fae.memory.allocate_slice_space, copy_slice_nonoverlapping, free_slice
 
 struct File {
 	file_descriptor: i32 readonly

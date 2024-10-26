@@ -1,5 +1,5 @@
-import fae::memory::free_slice, reallocate_region
-import fae::memory::copy_slice_nonoverlapping, copy_slice_overlapping
+import fae.memory.free_slice, reallocate_region
+import fae.memory.copy_slice_nonoverlapping, copy_slice_overlapping
 
 const GrowthFactor = 2
 const InitialGrowth = 8

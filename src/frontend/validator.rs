@@ -6,10 +6,10 @@ use crate::frontend::error::*;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::*;
 use crate::frontend::lang_items::LangItems;
-use crate::frontend::root_layers::RootLayers;
+use crate::frontend::root_layers::{RootLayer, RootLayers};
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Externs, ReadableKind, Readables, Statics, Symbol, SymbolKind, Symbols, SymbolsScope};
-use crate::frontend::tree::{self, BinaryOperator, EnumInitializer, FieldAttribute, MethodKind, Node, PathSegments};
+use crate::frontend::tree::{self, BinaryOperator, FieldAttribute, MethodKind, Node, PathSegments};
 use crate::frontend::type_store::*;
 use crate::frontend::when::WhenContext;
 use crate::frontend::yield_targets::YieldTargets;
@@ -249,13 +249,23 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		readable_index
 	}
 
-	pub fn lookup_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		self.symbols_scope.symbols.lookup_symbol(
+	pub fn lookup_path_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
+		self.symbols_scope.symbols.lookup_path_symbol(
 			self.messages,
 			self.root_layers,
 			self.type_store,
 			self.function_initial_symbols_length,
 			path,
+		)
+	}
+
+	pub fn lookup_symbol_by_name(&mut self, name: Node<&'a str>) -> Option<Symbol<'a>> {
+		self.symbols_scope.symbols.lookup_symbol_by_name(
+			self.messages,
+			self.root_layers,
+			self.type_store,
+			self.function_initial_symbols_length,
+			name,
 		)
 	}
 
@@ -2536,7 +2546,7 @@ fn determine_method_info<'a>(
 		};
 	};
 
-	let Some(symbol) = symbols.lookup_symbol(
+	let Some(symbol) = symbols.lookup_path_symbol(
 		messages,
 		root_layers,
 		type_store,
@@ -3407,7 +3417,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	if type_id.is_untyped_number(context.type_store) {
 		context.message(error!("Cannot create binding of untyped number").span(statement.span));
 		type_id = context.type_store.any_collapse_type_id();
-	} else if let ExpressionKind::Type(found) = &expression.kind {
+	} else if let ExpressionKind::Type { type_id: found, .. } = &expression.kind {
 		let found = context.type_name(*found);
 		context.message(error!("Binding expression must be a value, found type {found}").span(statement.span));
 		type_id = context.type_store.any_collapse_type_id();
@@ -3497,7 +3507,6 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::StructLiteral(literal) => {
-			context.expected_type = None;
 			context.can_is_bind = false;
 			let expression = validate_struct_literal(context, literal, span);
 			context.can_is_bind = original_can_is_bind;
@@ -3505,37 +3514,47 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::Call(call) => {
-			context.expected_type = None;
 			context.can_is_bind = false;
 			let expression = validate_call(context, call, span);
 			context.can_is_bind = original_can_is_bind;
 			expression
 		}
 
-		tree::Expression::MethodCall(method_call) => {
-			context.can_is_bind = false;
-			let expression = validate_method_call(context, method_call, span);
-			context.can_is_bind = original_can_is_bind;
-			expression
-		}
-
+		// tree::Expression::MethodCall(method_call) => {
+		// 	context.can_is_bind = false;
+		// 	let expression = validate_method_call(context, method_call, span);
+		// 	context.can_is_bind = original_can_is_bind;
+		// 	expression
+		// }
 		tree::Expression::Read(read) => {
-			context.expected_type = None;
 			context.can_is_bind = false;
 			let expression = validate_read(context, read, span);
 			context.can_is_bind = original_can_is_bind;
 			expression
 		}
 
-		tree::Expression::DotAcccess(dot_access) => {
+		tree::Expression::DotAccess(dot_access) => {
 			context.can_is_bind = false;
 			let expression = validate_dot_access(context, dot_access, span);
 			context.can_is_bind = original_can_is_bind;
 			expression
 		}
 
-		tree::Expression::InferredEnum(inferred_enum) => validate_inferred_enum(context, inferred_enum, span),
+		tree::Expression::DotInfer(dot_infer) => {
+			context.can_is_bind = false;
+			let expression = validate_dot_infer(context, dot_infer, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
 
+		tree::Expression::DotInferCall(dot_infer_call) => {
+			context.can_is_bind = false;
+			let expression = validate_dot_infer_call(context, dot_infer_call, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
+		// tree::Expression::InferredEnum(inferred_enum) => validate_inferred_enum(context, inferred_enum, span),
 		tree::Expression::UnaryOperation(operation) => {
 			context.can_is_bind = false;
 			let expression = validate_unary_operation(context, operation, span);
@@ -4201,15 +4220,23 @@ fn validate_struct_literal<'a>(
 	literal: &'a tree::StructLiteral<'a>,
 	span: Span,
 ) -> Expression<'a> {
-	let type_id = match context.lookup_type(&literal.parsed_type) {
-		Some(type_id) => type_id,
-		None => return Expression::any_collapse(context.type_store, span),
+	let base = validate_expression(context, &literal.base);
+	let type_id = match base.kind {
+		ExpressionKind::Type { type_id, .. } => type_id,
+
+		ExpressionKind::AnyCollapse => return Expression::any_collapse(context.type_store, span),
+
+		kind => {
+			let error = error!("Cannot construct {} like a struct", kind.name_with_article());
+			context.message(error.span(span));
+			return Expression::any_collapse(context.type_store, span);
+		}
 	};
 
 	let report_not_struct = |context: &mut Context| {
 		let name = context.type_name(type_id);
 		let message = error!("Cannot construct type {name} like a struct as it is not a struct");
-		context.messages.message(message.span(literal.parsed_type.span));
+		context.messages.message(message.span(base.span));
 	};
 
 	let type_entry = context.type_store.type_entries.get(type_id);
@@ -4351,20 +4378,264 @@ fn validate_struct_initializer<'a>(
 	field_initializers
 }
 
-fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>, span: Span) -> Expression<'a> {
-	let symbol = match context.lookup_symbol(&call.path_segments.item) {
-		Some(symbol) => symbol,
-		None => return Expression::any_collapse(context.type_store, span),
+enum NameOnBase<'a> {
+	ModuleLayer(Ref<RwLock<RootLayer<'a>>>),
+
+	Symbol(Symbol<'a>),
+
+	Method(MethodInfo),
+
+	Field {
+		field_index: usize,
+		is_itself_mutable: bool,
+		is_pointer_access_mutable: bool,
+		immutable_reason: Option<FieldReadImmutableReason>,
+		field: Field<'a>,
+	},
+}
+
+fn lookup_name_on_base<'a>(
+	context: &mut Context<'a, '_, '_>,
+	base: &Expression<'a>,
+	name: Node<&'a str>,
+	is_call: bool,
+) -> Option<NameOnBase<'a>> {
+	match &base.kind {
+		ExpressionKind::ModuleLayer(layer) => {
+			let mut lock = layer.write();
+			if let Some(child) = lock.children.get(name.item) {
+				return Some(NameOnBase::ModuleLayer(child.clone()));
+			}
+
+			let symbol = lock.lookup_root_symbol(context.messages, &[name]);
+			return symbol.map(|symbol| NameOnBase::Symbol(symbol));
+		}
+
+		ExpressionKind::AnyCollapse => return None,
+
+		_ => {}
+	}
+
+	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base.type_id.as_pointed(context.type_store) {
+		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
+		None => (base.type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
 	};
 
-	let name = symbol.name;
-	let function_shape_index = match symbol.kind {
-		SymbolKind::Function { function_shape_index } => function_shape_index,
+	let entry = context.type_store.type_entries.get(type_id);
 
-		kind => {
-			context.message(error!("Cannot call {kind}").span(call.path_segments.span));
+	if is_call {
+		if let Some(methods_index) = entry.kind.methods_index() {
+			let collections = context.type_store.method_collections.read();
+			let collection = collections[methods_index].read();
+			let info = collection.methods.get(name.item).copied();
+			return info.map(|info| NameOnBase::Method(info));
+		}
+	}
+
+	match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
+			let external_access = context.check_is_external_access(shape_index);
+			let user_type = context.type_store.user_types.read()[shape_index].clone();
+			let user_type = user_type.read();
+
+			let fields = match &user_type.kind {
+				UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.as_ref(),
+				UserTypeKind::Enum { shape } => shape.specializations[specialization_index].shared_fields.as_ref(),
+			};
+
+			return lookup_field_in_fields(
+				context,
+				name,
+				base.type_id,
+				is_itself_mutable,
+				is_pointer_access_mutable,
+				fields,
+				external_access,
+			);
+		}
+
+		_ => {
+			// let error = error!("Cannot dot-access on this expression, expected a value with fields or methods");
+			// context.message(error.span(base.span));
+			// None
+		}
+	}
+
+	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
+		let slice_fields = &[
+			Field {
+				span: None,
+				name: "pointer",
+				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
+				attribute: None,
+				read_only: false,
+			},
+			Field {
+				span: None,
+				name: "length",
+				type_id: context.type_store.isize_type_id(),
+				attribute: None,
+				read_only: false,
+			},
+		];
+		let is_pointer_access_mutable = is_pointer_access_mutable && as_slice.mutable;
+		return lookup_field_in_fields(
+			context,
+			name,
+			base.type_id,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			slice_fields,
+			false,
+		);
+	} else if type_id.is_string(context.type_store) {
+		let u8_type_id = context.type_store.u8_type_id();
+		let str_fields = &[
+			Field {
+				span: None,
+				name: "pointer",
+				type_id: context.type_store.pointer_to(u8_type_id, false),
+				attribute: None,
+				read_only: true,
+			},
+			Field {
+				span: None,
+				name: "length",
+				type_id: context.type_store.isize_type_id(),
+				attribute: None,
+				read_only: true,
+			},
+			Field {
+				span: None,
+				name: "bytes",
+				type_id: context.type_store.u8_slice_type_id(),
+				attribute: None,
+				read_only: true,
+			},
+		];
+		return lookup_field_in_fields(
+			context,
+			name,
+			base.type_id,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			str_fields,
+			false,
+		);
+	} else if type_id.is_format_string(context.type_store) {
+		let item_type_id = context.lang_items.read().format_string_item_type.unwrap();
+		let fstr_fields = &[Field {
+			span: None,
+			name: "items",
+			type_id: context.type_store.slice_of(item_type_id, false),
+			attribute: None,
+			read_only: true,
+		}];
+		return lookup_field_in_fields(
+			context,
+			name,
+			base.type_id,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			fstr_fields,
+			false,
+		);
+	} else {
+		let on = base.kind.name_with_article();
+		let error = error!("Cannot dot-access on {on}, expected a value with fields or methods");
+		context.message(error.span(base.span));
+		None
+	}
+}
+
+fn lookup_field_in_fields<'a>(
+	context: &mut Context<'a, '_, '_>,
+	name: Node<&'a str>,
+	base_type_id: TypeId,
+	is_itself_mutable: bool,
+	is_pointer_access_mutable: bool,
+	fields: &[Field<'a>],
+	external_access: bool,
+) -> Option<NameOnBase<'a>> {
+	// TODO: Hashmapify this linear lookup
+	let mut fields = fields.iter().enumerate();
+	let Some((field_index, field)) = fields.find(|f| f.1.name == name.item) else {
+		let type_name = context.type_name(base_type_id);
+		let error = error!("No field `{}` on {}", name.item, type_name);
+		context.messages.message(error.span(name.span));
+		return None;
+	};
+
+	let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
+	let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
+	let is_read_only = field.read_only;
+
+	if external_access && is_internal {
+		let type_name = context.type_name(base_type_id);
+		let error = error!("Cannot publicly access internal field `{}` on type {}", name.item, type_name);
+		context.messages.message(error.span(name.span));
+		return None;
+	}
+
+	let (is_itself_mutable, is_pointer_access_mutable, immutable_reason) = if external_access && is_readable {
+		(false, true, Some(FieldReadImmutableReason::Readable))
+	} else if is_read_only {
+		(false, true, Some(FieldReadImmutableReason::ReadOnly))
+	} else {
+		(is_itself_mutable, is_pointer_access_mutable, None)
+	};
+
+	Some(NameOnBase::Field {
+		field_index,
+		is_itself_mutable,
+		is_pointer_access_mutable,
+		immutable_reason,
+		field: *field,
+	})
+}
+
+fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>, span: Span) -> Expression<'a> {
+	let base = call.base.as_ref().map(|base| validate_expression(context, base));
+	let on_base = if let Some(base) = base.as_ref() {
+		let Some(on_base) = lookup_name_on_base(context, &base, call.name, true) else {
+			return Expression::any_collapse(context.type_store, span);
+		};
+
+		on_base
+	} else {
+		match context.lookup_symbol_by_name(call.name) {
+			Some(symbol) => NameOnBase::Symbol(symbol),
+			None => return Expression::any_collapse(context.type_store, span),
+		}
+	};
+
+	match on_base {
+		NameOnBase::Symbol(symbol) => validate_symbol_call(context, symbol, call, span),
+		NameOnBase::Method(..) => validate_method_call(context, base.unwrap(), call, span),
+
+		NameOnBase::ModuleLayer(layer) => {
+			let message = error!("Cannot call module `{}`", layer.read().name);
+			context.message(message.span(call.name.span));
 			return Expression::any_collapse(context.type_store, span);
 		}
+
+		NameOnBase::Field { field, .. } => {
+			let message = error!("Cannot call field `{}`", field.name);
+			context.message(message.span(call.name.span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	}
+}
+
+fn validate_symbol_call<'a>(
+	context: &mut Context<'a, '_, '_>,
+	symbol: Symbol<'a>,
+	call: &'a tree::Call<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let SymbolKind::Function { function_shape_index } = symbol.kind else {
+		todo!("Implement transparent variant initialization");
+		// return Expression::any_collapse(context.type_store, span);
 	};
 
 	let mut type_argument_lookup_errored = false;
@@ -4501,7 +4772,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 	}
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
-	let kind = ExpressionKind::Call(Call { span, name, function_id, arguments });
+	let kind = ExpressionKind::Call(Call { span, name: call.name.item, function_id, arguments });
 	Expression {
 		span,
 		type_id: return_type,
@@ -4652,8 +4923,8 @@ fn validate_method_arguments<'a>(
 
 	if arguments.len() != specialization_parameters.len() - maybe_self {
 		let expected = specialization_parameters.len() - maybe_self;
-		let error = error!("Expected {expected} arguments, got {}", arguments.len());
-		context.message(error.span(span));
+		let message = error!("Expected {expected} arguments, got {}", arguments.len());
+		context.message(message.span(span));
 		return None;
 	}
 
@@ -4666,13 +4937,13 @@ fn validate_method_arguments<'a>(
 
 fn validate_method_call<'a>(
 	context: &mut Context<'a, '_, '_>,
-	method_call: &'a tree::MethodCall<'a>,
+	base: Expression<'a>,
+	call: &'a tree::Call<'a>,
 	span: Span,
 ) -> Expression<'a> {
-	let base = validate_expression(context, &method_call.base);
 	context.expected_type = None;
-	if let ExpressionKind::Type(base_type) = base.kind {
-		return validate_static_method_call(context, method_call, base_type, span);
+	if let ExpressionKind::Type { type_id, .. } = base.kind {
+		return validate_static_method_call(context, type_id, call, span);
 	}
 
 	let entry = context.type_store.type_entries.get(base.type_id);
@@ -4709,13 +4980,13 @@ fn validate_method_call<'a>(
 		}
 	};
 
+	let name = call.name.item;
 	let collections = context.type_store.method_collections.clone();
 	let collections = collections.read();
-	let method_info = match collections[methods_index].read().methods.get(method_call.name.item) {
+	let method_info = match collections[methods_index].read().methods.get(name) {
 		Some(method_info) => *method_info,
 
 		None => {
-			let name = method_call.name.item;
 			let found = context.type_name(base.type_id);
 			let error = error!("No method {name} on type {found}");
 			context.messages.message(error.span(span));
@@ -4730,7 +5001,6 @@ fn validate_method_call<'a>(
 		MethodKind::MutableSelf => true,
 
 		MethodKind::Static => {
-			let name = method_call.name.item;
 			let error = error!("Cannot call static method `{name}` on an object instance");
 			context.messages.message(error.span(span));
 			return Expression::any_collapse(context.type_store, span);
@@ -4738,25 +5008,19 @@ fn validate_method_call<'a>(
 	};
 
 	if mutable_self && !base_mutable {
-		let name = method_call.name.item;
 		let error = error!("Cannot call mutable method `{name}` on an immutable object");
 		context.message(error.span(span));
 	}
 
-	let result = get_method_function_specialization(
-		context,
-		&method_call.type_arguments,
-		function_shape_index,
-		method_base_user_type,
-		span,
-	);
+	let result =
+		get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_user_type, span);
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
 	let Some(MethodArgumentsResult { yields, mut returns, arguments }) =
-		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, false)
+		validate_method_arguments(context, &call.arguments, function_shape_index, specialization_index, span, false)
 	else {
 		return Expression::any_collapse(context.type_store, span);
 	};
@@ -4783,8 +5047,9 @@ fn validate_method_call<'a>(
 
 fn validate_static_method_call<'a>(
 	context: &mut Context<'a, '_, '_>,
-	method_call: &'a tree::MethodCall<'a>,
+	// method_call: &'a tree::MethodCall<'a>,
 	base_type_id: TypeId,
+	call: &'a tree::Call<'a>,
 	span: Span,
 ) -> Expression<'a> {
 	let entry = context.type_store.type_entries.get(base_type_id);
@@ -4807,20 +5072,20 @@ fn validate_static_method_call<'a>(
 		}
 	};
 
-	if let Some(method_base_user_type) = method_base_user_type {
-		let result = validate_enum_variant_dot_initializer(context, method_call, method_base_user_type, span);
-		if let Some(expression) = result {
-			return expression;
-		}
-	}
+	// if let Some(method_base_user_type) = method_base_user_type {
+	// 	let result = validate_enum_variant_dot_initializer(context, method_call, method_base_user_type, span);
+	// 	if let Some(expression) = result {
+	// 		return expression;
+	// 	}
+	// }
 
+	let name = call.name.item;
 	let collections = context.type_store.method_collections.clone();
 	let collections = collections.read();
-	let method_info = match collections[methods_index].read().methods.get(method_call.name.item) {
+	let method_info = match collections[methods_index].read().methods.get(name) {
 		Some(method_info) => *method_info,
 
 		None => {
-			let name = method_call.name.item;
 			let found = context.type_name(base_type_id);
 			let error = error!("No static method {name} on type {found}");
 			context.messages.message(error.span(span));
@@ -4831,7 +5096,6 @@ fn validate_static_method_call<'a>(
 
 	match method_info.kind {
 		MethodKind::ImmutableSelf | MethodKind::MutableSelf => {
-			let name = method_call.name.item;
 			let error = error!("Cannot call instance method `{name}` statically");
 			context.messages.message(error.span(span));
 			return Expression::any_collapse(context.type_store, span);
@@ -4841,26 +5105,21 @@ fn validate_static_method_call<'a>(
 	};
 	let function_shape_index = method_info.function_shape_index;
 
-	let result = get_method_function_specialization(
-		context,
-		&method_call.type_arguments,
-		function_shape_index,
-		method_base_user_type,
-		span,
-	);
+	let result =
+		get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_user_type, span);
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
 		None => return Expression::any_collapse(context.type_store, span),
 	};
 
 	let Some(MethodArgumentsResult { yields, mut returns, arguments }) =
-		validate_method_arguments(context, &method_call.arguments, function_shape_index, specialization_index, span, true)
+		validate_method_arguments(context, &call.arguments, function_shape_index, specialization_index, span, true)
 	else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
-	let call = Call { span, name: method_call.name.item, function_id, arguments };
+	let call = Call { span, name, function_id, arguments };
 
 	if return_type.is_noreturn(context.type_store) {
 		returns = true;
@@ -4879,103 +5138,169 @@ fn validate_static_method_call<'a>(
 	}
 }
 
-fn validate_enum_variant_dot_initializer<'a>(
-	context: &mut Context<'a, '_, '_>,
-	method_call: &'a tree::MethodCall<'a>,
-	method_base_user_type: MethodBaseUserType,
-	span: Span,
-) -> Option<Expression<'a>> {
-	let shape_index = method_base_user_type.shape_index;
-	let specialization_index = method_base_user_type.specialization_index;
+// fn validate_enum_variant_dot_initializer<'a>(
+// 	context: &mut Context<'a, '_, '_>,
+// 	method_call: &'a tree::MethodCall<'a>,
+// 	method_base_user_type: MethodBaseUserType,
+// 	span: Span,
+// ) -> Option<Expression<'a>> {
+// 	let shape_index = method_base_user_type.shape_index;
+// 	let specialization_index = method_base_user_type.specialization_index;
 
-	let user_type = context.type_store.user_types.read()[shape_index].clone();
-	let user_type = user_type.read();
+// 	let user_type = context.type_store.user_types.read()[shape_index].clone();
+// 	let user_type = user_type.read();
 
-	let UserTypeKind::Enum { shape } = &user_type.kind else {
-		return None;
-	};
+// 	let UserTypeKind::Enum { shape } = &user_type.kind else {
+// 		return None;
+// 	};
 
-	let specialization = &shape.specializations[specialization_index];
-	let Some(&variant_index) = specialization.variants_by_name.get(method_call.name.item) else {
-		return None;
-	};
+// 	let specialization = &shape.specializations[specialization_index];
+// 	let Some(&variant_index) = specialization.variants_by_name.get(method_call.name.item) else {
+// 		return None;
+// 	};
 
-	let variant = specialization.variants[variant_index];
-	drop(user_type);
+// 	let variant = specialization.variants[variant_index];
+// 	drop(user_type);
 
-	if !variant.is_transparent {
-		return None;
-	}
+// 	if !variant.is_transparent {
+// 		return None;
+// 	}
 
-	if !method_call.type_arguments.is_empty() {
-		let span = method_call
-			.type_arguments
-			.iter()
-			.fold(method_call.type_arguments.first().unwrap().span, |a, b| a + b.span);
+// 	if !method_call.type_arguments.is_empty() {
+// 		let span = method_call
+// 			.type_arguments
+// 			.iter()
+// 			.fold(method_call.type_arguments.first().unwrap().span, |a, b| a + b.span);
 
-		let name = method_call.name.item;
-		let error = error!("Cannot construct transparent variant enum `{name}` with type arguments");
-		context.messages.message(error.span(span));
-	}
+// 		let name = method_call.name.item;
+// 		let error = error!("Cannot construct transparent variant enum `{name}` with type arguments");
+// 		context.messages.message(error.span(span));
+// 	}
 
-	if method_call.arguments.len() != 1 {
-		let name = method_call.name.item;
-		let count = method_call.arguments.len();
-		let error = error!("Transparent variant enum `{name}` must be constructed with one value, found {count}");
-		context.messages.message(error.span(span));
-		return Some(Expression::any_collapse(context.type_store, span));
-	}
+// 	if method_call.arguments.len() != 1 {
+// 		let name = method_call.name.item;
+// 		let count = method_call.arguments.len();
+// 		let error = error!("Transparent variant enum `{name}` must be constructed with one value, found {count}");
+// 		context.messages.message(error.span(span));
+// 		return Some(Expression::any_collapse(context.type_store, span));
+// 	}
 
-	let expression = method_call.arguments.first().unwrap();
+// 	let expression = method_call.arguments.first().unwrap();
 
-	let expected_type_id = variant
-		.type_id
-		.as_struct(&mut context.type_store, |_, specialization| {
-			specialization.fields.first().unwrap().type_id
-		})
-		.unwrap();
+// 	let expected_type_id = variant
+// 		.type_id
+// 		.as_struct(&mut context.type_store, |_, specialization| {
+// 			specialization.fields.first().unwrap().type_id
+// 		})
+// 		.unwrap();
 
-	let mut yields = false;
-	let mut returns = false;
-	let Some(field_initializers) =
-		validate_transparent_variant_initializer(context, &mut yields, &mut returns, expression, expected_type_id)
-	else {
-		return Some(Expression::any_collapse(context.type_store, span));
-	};
+// 	let mut yields = false;
+// 	let mut returns = false;
+// 	let Some(field_initializers) =
+// 		validate_transparent_variant_initializer(context, &mut yields, &mut returns, expression, expected_type_id)
+// 	else {
+// 		return Some(Expression::any_collapse(context.type_store, span));
+// 	};
 
-	let type_id = variant.type_id;
-	let literal = StructLiteral { type_id, field_initializers };
-	let kind = ExpressionKind::StructLiteral(literal);
-	return Some(Expression {
-		span,
-		type_id,
-		is_itself_mutable: true,
-		is_pointer_access_mutable: true,
-		yields,
-		returns,
-		kind,
-		debug_location: span.debug_location(context.parsed_files),
-	});
-}
+// 	let type_id = variant.type_id;
+// 	let literal = StructLiteral { type_id, field_initializers };
+// 	let kind = ExpressionKind::StructLiteral(literal);
+// 	return Some(Expression {
+// 		span,
+// 		type_id,
+// 		is_itself_mutable: true,
+// 		is_pointer_access_mutable: true,
+// 		yields,
+// 		returns,
+// 		kind,
+// 		debug_location: span.debug_location(context.parsed_files),
+// 	});
+// }
 
 fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, span: Span) -> Expression<'a> {
-	let symbol = match context.lookup_symbol(&read.path_segments.item) {
-		Some(symbol) => symbol,
-		None => return Expression::any_collapse(context.type_store, span),
+	let Some(symbol) = context.lookup_symbol_by_name(read.name) else {
+		return Expression::any_collapse(context.type_store, span);
 	};
 
-	fn disallow_type_arguments(context: &mut Context, read: &tree::Read, span: Span, label: &str) {
-		if read.type_arguments.len() > 0 {
+	validate_symbol_read(context, symbol, read.type_arguments, span)
+}
+
+fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tree::DotAccess<'a>, span: Span) -> Expression<'a> {
+	let base = validate_expression(context, &dot_access.base);
+	let Some(on_base) = lookup_name_on_base(context, &base, dot_access.name, false) else {
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	match on_base {
+		NameOnBase::ModuleLayer(layer) => {
+			let kind = ExpressionKind::ModuleLayer(layer);
+			return Expression {
+				span,
+				type_id: context.type_store.any_collapse_type_id(), // HACK
+				is_itself_mutable: false,
+				is_pointer_access_mutable: false,
+				yields: false,
+				returns: false,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			};
+		}
+
+		NameOnBase::Symbol(symbol) => return validate_symbol_read(context, symbol, dot_access.type_arguments, span),
+
+		NameOnBase::Method(..) => {
+			let message = error!("Cannot dot-access method `{}`", dot_access.name.item);
+			context.message(message.span(dot_access.name.span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+
+		NameOnBase::Field {
+			field_index,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			immutable_reason,
+			field,
+		} => {
+			let kind = ExpressionKind::FieldRead(Box::new(FieldRead {
+				base,
+				name: dot_access.name.item,
+				field_index,
+				immutable_reason,
+			}));
+
+			return Expression {
+				span,
+				type_id: field.type_id,
+				is_itself_mutable,
+				is_pointer_access_mutable,
+				yields: false,
+				returns: false,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			};
+		}
+	}
+}
+
+fn validate_symbol_read<'a>(
+	context: &mut Context<'a, '_, '_>,
+	symbol: Symbol<'a>,
+	type_arguments: &'a [Node<tree::Type<'a>>],
+	span: Span,
+) -> Expression<'a> {
+	let has_type_arguments = !type_arguments.is_empty();
+	let disallow_type_arguments = |context: &mut Context, label: &str| {
+		if has_type_arguments {
 			let error = error!("Type arguments not permitted on {label}");
 			context.message(error.span(span));
 		}
-	}
+	};
 
 	let readable_index = match symbol.kind {
 		SymbolKind::Let { readable_index } | SymbolKind::Mut { readable_index } => readable_index,
 
 		SymbolKind::Const { constant_index } => {
-			disallow_type_arguments(context, read, span, "a const read");
+			disallow_type_arguments(context, "a const read");
 
 			let constant = &context.constants.read()[constant_index];
 			let (kind, type_id) = match constant {
@@ -5010,7 +5335,7 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		}
 
 		SymbolKind::Static { static_index } => {
-			disallow_type_arguments(context, read, span, "a static read");
+			disallow_type_arguments(context, "a static read");
 
 			let static_instance = &context.statics.read().statics[static_index];
 			let static_read = StaticRead { static_index };
@@ -5030,12 +5355,12 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 		}
 
 		SymbolKind::BuiltinType { type_id, .. } => {
-			disallow_type_arguments(context, read, span, "a builtin type");
+			disallow_type_arguments(context, "a builtin type");
 
 			if type_id.is_void(context.type_store) {
 				return Expression::void(context.type_store, context.parsed_files, span);
 			} else {
-				let kind = ExpressionKind::Type(type_id);
+				let kind = ExpressionKind::Type { type_id, type_arguments };
 				return Expression {
 					span,
 					type_id,
@@ -5061,12 +5386,12 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 				Some(span),
 				context.function_initial_symbols_length,
 				context.generic_parameters,
-				&read.type_arguments,
+				type_arguments,
 			) else {
 				return Expression::any_collapse(context.type_store, span);
 			};
 
-			let kind = ExpressionKind::Type(type_id);
+			let kind = ExpressionKind::Type { type_id, type_arguments };
 			return Expression {
 				span,
 				type_id,
@@ -5079,14 +5404,39 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 			};
 		}
 
+		SymbolKind::Module { layer } => {
+			return Expression {
+				span,
+				type_id: context.type_store.any_collapse_type_id(), // HACK
+				is_itself_mutable: false,
+				is_pointer_access_mutable: false,
+				yields: false,
+				returns: false,
+				kind: ExpressionKind::ModuleLayer(layer),
+				debug_location: span.debug_location(context.parsed_files),
+			};
+		}
+
+		// SymbolKind::Function { function_shape_index } => {
+		// 	return Expression {
+		// 		span,
+		// 		type_id: context.type_store.any_collapse_type_id(), // HACK
+		// 		is_itself_mutable: false,
+		// 		is_pointer_access_mutable: false,
+		// 		yields: false,
+		// 		returns: false,
+		// 		kind: ExpressionKind::Function { function_shape_index },
+		// 		debug_location: span.debug_location(context.parsed_files),
+		// 	};
+		// }
 		kind => {
-			context.message(error!("Cannot read value from {kind}").span(read.path_segments.span));
+			context.message(error!("Cannot read value from {kind}").span(span));
 			return Expression::any_collapse(context.type_store, span);
 		}
 	};
 
 	let Some(readable) = context.readables.get(readable_index) else {
-		panic!("Symbol pointed to unknown readable index {readable_index}, {read:?}");
+		panic!("Symbol pointed to unknown readable index {readable_index}, {symbol:?}");
 	};
 
 	let is_itself_mutable = readable.kind == ReadableKind::Mut;
@@ -5107,245 +5457,11 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 	}
 }
 
-fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tree::DotAccess<'a>, span: Span) -> Expression<'a> {
-	// Dumb name, this structure is forced to make the lock scope juggling not horrid
-	fn handle_fields<'a>(
-		context: &mut Context<'a, '_, '_>,
-		dot_access: &tree::DotAccess<'a>,
-		base: Expression<'a>,
-		is_itself_mutable: bool,
-		is_pointer_access_mutable: bool,
-		fields: &[Field<'a>],
-		external_access: bool,
-		span: Span,
-	) -> Expression<'a> {
-		// TODO: Hashmapify this linear lookup
-		let mut fields = fields.iter().enumerate();
-		let Some((field_index, field)) = fields.find(|f| f.1.name == dot_access.name.item) else {
-			let type_name = context.type_name(base.type_id);
-			let error = error!("No field `{}` on {}", dot_access.name.item, type_name);
-			context.messages.message(error.span(dot_access.name.span));
-			return Expression::any_collapse(context.type_store, span);
-		};
-
-		let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
-		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
-		let is_read_only = field.read_only;
-
-		if external_access && is_internal {
-			let type_name = context.type_name(base.type_id);
-			let error = error!("Cannot publicly access internal field `{}` on type {}", dot_access.name.item, type_name);
-			context.messages.message(error.span(dot_access.name.span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-
-		let (is_itself_mutable, is_pointer_access_mutable, reason) = if external_access && is_readable {
-			(false, true, Some(FieldReadImmutableReason::Readable))
-		} else if is_read_only {
-			(false, true, Some(FieldReadImmutableReason::ReadOnly))
-		} else {
-			(is_itself_mutable, is_pointer_access_mutable, None)
-		};
-
-		let field_entry = context.type_store.type_entries.get(field.type_id);
-		let type_id = match field_entry.kind {
-			TypeEntryKind::Pointer { type_id: pointed, .. } => {
-				if is_pointer_access_mutable {
-					field.type_id
-				} else {
-					context.type_store.pointer_to(pointed, false)
-				}
-			}
-
-			TypeEntryKind::Slice(slice) => {
-				if is_pointer_access_mutable {
-					field.type_id
-				} else {
-					context.type_store.slice_of(slice.type_id, false)
-				}
-			}
-
-			_ => field.type_id,
-		};
-
-		let field_read = FieldRead {
-			base,
-			name: field.name,
-			field_index,
-			immutable_reason: reason,
-		};
-		let kind = ExpressionKind::FieldRead(Box::new(field_read));
-		Expression {
-			span,
-			type_id,
-			is_itself_mutable,
-			is_pointer_access_mutable,
-			yields: false,
-			returns: false,
-			kind,
-			debug_location: span.debug_location(context.parsed_files),
-		}
-	}
-
-	let base = validate_expression(context, &dot_access.base);
-	context.expected_type = None;
-	if base.type_id.is_any_collapse(context.type_store) {
-		return Expression::any_collapse(context.type_store, span);
-	}
-
-	if let ExpressionKind::Type(base) = base.kind {
-		return validate_dot_access_enum_literal(context, base, dot_access, span);
-	}
-
-	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base.type_id.as_pointed(context.type_store) {
-		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
-		None => (base.type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
-	};
-
-	let type_entry = context.type_store.type_entries.get(type_id);
-	match type_entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
-			let user_type = context.type_store.user_types.read()[shape_index].clone();
-			let user_type = user_type.read();
-
-			match &user_type.kind {
-				UserTypeKind::Struct { shape } => {
-					let fields = shape.specializations[specialization_index].fields.clone();
-					drop(user_type);
-					let external_access = context.check_is_external_access(shape_index);
-					return handle_fields(
-						context,
-						dot_access,
-						base,
-						is_itself_mutable,
-						is_pointer_access_mutable,
-						&fields,
-						external_access,
-						span,
-					);
-				}
-
-				UserTypeKind::Enum { shape } => {
-					let fields = shape.specializations[specialization_index].shared_fields.clone();
-					drop(user_type);
-					let external_access = context.check_is_external_access(shape_index);
-					return handle_fields(
-						context,
-						dot_access,
-						base,
-						is_itself_mutable,
-						is_pointer_access_mutable,
-						&fields,
-						external_access,
-						span,
-					);
-				}
-			}
-		}
-
-		_ => {}
-	}
-
-	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
-		let slice_fields = &[
-			Field {
-				span: None,
-				name: "pointer",
-				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
-				attribute: None,
-				read_only: false,
-			},
-			Field {
-				span: None,
-				name: "length",
-				type_id: context.type_store.isize_type_id(),
-				attribute: None,
-				read_only: false,
-			},
-		];
-		let is_pointer_access_mutable = is_pointer_access_mutable && as_slice.mutable;
-		return handle_fields(
-			context,
-			dot_access,
-			base,
-			is_itself_mutable,
-			is_pointer_access_mutable,
-			slice_fields,
-			false,
-			span,
-		);
-	} else if type_id.is_string(context.type_store) {
-		let u8_type_id = context.type_store.u8_type_id();
-		let str_fields = &[
-			Field {
-				span: None,
-				name: "pointer",
-				type_id: context.type_store.pointer_to(u8_type_id, false),
-				attribute: None,
-				read_only: true,
-			},
-			Field {
-				span: None,
-				name: "length",
-				type_id: context.type_store.isize_type_id(),
-				attribute: None,
-				read_only: true,
-			},
-			Field {
-				span: None,
-				name: "bytes",
-				type_id: context.type_store.u8_slice_type_id(),
-				attribute: None,
-				read_only: true,
-			},
-		];
-		return handle_fields(
-			context,
-			dot_access,
-			base,
-			is_itself_mutable,
-			is_pointer_access_mutable,
-			str_fields,
-			false,
-			span,
-		);
-	} else if type_id.is_format_string(context.type_store) {
-		let item_type_id = context.lang_items.read().format_string_item_type.unwrap();
-		let fstr_fields = &[Field {
-			span: None,
-			name: "items",
-			type_id: context.type_store.slice_of(item_type_id, false),
-			attribute: None,
-			read_only: true,
-		}];
-		return handle_fields(
-			context,
-			dot_access,
-			base,
-			is_itself_mutable,
-			is_pointer_access_mutable,
-			fstr_fields,
-			false,
-			span,
-		);
-	} else {
-		let on = base.kind.name_with_article();
-		let found = context.type_name(base.type_id);
-		let error = error!("Cannot access field on {on} of type {found}");
-		context.messages.message(error.span(span));
-		return Expression::any_collapse(context.type_store, span);
-	}
-}
-
-fn validate_inferred_enum<'a>(
-	context: &mut Context<'a, '_, '_>,
-	inferred_enum: &'a tree::InferredEnum<'a>,
-	span: Span,
-) -> Expression<'a> {
+fn infer_variant<'a>(context: &mut Context<'a, '_, '_>, name: Node<&'a str>, span: Span) -> Option<EnumVariant> {
 	let Some(expected_type) = context.expected_type else {
 		let error = error!("Cannot infer enum type for variant, there is no specific expected type in this context");
 		context.message(error.span(span));
-		return Expression::any_collapse(context.type_store, span);
+		return None;
 	};
 
 	let entry = context.type_store.type_entries.get(expected_type);
@@ -5360,206 +5476,538 @@ fn validate_inferred_enum<'a>(
 			let variants_by_name = specialization.variants_by_name.clone();
 			drop(user_type);
 
-			let Some(&variant_index) = variants_by_name.get(inferred_enum.name.item) else {
+			let Some(&variant_index) = variants_by_name.get(name.item) else {
 				let expected = context.type_name(specialization_type_id);
-				let error = error!("Expected enum {expected} has no variant named `{}`", inferred_enum.name.item);
-				context.messages.message(error.span(inferred_enum.name.span));
-				return Expression::any_collapse(context.type_store, span);
+				let error = error!("Expected enum {expected} has no variant named `{}`", name.item);
+				context.messages.message(error.span(name.span));
+				return None;
 			};
 
-			let variant = variants[variant_index];
-			let type_id = variant.type_id;
-
-			let mut yields = false;
-			let mut returns = false;
-			let Some(field_initializers) = validate_enum_initializer(
-				context,
-				inferred_enum.name.item,
-				type_id,
-				&mut yields,
-				&mut returns,
-				inferred_enum.initializer,
-				span,
-			) else {
-				return Expression::any_collapse(context.type_store, span);
-			};
-
-			let literal = StructLiteral { type_id, field_initializers };
-			let kind = ExpressionKind::StructLiteral(literal);
-			return Expression {
-				span,
-				type_id,
-				is_itself_mutable: true,
-				is_pointer_access_mutable: true,
-				yields,
-				returns,
-				kind,
-				debug_location: span.debug_location(context.parsed_files),
-			};
+			return Some(variants[variant_index]);
 		}
 	}
 
 	let error = error!("Cannot infer enum type for variant, the expected type is not an enum");
 	context.messages.message(error.span(span));
-	Expression::any_collapse(context.type_store, span)
+	None
 }
 
-fn validate_dot_access_enum_literal<'a>(
-	context: &mut Context<'a, '_, '_>,
-	base: TypeId,
-	dot_access: &'a tree::DotAccess<'a>,
-	span: Span,
-) -> Expression<'a> {
-	let Some(variant_type_id) = context.get_enum_variant(base, dot_access.name) else {
+fn validate_dot_infer<'a>(context: &mut Context<'a, '_, '_>, dot_infer: &'a tree::DotInfer<'a>, span: Span) -> Expression<'a> {
+	let Some(inferred_variant) = infer_variant(context, dot_infer.name, span) else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let mut yields = false;
-	let mut returns = false;
-	let Some(field_initializers) = validate_enum_initializer(
-		context,
-		dot_access.name.item,
-		variant_type_id,
-		&mut yields,
-		&mut returns,
-		dot_access.enum_initializer,
+	let type_id = inferred_variant.type_id;
+	let type_arguments = dot_infer.type_arguments;
+	let kind = ExpressionKind::Type { type_id, type_arguments };
+	return Expression {
 		span,
-	) else {
-		return Expression::any_collapse(context.type_store, span);
-	};
-
-	let literal = StructLiteral { type_id: variant_type_id, field_initializers };
-	let kind = ExpressionKind::StructLiteral(literal);
-	Expression {
-		span,
-		type_id: variant_type_id,
+		type_id,
 		is_itself_mutable: true,
 		is_pointer_access_mutable: true,
-		yields,
-		returns,
+		yields: false,
+		returns: false,
 		kind,
 		debug_location: span.debug_location(context.parsed_files),
-	}
+	};
 }
 
-fn validate_enum_initializer<'a>(
+fn validate_dot_infer_call<'a>(
 	context: &mut Context<'a, '_, '_>,
-	variant_name: &str,
-	variant_type_id: TypeId,
-	yields: &mut bool,
-	returns: &mut bool,
-	initializer: Option<&'a tree::EnumInitializer<'a>>,
+	dot_infer_call: &'a tree::DotInferCall<'a>,
 	span: Span,
-) -> Option<Vec<FieldInitializer<'a>>> {
-	let entry = context.type_store.type_entries.get(variant_type_id);
-	let (variant_shape_index, variant_specialization_index) = match entry.kind {
-		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
-		_ => unreachable!(),
+) -> Expression<'a> {
+	let Some(inferred_variant) = infer_variant(context, dot_infer_call.name, span) else {
+		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let user_type = context.type_store.user_types.read()[variant_shape_index].clone();
-	let user_type = user_type.read();
-	let fields = match &user_type.kind {
-		UserTypeKind::Struct { shape } => {
-			if shape.is_transparent_variant {
-				let Some(initializer) = initializer else {
-					let error = error!("Cannot construct transparent enum variant `{variant_name}` without an initializer");
-					context.messages.message(error.span(span));
-					return None;
-				};
-
-				let expression = match initializer {
-					EnumInitializer::Transparent { expression } => expression,
-
-					EnumInitializer::StructLike { .. } => {
-						context.messages.message(
-							error!("Cannot construct transparent enum variant `{variant_name}` like a struck-like enum variant")
-								.span(span),
-						);
-						return None;
-					}
-				};
-
-				let expected_type_id = shape.specializations[variant_specialization_index]
-					.fields
-					.first()
-					.unwrap()
-					.type_id;
-
-				drop(user_type);
-				return validate_transparent_variant_initializer(context, yields, returns, expression, expected_type_id);
-			}
-
-			// Uggg
-			shape.specializations[variant_specialization_index].fields.clone()
-		}
-
-		UserTypeKind::Enum { .. } => unreachable!(),
-	};
-
-	drop(user_type);
-
-	if let Some(initializer) = initializer {
-		if fields.is_empty() {
-			let error = match initializer {
-				EnumInitializer::StructLike { .. } => {
-					error!("Cannot construct enum variant `{variant_name}` with field initializers")
-				}
-				EnumInitializer::Transparent { .. } => {
-					error!("Cannot construct enum variant `{variant_name}` with a transparent initializer")
-				}
-			};
-			context.message(error.span(span));
-			return None;
-		}
-
-		let struct_initializer = match initializer {
-			EnumInitializer::StructLike { struct_initializer } => struct_initializer,
-
-			EnumInitializer::Transparent { .. } => {
-				let error = error!("Cannot construct struck-like enum variant `{variant_name}` like a transparent enum variant");
-				context.message(error.span(span));
-				return None;
-			}
-		};
-
-		Some(validate_struct_initializer(
-			context,
-			variant_shape_index,
-			variant_specialization_index,
-			variant_type_id,
-			struct_initializer,
-			&fields,
-			yields,
-			returns,
-		))
-	} else if !fields.is_empty() {
-		let name = variant_name;
-		let error = error!(
-			"Cannot construct struck-like enum variant `{}` without providing fields initializers",
-			name
-		);
-		context.message(error.span(span));
-		return None;
-	} else {
-		Some(Vec::new())
-	}
+	validate_transparent_variant_initialization(
+		context,
+		dot_infer_call.name.item,
+		inferred_variant,
+		dot_infer_call.arguments,
+		span,
+	)
 }
 
-fn validate_transparent_variant_initializer<'a>(
+// fn validate_field_access<'a>(
+// 	context: &mut Context<'a, '_, '_>,
+// 	dot_access: &'a tree::DotAccess<'a>,
+// 	span: Span,
+// ) -> Expression<'a> {
+// 	// Dumb name, this structure is forced to make the lock scope juggling not horrid
+// 	fn handle_fields<'a>(
+// 		context: &mut Context<'a, '_, '_>,
+// 		dot_access: &tree::DotAccess<'a>,
+// 		base: Expression<'a>,
+// 		is_itself_mutable: bool,
+// 		is_pointer_access_mutable: bool,
+// 		fields: &[Field<'a>],
+// 		external_access: bool,
+// 		span: Span,
+// 	) -> Expression<'a> {
+// 		// TODO: Hashmapify this linear lookup
+// 		let mut fields = fields.iter().enumerate();
+// 		let Some((field_index, field)) = fields.find(|f| f.1.name == dot_access.name.item) else {
+// 			let type_name = context.type_name(base.type_id);
+// 			let error = error!("No field `{}` on {}", dot_access.name.item, type_name);
+// 			context.messages.message(error.span(dot_access.name.span));
+// 			return Expression::any_collapse(context.type_store, span);
+// 		};
+
+// 		let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
+// 		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
+// 		let is_read_only = field.read_only;
+
+// 		if external_access && is_internal {
+// 			let type_name = context.type_name(base.type_id);
+// 			let error = error!("Cannot publicly access internal field `{}` on type {}", dot_access.name.item, type_name);
+// 			context.messages.message(error.span(dot_access.name.span));
+// 			return Expression::any_collapse(context.type_store, span);
+// 		}
+
+// 		let (is_itself_mutable, is_pointer_access_mutable, reason) = if external_access && is_readable {
+// 			(false, true, Some(FieldReadImmutableReason::Readable))
+// 		} else if is_read_only {
+// 			(false, true, Some(FieldReadImmutableReason::ReadOnly))
+// 		} else {
+// 			(is_itself_mutable, is_pointer_access_mutable, None)
+// 		};
+
+// 		let field_entry = context.type_store.type_entries.get(field.type_id);
+// 		let type_id = match field_entry.kind {
+// 			TypeEntryKind::Pointer { type_id: pointed, .. } => {
+// 				if is_pointer_access_mutable {
+// 					field.type_id
+// 				} else {
+// 					context.type_store.pointer_to(pointed, false)
+// 				}
+// 			}
+
+// 			TypeEntryKind::Slice(slice) => {
+// 				if is_pointer_access_mutable {
+// 					field.type_id
+// 				} else {
+// 					context.type_store.slice_of(slice.type_id, false)
+// 				}
+// 			}
+
+// 			_ => field.type_id,
+// 		};
+
+// 		let field_read = FieldRead {
+// 			base,
+// 			name: field.name,
+// 			field_index,
+// 			immutable_reason: reason,
+// 		};
+// 		let kind = ExpressionKind::FieldRead(Box::new(field_read));
+// 		Expression {
+// 			span,
+// 			type_id,
+// 			is_itself_mutable,
+// 			is_pointer_access_mutable,
+// 			yields: false,
+// 			returns: false,
+// 			kind,
+// 			debug_location: span.debug_location(context.parsed_files),
+// 		}
+// 	}
+
+// 	let base = validate_expression(context, &dot_access.base);
+// 	context.expected_type = None;
+// 	if base.type_id.is_any_collapse(context.type_store) {
+// 		return Expression::any_collapse(context.type_store, span);
+// 	}
+
+// 	if let ExpressionKind::Type(base) = base.kind {
+// 		return validate_dot_access_enum_literal(context, base, dot_access, span);
+// 	}
+
+// 	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base.type_id.as_pointed(context.type_store) {
+// 		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
+// 		None => (base.type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
+// 	};
+
+// 	let type_entry = context.type_store.type_entries.get(type_id);
+// 	match type_entry.kind {
+// 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
+// 			let user_type = context.type_store.user_types.read()[shape_index].clone();
+// 			let user_type = user_type.read();
+
+// 			match &user_type.kind {
+// 				UserTypeKind::Struct { shape } => {
+// 					let fields = shape.specializations[specialization_index].fields.clone();
+// 					drop(user_type);
+// 					let external_access = context.check_is_external_access(shape_index);
+// 					return handle_fields(
+// 						context,
+// 						dot_access,
+// 						base,
+// 						is_itself_mutable,
+// 						is_pointer_access_mutable,
+// 						&fields,
+// 						external_access,
+// 						span,
+// 					);
+// 				}
+
+// 				UserTypeKind::Enum { shape } => {
+// 					let fields = shape.specializations[specialization_index].shared_fields.clone();
+// 					drop(user_type);
+// 					let external_access = context.check_is_external_access(shape_index);
+// 					return handle_fields(
+// 						context,
+// 						dot_access,
+// 						base,
+// 						is_itself_mutable,
+// 						is_pointer_access_mutable,
+// 						&fields,
+// 						external_access,
+// 						span,
+// 					);
+// 				}
+// 			}
+// 		}
+
+// 		_ => {}
+// 	}
+
+// 	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
+// 		let slice_fields = &[
+// 			Field {
+// 				span: None,
+// 				name: "pointer",
+// 				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
+// 				attribute: None,
+// 				read_only: false,
+// 			},
+// 			Field {
+// 				span: None,
+// 				name: "length",
+// 				type_id: context.type_store.isize_type_id(),
+// 				attribute: None,
+// 				read_only: false,
+// 			},
+// 		];
+// 		let is_pointer_access_mutable = is_pointer_access_mutable && as_slice.mutable;
+// 		return handle_fields(
+// 			context,
+// 			dot_access,
+// 			base,
+// 			is_itself_mutable,
+// 			is_pointer_access_mutable,
+// 			slice_fields,
+// 			false,
+// 			span,
+// 		);
+// 	} else if type_id.is_string(context.type_store) {
+// 		let u8_type_id = context.type_store.u8_type_id();
+// 		let str_fields = &[
+// 			Field {
+// 				span: None,
+// 				name: "pointer",
+// 				type_id: context.type_store.pointer_to(u8_type_id, false),
+// 				attribute: None,
+// 				read_only: true,
+// 			},
+// 			Field {
+// 				span: None,
+// 				name: "length",
+// 				type_id: context.type_store.isize_type_id(),
+// 				attribute: None,
+// 				read_only: true,
+// 			},
+// 			Field {
+// 				span: None,
+// 				name: "bytes",
+// 				type_id: context.type_store.u8_slice_type_id(),
+// 				attribute: None,
+// 				read_only: true,
+// 			},
+// 		];
+// 		return handle_fields(
+// 			context,
+// 			dot_access,
+// 			base,
+// 			is_itself_mutable,
+// 			is_pointer_access_mutable,
+// 			str_fields,
+// 			false,
+// 			span,
+// 		);
+// 	} else if type_id.is_format_string(context.type_store) {
+// 		let item_type_id = context.lang_items.read().format_string_item_type.unwrap();
+// 		let fstr_fields = &[Field {
+// 			span: None,
+// 			name: "items",
+// 			type_id: context.type_store.slice_of(item_type_id, false),
+// 			attribute: None,
+// 			read_only: true,
+// 		}];
+// 		return handle_fields(
+// 			context,
+// 			dot_access,
+// 			base,
+// 			is_itself_mutable,
+// 			is_pointer_access_mutable,
+// 			fstr_fields,
+// 			false,
+// 			span,
+// 		);
+// 	} else {
+// 		let on = base.kind.name_with_article();
+// 		let found = context.type_name(base.type_id);
+// 		let error = error!("Cannot access field on {on} of type {found}");
+// 		context.messages.message(error.span(span));
+// 		return Expression::any_collapse(context.type_store, span);
+// 	}
+// }
+
+// fn validate_inferred_enum<'a>(
+// 	context: &mut Context<'a, '_, '_>,
+// 	inferred_enum: &'a tree::InferredEnum<'a>,
+// 	span: Span,
+// ) -> Expression<'a> {
+// 	let Some(expected_type) = context.expected_type else {
+// 		let error = error!("Cannot infer enum type for variant, there is no specific expected type in this context");
+// 		context.message(error.span(span));
+// 		return Expression::any_collapse(context.type_store, span);
+// 	};
+
+// 	let entry = context.type_store.type_entries.get(expected_type);
+// 	if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
+// 		let lock = context.type_store.user_types.read()[shape_index].clone();
+// 		let user_type = lock.read();
+
+// 		if let UserTypeKind::Enum { shape } = &user_type.kind {
+// 			let specialization = &shape.specializations[specialization_index];
+// 			let specialization_type_id = specialization.type_id;
+// 			let variants = specialization.variants.clone();
+// 			let variants_by_name = specialization.variants_by_name.clone();
+// 			drop(user_type);
+
+// 			let Some(&variant_index) = variants_by_name.get(inferred_enum.name.item) else {
+// 				let expected = context.type_name(specialization_type_id);
+// 				let error = error!("Expected enum {expected} has no variant named `{}`", inferred_enum.name.item);
+// 				context.messages.message(error.span(inferred_enum.name.span));
+// 				return Expression::any_collapse(context.type_store, span);
+// 			};
+
+// 			let variant = variants[variant_index];
+// 			let type_id = variant.type_id;
+
+// 			let mut yields = false;
+// 			let mut returns = false;
+// 			let Some(field_initializers) = validate_enum_initializer(
+// 				context,
+// 				inferred_enum.name.item,
+// 				type_id,
+// 				&mut yields,
+// 				&mut returns,
+// 				inferred_enum.initializer,
+// 				span,
+// 			) else {
+// 				return Expression::any_collapse(context.type_store, span);
+// 			};
+
+// 			let literal = StructLiteral { type_id, field_initializers };
+// 			let kind = ExpressionKind::StructLiteral(literal);
+// 			return Expression {
+// 				span,
+// 				type_id,
+// 				is_itself_mutable: true,
+// 				is_pointer_access_mutable: true,
+// 				yields,
+// 				returns,
+// 				kind,
+// 				debug_location: span.debug_location(context.parsed_files),
+// 			};
+// 		}
+// 	}
+
+// 	let error = error!("Cannot infer enum type for variant, the expected type is not an enum");
+// 	context.messages.message(error.span(span));
+// 	Expression::any_collapse(context.type_store, span)
+// }
+
+// fn validate_dot_access_enum_literal<'a>(
+// 	context: &mut Context<'a, '_, '_>,
+// 	base: TypeId,
+// 	dot_access: &'a tree::DotAccess<'a>,
+// 	span: Span,
+// ) -> Expression<'a> {
+// 	let Some(variant_type_id) = context.get_enum_variant(base, dot_access.name) else {
+// 		return Expression::any_collapse(context.type_store, span);
+// 	};
+
+// 	let mut yields = false;
+// 	let mut returns = false;
+// 	let Some(field_initializers) = validate_enum_initializer(
+// 		context,
+// 		dot_access.name.item,
+// 		variant_type_id,
+// 		&mut yields,
+// 		&mut returns,
+// 		dot_access.enum_initializer,
+// 		span,
+// 	) else {
+// 		return Expression::any_collapse(context.type_store, span);
+// 	};
+
+// 	let literal = StructLiteral { type_id: variant_type_id, field_initializers };
+// 	let kind = ExpressionKind::StructLiteral(literal);
+// 	Expression {
+// 		span,
+// 		type_id: variant_type_id,
+// 		is_itself_mutable: true,
+// 		is_pointer_access_mutable: true,
+// 		yields,
+// 		returns,
+// 		kind,
+// 		debug_location: span.debug_location(context.parsed_files),
+// 	}
+// }
+
+// fn validate_enum_initializer<'a>(
+// 	context: &mut Context<'a, '_, '_>,
+// 	variant_name: &str,
+// 	variant_type_id: TypeId,
+// 	yields: &mut bool,
+// 	returns: &mut bool,
+// 	initializer: Option<&'a tree::EnumInitializer<'a>>,
+// 	span: Span,
+// ) -> Option<Vec<FieldInitializer<'a>>> {
+// 	let entry = context.type_store.type_entries.get(variant_type_id);
+// 	let (variant_shape_index, variant_specialization_index) = match entry.kind {
+// 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
+// 		_ => unreachable!(),
+// 	};
+
+// 	let user_type = context.type_store.user_types.read()[variant_shape_index].clone();
+// 	let user_type = user_type.read();
+// 	let fields = match &user_type.kind {
+// 		UserTypeKind::Struct { shape } => {
+// 			if shape.is_transparent_variant {
+// 				let Some(initializer) = initializer else {
+// 					let error = error!("Cannot construct transparent enum variant `{variant_name}` without an initializer");
+// 					context.messages.message(error.span(span));
+// 					return None;
+// 				};
+
+// 				let expression = match initializer {
+// 					EnumInitializer::Transparent { expression } => expression,
+
+// 					EnumInitializer::StructLike { .. } => {
+// 						context.messages.message(
+// 							error!("Cannot construct transparent enum variant `{variant_name}` like a struck-like enum variant")
+// 								.span(span),
+// 						);
+// 						return None;
+// 					}
+// 				};
+
+// 				let expected_type_id = shape.specializations[variant_specialization_index]
+// 					.fields
+// 					.first()
+// 					.unwrap()
+// 					.type_id;
+
+// 				drop(user_type);
+// 				return validate_transparent_variant_initializer(context, yields, returns, expression, expected_type_id);
+// 			}
+
+// 			// Uggg
+// 			shape.specializations[variant_specialization_index].fields.clone()
+// 		}
+
+// 		UserTypeKind::Enum { .. } => unreachable!(),
+// 	};
+
+// 	drop(user_type);
+
+// 	if let Some(initializer) = initializer {
+// 		if fields.is_empty() {
+// 			let error = match initializer {
+// 				EnumInitializer::StructLike { .. } => {
+// 					error!("Cannot construct enum variant `{variant_name}` with field initializers")
+// 				}
+// 				EnumInitializer::Transparent { .. } => {
+// 					error!("Cannot construct enum variant `{variant_name}` with a transparent initializer")
+// 				}
+// 			};
+// 			context.message(error.span(span));
+// 			return None;
+// 		}
+
+// 		let struct_initializer = match initializer {
+// 			EnumInitializer::StructLike { struct_initializer } => struct_initializer,
+
+// 			EnumInitializer::Transparent { .. } => {
+// 				let error = error!("Cannot construct struck-like enum variant `{variant_name}` like a transparent enum variant");
+// 				context.message(error.span(span));
+// 				return None;
+// 			}
+// 		};
+
+// 		Some(validate_struct_initializer(
+// 			context,
+// 			variant_shape_index,
+// 			variant_specialization_index,
+// 			variant_type_id,
+// 			struct_initializer,
+// 			&fields,
+// 			yields,
+// 			returns,
+// 		))
+// 	} else if !fields.is_empty() {
+// 		let name = variant_name;
+// 		let error = error!(
+// 			"Cannot construct struck-like enum variant `{}` without providing fields initializers",
+// 			name
+// 		);
+// 		context.message(error.span(span));
+// 		return None;
+// 	} else {
+// 		Some(Vec::new())
+// 	}
+// }
+
+fn validate_transparent_variant_initialization<'a>(
 	context: &mut Context<'a, '_, '_>,
-	yields: &mut bool,
-	returns: &mut bool,
-	expression: &'a Node<tree::Expression<'a>>,
-	expected_type_id: TypeId,
-) -> Option<Vec<FieldInitializer<'a>>> {
+	name: &str,
+	enum_variant: EnumVariant,
+	expressions: &'a [Node<tree::Expression<'a>>],
+	span: Span,
+) -> Expression<'a> {
+	if !enum_variant.is_transparent {
+		let found = context.type_name(enum_variant.type_id);
+		let message = error!("Type {found} is not a transparent enum variant");
+		context.message(message.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	let expected_type_id = enum_variant
+		.type_id
+		.as_struct(&mut context.type_store, |_, specialization| {
+			specialization.fields.first().unwrap().type_id
+		})
+		.unwrap();
+
+	let [expression] = expressions else {
+		let count = expressions.len();
+		let message = error!("Transparent variant enum `{name}` must be constructed with one value, found {count}");
+		context.message(message.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	};
+
 	let mut scope = context.child_scope();
 	scope.expected_type = Some(expected_type_id);
 	let mut expression = validate_expression(&mut scope, expression);
 	drop(scope);
 
-	*yields |= expression.yields;
-	*returns |= expression.returns;
+	let yields = expression.yields;
+	let returns = expression.returns;
 
 	if !context.collapse_to(expected_type_id, &mut expression).unwrap_or(true) {
 		if !expected_type_id.is_any_collapse(context.type_store) {
@@ -5567,12 +6015,24 @@ fn validate_transparent_variant_initializer<'a>(
 			let found = context.type_name(expression.type_id);
 			let error = error!("Transparent enum variant initializer type mismatch, expected {expected} but got {found} instead");
 			context.message(error.span(expression.span));
-			return None;
+			return Expression::any_collapse(context.type_store, span);
 		}
 	}
 
 	let initializer = FieldInitializer { expression };
-	Some(vec![initializer])
+	let field_initializers = vec![initializer];
+	let literal = StructLiteral { type_id: enum_variant.type_id, field_initializers };
+	let kind = ExpressionKind::StructLiteral(literal);
+	Expression {
+		span,
+		type_id: enum_variant.type_id,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
+		yields,
+		returns,
+		kind,
+		debug_location: span.debug_location(context.parsed_files),
+	}
 }
 
 fn validate_unary_operation<'a>(

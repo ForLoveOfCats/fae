@@ -1,4 +1,4 @@
-import fae::libc::StdOutFile, fflush, fwrite
+import fae.libc.StdOutFile, fflush, fwrite
 
 fn clear() {
 	let string = []u8 { 27, 91, 49, 59, 49, 72, 27, 91, 50, 74, 0 }

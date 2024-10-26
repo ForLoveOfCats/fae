@@ -6,7 +6,7 @@ fn fae_main(argc: i32, argv: **u8): i32 {
 	ArgC = argc
 	ArgV = argv
 
-	fae::intrinsics::user_main_function()
+	fae.intrinsics.user_main_function()
 	return 0
 }
 
@@ -36,7 +36,7 @@ fn for_range_inverted(range: Range) {
 }
 
 fn panic_impl(message: fstr): noreturn {
-	import fae::libc::DlInfo, exit, backtrace, dladdr, strlen
+	import fae.libc.DlInfo, exit, backtrace, dladdr, strlen
 
 	eprintln(f"Fae thread panicked: {message}")	
 
@@ -99,21 +99,21 @@ fn panic_impl(message: fstr): noreturn {
 		}
 
 		if dladdr(address, info.&mut) == 0 {
-			symbols[index] = Symbol.Error
+			symbols[index] = .Error
 			handle_width(longest_width.&mut, Error.length)
 			continue
 		}
 
 		let path_length = strlen(info.dli_fname).(isize)
-		let path = fae::intrinsics::create_str(info.dli_fname, path_length)
+		let path = fae.intrinsics.create_str(info.dli_fname, path_length)
 
 		if info.dli_saddr.(usize) == 0 {
-			symbols[index] = Symbol.Unknown { path }
+			symbols[index] = .Unknown { path }
 			handle_width(longest_width.&mut, Unknown.length)
 		} else {
 			let name_length = strlen(info.dli_sname).(isize)
-			let name = fae::intrinsics::create_str(info.dli_sname, name_length)
-			symbols[index] = Symbol.Found { name, path }
+			let name = fae.intrinsics.create_str(info.dli_sname, name_length)
+			symbols[index] = .Found { name, path }
 			handle_width(longest_width.&mut, name_length)
 		}
 	}
@@ -148,7 +148,7 @@ fn panic_impl(message: fstr): noreturn {
 	}
 	eprintln("")
 
-	fae::intrinsics::debugger_break()
+	fae.intrinsics.debugger_break()
 	exit(-1)
 }
 

@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::frontend::error::Messages;
 use crate::frontend::root_layers::{layer_for_module_path_under_root, RootLayer, RootLayers};
 use crate::frontend::span::Span;
-use crate::frontend::tree::{ExternAttribute, PathSegments};
+use crate::frontend::tree::{ExternAttribute, Node, PathSegments};
 use crate::frontend::type_store::{TypeId, TypeStore, UserTypeKind};
 use crate::lock::RwLock;
 use crate::reference::Ref;
@@ -156,7 +156,37 @@ impl<'a> Symbols<'a> {
 		None
 	}
 
-	pub fn lookup_symbol(
+	pub fn lookup_symbol_by_name(
+		&mut self,
+		messages: &mut Messages,
+		root_layers: &RootLayers<'a>,
+		type_store: &TypeStore<'a>,
+		function_initial_symbols_length: usize,
+		name: Node<&'a str>,
+	) -> Option<Symbol<'a>> {
+		let primatives = &type_store.primative_type_symbols;
+		if let Some(found) = primatives.iter().find(|symbol| symbol.name == name.item) {
+			return Some(found.clone());
+		}
+
+		if let Some(found) = self.find_local_symbol_matching_name(function_initial_symbols_length, name.item, true) {
+			return Some(found);
+		}
+
+		if let Some(layer) = root_layers.layer_for_module_name(Some(messages), name) {
+			let kind = SymbolKind::Module { layer };
+			let span = Some(name.span);
+			let name = name.item;
+			let symbol = Symbol { name, kind, span, used: false, imported: false };
+			return Some(symbol);
+		}
+
+		let error = error!("No symbol `{}` in the current scope", name.item);
+		messages.message(error.span(name.span));
+		None
+	}
+
+	pub fn lookup_path_symbol(
 		&mut self,
 		messages: &mut Messages,
 		root_layers: &RootLayers<'a>,

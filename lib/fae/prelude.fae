@@ -1,4 +1,4 @@
-import fae::intrinsics::create_slice_mut
+import fae.intrinsics.create_slice_mut
 
 #intrinsic
 generic T
@@ -30,46 +30,46 @@ fn offset_pointer_mut(pointer: *mut T, by_bytes: isize): *mut T {
 }
 
 fn print(message: fstr) {
-	let handle = fae::libc::StdOutFile
-	fae::string::format::print_to_file_handle(handle, message)
+	let handle = fae.libc.StdOutFile
+	fae.string.format.print_to_file_handle(handle, message)
 }
 
 fn println(message: fstr) {
-	let handle = fae::libc::StdOutFile
+	let handle = fae.libc.StdOutFile
 	let message = f"{message}\n"
-	fae::string::format::print_to_file_handle(handle, message)
+	fae.string.format.print_to_file_handle(handle, message)
 }
 
 fn eprint(message: fstr) {
-	let handle = fae::libc::StdErrFile
-	fae::string::format::print_to_file_handle(handle, message)
+	let handle = fae.libc.StdErrFile
+	fae.string.format.print_to_file_handle(handle, message)
 }
 
 fn eprintln(message: fstr) {
-	let handle = fae::libc::StdErrFile
+	let handle = fae.libc.StdErrFile
 	let message = f"{message}\n"
-	fae::string::format::print_to_file_handle(handle, message)
+	fae.string.format.print_to_file_handle(handle, message)
 }
 
 fn panic(): noreturn {
-	fae::runtime::panic_impl("Explicit panic")
+	fae.runtime.panic_impl("Explicit panic")
 }
 
 fn panicf(message: fstr): noreturn {
-	fae::runtime::panic_impl(message)
+	fae.runtime.panic_impl(message)
 }
 
 fn exit_success(): noreturn {
-	fae::libc::exit(0)
+	fae.libc.exit(0)
 }
 
 fn exit_error(): noreturn {
-	fae::libc::exit(-1)
+	fae.libc.exit(-1)
 }
 
 fn exit_errorf(message: fstr): noreturn {
 	eprintln(message)
-	fae::libc::exit(-1)
+	fae.libc.exit(-1)
 }
 
 fn assert(value: bool) {

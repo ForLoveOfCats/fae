@@ -374,6 +374,7 @@ fn parse_expression_climb<'a>(
 
 	loop {
 		if tokens.peek_kind() == Ok(TokenKind::Period) {
+			tokens.next(messages)?;
 			atom = parse_following_period(bump, messages, tokens, atom, allow_struct_literal)?;
 		} else if tokens.peek_kind() == Ok(TokenKind::OpenBracket) {
 			atom = parse_bracket_index(bump, messages, tokens, atom)?;
@@ -581,50 +582,52 @@ fn parse_expression_atom<'a>(
 				_ => {}
 			}
 
-			let path_segments = parse_path_segments(bump, messages, tokens)?;
-			let type_arguments = parse_type_arguments(bump, messages, tokens)?;
+			parse_path_expression(bump, messages, tokens, None, allow_struct_literal)
 
-			let (is_call, is_struct_literal) = match tokens.peek() {
-				Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
-				Ok(Token { kind: TokenKind::OpenBrace, .. }) => (false, true),
-				_ => (false, false),
-			};
+			// let path_segments = parse_path_segments(bump, messages, tokens)?;
+			// let type_arguments = parse_type_arguments(bump, messages, tokens)?;
 
-			if is_call {
-				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-				let arguments_node = parse_arguments(bump, messages, tokens)?;
-				let arguments = arguments_node.item;
-				let span = path_segments.span + arguments_node.span;
-				let call = Call { path_segments, type_arguments, arguments };
+			// let (is_call, is_struct_literal) = match tokens.peek() {
+			// 	Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
+			// 	Ok(Token { kind: TokenKind::OpenBrace, .. }) => (false, true),
+			// 	_ => (false, false),
+			// };
 
-				return Ok(Node::new(Expression::Call(call), span));
-			}
+			// if is_call {
+			// 	let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+			// 	let arguments_node = parse_arguments(bump, messages, tokens)?;
+			// 	let arguments = arguments_node.item;
+			// 	let span = path_segments.span + arguments_node.span;
+			// 	let call = Call { path_segments, type_arguments, arguments };
 
-			if is_struct_literal && allow_struct_literal {
-				let type_span = match &type_arguments {
-					Some(type_arguments) => path_segments.span + type_arguments.span,
-					None => path_segments.span,
-				};
-				let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-				let type_object = Type::Path { path_segments, type_arguments };
-				let parsed_type = Node::new(type_object, type_span);
+			// 	return Ok(Node::new(Expression::Call(call), span));
+			// }
 
-				let initializer = parse_struct_initializer(bump, messages, tokens)?;
+			// if is_struct_literal && allow_struct_literal {
+			// 	let type_span = match &type_arguments {
+			// 		Some(type_arguments) => path_segments.span + type_arguments.span,
+			// 		None => path_segments.span,
+			// 	};
+			// 	let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+			// 	let type_object = Type::Path { path_segments, type_arguments };
+			// 	let parsed_type = Node::new(type_object, type_span);
 
-				let span = type_span + initializer.span;
-				let struct_literal = StructLiteral { parsed_type, initializer };
+			// 	let initializer = parse_struct_initializer(bump, messages, tokens)?;
 
-				return Ok(Node::new(Expression::StructLiteral(struct_literal), span));
-			}
+			// 	let span = type_span + initializer.span;
+			// 	let struct_literal = StructLiteral { parsed_type, initializer };
 
-			let span = match &type_arguments {
-				Some(type_arguments) => path_segments.span + type_arguments.span,
-				None => path_segments.span,
-			};
-			let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-			let read = Read { path_segments, type_arguments };
+			// 	return Ok(Node::new(Expression::StructLiteral(struct_literal), span));
+			// }
 
-			Ok(Node::new(Expression::Read(read), span))
+			// let span = match &type_arguments {
+			// 	Some(type_arguments) => path_segments.span + type_arguments.span,
+			// 	None => path_segments.span,
+			// };
+			// let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
+			// let read = Read { path_segments, type_arguments };
+
+			// Ok(Node::new(Expression::Read(read), span))
 		}
 
 		TokenKind::OpenParen => {
@@ -681,28 +684,30 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::Period => {
-			let period = tokens.next(messages)?;
-			let name_token = tokens.expect(messages, TokenKind::Word)?;
-			let name = Node::from_token(name_token.text, name_token);
+			parse_dot_infer(bump, messages, tokens, allow_struct_literal)
 
-			let mut span = period.span + name.span;
+			// let period = tokens.next(messages)?;
+			// let name_token = tokens.expect(messages, TokenKind::Word)?;
+			// let name = Node::from_token(name_token.text, name_token);
 
-			let initializer = if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-				let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
-				span += struct_initializer.span;
-				Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_)
-			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
-				tokens.next(messages)?;
-				let expression = parse_expression(bump, messages, tokens, true)?;
-				let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
-				span += close_paren.span;
-				Some(bump.alloc(EnumInitializer::Transparent { expression }) as &_)
-			} else {
-				None
-			};
+			// let mut span = period.span + name.span;
 
-			let inferred_enum = bump.alloc(InferredEnum { name, initializer });
-			Ok(Node::new(Expression::InferredEnum(inferred_enum), span))
+			// let initializer = if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+			// 	let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
+			// 	span += struct_initializer.span;
+			// 	Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_)
+			// } else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
+			// 	tokens.next(messages)?;
+			// 	let expression = parse_expression(bump, messages, tokens, true)?;
+			// 	let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
+			// 	span += close_paren.span;
+			// 	Some(bump.alloc(EnumInitializer::Transparent { expression }) as &_)
+			// } else {
+			// 	None
+			// };
+
+			// let inferred_enum = bump.alloc(InferredEnum { name, initializer });
+			// Ok(Node::new(Expression::InferredEnum(inferred_enum), span))
 		}
 
 		_ => {
@@ -721,8 +726,6 @@ fn parse_following_period<'a>(
 	atom: Node<Expression<'a>>,
 	allow_struct_literal: bool,
 ) -> ParseResult<Node<Expression<'a>>> {
-	tokens.expect(messages, TokenKind::Period)?;
-
 	if tokens.peek_kind() == Ok(TokenKind::Exclamation) {
 		let exclamation = tokens.next(messages)?;
 		let span = atom.span + exclamation.span;
@@ -776,31 +779,33 @@ fn parse_following_period<'a>(
 		return Ok(Node::new(expression, span));
 	}
 
-	let name_token = tokens.expect(messages, TokenKind::Word)?;
-	let name = Node::from_token(name_token.text, name_token);
+	// let name_token = tokens.expect(messages, TokenKind::Word)?;
+	// let name = Node::from_token(name_token.text, name_token);
 
-	if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-		let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
-		let span = atom.span + name.span;
-		let enum_initializer = Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_);
-		let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer });
-		return Ok(Node::new(Expression::DotAcccess(field_read), span));
-	}
+	// if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+	// 	let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
+	// 	let span = atom.span + name.span;
+	// 	let enum_initializer = Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_);
+	// 	let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer });
+	// 	return Ok(Node::new(Expression::DotAcccess(field_read), span));
+	// }
 
-	if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokens.peek_kind() {
-		let type_arguments = parse_type_arguments(bump, messages, tokens)?
-			.map(|a| a.item)
-			.unwrap_or_default();
-		let arguments_node = parse_arguments(bump, messages, tokens)?;
-		let span = atom.span + arguments_node.span;
-		let arguments = arguments_node.item;
-		let method_call = MethodCall { base: atom, name, type_arguments, arguments };
-		return Ok(Node::new(Expression::MethodCall(bump.alloc(method_call)), span));
-	}
+	// if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokens.peek_kind() {
+	// 	let type_arguments = parse_type_arguments(bump, messages, tokens)?
+	// 		.map(|a| a.item)
+	// 		.unwrap_or_default();
+	// 	let arguments_node = parse_arguments(bump, messages, tokens)?;
+	// 	let span = atom.span + arguments_node.span;
+	// 	let arguments = arguments_node.item;
+	// 	let method_call = MethodCall { base: atom, name, type_arguments, arguments };
+	// 	return Ok(Node::new(Expression::MethodCall(bump.alloc(method_call)), span));
+	// }
 
-	let span = atom.span + name.span;
-	let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer: None });
-	return Ok(Node::new(Expression::DotAcccess(field_read), span));
+	// let span = atom.span + name.span;
+	// let field_read = bump.alloc(DotAccess { base: atom, name });
+	// return Ok(Node::new(Expression::DotAcccess(field_read), span));
+
+	parse_path_expression(bump, messages, tokens, Some(atom), allow_struct_literal)
 }
 
 fn parse_bracket_index<'a>(
@@ -1203,9 +1208,9 @@ fn parse_type_arguments<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
-) -> ParseResult<Option<Node<&'a [Node<Type<'a>>]>>> {
+) -> ParseResult<&'a [Node<Type<'a>>]> {
 	if tokens.peek_kind() != Ok(TokenKind::OpenGeneric) {
-		return Ok(None);
+		return Ok(&[]);
 	}
 
 	let open_token = tokens.expect(messages, TokenKind::OpenGeneric)?;
@@ -1228,7 +1233,7 @@ fn parse_type_arguments<'a>(
 		messages.message(error!("Empty type argument list").span(span));
 	}
 
-	Ok(Some(Node::new(types.into_bump_slice(), span)))
+	Ok(types.into_bump_slice())
 }
 
 fn parse_arguments<'a>(
@@ -1280,9 +1285,7 @@ fn parse_struct_initializer<'a>(
 			tokens.next(messages)?;
 			parse_expression(bump, messages, tokens, true)?
 		} else {
-			let path = PathSegments { segments: bump_vec![in bump; name].into_bump_slice() };
-			let type_arguments = &[];
-			let read = Read { path_segments: Node::new(path, name.span), type_arguments };
+			let read = Read { name, type_arguments: &[] };
 			Node::new(Expression::Read(read), name.span)
 		};
 
@@ -1509,13 +1512,13 @@ fn parse_import_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &
 		let word = Node::from_token(token.text, token);
 
 		let peeked_kind = tokens.peek_kind();
-		if peeked_kind != Ok(TokenKind::DoubleColon) {
+		if peeked_kind != Ok(TokenKind::Period) {
 			symbol_names.push(word);
 			break;
 		}
 
 		segments.push(word);
-		tokens.expect(messages, TokenKind::DoubleColon)?;
+		tokens.expect(messages, TokenKind::Period)?;
 	}
 
 	while tokens.peek_kind() == Ok(TokenKind::Comma) {
@@ -1551,7 +1554,7 @@ fn parse_path_segments<'a>(
 		let segment_token = tokens.expect(messages, TokenKind::Word)?;
 		segments.push(Node::from_token(segment_token.text, segment_token));
 
-		if tokens.peek_kind() == Ok(TokenKind::DoubleColon) {
+		if tokens.peek_kind() == Ok(TokenKind::Period) {
 			tokens.next(messages)?;
 		} else {
 			break;
@@ -1560,6 +1563,108 @@ fn parse_path_segments<'a>(
 
 	let span = segments.first().unwrap().span + segments.last().unwrap().span;
 	Ok(Node::new(PathSegments { segments: segments.into_bump_slice() }, span))
+}
+
+fn parse_path_expression<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	previous: Option<Node<Expression<'a>>>,
+	allow_struct_literal: bool,
+) -> ParseResult<Node<Expression<'a>>> {
+	let word_token = tokens.expect(messages, TokenKind::Word)?;
+	let name = Node::from_token(word_token.text, word_token);
+	let type_arguments = parse_type_arguments(bump, messages, tokens)?;
+
+	let (is_call, is_struct_literal) = match tokens.peek_kind() {
+		Ok(TokenKind::OpenParen) => (true, false),
+		Ok(TokenKind::OpenBrace) => (false, true),
+		_ => (false, false),
+	};
+
+	if is_call {
+		let arguments_node = parse_arguments(bump, messages, tokens)?;
+		let arguments = arguments_node.item;
+		let span = word_token.span + arguments_node.span;
+
+		let call = Call { base: previous, name, type_arguments, arguments };
+		return Ok(Node::new(Expression::Call(bump.alloc(call)), span));
+	}
+
+	let expression = if let Some(previous) = previous {
+		let span = previous.span + word_token.span;
+		let access = bump.alloc(DotAccess { base: previous, name, type_arguments });
+		Node::new(Expression::DotAccess(access), span)
+	} else {
+		let read = Read { name, type_arguments };
+		Node::from_token(Expression::Read(read), word_token)
+	};
+
+	if is_struct_literal && allow_struct_literal {
+		let initializer = parse_struct_initializer(bump, messages, tokens)?;
+		let span = word_token.span + initializer.span;
+
+		let literal = bump.alloc(StructLiteral { base: expression, initializer });
+		return Ok(Node::new(Expression::StructLiteral(literal), span));
+	}
+
+	if tokens.peek_kind() == Ok(TokenKind::Period) {
+		tokens.next(messages)?;
+
+		if tokens.peek_kind() != Ok(TokenKind::Word) {
+			return parse_following_period(bump, messages, tokens, expression, allow_struct_literal);
+		}
+
+		return parse_path_expression(bump, messages, tokens, Some(expression), allow_struct_literal);
+	}
+
+	Ok(expression)
+}
+
+fn parse_dot_infer<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	allow_struct_literal: bool,
+) -> ParseResult<Node<Expression<'a>>> {
+	tokens.expect(messages, TokenKind::Period)?;
+
+	let word_token = tokens.expect(messages, TokenKind::Word)?;
+	let name = Node::from_token(word_token.text, word_token);
+
+	if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
+		let arguments_node = parse_arguments(bump, messages, tokens)?;
+		let arguments = arguments_node.item;
+		let span = word_token.span + arguments_node.span;
+
+		let infer = bump.alloc(DotInferCall { name, arguments });
+		let expression = Node::new(Expression::DotInferCall(infer), span);
+		return Ok(expression);
+	}
+
+	let type_arguments = parse_type_arguments(bump, messages, tokens)?;
+	let infer = bump.alloc(DotInfer { name, type_arguments });
+	let expression = Node::from_token(Expression::DotInfer(infer), word_token);
+
+	if tokens.peek_kind() == Ok(TokenKind::OpenBrace) && allow_struct_literal {
+		let initializer = parse_struct_initializer(bump, messages, tokens)?;
+		let span = word_token.span + initializer.span;
+
+		let literal = bump.alloc(StructLiteral { base: expression, initializer });
+		return Ok(Node::new(Expression::StructLiteral(literal), span));
+	}
+
+	if tokens.peek_kind() == Ok(TokenKind::Period) {
+		tokens.next(messages)?;
+
+		if tokens.peek_kind() != Ok(TokenKind::Word) {
+			return parse_following_period(bump, messages, tokens, expression, allow_struct_literal);
+		}
+
+		return parse_path_expression(bump, messages, tokens, Some(expression), allow_struct_literal);
+	}
+
+	Ok(expression)
 }
 
 fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Type<'a>>> {

@@ -6,9 +6,11 @@ use rustc_hash::FxHashMap;
 
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
+use crate::frontend::root_layers::RootLayer;
 use crate::frontend::span::{DebugLocation, Span};
 use crate::frontend::tree::{self, BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
+use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
 #[derive(Debug, Copy, Clone)]
@@ -473,7 +475,10 @@ impl<'a> Expression<'a> {
 pub enum ExpressionKind<'a> {
 	AnyCollapse,
 	Void,
-	Type(TypeId),
+
+	ModuleLayer(Ref<RwLock<RootLayer<'a>>>),
+	Type { type_id: TypeId, type_arguments: &'a [Node<tree::Type<'a>>] },
+	// Function { function_shape_index: usize },
 
 	Block(Block<'a>),
 	IfElseChain(Box<IfElseChain<'a>>),
@@ -510,7 +515,9 @@ impl<'a> ExpressionKind<'a> {
 		match self {
 			ExpressionKind::AnyCollapse => "AnyCollapse",
 			ExpressionKind::Void => "void value",
-			ExpressionKind::Type(_) => "type",
+			ExpressionKind::ModuleLayer(_) => "module",
+			ExpressionKind::Type { .. } => "type",
+			// ExpressionKind::Function { .. } => "function",
 			ExpressionKind::Block(_) => "block",
 			ExpressionKind::IfElseChain(_) => "if expression",
 			ExpressionKind::Match(_) => "match expression",
@@ -540,7 +547,9 @@ impl<'a> ExpressionKind<'a> {
 		match self {
 			ExpressionKind::AnyCollapse => "an AnyCollapse",
 			ExpressionKind::Void => "a void value",
-			ExpressionKind::Type(_) => "a type",
+			ExpressionKind::ModuleLayer(_) => "a module",
+			ExpressionKind::Type { .. } => "a type",
+			// ExpressionKind::Function { .. } => "a function",
 			ExpressionKind::Block(_) => "a block",
 			ExpressionKind::IfElseChain(_) => "a if expression",
 			ExpressionKind::Match(_) => "a match expression",
