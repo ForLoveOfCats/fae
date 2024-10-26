@@ -1,5 +1,5 @@
-import fae::memory::allocate_string_copied, free_str
-import fae::intrinsics::create_str
+import fae.memory.allocate_string_copied, free_str
+import fae.intrinsics.create_str
 
 fn slice_to_str(slice: []u8): str {
 	return create_str(slice.pointer, slice.length)

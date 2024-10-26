@@ -325,6 +325,7 @@ pub struct Enum<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct EnumVariant {
 	pub span: Span,
+	pub shape_index: usize,
 	pub type_id: TypeId,
 	pub is_transparent: bool,
 }
@@ -533,24 +534,51 @@ pub enum TypeEntryKind {
 		kind: PrimativeKind,
 		methods_index: usize,
 	},
+
 	UserType {
 		shape_index: usize,
 		specialization_index: usize,
 		methods_index: usize,
 	},
+
 	Pointer {
 		type_id: TypeId,
 		mutable: bool,
 	},
+
 	Slice(Slice),
+
 	UserTypeGeneric {
 		shape_index: usize,
 		generic_index: usize,
 	},
+
 	FunctionGeneric {
 		function_shape_index: usize,
 		generic_index: usize,
 	},
+}
+
+impl TypeEntryKind {
+	pub fn name(self) -> &'static str {
+		match self {
+			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::UserType { .. } => "type",
+			TypeEntryKind::Pointer { .. } => "pointer",
+			TypeEntryKind::Slice(_) => "slice",
+			TypeEntryKind::UserTypeGeneric { .. } => "type generic",
+			TypeEntryKind::FunctionGeneric { .. } => "function generic",
+		}
+	}
+
+	pub fn methods_index(self) -> Option<usize> {
+		match self {
+			TypeEntryKind::BuiltinType { methods_index, .. } | TypeEntryKind::UserType { methods_index, .. } => {
+				Some(methods_index)
+			}
+
+			_ => None,
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1597,7 +1625,8 @@ impl<'a> TypeStore<'a> {
 			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
 		};
 
-		let symbol = symbols.lookup_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
+		let symbol =
+			symbols.lookup_path_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
 		let shape_index = match symbol.kind {
 			SymbolKind::BuiltinType { type_id, .. } => {
 				if !type_arguments.is_empty() {
@@ -2022,13 +2051,14 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
+			let shape_index = variant_shape.struct_shape_index;
 			let type_id = self
 				.get_or_add_struct_shape_specialization(
 					messages,
 					function_store,
 					module_path,
 					generic_usages,
-					variant_shape.struct_shape_index,
+					shape_index,
 					None,
 					Ref::new(new_struct_type_arguments),
 				)
@@ -2038,7 +2068,7 @@ impl<'a> TypeStore<'a> {
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
 			let is_transparent = variant_shape.is_transparent;
-			variants.push(EnumVariant { span, type_id, is_transparent });
+			variants.push(EnumVariant { span, shape_index, type_id, is_transparent });
 			variants_by_name.insert(variant_shape.name, variant_index);
 		}
 

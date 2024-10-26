@@ -1,5 +1,5 @@
-import fae::intrinsics::create_slice_mut, create_str, create_non_null_invalid_pointer, create_non_null_invalid_slice
-import fae::libc::malloc, memcpy, memmove, memset
+import fae.intrinsics.create_slice_mut, create_str, create_non_null_invalid_pointer, create_non_null_invalid_slice
+import fae.libc.malloc, memcpy, memmove, memset
 
 generic T
 fn swap(a: *mut T, b: *mut T) {
@@ -50,7 +50,7 @@ fn allocate_region(length: isize): *mut T {
 	}
 
 	let size = (size_of<T>() * length).(usize)
-	return fae::libc::malloc(size).(*mut T)
+	return fae.libc.malloc(size).(*mut T)
 }
 
 generic T
@@ -59,14 +59,14 @@ fn reallocate_region(pointer: *mut *mut T, new_length: isize) {
 	if size_of<T>() <= 0 => return
 
 	let new_size = (size_of<T>() * new_length).(usize)
-	let result = fae::libc::realloc(pointer.*.(*mut u8), new_size)
+	let result = fae.libc.realloc(pointer.*.(*mut u8), new_size)
 	pointer.* = result.(*mut T)
 }
 
 generic T
 fn free(pointer: *T) {
 	if size_of<T>() <= 0 => return
-	fae::libc::free(pointer.(*u8))
+	fae.libc.free(pointer.(*u8))
 }
 
 generic T

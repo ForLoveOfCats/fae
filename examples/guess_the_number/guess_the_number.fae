@@ -1,13 +1,13 @@
-import fae::libc::rand
-import fae::io::file::File
-import fae::string::parse::parse_bytes_to_integer
+import fae.libc.rand
+import fae.io.file.File
+import fae.string.parse.parse_bytes_to_integer
 
 fn main() {
 	play_round()
 }
 
 fn seed_rand() {
-	import fae::libc::TimeT, srand, time
+	import fae.libc.TimeT, srand, time
 	let null = null_pointer<TimeT>()
 	srand(time(null).time_t.(u32))
 }
