@@ -249,16 +249,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		readable_index
 	}
 
-	pub fn lookup_path_symbol(&mut self, path: &PathSegments<'a>) -> Option<Symbol<'a>> {
-		self.symbols_scope.symbols.lookup_path_symbol(
-			self.messages,
-			self.root_layers,
-			self.type_store,
-			self.function_initial_symbols_length,
-			path,
-		)
-	}
-
 	pub fn lookup_symbol_by_name(&mut self, name: Node<&'a str>) -> Option<Symbol<'a>> {
 		self.symbols_scope.symbols.lookup_symbol_by_name(
 			self.messages,
@@ -281,11 +271,6 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			self.generic_parameters,
 			parsed_type,
 		)
-	}
-
-	pub fn get_enum_variant(&mut self, base: TypeId, name: Node<&'a str>) -> Option<TypeId> {
-		self.type_store
-			.get_enum_variant(self.messages, self.function_store, self.module_path, base, name)
 	}
 
 	pub fn check_is_external_access(&self, shape_index: usize) -> bool {
@@ -3520,12 +3505,6 @@ pub fn validate_expression<'a>(
 			expression
 		}
 
-		// tree::Expression::MethodCall(method_call) => {
-		// 	context.can_is_bind = false;
-		// 	let expression = validate_method_call(context, method_call, span);
-		// 	context.can_is_bind = original_can_is_bind;
-		// 	expression
-		// }
 		tree::Expression::Read(read) => {
 			context.can_is_bind = false;
 			let expression = validate_read(context, read, span);
@@ -4623,7 +4602,7 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 			validate_transparent_variant_initialization(context, call.name.item, variant, call.arguments, span)
 		}
 
-		NameOnBase::Method(..) => validate_method_call(context, base.unwrap(), call, span),
+		NameOnBase::Method(method_info) => validate_method_call(context, method_info, base.unwrap(), call, span),
 
 		NameOnBase::ModuleLayer(layer) => {
 			let message = error!("Cannot call module `{}`", layer.read().name);
@@ -4949,31 +4928,32 @@ fn validate_method_arguments<'a>(
 
 fn validate_method_call<'a>(
 	context: &mut Context<'a, '_, '_>,
+	method_info: MethodInfo,
 	base: Expression<'a>,
 	call: &'a tree::Call<'a>,
 	span: Span,
 ) -> Expression<'a> {
 	context.expected_type = None;
 	if let ExpressionKind::Type { type_id, .. } = base.kind {
-		return validate_static_method_call(context, type_id, call, span);
+		return validate_static_method_call(context, method_info, type_id, call, span);
 	}
 
 	let entry = context.type_store.type_entries.get(base.type_id);
-	let (methods_index, method_base_user_type, base_mutable) = match entry.kind {
+	let (method_base_user_type, base_mutable) = match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
 		}
 
-		TypeEntryKind::BuiltinType { methods_index, .. } => (methods_index, None, base.is_itself_mutable),
+		TypeEntryKind::BuiltinType { .. } => (None, base.is_itself_mutable),
 
-		TypeEntryKind::UserType { shape_index, specialization_index, methods_index } => {
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 			let method_base_user_type = MethodBaseUserType { shape_index, specialization_index };
-			(methods_index, Some(method_base_user_type), base.is_itself_mutable)
+			(Some(method_base_user_type), base.is_itself_mutable)
 		}
 
 		TypeEntryKind::Pointer { type_id, mutable } => {
 			let entry = context.type_store.type_entries.get(type_id);
-			let TypeEntryKind::UserType { shape_index, specialization_index, methods_index } = entry.kind else {
+			let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind else {
 				let found = context.type_name(base.type_id);
 				let error = error!("Cannot call method on type {found}");
 				context.message(error.span(span));
@@ -4981,7 +4961,7 @@ fn validate_method_call<'a>(
 			};
 
 			let method_base_user_type = MethodBaseUserType { shape_index, specialization_index };
-			(methods_index, Some(method_base_user_type), mutable && base.is_pointer_access_mutable)
+			(Some(method_base_user_type), mutable && base.is_pointer_access_mutable)
 		}
 
 		_ => {
@@ -4993,20 +4973,6 @@ fn validate_method_call<'a>(
 	};
 
 	let name = call.name.item;
-	let collections = context.type_store.method_collections.clone();
-	let collections = collections.read();
-	let method_info = match collections[methods_index].read().methods.get(name) {
-		Some(method_info) => *method_info,
-
-		None => {
-			let found = context.type_name(base.type_id);
-			let error = error!("No method {name} on type {found}");
-			context.messages.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-	};
-	drop(collections);
-
 	let function_shape_index = method_info.function_shape_index;
 	let mutable_self = match method_info.kind {
 		MethodKind::ImmutableSelf => false,
@@ -5059,21 +5025,21 @@ fn validate_method_call<'a>(
 
 fn validate_static_method_call<'a>(
 	context: &mut Context<'a, '_, '_>,
-	// method_call: &'a tree::MethodCall<'a>,
+	method_info: MethodInfo,
 	base_type_id: TypeId,
 	call: &'a tree::Call<'a>,
 	span: Span,
 ) -> Expression<'a> {
 	let entry = context.type_store.type_entries.get(base_type_id);
-	let (methods_index, method_base_user_type) = match entry.kind {
+	let method_base_user_type = match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
 		}
 
-		TypeEntryKind::BuiltinType { methods_index, .. } => (methods_index, None),
+		TypeEntryKind::BuiltinType { .. } => None,
 
-		TypeEntryKind::UserType { shape_index, specialization_index, methods_index } => {
-			(methods_index, Some(MethodBaseUserType { shape_index, specialization_index }))
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
+			Some(MethodBaseUserType { shape_index, specialization_index })
 		}
 
 		_ => {
@@ -5084,28 +5050,7 @@ fn validate_static_method_call<'a>(
 		}
 	};
 
-	// if let Some(method_base_user_type) = method_base_user_type {
-	// 	let result = validate_enum_variant_dot_initializer(context, method_call, method_base_user_type, span);
-	// 	if let Some(expression) = result {
-	// 		return expression;
-	// 	}
-	// }
-
 	let name = call.name.item;
-	let collections = context.type_store.method_collections.clone();
-	let collections = collections.read();
-	let method_info = match collections[methods_index].read().methods.get(name) {
-		Some(method_info) => *method_info,
-
-		None => {
-			let found = context.type_name(base_type_id);
-			let error = error!("No static method {name} on type {found}");
-			context.messages.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-	};
-	drop(collections);
-
 	match method_info.kind {
 		MethodKind::ImmutableSelf | MethodKind::MutableSelf => {
 			let error = error!("Cannot call instance method `{name}` statically");
@@ -5513,13 +5458,13 @@ fn lookup_variant<'a>(
 
 	return Some(variants[variant_index]);
 }
+
 fn validate_dot_infer<'a>(context: &mut Context<'a, '_, '_>, dot_infer: &'a tree::DotInfer<'a>, span: Span) -> Expression<'a> {
 	let Some(inferred_variant) = infer_variant(context, dot_infer.name, span) else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let type_id = inferred_variant.type_id;
-	let type_arguments = dot_infer.type_arguments;
 	let kind = ExpressionKind::Type { type_id };
 	return Expression {
 		span,

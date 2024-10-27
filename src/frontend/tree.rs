@@ -490,7 +490,6 @@ pub struct DotAccess<'a> {
 #[derive(Debug)]
 pub struct DotInfer<'a> {
 	pub name: Node<&'a str>,
-	pub type_arguments: &'a [Node<Type<'a>>],
 }
 
 #[derive(Debug)]

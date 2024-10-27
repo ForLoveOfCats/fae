@@ -325,7 +325,6 @@ pub struct Enum<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct EnumVariant {
 	pub span: Span,
-	pub shape_index: usize,
 	pub type_id: TypeId,
 	pub is_transparent: bool,
 }
@@ -560,6 +559,7 @@ pub enum TypeEntryKind {
 }
 
 impl TypeEntryKind {
+	#[allow(dead_code)] // TODO: Do we need to keep this around
 	pub fn name(self) -> &'static str {
 		match self {
 			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::UserType { .. } => "type",
@@ -1675,56 +1675,6 @@ impl<'a> TypeStore<'a> {
 		Some(type_id)
 	}
 
-	pub fn get_enum_variant(
-		&mut self,
-		messages: &mut Messages<'a>,
-		function_store: &FunctionStore<'a>,
-		module_path: &[String],
-		base: TypeId,
-		name: Node<&'a str>,
-	) -> Option<TypeId> {
-		let mut report_not_enum_error = |this: &mut Self| {
-			let found = this.type_name(function_store, module_path, base);
-			let error = error!("Type {found} does not have variants as it is not an enum");
-			messages.message(error.span(name.span));
-		};
-
-		let entry = self.type_entries.get(base);
-		let user_types = self.user_types.read();
-
-		let (lock, specialization_index) = match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
-				(user_types[shape_index].clone(), specialization_index)
-			}
-
-			_ => {
-				drop(user_types);
-				report_not_enum_error(self);
-				return None;
-			}
-		};
-		drop(user_types);
-
-		let shape = lock.read();
-		let specialization = if let UserTypeKind::Enum { shape } = &shape.kind {
-			&shape.specializations[specialization_index]
-		} else {
-			drop(shape);
-			report_not_enum_error(self);
-			return None;
-		};
-
-		if let Some(&variant_index) = specialization.variants_by_name.get(name.item) {
-			Some(specialization.variants[variant_index].type_id)
-		} else {
-			drop(shape);
-			let found = self.type_name(function_store, module_path, base);
-			let error = error!("No variant `{}` found on enum {found}", name.item);
-			messages.message(error.span(name.span));
-			None
-		}
-	}
-
 	pub fn get_or_add_shape_specialization_in_scope(
 		&mut self,
 		messages: &mut Messages<'a>,
@@ -2051,14 +2001,13 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			let shape_index = variant_shape.struct_shape_index;
 			let type_id = self
 				.get_or_add_struct_shape_specialization(
 					messages,
 					function_store,
 					module_path,
 					generic_usages,
-					shape_index,
+					variant_shape.struct_shape_index,
 					None,
 					Ref::new(new_struct_type_arguments),
 				)
@@ -2068,7 +2017,7 @@ impl<'a> TypeStore<'a> {
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
 			let is_transparent = variant_shape.is_transparent;
-			variants.push(EnumVariant { span, shape_index, type_id, is_transparent });
+			variants.push(EnumVariant { span, type_id, is_transparent });
 			variants_by_name.insert(variant_shape.name, variant_index);
 		}
 
