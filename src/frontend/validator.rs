@@ -4526,12 +4526,13 @@ fn lookup_name_on_base<'a>(
 			fstr_fields,
 			false,
 		);
-	} else {
+	} else if !base.type_id.is_any_collapse(context.type_store) {
 		let on = base.kind.name_with_article();
 		let error = error!("Cannot dot-access on {on}, expected a value with fields or methods");
 		context.message(error.span(base.span));
-		None
 	}
+
+	None
 }
 
 fn lookup_field_in_fields<'a>(
@@ -5239,9 +5240,30 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				immutable_reason,
 			}));
 
+			let field_entry = context.type_store.type_entries.get(field.type_id);
+			let type_id = match field_entry.kind {
+				TypeEntryKind::Pointer { type_id: pointed, .. } => {
+					if is_pointer_access_mutable {
+						field.type_id
+					} else {
+						context.type_store.pointer_to(pointed, false)
+					}
+				}
+
+				TypeEntryKind::Slice(slice) => {
+					if is_pointer_access_mutable {
+						field.type_id
+					} else {
+						context.type_store.slice_of(slice.type_id, false)
+					}
+				}
+
+				_ => field.type_id,
+			};
+
 			return Expression {
 				span,
-				type_id: field.type_id,
+				type_id,
 				is_itself_mutable,
 				is_pointer_access_mutable,
 				yields: false,
@@ -5495,240 +5517,6 @@ fn validate_dot_infer_call<'a>(
 		span,
 	)
 }
-
-// fn validate_field_access<'a>(
-// 	context: &mut Context<'a, '_, '_>,
-// 	dot_access: &'a tree::DotAccess<'a>,
-// 	span: Span,
-// ) -> Expression<'a> {
-// 	// Dumb name, this structure is forced to make the lock scope juggling not horrid
-// 	fn handle_fields<'a>(
-// 		context: &mut Context<'a, '_, '_>,
-// 		dot_access: &tree::DotAccess<'a>,
-// 		base: Expression<'a>,
-// 		is_itself_mutable: bool,
-// 		is_pointer_access_mutable: bool,
-// 		fields: &[Field<'a>],
-// 		external_access: bool,
-// 		span: Span,
-// 	) -> Expression<'a> {
-// 		// TODO: Hashmapify this linear lookup
-// 		let mut fields = fields.iter().enumerate();
-// 		let Some((field_index, field)) = fields.find(|f| f.1.name == dot_access.name.item) else {
-// 			let type_name = context.type_name(base.type_id);
-// 			let error = error!("No field `{}` on {}", dot_access.name.item, type_name);
-// 			context.messages.message(error.span(dot_access.name.span));
-// 			return Expression::any_collapse(context.type_store, span);
-// 		};
-
-// 		let is_internal = matches!(field.attribute, Some(Node { item: FieldAttribute::Internal, .. }));
-// 		let is_readable = matches!(field.attribute, Some(Node { item: FieldAttribute::Readable, .. }));
-// 		let is_read_only = field.read_only;
-
-// 		if external_access && is_internal {
-// 			let type_name = context.type_name(base.type_id);
-// 			let error = error!("Cannot publicly access internal field `{}` on type {}", dot_access.name.item, type_name);
-// 			context.messages.message(error.span(dot_access.name.span));
-// 			return Expression::any_collapse(context.type_store, span);
-// 		}
-
-// 		let (is_itself_mutable, is_pointer_access_mutable, reason) = if external_access && is_readable {
-// 			(false, true, Some(FieldReadImmutableReason::Readable))
-// 		} else if is_read_only {
-// 			(false, true, Some(FieldReadImmutableReason::ReadOnly))
-// 		} else {
-// 			(is_itself_mutable, is_pointer_access_mutable, None)
-// 		};
-
-// 		let field_entry = context.type_store.type_entries.get(field.type_id);
-// 		let type_id = match field_entry.kind {
-// 			TypeEntryKind::Pointer { type_id: pointed, .. } => {
-// 				if is_pointer_access_mutable {
-// 					field.type_id
-// 				} else {
-// 					context.type_store.pointer_to(pointed, false)
-// 				}
-// 			}
-
-// 			TypeEntryKind::Slice(slice) => {
-// 				if is_pointer_access_mutable {
-// 					field.type_id
-// 				} else {
-// 					context.type_store.slice_of(slice.type_id, false)
-// 				}
-// 			}
-
-// 			_ => field.type_id,
-// 		};
-
-// 		let field_read = FieldRead {
-// 			base,
-// 			name: field.name,
-// 			field_index,
-// 			immutable_reason: reason,
-// 		};
-// 		let kind = ExpressionKind::FieldRead(Box::new(field_read));
-// 		Expression {
-// 			span,
-// 			type_id,
-// 			is_itself_mutable,
-// 			is_pointer_access_mutable,
-// 			yields: false,
-// 			returns: false,
-// 			kind,
-// 			debug_location: span.debug_location(context.parsed_files),
-// 		}
-// 	}
-
-// 	let base = validate_expression(context, &dot_access.base);
-// 	context.expected_type = None;
-// 	if base.type_id.is_any_collapse(context.type_store) {
-// 		return Expression::any_collapse(context.type_store, span);
-// 	}
-
-// 	if let ExpressionKind::Type(base) = base.kind {
-// 		return validate_dot_access_enum_literal(context, base, dot_access, span);
-// 	}
-
-// 	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base.type_id.as_pointed(context.type_store) {
-// 		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
-// 		None => (base.type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
-// 	};
-
-// 	let type_entry = context.type_store.type_entries.get(type_id);
-// 	match type_entry.kind {
-// 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
-// 			let user_type = context.type_store.user_types.read()[shape_index].clone();
-// 			let user_type = user_type.read();
-
-// 			match &user_type.kind {
-// 				UserTypeKind::Struct { shape } => {
-// 					let fields = shape.specializations[specialization_index].fields.clone();
-// 					drop(user_type);
-// 					let external_access = context.check_is_external_access(shape_index);
-// 					return handle_fields(
-// 						context,
-// 						dot_access,
-// 						base,
-// 						is_itself_mutable,
-// 						is_pointer_access_mutable,
-// 						&fields,
-// 						external_access,
-// 						span,
-// 					);
-// 				}
-
-// 				UserTypeKind::Enum { shape } => {
-// 					let fields = shape.specializations[specialization_index].shared_fields.clone();
-// 					drop(user_type);
-// 					let external_access = context.check_is_external_access(shape_index);
-// 					return handle_fields(
-// 						context,
-// 						dot_access,
-// 						base,
-// 						is_itself_mutable,
-// 						is_pointer_access_mutable,
-// 						&fields,
-// 						external_access,
-// 						span,
-// 					);
-// 				}
-// 			}
-// 		}
-
-// 		_ => {}
-// 	}
-
-// 	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
-// 		let slice_fields = &[
-// 			Field {
-// 				span: None,
-// 				name: "pointer",
-// 				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
-// 				attribute: None,
-// 				read_only: false,
-// 			},
-// 			Field {
-// 				span: None,
-// 				name: "length",
-// 				type_id: context.type_store.isize_type_id(),
-// 				attribute: None,
-// 				read_only: false,
-// 			},
-// 		];
-// 		let is_pointer_access_mutable = is_pointer_access_mutable && as_slice.mutable;
-// 		return handle_fields(
-// 			context,
-// 			dot_access,
-// 			base,
-// 			is_itself_mutable,
-// 			is_pointer_access_mutable,
-// 			slice_fields,
-// 			false,
-// 			span,
-// 		);
-// 	} else if type_id.is_string(context.type_store) {
-// 		let u8_type_id = context.type_store.u8_type_id();
-// 		let str_fields = &[
-// 			Field {
-// 				span: None,
-// 				name: "pointer",
-// 				type_id: context.type_store.pointer_to(u8_type_id, false),
-// 				attribute: None,
-// 				read_only: true,
-// 			},
-// 			Field {
-// 				span: None,
-// 				name: "length",
-// 				type_id: context.type_store.isize_type_id(),
-// 				attribute: None,
-// 				read_only: true,
-// 			},
-// 			Field {
-// 				span: None,
-// 				name: "bytes",
-// 				type_id: context.type_store.u8_slice_type_id(),
-// 				attribute: None,
-// 				read_only: true,
-// 			},
-// 		];
-// 		return handle_fields(
-// 			context,
-// 			dot_access,
-// 			base,
-// 			is_itself_mutable,
-// 			is_pointer_access_mutable,
-// 			str_fields,
-// 			false,
-// 			span,
-// 		);
-// 	} else if type_id.is_format_string(context.type_store) {
-// 		let item_type_id = context.lang_items.read().format_string_item_type.unwrap();
-// 		let fstr_fields = &[Field {
-// 			span: None,
-// 			name: "items",
-// 			type_id: context.type_store.slice_of(item_type_id, false),
-// 			attribute: None,
-// 			read_only: true,
-// 		}];
-// 		return handle_fields(
-// 			context,
-// 			dot_access,
-// 			base,
-// 			is_itself_mutable,
-// 			is_pointer_access_mutable,
-// 			fstr_fields,
-// 			false,
-// 			span,
-// 		);
-// 	} else {
-// 		let on = base.kind.name_with_article();
-// 		let found = context.type_name(base.type_id);
-// 		let error = error!("Cannot access field on {on} of type {found}");
-// 		context.messages.message(error.span(span));
-// 		return Expression::any_collapse(context.type_store, span);
-// 	}
-// }
 
 // fn validate_inferred_enum<'a>(
 // 	context: &mut Context<'a, '_, '_>,
