@@ -1,8 +1,8 @@
-import fae::libc::malloc
+import fae.libc.malloc
 
 fn main() {
 	let source = "Hello world!"
-	let string = fae::intrinsics::create_str(source.pointer, source.length)
+	let string = fae.intrinsics.create_str(source.pointer, source.length)
 
 	mut index: isize = 0
 	while index < string.length {
@@ -15,13 +15,13 @@ fn main() {
 	println("")
 
 	let pointer = malloc(5)
-	let slice = fae::intrinsics::create_slice_mut<u8>(pointer, 5)
+	let slice = fae.intrinsics.create_slice_mut<u8>(pointer, 5)
 	slice[0] = 65
 	slice[1] = 66
 	slice[2] = 67
 	slice[3] = 68
 	slice[4] = 69
 
-	let string = fae::intrinsics::create_str(slice.pointer, slice.length)
+	let string = fae.intrinsics.create_str(slice.pointer, slice.length)
 	println(string)
 }

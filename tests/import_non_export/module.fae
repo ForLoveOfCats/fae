@@ -1,4 +1,4 @@
-import origin::Pi, MyStatic, MyStruct, MyEnum, my_function
+import origin.Pi, MyStatic, MyStruct, MyEnum, my_function
 
 fn do_something() {
 	MyStatic = "Hello world!"

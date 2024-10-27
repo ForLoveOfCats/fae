@@ -1,6 +1,6 @@
-import abc::Abc
-import fae::Abc
+import abc.Abc
+import fae.Abc
 
-import other::Abc
+import other.Abc
 
 fn main() {}

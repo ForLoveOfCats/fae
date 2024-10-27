@@ -24,7 +24,7 @@ fn main() {
 	println(f"{s.a}, {s.b}, {s.c}")
 
 
-	let ea = Enum::A {
+	let ea = Enum.A {
 
 		shared: "Hello"
 
@@ -33,7 +33,7 @@ fn main() {
 	}
 	println(f"{ea.shared}, {ea.one}")
 
-	let eb = Enum::B {
+	let eb = Enum.B {
 
 		shared: "World"
 

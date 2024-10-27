@@ -1,4 +1,4 @@
-import fae::collections::list::List
+import fae.collections.list.List
 
 fn main() {
 	mut list = List<str>.new()

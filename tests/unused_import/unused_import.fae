@@ -1,3 +1,3 @@
-import other::A, B, C, d
+import other.A, B, C, d
 
 fn main() {}

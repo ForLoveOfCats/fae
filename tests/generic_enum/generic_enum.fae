@@ -45,6 +45,6 @@ enum Enum {
 }
 
 generic T
-fn print_error(arg: Enum::Error<T, str>) {
+fn print_error(arg: Enum.Error<T, str>) {
 	println(f"Error: {arg.value}")
 }

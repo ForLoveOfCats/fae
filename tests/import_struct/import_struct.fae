@@ -1,4 +1,4 @@
-import other::B
+import other.B
 
 struct A {
 	field: B
@@ -7,5 +7,5 @@ struct A {
 fn main() {
 	let a = A { field: B { field: 5 } }
 	println(f"{a.field.field}")
-	other::func(a)
+	other.func(a)
 }

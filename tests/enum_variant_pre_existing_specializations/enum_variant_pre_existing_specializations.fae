@@ -1,5 +1,5 @@
 struct Struct {
-	variant: *Enum::Variant
+	variant: *Enum.Variant
 }
 
 enum Enum {
@@ -7,7 +7,7 @@ enum Enum {
 }
 
 fn main() {
-	let variant = Enum::Variant { field: 3 }
+	let variant = Enum.Variant { field: 3 }
 	let instance = Struct { variant: variant.& }
 	println(f"{instance.variant.field}")
 }

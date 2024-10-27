@@ -14,7 +14,7 @@ fn new(): Enum {
 	return .Variant { shared: 1, variant: 2 }
 }
 
-method Enum::Variant
+method Enum.Variant
 fn compare_shared(other: Enum): bool {
 	if other is Variant => println(f"{self.variant}, {other.variant}")
 	return other.shared == self.shared

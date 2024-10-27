@@ -1,4 +1,4 @@
-import module::Struct
+import module.Struct
 
 method Struct
 fn print() {

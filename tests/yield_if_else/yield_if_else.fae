@@ -10,7 +10,7 @@ fn main() {
 	bare_if_else(true)
 
 	let a = if false => yield "if"
-	else => fae::libc::exit(0)
+	else => fae.libc.exit(0)
 	println(a)
 }
 

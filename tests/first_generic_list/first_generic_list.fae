@@ -1,4 +1,4 @@
-import fae::libc::realloc, free
+import fae.libc.realloc, free
 
 generic T
 fn null_reference(): *mut T {

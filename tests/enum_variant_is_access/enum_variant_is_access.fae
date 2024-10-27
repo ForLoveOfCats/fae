@@ -12,7 +12,7 @@ fn print_number(value: JsonValue) {
 		println(f"It had offset {number.offset}")
 
 		// Check that the type is what we expect
-		let copy: JsonValue::Number = number
+		let copy: JsonValue.Number = number
 		println(f"Copy number is {copy.value}")
 	}
 }
