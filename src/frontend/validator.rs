@@ -5264,7 +5264,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			let kind = ExpressionKind::Type { type_id: variant.type_id };
 			return Expression {
 				span,
-				type_id: context.type_store.any_collapse_type_id(), // HACK
+				type_id: variant.type_id,
 				is_itself_mutable: false,
 				is_pointer_access_mutable: false,
 				yields: false,
@@ -5443,18 +5443,6 @@ fn validate_symbol_read<'a>(
 			};
 		}
 
-		// SymbolKind::Function { function_shape_index } => {
-		// 	return Expression {
-		// 		span,
-		// 		type_id: context.type_store.any_collapse_type_id(), // HACK
-		// 		is_itself_mutable: false,
-		// 		is_pointer_access_mutable: false,
-		// 		yields: false,
-		// 		returns: false,
-		// 		kind: ExpressionKind::Function { function_shape_index },
-		// 		debug_location: span.debug_location(context.parsed_files),
-		// 	};
-		// }
 		kind => {
 			context.message(error!("Cannot read value from {kind}").span(span));
 			return Expression::any_collapse(context.type_store, span);
