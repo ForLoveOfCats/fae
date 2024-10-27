@@ -9,7 +9,7 @@ fn allocate(): *mut T {
 
 generic T
 fn deallocate(ptr: *mut T) {
-	fae::libc::free(ptr.(*mut u8))
+	fae.libc.free(ptr.(*mut u8))
 }
 
 fn takes_ptr(ptr: *u64) {

@@ -1,4 +1,4 @@
-import import_struct::A
+import import_struct.A
 
 struct B {
 	field: u16

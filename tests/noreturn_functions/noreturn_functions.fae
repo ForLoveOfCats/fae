@@ -9,5 +9,5 @@ fn must_return(arg: bool): i32 {
 }
 
 fn does_not_return(): noreturn {
-	fae::libc::exit(0)
+	fae.libc.exit(0)
 }
