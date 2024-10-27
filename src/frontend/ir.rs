@@ -477,8 +477,7 @@ pub enum ExpressionKind<'a> {
 	Void,
 
 	ModuleLayer(Ref<RwLock<RootLayer<'a>>>),
-	Type { type_id: TypeId, type_arguments: &'a [Node<tree::Type<'a>>] },
-	// Function { function_shape_index: usize },
+	Type { type_id: TypeId },
 
 	Block(Block<'a>),
 	IfElseChain(Box<IfElseChain<'a>>),
