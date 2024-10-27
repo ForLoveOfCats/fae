@@ -1642,8 +1642,7 @@ fn parse_dot_infer<'a>(
 		return Ok(expression);
 	}
 
-	let type_arguments = parse_type_arguments(bump, messages, tokens)?;
-	let infer = bump.alloc(DotInfer { name, type_arguments });
+	let infer = bump.alloc(DotInfer { name });
 	let expression = Node::from_token(Expression::DotInfer(infer), word_token);
 
 	if tokens.peek_kind() == Ok(TokenKind::OpenBrace) && allow_struct_literal {
