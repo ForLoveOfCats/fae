@@ -4378,10 +4378,13 @@ fn validate_struct_initializer<'a>(
 	field_initializers
 }
 
+#[derive(Debug)]
 enum NameOnBase<'a> {
 	ModuleLayer(Ref<RwLock<RootLayer<'a>>>),
 
 	Symbol(Symbol<'a>),
+
+	Variant(EnumVariant),
 
 	Method(MethodInfo),
 
@@ -4427,8 +4430,9 @@ fn lookup_name_on_base<'a>(
 		if let Some(methods_index) = entry.kind.methods_index() {
 			let collections = context.type_store.method_collections.read();
 			let collection = collections[methods_index].read();
-			let info = collection.methods.get(name.item).copied();
-			return info.map(|info| NameOnBase::Method(info));
+			if let Some(info) = collection.methods.get(name.item).copied() {
+				return Some(NameOnBase::Method(info));
+			}
 		}
 	}
 
@@ -4440,7 +4444,14 @@ fn lookup_name_on_base<'a>(
 
 			let fields = match &user_type.kind {
 				UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.as_ref(),
-				UserTypeKind::Enum { shape } => shape.specializations[specialization_index].shared_fields.as_ref(),
+
+				UserTypeKind::Enum { shape } => {
+					if let Some(variant) = lookup_variant(context, shape, specialization_index, name) {
+						return Some(NameOnBase::Variant(variant));
+					}
+
+					shape.specializations[specialization_index].shared_fields.as_ref()
+				}
 			};
 
 			return lookup_field_in_fields(
@@ -4454,11 +4465,7 @@ fn lookup_name_on_base<'a>(
 			);
 		}
 
-		_ => {
-			// let error = error!("Cannot dot-access on this expression, expected a value with fields or methods");
-			// context.message(error.span(base.span));
-			// None
-		}
+		_ => {}
 	}
 
 	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
@@ -4611,6 +4618,11 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 
 	match on_base {
 		NameOnBase::Symbol(symbol) => validate_symbol_call(context, symbol, call, span),
+
+		NameOnBase::Variant(variant) => {
+			validate_transparent_variant_initialization(context, call.name.item, variant, call.arguments, span)
+		}
+
 		NameOnBase::Method(..) => validate_method_call(context, base.unwrap(), call, span),
 
 		NameOnBase::ModuleLayer(layer) => {
@@ -5248,6 +5260,20 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 
 		NameOnBase::Symbol(symbol) => return validate_symbol_read(context, symbol, dot_access.type_arguments, span),
 
+		NameOnBase::Variant(variant) => {
+			let kind = ExpressionKind::Type { type_id: variant.type_id };
+			return Expression {
+				span,
+				type_id: context.type_store.any_collapse_type_id(), // HACK
+				is_itself_mutable: false,
+				is_pointer_access_mutable: false,
+				yields: false,
+				returns: false,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			};
+		}
+
 		NameOnBase::Method(..) => {
 			let message = error!("Cannot dot-access method `{}`", dot_access.name.item);
 			context.message(message.span(dot_access.name.span));
@@ -5360,7 +5386,7 @@ fn validate_symbol_read<'a>(
 			if type_id.is_void(context.type_store) {
 				return Expression::void(context.type_store, context.parsed_files, span);
 			} else {
-				let kind = ExpressionKind::Type { type_id, type_arguments };
+				let kind = ExpressionKind::Type { type_id };
 				return Expression {
 					span,
 					type_id,
@@ -5391,7 +5417,7 @@ fn validate_symbol_read<'a>(
 				return Expression::any_collapse(context.type_store, span);
 			};
 
-			let kind = ExpressionKind::Type { type_id, type_arguments };
+			let kind = ExpressionKind::Type { type_id };
 			return Expression {
 				span,
 				type_id,
@@ -5470,20 +5496,7 @@ fn infer_variant<'a>(context: &mut Context<'a, '_, '_>, name: Node<&'a str>, spa
 		let user_type = lock.read();
 
 		if let UserTypeKind::Enum { shape } = &user_type.kind {
-			let specialization = &shape.specializations[specialization_index];
-			let specialization_type_id = specialization.type_id;
-			let variants = specialization.variants.clone();
-			let variants_by_name = specialization.variants_by_name.clone();
-			drop(user_type);
-
-			let Some(&variant_index) = variants_by_name.get(name.item) else {
-				let expected = context.type_name(specialization_type_id);
-				let error = error!("Expected enum {expected} has no variant named `{}`", name.item);
-				context.messages.message(error.span(name.span));
-				return None;
-			};
-
-			return Some(variants[variant_index]);
+			return lookup_variant(context, shape, specialization_index, name);
 		}
 	}
 
@@ -5492,6 +5505,26 @@ fn infer_variant<'a>(context: &mut Context<'a, '_, '_>, name: Node<&'a str>, spa
 	None
 }
 
+fn lookup_variant<'a>(
+	context: &mut Context<'a, '_, '_>,
+	shape: &EnumShape<'a>,
+	specialization_index: usize,
+	name: Node<&'a str>,
+) -> Option<EnumVariant> {
+	let specialization = &shape.specializations[specialization_index];
+	let specialization_type_id = specialization.type_id;
+	let variants = specialization.variants.clone();
+	let variants_by_name = specialization.variants_by_name.clone();
+
+	let Some(&variant_index) = variants_by_name.get(name.item) else {
+		let expected = context.type_name(specialization_type_id);
+		let error = error!("Expected enum {expected} has no variant named `{}`", name.item);
+		context.messages.message(error.span(name.span));
+		return None;
+	};
+
+	return Some(variants[variant_index]);
+}
 fn validate_dot_infer<'a>(context: &mut Context<'a, '_, '_>, dot_infer: &'a tree::DotInfer<'a>, span: Span) -> Expression<'a> {
 	let Some(inferred_variant) = infer_variant(context, dot_infer.name, span) else {
 		return Expression::any_collapse(context.type_store, span);
@@ -5499,7 +5532,7 @@ fn validate_dot_infer<'a>(context: &mut Context<'a, '_, '_>, dot_infer: &'a tree
 
 	let type_id = inferred_variant.type_id;
 	let type_arguments = dot_infer.type_arguments;
-	let kind = ExpressionKind::Type { type_id, type_arguments };
+	let kind = ExpressionKind::Type { type_id };
 	return Expression {
 		span,
 		type_id,
