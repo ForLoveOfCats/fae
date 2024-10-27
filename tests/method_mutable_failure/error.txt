@@ -1,7 +1,7 @@
 Validation error: ./tests/method_mutable_failure/method_mutable_failure.fae, line 17: Cannot call mutable method `increment` on an immutable object
   17|     instance.increment()
-          ^^^^^^^^^^^^^^^^^^^^
+                   ^^^^^^^^^^^
 
 Validation error: ./tests/method_mutable_failure/method_mutable_failure.fae, line 20: Cannot call mutable method `increment` on an immutable object
   20|     value.increment()
-          ^^^^^^^^^^^^^^^^^
+                ^^^^^^^^^^^
