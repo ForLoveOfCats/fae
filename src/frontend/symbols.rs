@@ -173,7 +173,7 @@ impl<'a> Symbols<'a> {
 			return Some(found);
 		}
 
-		if let Some(layer) = root_layers.layer_for_module_name(Some(messages), name) {
+		if let Some(layer) = root_layers.layer_for_module_name(name) {
 			let kind = SymbolKind::Module { layer };
 			let span = Some(name.span);
 			let name = name.item;

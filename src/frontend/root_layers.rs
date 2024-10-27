@@ -31,18 +31,10 @@ impl<'a> RootLayers<'a> {
 		layer_for_module_path_under_root(messages, self.root.clone(), segments)
 	}
 
-	pub fn layer_for_module_name(
-		&self,
-		messages: Option<&mut Messages>,
-		name: Node<&'a str>,
-	) -> Option<Ref<RwLock<RootLayer<'a>>>> {
+	pub fn layer_for_module_name(&self, name: Node<&'a str>) -> Option<Ref<RwLock<RootLayer<'a>>>> {
 		let guard = self.root.read();
 		if let Some(layer) = guard.children.get(name.item) {
 			return Some(layer.clone());
-		}
-
-		if let Some(messages) = messages {
-			messages.message(error!("Cannot find module for name").span(name.span));
 		}
 
 		None
