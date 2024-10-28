@@ -4425,8 +4425,9 @@ fn lookup_name_on_base<'a>(
 				UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.as_ref(),
 
 				UserTypeKind::Enum { shape } => {
-					if let Some(variant) = lookup_variant(context, shape, specialization_index, name) {
-						return Some(NameOnBase::Variant(variant));
+					if let ExpressionKind::Type { .. } = base.kind {
+						let variant = lookup_variant(context, shape, specialization_index, name, false);
+						return variant.map(|variant| NameOnBase::Variant(variant));
 					}
 
 					shape.specializations[specialization_index].shared_fields.as_ref()
@@ -5451,7 +5452,7 @@ fn infer_variant<'a>(context: &mut Context<'a, '_, '_>, name: Node<&'a str>, spa
 		let user_type = lock.read();
 
 		if let UserTypeKind::Enum { shape } = &user_type.kind {
-			return lookup_variant(context, shape, specialization_index, name);
+			return lookup_variant(context, shape, specialization_index, name, true);
 		}
 	}
 
@@ -5465,6 +5466,7 @@ fn lookup_variant<'a>(
 	shape: &EnumShape<'a>,
 	specialization_index: usize,
 	name: Node<&'a str>,
+	is_inferred: bool,
 ) -> Option<EnumVariant> {
 	let specialization = &shape.specializations[specialization_index];
 	let specialization_type_id = specialization.type_id;
@@ -5472,8 +5474,12 @@ fn lookup_variant<'a>(
 	let variants_by_name = specialization.variants_by_name.clone();
 
 	let Some(&variant_index) = variants_by_name.get(name.item) else {
-		let expected = context.type_name(specialization_type_id);
-		let error = error!("Expected enum {expected} has no variant named `{}`", name.item);
+		let enum_name = context.type_name(specialization_type_id);
+		let error = if is_inferred {
+			error!("Expected enum {enum_name} has no variant named `{}`", name.item)
+		} else {
+			error!("Enum {enum_name} has no variant named `{}`", name.item)
+		};
 		context.messages.message(error.span(name.span));
 		return None;
 	};

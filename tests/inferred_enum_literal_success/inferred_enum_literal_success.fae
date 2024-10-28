@@ -100,7 +100,7 @@ fn new(enums: Enum, second: i32): Struct {
 
 method mut Struct
 fn update_enum(arg: Enum) {
-	self.first  = arg
+	self.first = arg
 	self.third = arg
 }
 
