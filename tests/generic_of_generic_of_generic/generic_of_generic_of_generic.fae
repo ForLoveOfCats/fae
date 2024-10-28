@@ -33,7 +33,7 @@ fn new(): EnumEntityStore<T> {
 
 method static EnumEntityStore
 fn new_variant(): EnumEntityStore.Variant<T> {
-	return EnumEntityStore.Variant<T> {
+	return EnumEntityStore<T>.Variant {
 		shared_entities: List<Entity<T>>.new()
 		variant_entities: List<Entity<T>>.new()
 	}

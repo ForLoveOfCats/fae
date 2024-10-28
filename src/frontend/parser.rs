@@ -583,51 +583,6 @@ fn parse_expression_atom<'a>(
 			}
 
 			parse_path_expression(bump, messages, tokens, None, allow_struct_literal)
-
-			// let path_segments = parse_path_segments(bump, messages, tokens)?;
-			// let type_arguments = parse_type_arguments(bump, messages, tokens)?;
-
-			// let (is_call, is_struct_literal) = match tokens.peek() {
-			// 	Ok(Token { kind: TokenKind::OpenParen, .. }) => (true, false),
-			// 	Ok(Token { kind: TokenKind::OpenBrace, .. }) => (false, true),
-			// 	_ => (false, false),
-			// };
-
-			// if is_call {
-			// 	let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-			// 	let arguments_node = parse_arguments(bump, messages, tokens)?;
-			// 	let arguments = arguments_node.item;
-			// 	let span = path_segments.span + arguments_node.span;
-			// 	let call = Call { path_segments, type_arguments, arguments };
-
-			// 	return Ok(Node::new(Expression::Call(call), span));
-			// }
-
-			// if is_struct_literal && allow_struct_literal {
-			// 	let type_span = match &type_arguments {
-			// 		Some(type_arguments) => path_segments.span + type_arguments.span,
-			// 		None => path_segments.span,
-			// 	};
-			// 	let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-			// 	let type_object = Type::Path { path_segments, type_arguments };
-			// 	let parsed_type = Node::new(type_object, type_span);
-
-			// 	let initializer = parse_struct_initializer(bump, messages, tokens)?;
-
-			// 	let span = type_span + initializer.span;
-			// 	let struct_literal = StructLiteral { parsed_type, initializer };
-
-			// 	return Ok(Node::new(Expression::StructLiteral(struct_literal), span));
-			// }
-
-			// let span = match &type_arguments {
-			// 	Some(type_arguments) => path_segments.span + type_arguments.span,
-			// 	None => path_segments.span,
-			// };
-			// let type_arguments = type_arguments.map(|node| node.item).unwrap_or_default();
-			// let read = Read { path_segments, type_arguments };
-
-			// Ok(Node::new(Expression::Read(read), span))
 		}
 
 		TokenKind::OpenParen => {
@@ -683,32 +638,7 @@ fn parse_expression_atom<'a>(
 			Ok(Node::new(Expression::Block(block), span))
 		}
 
-		TokenKind::Period => {
-			parse_dot_infer(bump, messages, tokens, allow_struct_literal)
-
-			// let period = tokens.next(messages)?;
-			// let name_token = tokens.expect(messages, TokenKind::Word)?;
-			// let name = Node::from_token(name_token.text, name_token);
-
-			// let mut span = period.span + name.span;
-
-			// let initializer = if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-			// 	let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
-			// 	span += struct_initializer.span;
-			// 	Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_)
-			// } else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
-			// 	tokens.next(messages)?;
-			// 	let expression = parse_expression(bump, messages, tokens, true)?;
-			// 	let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
-			// 	span += close_paren.span;
-			// 	Some(bump.alloc(EnumInitializer::Transparent { expression }) as &_)
-			// } else {
-			// 	None
-			// };
-
-			// let inferred_enum = bump.alloc(InferredEnum { name, initializer });
-			// Ok(Node::new(Expression::InferredEnum(inferred_enum), span))
-		}
+		TokenKind::Period => parse_dot_infer(bump, messages, tokens, allow_struct_literal),
 
 		_ => {
 			messages.message(
@@ -778,32 +708,6 @@ fn parse_following_period<'a>(
 		let expression = Expression::UnaryOperation(bump.alloc(operation));
 		return Ok(Node::new(expression, span));
 	}
-
-	// let name_token = tokens.expect(messages, TokenKind::Word)?;
-	// let name = Node::from_token(name_token.text, name_token);
-
-	// if allow_struct_literal && tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
-	// 	let struct_initializer = parse_struct_initializer(bump, messages, tokens)?;
-	// 	let span = atom.span + name.span;
-	// 	let enum_initializer = Some(bump.alloc(EnumInitializer::StructLike { struct_initializer }) as &_);
-	// 	let field_read = bump.alloc(DotAccess { base: atom, name, enum_initializer });
-	// 	return Ok(Node::new(Expression::DotAcccess(field_read), span));
-	// }
-
-	// if let Ok(TokenKind::OpenParen | TokenKind::OpenGeneric) = tokens.peek_kind() {
-	// 	let type_arguments = parse_type_arguments(bump, messages, tokens)?
-	// 		.map(|a| a.item)
-	// 		.unwrap_or_default();
-	// 	let arguments_node = parse_arguments(bump, messages, tokens)?;
-	// 	let span = atom.span + arguments_node.span;
-	// 	let arguments = arguments_node.item;
-	// 	let method_call = MethodCall { base: atom, name, type_arguments, arguments };
-	// 	return Ok(Node::new(Expression::MethodCall(bump.alloc(method_call)), span));
-	// }
-
-	// let span = atom.span + name.span;
-	// let field_read = bump.alloc(DotAccess { base: atom, name });
-	// return Ok(Node::new(Expression::DotAcccess(field_read), span));
 
 	parse_path_expression(bump, messages, tokens, Some(atom), allow_struct_literal)
 }

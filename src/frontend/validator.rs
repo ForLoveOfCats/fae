@@ -4239,8 +4239,15 @@ fn validate_struct_literal<'a>(
 		}
 	};
 
+	let specialization = &shape.specializations[specialization_index];
+	if shape.parent_enum_shape_index.is_some() && specialization.fields.is_empty() {
+		let variant_name = user_type.name;
+		let message = error!("Cannot construct enum variant `{variant_name}` with field initializers");
+		context.message(message.span(span));
+	}
+
 	// Hate this clone
-	let fields = shape.specializations[specialization_index].fields.clone();
+	let fields = specialization.fields.clone();
 	drop(user_type);
 
 	let mut yields = false;
@@ -5190,8 +5197,17 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		return Expression::any_collapse(context.type_store, span);
 	};
 
+	let has_type_arguments = !dot_access.type_arguments.is_empty();
+	let disallow_type_arguments = |context: &mut Context, label: &str| {
+		if has_type_arguments {
+			let error = error!("Type arguments not permitted on {label}");
+			context.message(error.span(span));
+		}
+	};
+
 	match on_base {
 		NameOnBase::ModuleLayer(layer) => {
+			disallow_type_arguments(context, "a module");
 			let kind = ExpressionKind::ModuleLayer(layer);
 			return Expression {
 				span,
@@ -5208,6 +5224,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 		NameOnBase::Symbol(symbol) => return validate_symbol_read(context, symbol, dot_access.type_arguments, span),
 
 		NameOnBase::Variant(variant) => {
+			disallow_type_arguments(context, "an enum variant");
 			let kind = ExpressionKind::Type { type_id: variant.type_id };
 			return Expression {
 				span,
@@ -5234,6 +5251,8 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			immutable_reason,
 			field,
 		} => {
+			disallow_type_arguments(context, "a field");
+
 			let kind = ExpressionKind::FieldRead(Box::new(FieldRead {
 				base,
 				name: dot_access.name.item,
@@ -5742,7 +5761,7 @@ fn validate_transparent_variant_initialization<'a>(
 ) -> Expression<'a> {
 	if !enum_variant.is_transparent {
 		let found = context.type_name(enum_variant.type_id);
-		let message = error!("Type {found} is not a transparent enum variant");
+		let message = error!("Cannot construct enum variant {found} with a transparent initializer");
 		context.message(message.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	}
