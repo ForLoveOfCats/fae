@@ -187,7 +187,10 @@ impl LLVMTypes {
 
 			TypeEntryKind::Slice(_) => self.slice_struct,
 
-			TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => unreachable!("{:?}", entry.kind),
+			TypeEntryKind::Module
+			| TypeEntryKind::Type
+			| TypeEntryKind::UserTypeGeneric { .. }
+			| TypeEntryKind::FunctionGeneric { .. } => unreachable!("{:?}", entry.kind),
 		}
 	}
 }
