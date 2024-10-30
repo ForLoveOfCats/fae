@@ -74,7 +74,7 @@ impl TypeId {
 		range.contains(&self.entry)
 			|| self.is_any_collapse(type_store)
 			|| match &expression.kind {
-				ExpressionKind::NumberValue(value) => match dbg!(value.collapsed()) {
+				ExpressionKind::NumberValue(value) => match value.collapsed() {
 					Some(collapsed) => range.contains(&collapsed.entry),
 					None => false,
 				},
@@ -136,10 +136,14 @@ impl TypeId {
 	pub fn is_primative(self, type_store: &mut TypeStore) -> bool {
 		let entry = type_store.type_entries.get(self);
 		match entry.kind {
-			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::Pointer { .. } => true,
-			TypeEntryKind::UserType { .. } | TypeEntryKind::Slice(_) => false,
-			TypeEntryKind::UserTypeGeneric { .. } => false,
-			TypeEntryKind::FunctionGeneric { .. } => false,
+			TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::BuiltinType { .. } | TypeEntryKind::Pointer { .. } => {
+				true
+			}
+
+			TypeEntryKind::UserType { .. }
+			| TypeEntryKind::Slice(_)
+			| TypeEntryKind::UserTypeGeneric { .. }
+			| TypeEntryKind::FunctionGeneric { .. } => false,
 		}
 	}
 
@@ -521,6 +525,8 @@ impl TypeEntry {
 			}
 
 			TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => true,
+
+			TypeEntryKind::Module | TypeEntryKind::Type => unreachable!(),
 		};
 
 		TypeEntry { kind, reference_entries: None, generic_poisoned }
@@ -529,6 +535,9 @@ impl TypeEntry {
 
 #[derive(Debug, Clone, Copy)]
 pub enum TypeEntryKind {
+	Module,
+	Type,
+
 	BuiltinType {
 		kind: PrimativeKind,
 		methods_index: usize,
@@ -559,10 +568,11 @@ pub enum TypeEntryKind {
 }
 
 impl TypeEntryKind {
-	#[allow(dead_code)] // TODO: Do we need to keep this around
+	#[allow(dead_code)] // TODO: Do we need to keep this around?
 	pub fn name(self) -> &'static str {
 		match self {
-			TypeEntryKind::BuiltinType { .. } | TypeEntryKind::UserType { .. } => "type",
+			TypeEntryKind::Module => "module",
+			TypeEntryKind::Type | TypeEntryKind::BuiltinType { .. } | TypeEntryKind::UserType { .. } => "type",
 			TypeEntryKind::Pointer { .. } => "pointer",
 			TypeEntryKind::Slice(_) => "slice",
 			TypeEntryKind::UserTypeGeneric { .. } => "type generic",
@@ -687,6 +697,8 @@ pub struct TypeStore<'a> {
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
 	pub method_collections: Ref<RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>>,
 
+	module_type_id: TypeId,
+	type_type_id: TypeId,
 	any_collapse_type_id: TypeId,
 	noreturn_type_id: TypeId,
 	void_type_id: TypeId,
@@ -721,6 +733,18 @@ impl<'a> TypeStore<'a> {
 		let mut primative_type_symbols = Vec::new();
 		let mut type_entries = TypeEntries::new();
 		let mut method_collections = Vec::new();
+
+		let module_type_id = {
+			let kind = TypeEntryKind::Module;
+			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
+			type_entries.push_entry(type_entry)
+		};
+
+		let type_type_id = {
+			let kind = TypeEntryKind::Type;
+			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
+			type_entries.push_entry(type_entry)
+		};
 
 		let mut push_primative = |name: Option<&'a str>, kind| {
 			let methods_index = method_collections.len();
@@ -773,6 +797,8 @@ impl<'a> TypeStore<'a> {
 			type_entries,
 			user_types: Ref::new(RwLock::new(Vec::new())),
 			method_collections: Ref::new(RwLock::new(method_collections)),
+			module_type_id,
+			type_type_id,
 			any_collapse_type_id,
 			noreturn_type_id,
 			void_type_id,
@@ -800,6 +826,14 @@ impl<'a> TypeStore<'a> {
 		type_store.u8_slice_type_id = u8_slice_type_id;
 
 		type_store
+	}
+
+	pub fn module_type_id(&self) -> TypeId {
+		self.module_type_id
+	}
+
+	pub fn type_type_id(&self) -> TypeId {
+		self.type_type_id
 	}
 
 	pub fn any_collapse_type_id(&self) -> TypeId {
@@ -1503,6 +1537,8 @@ impl<'a> TypeStore<'a> {
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
 			TypeEntryKind::UserTypeGeneric { .. } => Layout { size: 0, alignment: 1 },
 			TypeEntryKind::FunctionGeneric { .. } => Layout { size: 0, alignment: 1 },
+
+			TypeEntryKind::Module | TypeEntryKind::Type => panic!("Forbidden"),
 		}
 	}
 
@@ -2226,6 +2262,8 @@ impl<'a> TypeStore<'a> {
 					.parameters()[generic_index]
 					.generic_type_id
 			}
+
+			TypeEntryKind::Module | TypeEntryKind::Type => panic!("{:?}", &entry.kind),
 		}
 	}
 
@@ -2343,6 +2381,8 @@ impl<'a> TypeStore<'a> {
 				assert_eq!(function_shape_index, shape_index);
 				function_type_arguments.ids[generic_index]
 			}
+
+			TypeEntryKind::Module | TypeEntryKind::Type => panic!("{:?}", &entry.kind),
 		}
 	}
 
@@ -2375,6 +2415,10 @@ impl<'a> TypeStore<'a> {
 
 		let type_entry = self.type_entries.get(type_id);
 		match type_entry.kind {
+			TypeEntryKind::Module => "a module".to_owned(),
+
+			TypeEntryKind::Type => "a type".to_owned(),
+
 			TypeEntryKind::BuiltinType { kind, .. } => kind.name().to_owned(),
 
 			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
@@ -2465,7 +2509,7 @@ impl<'a> TypeStore<'a> {
 					if debug_generics {
 						format!("FunctionGeneric {function_shape_index} {generic_index}")
 					} else {
-						String::from("FunctionGeneric")
+						"FunctionGeneric".to_owned()
 					}
 				}
 			}

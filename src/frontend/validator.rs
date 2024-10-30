@@ -2779,7 +2779,8 @@ fn validate_statement<'a>(
 			if is_root => {} // `is_root` is true, then we've already emitted a message in the root pre-process step, skip
 
 		tree::Statement::Expression(statement) => {
-			let expression = validate_expression(context, statement);
+			let mut expression = validate_expression(context, statement);
+			expression.wants_value(context);
 			*yields |= expression.yields;
 			*returns |= expression.returns;
 
@@ -2965,6 +2966,7 @@ fn validate_statement<'a>(
 				let original_expected_type = context.expected_type;
 				context.expected_type = context.yield_targets.get(yield_target_index).type_id;
 				let mut expression = validate_expression(context, &statement.item.expression);
+				expression.wants_value(context);
 				context.expected_type = original_expected_type;
 
 				let target_type = context.yield_targets.get_mut(yield_target_index);
@@ -3006,6 +3008,7 @@ fn validate_statement<'a>(
 			});
 
 			if let Some(expression) = &mut expression {
+				expression.wants_value(context);
 				let return_type = context.return_type.unwrap();
 				if let Ok(false) = context.collapse_to(return_type, expression) {
 					let expected = context.type_name(return_type);
@@ -3307,6 +3310,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	};
 
 	let mut expression = validate_expression(context, &statement.item.expression);
+	expression.wants_value(context);
 	if let Some(explicit_type) = explicit_type {
 		if !context.collapse_to(explicit_type, &mut expression).ok()? {
 			let explicit = context.type_name(explicit_type);
@@ -3378,6 +3382,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	let mut scope = context.child_scope();
 	scope.expected_type = explicit_type;
 	let mut expression = validate_expression(&mut scope, &statement.item.expression);
+	expression.wants_value(&mut scope);
 	drop(scope);
 
 	let mut type_id = match &statement.item.parsed_type {
@@ -3402,9 +3407,16 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	if type_id.is_untyped_number(context.type_store) {
 		context.message(error!("Cannot create binding of untyped number").span(statement.span));
 		type_id = context.type_store.any_collapse_type_id();
+	} else if let ExpressionKind::ModuleLayer { .. } = &expression.kind {
+		if !expression.type_id.is_any_collapse(context.type_store) {
+			context.message(error!("Binding expression must be a value, found a module").span(statement.span));
+		}
+		type_id = context.type_store.any_collapse_type_id();
 	} else if let ExpressionKind::Type { type_id: found, .. } = &expression.kind {
-		let found = context.type_name(*found);
-		context.message(error!("Binding expression must be a value, found type {found}").span(statement.span));
+		if !expression.type_id.is_any_collapse(context.type_store) {
+			let found = context.type_name(*found);
+			context.message(error!("Binding expression must be a value, found type {found}").span(statement.span));
+		}
 		type_id = context.type_store.any_collapse_type_id();
 	}
 
@@ -3607,7 +3619,8 @@ fn validate_if_else_chain_expression<'a>(
 	for (index, entry) in chain_expression.entries.iter().enumerate() {
 		let mut scope = context.child_scope();
 		scope.can_is_bind = true;
-		let condition = validate_expression(&mut scope, &entry.condition);
+		let mut condition = validate_expression(&mut scope, &entry.condition);
+		condition.wants_value(&mut scope);
 		scope.can_is_bind = false;
 		if index == 0 && condition.yields {
 			first_condition_yields = true;
@@ -3673,7 +3686,8 @@ fn validate_match_expression<'a>(
 	span: Span,
 	yield_target_index: Option<usize>,
 ) -> Expression<'a> {
-	let expression = validate_expression(context, &match_expression.expression);
+	let mut expression = validate_expression(context, &match_expression.expression);
+	expression.wants_value(context);
 	if expression.type_id.is_any_collapse(context.type_store) {
 		return Expression::any_collapse(context.type_store, span);
 	}
@@ -3888,7 +3902,8 @@ fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'
 	let mut scope = context.child_scope();
 	scope.can_is_bind = true;
 
-	let condition = validate_expression(&mut scope, &statement.item.condition);
+	let mut condition = validate_expression(&mut scope, &statement.item.condition);
+	condition.wants_value(&mut scope);
 	if !condition.type_id.is_bool(scope.type_store) && !condition.type_id.is_any_collapse(scope.type_store) {
 		let found = scope.type_name(condition.type_id);
 		let error = error!("Expected `while` condition of type `bool`, found {found}");
@@ -3906,7 +3921,8 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 	let mut scope = context.child_scope();
 	let any_collapse = scope.type_store.any_collapse_type_id();
 
-	let initializer = validate_expression(&mut scope, &statement.item.initializer);
+	let mut initializer = validate_expression(&mut scope, &statement.item.initializer);
+	initializer.wants_value(&mut scope);
 	let slice = initializer.type_id.as_slice(&mut scope.type_store.type_entries);
 	let kind = if slice.is_some() {
 		match statement.item.iteration_kind.item {
@@ -4100,7 +4116,8 @@ fn validate_format_string_literal<'a>(
 			tree::FormatStringItem::Text(text) => FormatStringItem::Text(text.clone()),
 
 			tree::FormatStringItem::Expression(expression) => {
-				let expression = validate_expression(context, expression);
+				let mut expression = validate_expression(context, expression);
+				expression.wants_value(context);
 				if !expression.type_id.is_formattable(context.type_store, &expression) {
 					let found = context.type_name(expression.type_id);
 					let error = error!("Cannot format expression of type {found}");
@@ -4146,7 +4163,8 @@ fn validate_array_literal<'a>(
 	let mut returns = false;
 	let mut expressions = Vec::with_capacity(literal.expressions.len());
 	for expression in literal.expressions {
-		let expression = validate_expression(context, expression);
+		let mut expression = validate_expression(context, expression);
+		expression.wants_value(context);
 		yields |= expression.yields;
 		returns |= expression.returns;
 		expressions.push(expression);
@@ -4241,9 +4259,17 @@ fn validate_struct_literal<'a>(
 
 	let specialization = &shape.specializations[specialization_index];
 	if shape.parent_enum_shape_index.is_some() && specialization.fields.is_empty() {
-		let variant_name = user_type.name;
-		let message = error!("Cannot construct enum variant `{variant_name}` with field initializers");
+		let variant_name = context.type_name(type_id);
+		let message = error!("Cannot construct enum variant {variant_name} with field initializers");
 		context.message(message.span(span));
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	if shape.is_transparent_variant {
+		let variant_name = context.type_name(type_id);
+		let message = error!("Cannot construct transparent enum variant {variant_name} like a struck-like enum variant");
+		context.message(message.span(span));
+		return Expression::any_collapse(context.type_store, span);
 	}
 
 	// Hate this clone
@@ -4295,6 +4321,7 @@ fn validate_struct_initializer<'a>(
 		let mut scope = context.child_scope();
 		scope.expected_type = field.map(|f| f.type_id);
 		let mut expression = validate_expression(&mut scope, &intializer.expression);
+		expression.wants_value(&mut scope);
 		drop(scope);
 
 		*yields |= expression.yields;
@@ -4385,11 +4412,11 @@ enum NameOnBase<'a> {
 
 fn lookup_name_on_base<'a>(
 	context: &mut Context<'a, '_, '_>,
-	base: &Expression<'a>,
+	base: &mut Expression<'a>,
 	name: Node<&'a str>,
 	is_call: bool,
 ) -> Option<NameOnBase<'a>> {
-	match &base.kind {
+	let base_type_id = match &base.kind {
 		ExpressionKind::ModuleLayer(layer) => {
 			let mut lock = layer.write();
 			if let Some(child) = lock.children.get(name.item) {
@@ -4400,16 +4427,17 @@ fn lookup_name_on_base<'a>(
 			return symbol.map(|symbol| NameOnBase::Symbol(symbol));
 		}
 
+		ExpressionKind::Type { type_id } => *type_id,
+
 		ExpressionKind::AnyCollapse => return None,
 
-		_ => {}
-	}
-
-	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base.type_id.as_pointed(context.type_store) {
-		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
-		None => (base.type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
+		_ => base.type_id,
 	};
 
+	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base_type_id.as_pointed(context.type_store) {
+		Some(p) => (p.type_id, p.mutable, p.mutable && base.is_pointer_access_mutable),
+		None => (base_type_id, base.is_itself_mutable, base.is_pointer_access_mutable),
+	};
 	let entry = context.type_store.type_entries.get(type_id);
 
 	if is_call {
@@ -4421,6 +4449,8 @@ fn lookup_name_on_base<'a>(
 			}
 		}
 	}
+
+	base.wants_value(context);
 
 	match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
@@ -4444,7 +4474,7 @@ fn lookup_name_on_base<'a>(
 			return lookup_field_in_fields(
 				context,
 				name,
-				base.type_id,
+				base_type_id,
 				is_itself_mutable,
 				is_pointer_access_mutable,
 				fields,
@@ -4537,7 +4567,7 @@ fn lookup_name_on_base<'a>(
 	} else if !base.type_id.is_any_collapse(context.type_store) {
 		let on = base.kind.name_with_article();
 		let error = error!("Cannot dot-access on {on}, expected a value with fields or methods");
-		context.message(error.span(base.span));
+		context.message(error.span(base.span + name.span));
 	}
 
 	None
@@ -4590,9 +4620,9 @@ fn lookup_field_in_fields<'a>(
 }
 
 fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>, span: Span) -> Expression<'a> {
-	let base = call.base.as_ref().map(|base| validate_expression(context, base));
-	let on_base = if let Some(base) = base.as_ref() {
-		let Some(on_base) = lookup_name_on_base(context, &base, call.name, true) else {
+	let mut base = call.base.as_ref().map(|base| validate_expression(context, base));
+	let on_base = if let Some(base) = base.as_mut() {
+		let Some(on_base) = lookup_name_on_base(context, base, call.name, true) else {
 			return Expression::any_collapse(context.type_store, span);
 		};
 
@@ -4695,7 +4725,8 @@ fn validate_symbol_call<'a>(
 			drop(shape);
 		}
 
-		let argument = validate_expression(&mut scope, argument);
+		let mut argument = validate_expression(&mut scope, argument);
+		argument.wants_value(&mut scope);
 		yields |= argument.yields;
 		returns |= argument.returns;
 		arguments.push(argument);
@@ -4886,7 +4917,8 @@ fn validate_method_arguments<'a>(
 		};
 		drop(shape);
 
-		let argument = validate_expression(&mut scope, argument);
+		let mut argument = validate_expression(&mut scope, argument);
+		argument.wants_value(&mut scope);
 		yields |= argument.yields;
 		returns |= argument.returns;
 		arguments.push(argument);
@@ -5192,8 +5224,8 @@ fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, s
 }
 
 fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tree::DotAccess<'a>, span: Span) -> Expression<'a> {
-	let base = validate_expression(context, &dot_access.base);
-	let Some(on_base) = lookup_name_on_base(context, &base, dot_access.name, false) else {
+	let mut base = validate_expression(context, &dot_access.base);
+	let Some(on_base) = lookup_name_on_base(context, &mut base, dot_access.name, false) else {
 		return Expression::any_collapse(context.type_store, span);
 	};
 
@@ -5211,7 +5243,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			let kind = ExpressionKind::ModuleLayer(layer);
 			return Expression {
 				span,
-				type_id: context.type_store.any_collapse_type_id(), // HACK
+				type_id: context.type_store.module_type_id(),
 				is_itself_mutable: false,
 				is_pointer_access_mutable: false,
 				yields: false,
@@ -5228,7 +5260,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 			let kind = ExpressionKind::Type { type_id: variant.type_id };
 			return Expression {
 				span,
-				type_id: variant.type_id,
+				type_id: context.type_store.type_type_id(),
 				is_itself_mutable: false,
 				is_pointer_access_mutable: false,
 				yields: false,
@@ -5376,7 +5408,7 @@ fn validate_symbol_read<'a>(
 				let kind = ExpressionKind::Type { type_id };
 				return Expression {
 					span,
-					type_id,
+					type_id: context.type_store.type_type_id(),
 					is_itself_mutable: false,
 					is_pointer_access_mutable: false,
 					yields: false,
@@ -5407,7 +5439,7 @@ fn validate_symbol_read<'a>(
 			let kind = ExpressionKind::Type { type_id };
 			return Expression {
 				span,
-				type_id,
+				type_id: context.type_store.type_type_id(),
 				is_itself_mutable: false,
 				is_pointer_access_mutable: false,
 				yields: false,
@@ -5420,7 +5452,7 @@ fn validate_symbol_read<'a>(
 		SymbolKind::Module { layer } => {
 			return Expression {
 				span,
-				type_id: context.type_store.any_collapse_type_id(), // HACK
+				type_id: context.type_store.module_type_id(),
 				is_itself_mutable: false,
 				is_pointer_access_mutable: false,
 				yields: false,
@@ -5511,11 +5543,10 @@ fn validate_dot_infer<'a>(context: &mut Context<'a, '_, '_>, dot_infer: &'a tree
 		return Expression::any_collapse(context.type_store, span);
 	};
 
-	let type_id = inferred_variant.type_id;
-	let kind = ExpressionKind::Type { type_id };
+	let kind = ExpressionKind::Type { type_id: inferred_variant.type_id };
 	return Expression {
 		span,
-		type_id,
+		type_id: context.type_store.type_type_id(),
 		is_itself_mutable: true,
 		is_pointer_access_mutable: true,
 		yields: false,
@@ -5543,215 +5574,6 @@ fn validate_dot_infer_call<'a>(
 	)
 }
 
-// fn validate_inferred_enum<'a>(
-// 	context: &mut Context<'a, '_, '_>,
-// 	inferred_enum: &'a tree::InferredEnum<'a>,
-// 	span: Span,
-// ) -> Expression<'a> {
-// 	let Some(expected_type) = context.expected_type else {
-// 		let error = error!("Cannot infer enum type for variant, there is no specific expected type in this context");
-// 		context.message(error.span(span));
-// 		return Expression::any_collapse(context.type_store, span);
-// 	};
-
-// 	let entry = context.type_store.type_entries.get(expected_type);
-// 	if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
-// 		let lock = context.type_store.user_types.read()[shape_index].clone();
-// 		let user_type = lock.read();
-
-// 		if let UserTypeKind::Enum { shape } = &user_type.kind {
-// 			let specialization = &shape.specializations[specialization_index];
-// 			let specialization_type_id = specialization.type_id;
-// 			let variants = specialization.variants.clone();
-// 			let variants_by_name = specialization.variants_by_name.clone();
-// 			drop(user_type);
-
-// 			let Some(&variant_index) = variants_by_name.get(inferred_enum.name.item) else {
-// 				let expected = context.type_name(specialization_type_id);
-// 				let error = error!("Expected enum {expected} has no variant named `{}`", inferred_enum.name.item);
-// 				context.messages.message(error.span(inferred_enum.name.span));
-// 				return Expression::any_collapse(context.type_store, span);
-// 			};
-
-// 			let variant = variants[variant_index];
-// 			let type_id = variant.type_id;
-
-// 			let mut yields = false;
-// 			let mut returns = false;
-// 			let Some(field_initializers) = validate_enum_initializer(
-// 				context,
-// 				inferred_enum.name.item,
-// 				type_id,
-// 				&mut yields,
-// 				&mut returns,
-// 				inferred_enum.initializer,
-// 				span,
-// 			) else {
-// 				return Expression::any_collapse(context.type_store, span);
-// 			};
-
-// 			let literal = StructLiteral { type_id, field_initializers };
-// 			let kind = ExpressionKind::StructLiteral(literal);
-// 			return Expression {
-// 				span,
-// 				type_id,
-// 				is_itself_mutable: true,
-// 				is_pointer_access_mutable: true,
-// 				yields,
-// 				returns,
-// 				kind,
-// 				debug_location: span.debug_location(context.parsed_files),
-// 			};
-// 		}
-// 	}
-
-// 	let error = error!("Cannot infer enum type for variant, the expected type is not an enum");
-// 	context.messages.message(error.span(span));
-// 	Expression::any_collapse(context.type_store, span)
-// }
-
-// fn validate_dot_access_enum_literal<'a>(
-// 	context: &mut Context<'a, '_, '_>,
-// 	base: TypeId,
-// 	dot_access: &'a tree::DotAccess<'a>,
-// 	span: Span,
-// ) -> Expression<'a> {
-// 	let Some(variant_type_id) = context.get_enum_variant(base, dot_access.name) else {
-// 		return Expression::any_collapse(context.type_store, span);
-// 	};
-
-// 	let mut yields = false;
-// 	let mut returns = false;
-// 	let Some(field_initializers) = validate_enum_initializer(
-// 		context,
-// 		dot_access.name.item,
-// 		variant_type_id,
-// 		&mut yields,
-// 		&mut returns,
-// 		dot_access.enum_initializer,
-// 		span,
-// 	) else {
-// 		return Expression::any_collapse(context.type_store, span);
-// 	};
-
-// 	let literal = StructLiteral { type_id: variant_type_id, field_initializers };
-// 	let kind = ExpressionKind::StructLiteral(literal);
-// 	Expression {
-// 		span,
-// 		type_id: variant_type_id,
-// 		is_itself_mutable: true,
-// 		is_pointer_access_mutable: true,
-// 		yields,
-// 		returns,
-// 		kind,
-// 		debug_location: span.debug_location(context.parsed_files),
-// 	}
-// }
-
-// fn validate_enum_initializer<'a>(
-// 	context: &mut Context<'a, '_, '_>,
-// 	variant_name: &str,
-// 	variant_type_id: TypeId,
-// 	yields: &mut bool,
-// 	returns: &mut bool,
-// 	initializer: Option<&'a tree::EnumInitializer<'a>>,
-// 	span: Span,
-// ) -> Option<Vec<FieldInitializer<'a>>> {
-// 	let entry = context.type_store.type_entries.get(variant_type_id);
-// 	let (variant_shape_index, variant_specialization_index) = match entry.kind {
-// 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
-// 		_ => unreachable!(),
-// 	};
-
-// 	let user_type = context.type_store.user_types.read()[variant_shape_index].clone();
-// 	let user_type = user_type.read();
-// 	let fields = match &user_type.kind {
-// 		UserTypeKind::Struct { shape } => {
-// 			if shape.is_transparent_variant {
-// 				let Some(initializer) = initializer else {
-// 					let error = error!("Cannot construct transparent enum variant `{variant_name}` without an initializer");
-// 					context.messages.message(error.span(span));
-// 					return None;
-// 				};
-
-// 				let expression = match initializer {
-// 					EnumInitializer::Transparent { expression } => expression,
-
-// 					EnumInitializer::StructLike { .. } => {
-// 						context.messages.message(
-// 							error!("Cannot construct transparent enum variant `{variant_name}` like a struck-like enum variant")
-// 								.span(span),
-// 						);
-// 						return None;
-// 					}
-// 				};
-
-// 				let expected_type_id = shape.specializations[variant_specialization_index]
-// 					.fields
-// 					.first()
-// 					.unwrap()
-// 					.type_id;
-
-// 				drop(user_type);
-// 				return validate_transparent_variant_initializer(context, yields, returns, expression, expected_type_id);
-// 			}
-
-// 			// Uggg
-// 			shape.specializations[variant_specialization_index].fields.clone()
-// 		}
-
-// 		UserTypeKind::Enum { .. } => unreachable!(),
-// 	};
-
-// 	drop(user_type);
-
-// 	if let Some(initializer) = initializer {
-// 		if fields.is_empty() {
-// 			let error = match initializer {
-// 				EnumInitializer::StructLike { .. } => {
-// 					error!("Cannot construct enum variant `{variant_name}` with field initializers")
-// 				}
-// 				EnumInitializer::Transparent { .. } => {
-// 					error!("Cannot construct enum variant `{variant_name}` with a transparent initializer")
-// 				}
-// 			};
-// 			context.message(error.span(span));
-// 			return None;
-// 		}
-
-// 		let struct_initializer = match initializer {
-// 			EnumInitializer::StructLike { struct_initializer } => struct_initializer,
-
-// 			EnumInitializer::Transparent { .. } => {
-// 				let error = error!("Cannot construct struck-like enum variant `{variant_name}` like a transparent enum variant");
-// 				context.message(error.span(span));
-// 				return None;
-// 			}
-// 		};
-
-// 		Some(validate_struct_initializer(
-// 			context,
-// 			variant_shape_index,
-// 			variant_specialization_index,
-// 			variant_type_id,
-// 			struct_initializer,
-// 			&fields,
-// 			yields,
-// 			returns,
-// 		))
-// 	} else if !fields.is_empty() {
-// 		let name = variant_name;
-// 		let error = error!(
-// 			"Cannot construct struck-like enum variant `{}` without providing fields initializers",
-// 			name
-// 		);
-// 		context.message(error.span(span));
-// 		return None;
-// 	} else {
-// 		Some(Vec::new())
-// 	}
-// }
-
 fn validate_transparent_variant_initialization<'a>(
 	context: &mut Context<'a, '_, '_>,
 	name: &str,
@@ -5761,7 +5583,7 @@ fn validate_transparent_variant_initialization<'a>(
 ) -> Expression<'a> {
 	if !enum_variant.is_transparent {
 		let found = context.type_name(enum_variant.type_id);
-		let message = error!("Cannot construct enum variant {found} with a transparent initializer");
+		let message = error!("Cannot construct struct-like enum variant {found} like a transparent enum variant");
 		context.message(message.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	}
@@ -5783,6 +5605,7 @@ fn validate_transparent_variant_initialization<'a>(
 	let mut scope = context.child_scope();
 	scope.expected_type = Some(expected_type_id);
 	let mut expression = validate_expression(&mut scope, expression);
+	expression.wants_value(&mut scope);
 	drop(scope);
 
 	let yields = expression.yields;
@@ -5820,6 +5643,7 @@ fn validate_unary_operation<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut expression = validate_expression(context, &operation.expression);
+	expression.wants_value(context);
 	let op = match &operation.op.item {
 		tree::UnaryOperator::Negate => UnaryOperator::Negate,
 		tree::UnaryOperator::Invert => UnaryOperator::Invert,
@@ -6094,6 +5918,7 @@ fn validate_bracket_index<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut index_expression = validate_expression(context, index_expression);
+	index_expression.wants_value(context);
 	let range_type_id = context.lang_items.read().range_type.unwrap();
 	let is_range = context.type_store.direct_match(index_expression.type_id, range_type_id);
 
@@ -6182,12 +6007,15 @@ fn validate_binary_operation<'a>(
 	}
 
 	let mut left = validate_expression(context, &operation.left);
+	left.wants_value(context);
 
 	let original_expected_type = context.expected_type;
 	if op == BinaryOperator::Assign {
 		context.expected_type = Some(left.type_id);
 	}
+
 	let mut right = validate_expression(context, &operation.right);
+	right.wants_value(context);
 
 	context.can_is_bind = original_can_is_bind;
 	context.expected_type = original_expected_type;
@@ -6528,7 +6356,8 @@ fn perform_constant_binary_operation<'a>(
 }
 
 fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::CheckIs<'a>, span: Span) -> Expression<'a> {
-	let left = validate_expression(context, &check.left);
+	let mut left = validate_expression(context, &check.left);
+	left.wants_value(context);
 
 	let binding_name = if !context.can_is_bind {
 		if let Some(binding_name) = check.binding_name {

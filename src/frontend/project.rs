@@ -69,7 +69,7 @@ pub fn build_project(
 	}
 
 	let (binary_name, project_config) = if let Some(test_config) = test_config {
-		(String::from("fae_compiler_test_suite"), test_config)
+		("fae_compiler_test_suite".to_owned(), test_config)
 	} else {
 		let config_path = project_path.join("fae.toml");
 		let Ok(config_file) = std::fs::read_to_string(&config_path) else {

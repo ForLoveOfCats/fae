@@ -10,6 +10,7 @@ use crate::frontend::root_layers::RootLayer;
 use crate::frontend::span::{DebugLocation, Span};
 use crate::frontend::tree::{self, BinaryOperator, ExportAttribute, ExternAttribute, IntrinsicAttribute, LangAttribute, Node};
 use crate::frontend::type_store::*;
+use crate::frontend::validator::Context;
 use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
@@ -468,6 +469,49 @@ impl<'a> Expression<'a> {
 			kind: ExpressionKind::Void,
 			debug_location: span.debug_location(parsed_files),
 		}
+	}
+
+	pub fn wants_value(&mut self, context: &mut Context<'a, '_, '_>) {
+		let ExpressionKind::Type { type_id } = self.kind else {
+			return;
+		};
+
+		let entry = context.type_store.type_entries.get(type_id);
+		let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind else {
+			return;
+		};
+
+		let user_type = context.type_store.user_types.read()[shape_index].clone();
+		let user_type = user_type.read();
+		let UserTypeKind::Struct { shape } = &user_type.kind else {
+			return;
+		};
+
+		if shape.parent_enum_shape_index.is_none() {
+			return; // Not an enum variant
+		}
+
+		let specialization = &shape.specializations[specialization_index];
+		assert!(specialization.been_filled);
+
+		if !specialization.fields.is_empty() {
+			let name = context.type_name(type_id);
+			let message = if shape.is_transparent_variant {
+				error!("Cannot construct transparent enum variant {name} without an initializer")
+			} else {
+				error!("Cannot construct struct-like enum variant {name} without an initializer")
+			};
+			context.message(message.span(self.span));
+
+			self.type_id = context.type_store.any_collapse_type_id();
+
+			// We know we are an enum variant, have fields, and we are implicitly
+			// being constructed without a struct or transparent initializer
+			return;
+		}
+
+		// We are a field-less enum variant so it is valid to treat us like an instance
+		self.type_id = type_id;
 	}
 }
 

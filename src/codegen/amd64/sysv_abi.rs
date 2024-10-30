@@ -267,6 +267,9 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 			return &mut buffer[..2];
 		}
 
-		TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
+		TypeEntryKind::Module
+		| TypeEntryKind::Type
+		| TypeEntryKind::UserTypeGeneric { .. }
+		| TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
 	}
 }
