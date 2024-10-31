@@ -1,0 +1,15 @@
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 2: Cannot construct struct-like enum variant `Enum.B` without an initializer
+  2|     mut v: Enum = .B.immutable_method()
+                       ^^
+
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 2: Cannot call instance method `immutable_method` statically
+  2|     mut v: Enum = .B.immutable_method()
+                          ^^^^^^^^^^^^^^^^^^
+
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 5: Cannot construct struct-like enum variant `Enum.B` without an initializer
+  5|     v = .B.mutable_method()
+             ^^
+
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 5: Cannot call instance method `mutable_method` statically
+  5|     v = .B.mutable_method()
+                ^^^^^^^^^^^^^^^^

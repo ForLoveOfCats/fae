@@ -1,0 +1,71 @@
+fn main() {
+	mut v: Enum = .A.static_method()
+	v.print()
+
+	v = .A.immutable_method()
+	v.print()
+
+	v = .A.mutable_method()
+	v.print()
+
+
+	v = .B.static_method()
+	v.print()
+
+	v = .B { field: true }.immutable_method()
+	v.print()
+
+	v = .B { field: true }.mutable_method()
+	v.print()
+}
+
+enum Enum {
+	A
+	B { field: bool }
+}
+
+method Enum
+fn print() {
+	match self {
+		A => println("Enum.A")
+		B => println(f"Enum.B \{ field: {self.field} }")
+	}
+
+	println("")
+}
+
+method static Enum.A
+fn static_method(): Enum {
+	println("static method A")
+	return .A
+}
+
+method Enum.A
+fn immutable_method(): Enum {
+	println("method A")
+	return self.*
+}
+
+method mut Enum.A
+fn mutable_method(): Enum {
+	println("mut method A")
+	return self.*
+}
+
+method static Enum.B
+fn static_method(): Enum {
+	println("static method B")
+	return .B { field: true }
+}
+
+method Enum.B
+fn immutable_method(): Enum {
+	println("method B")
+	return self.*
+}
+
+method mut Enum.B
+fn mutable_method(): Enum {
+	println("mut method B")
+	return self.*
+}
