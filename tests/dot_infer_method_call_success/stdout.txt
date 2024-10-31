@@ -1,0 +1,18 @@
+static method A
+Enum.A
+
+method A
+Enum.A
+
+mut method A
+Enum.A
+
+static method B
+Enum.B { field: true }
+
+method B
+Enum.B { field: true }
+
+mut method B
+Enum.B { field: true }
+

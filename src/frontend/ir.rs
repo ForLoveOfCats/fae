@@ -471,24 +471,25 @@ impl<'a> Expression<'a> {
 		}
 	}
 
-	pub fn wants_value(&mut self, context: &mut Context<'a, '_, '_>) {
+	// Returns true if it *turned into* a value
+	pub fn into_value(&mut self, context: &mut Context<'a, '_, '_>) -> bool {
 		let ExpressionKind::Type { type_id } = self.kind else {
-			return;
+			return false;
 		};
 
 		let entry = context.type_store.type_entries.get(type_id);
 		let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind else {
-			return;
+			return false;
 		};
 
 		let user_type = context.type_store.user_types.read()[shape_index].clone();
 		let user_type = user_type.read();
 		let UserTypeKind::Struct { shape } = &user_type.kind else {
-			return;
+			return false;
 		};
 
 		if shape.parent_enum_shape_index.is_none() {
-			return; // Not an enum variant
+			return false; // Not an enum variant
 		}
 
 		let specialization = &shape.specializations[specialization_index];
@@ -507,11 +508,12 @@ impl<'a> Expression<'a> {
 
 			// We know we are an enum variant, have fields, and we are implicitly
 			// being constructed without a struct or transparent initializer
-			return;
+			return false;
 		}
 
 		// We are a field-less enum variant so it is valid to treat us like an instance
 		self.type_id = type_id;
+		true
 	}
 }
 

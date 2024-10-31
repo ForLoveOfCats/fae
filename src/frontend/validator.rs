@@ -2780,7 +2780,7 @@ fn validate_statement<'a>(
 
 		tree::Statement::Expression(statement) => {
 			let mut expression = validate_expression(context, statement);
-			expression.wants_value(context);
+			expression.into_value(context);
 			*yields |= expression.yields;
 			*returns |= expression.returns;
 
@@ -2966,7 +2966,7 @@ fn validate_statement<'a>(
 				let original_expected_type = context.expected_type;
 				context.expected_type = context.yield_targets.get(yield_target_index).type_id;
 				let mut expression = validate_expression(context, &statement.item.expression);
-				expression.wants_value(context);
+				expression.into_value(context);
 				context.expected_type = original_expected_type;
 
 				let target_type = context.yield_targets.get_mut(yield_target_index);
@@ -3008,7 +3008,7 @@ fn validate_statement<'a>(
 			});
 
 			if let Some(expression) = &mut expression {
-				expression.wants_value(context);
+				expression.into_value(context);
 				let return_type = context.return_type.unwrap();
 				if let Ok(false) = context.collapse_to(return_type, expression) {
 					let expected = context.type_name(return_type);
@@ -3310,7 +3310,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	};
 
 	let mut expression = validate_expression(context, &statement.item.expression);
-	expression.wants_value(context);
+	expression.into_value(context);
 	if let Some(explicit_type) = explicit_type {
 		if !context.collapse_to(explicit_type, &mut expression).ok()? {
 			let explicit = context.type_name(explicit_type);
@@ -3382,7 +3382,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	let mut scope = context.child_scope();
 	scope.expected_type = explicit_type;
 	let mut expression = validate_expression(&mut scope, &statement.item.expression);
-	expression.wants_value(&mut scope);
+	expression.into_value(&mut scope);
 	drop(scope);
 
 	let mut type_id = match &statement.item.parsed_type {
@@ -3619,7 +3619,7 @@ fn validate_if_else_chain_expression<'a>(
 		let mut scope = context.child_scope();
 		scope.can_is_bind = true;
 		let mut condition = validate_expression(&mut scope, &entry.condition);
-		condition.wants_value(&mut scope);
+		condition.into_value(&mut scope);
 		scope.can_is_bind = false;
 		if index == 0 && condition.yields {
 			first_condition_yields = true;
@@ -3686,7 +3686,7 @@ fn validate_match_expression<'a>(
 	yield_target_index: Option<usize>,
 ) -> Expression<'a> {
 	let mut expression = validate_expression(context, &match_expression.expression);
-	expression.wants_value(context);
+	expression.into_value(context);
 	if expression.type_id.is_any_collapse(context.type_store) {
 		return Expression::any_collapse(context.type_store, span);
 	}
@@ -3902,7 +3902,7 @@ fn validate_while_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'
 	scope.can_is_bind = true;
 
 	let mut condition = validate_expression(&mut scope, &statement.item.condition);
-	condition.wants_value(&mut scope);
+	condition.into_value(&mut scope);
 	if !condition.type_id.is_bool(scope.type_store) && !condition.type_id.is_any_collapse(scope.type_store) {
 		let found = scope.type_name(condition.type_id);
 		let error = error!("Expected `while` condition of type `bool`, found {found}");
@@ -3921,7 +3921,7 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 	let any_collapse = scope.type_store.any_collapse_type_id();
 
 	let mut initializer = validate_expression(&mut scope, &statement.item.initializer);
-	initializer.wants_value(&mut scope);
+	initializer.into_value(&mut scope);
 	let slice = initializer.type_id.as_slice(&mut scope.type_store.type_entries);
 	let kind = if slice.is_some() {
 		match statement.item.iteration_kind.item {
@@ -4116,7 +4116,7 @@ fn validate_format_string_literal<'a>(
 
 			tree::FormatStringItem::Expression(expression) => {
 				let mut expression = validate_expression(context, expression);
-				expression.wants_value(context);
+				expression.into_value(context);
 				if !expression.type_id.is_formattable(context.type_store, &expression) {
 					let found = context.type_name(expression.type_id);
 					let error = error!("Cannot format expression of type {found}");
@@ -4163,7 +4163,7 @@ fn validate_array_literal<'a>(
 	let mut expressions = Vec::with_capacity(literal.expressions.len());
 	for expression in literal.expressions {
 		let mut expression = validate_expression(context, expression);
-		expression.wants_value(context);
+		expression.into_value(context);
 		yields |= expression.yields;
 		returns |= expression.returns;
 		expressions.push(expression);
@@ -4320,7 +4320,7 @@ fn validate_struct_initializer<'a>(
 		let mut scope = context.child_scope();
 		scope.expected_type = field.map(|f| f.type_id);
 		let mut expression = validate_expression(&mut scope, &intializer.expression);
-		expression.wants_value(&mut scope);
+		expression.into_value(&mut scope);
 		drop(scope);
 
 		*yields |= expression.yields;
@@ -4449,7 +4449,7 @@ fn lookup_name_on_base<'a>(
 		}
 	}
 
-	base.wants_value(context);
+	base.into_value(context);
 
 	match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
@@ -4640,7 +4640,14 @@ fn validate_call<'a>(context: &mut Context<'a, '_, '_>, call: &'a tree::Call<'a>
 			validate_transparent_variant_initialization(context, call.name.item, variant, call.arguments, span)
 		}
 
-		NameOnBase::Method(method_info) => validate_method_call(context, method_info, base.unwrap(), call, span),
+		NameOnBase::Method(method_info) => {
+			let base = base.unwrap();
+			if let ExpressionKind::Type { type_id, .. } = base.kind {
+				validate_static_method_call(context, method_info, base, type_id, call, span)
+			} else {
+				validate_method_call(context, method_info, base, call, span)
+			}
+		}
 
 		NameOnBase::ModuleLayer(layer) => {
 			let message = error!("Cannot call module `{}`", layer.read().name);
@@ -4726,7 +4733,7 @@ fn validate_symbol_call<'a>(
 		}
 
 		let mut argument = validate_expression(&mut scope, argument);
-		argument.wants_value(&mut scope);
+		argument.into_value(&mut scope);
 		yields |= argument.yields;
 		returns |= argument.returns;
 		arguments.push(argument);
@@ -4918,7 +4925,7 @@ fn validate_method_arguments<'a>(
 		drop(shape);
 
 		let mut argument = validate_expression(&mut scope, argument);
-		argument.wants_value(&mut scope);
+		argument.into_value(&mut scope);
 		yields |= argument.yields;
 		returns |= argument.returns;
 		arguments.push(argument);
@@ -4975,10 +4982,6 @@ fn validate_method_call<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	context.expected_type = None;
-	if let ExpressionKind::Type { type_id, .. } = base.kind {
-		return validate_static_method_call(context, method_info, type_id, call, span);
-	}
-
 	let entry = context.type_store.type_entries.get(base.type_id);
 	let (method_base_user_type, base_mutable) = match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
@@ -5067,10 +5070,12 @@ fn validate_method_call<'a>(
 fn validate_static_method_call<'a>(
 	context: &mut Context<'a, '_, '_>,
 	method_info: MethodInfo,
+	mut base_expression: Expression<'a>,
 	base_type_id: TypeId,
 	call: &'a tree::Call<'a>,
 	span: Span,
 ) -> Expression<'a> {
+	context.expected_type = None;
 	let entry = context.type_store.type_entries.get(base_type_id);
 	let method_base_user_type = match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
@@ -5094,9 +5099,13 @@ fn validate_static_method_call<'a>(
 	let name = call.name.item;
 	match method_info.kind {
 		MethodKind::ImmutableSelf | MethodKind::MutableSelf => {
-			let error = error!("Cannot call instance method `{name}` statically");
-			context.messages.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
+			if base_expression.into_value(context) {
+				return validate_method_call(context, method_info, base_expression, call, span);
+			} else {
+				let error = error!("Cannot call instance method `{name}` statically");
+				context.messages.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
 		}
 
 		MethodKind::Static => {}
@@ -5526,7 +5535,7 @@ fn validate_transparent_variant_initialization<'a>(
 	let mut scope = context.child_scope();
 	scope.expected_type = Some(expected_type_id);
 	let mut expression = validate_expression(&mut scope, expression);
-	expression.wants_value(&mut scope);
+	expression.into_value(&mut scope);
 	drop(scope);
 
 	let yields = expression.yields;
@@ -5564,7 +5573,7 @@ fn validate_unary_operation<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut expression = validate_expression(context, &operation.expression);
-	expression.wants_value(context);
+	expression.into_value(context);
 	let op = match &operation.op.item {
 		tree::UnaryOperator::Negate => UnaryOperator::Negate,
 		tree::UnaryOperator::Invert => UnaryOperator::Invert,
@@ -5839,7 +5848,7 @@ fn validate_bracket_index<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let mut index_expression = validate_expression(context, index_expression);
-	index_expression.wants_value(context);
+	index_expression.into_value(context);
 	let range_type_id = context.lang_items.read().range_type.unwrap();
 	let is_range = context.type_store.direct_match(index_expression.type_id, range_type_id);
 
@@ -5928,7 +5937,7 @@ fn validate_binary_operation<'a>(
 	}
 
 	let mut left = validate_expression(context, &operation.left);
-	left.wants_value(context);
+	left.into_value(context);
 
 	let original_expected_type = context.expected_type;
 	if op == BinaryOperator::Assign {
@@ -5936,7 +5945,7 @@ fn validate_binary_operation<'a>(
 	}
 
 	let mut right = validate_expression(context, &operation.right);
-	right.wants_value(context);
+	right.into_value(context);
 
 	context.can_is_bind = original_can_is_bind;
 	context.expected_type = original_expected_type;
@@ -6278,7 +6287,7 @@ fn perform_constant_binary_operation<'a>(
 
 fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::CheckIs<'a>, span: Span) -> Expression<'a> {
 	let mut left = validate_expression(context, &check.left);
-	left.wants_value(context);
+	left.into_value(context);
 
 	let binding_name = if !context.can_is_bind {
 		if let Some(binding_name) = check.binding_name {
