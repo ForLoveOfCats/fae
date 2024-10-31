@@ -276,12 +276,6 @@ pub struct StructLiteral<'a> {
 	pub initializer: Node<StructInitializer<'a>>,
 }
 
-// #[derive(Debug)]
-// pub struct StructlikeEnumLiteral<'a> {
-// 	pub base: Node<Expression<'a>>,
-// 	pub initializer: Node<StructInitializer<'a>>,
-// }
-
 #[derive(Debug)]
 pub struct StructInitializer<'a> {
 	pub field_initializers: &'a [FieldInitializer<'a>],
@@ -468,13 +462,6 @@ pub struct Call<'a> {
 	pub arguments: &'a [Node<Expression<'a>>],
 }
 
-// #[derive(Debug)]
-// pub struct MethodCall<'a> {
-// 	pub base: Node<Expression<'a>>,
-// 	pub name: Node<&'a str>,
-// 	pub arguments: &'a [Node<Expression<'a>>],
-// }
-
 #[derive(Debug)]
 pub struct Read<'a> {
 	pub name: Node<&'a str>,
@@ -498,12 +485,6 @@ pub struct DotInferCall<'a> {
 	pub name: Node<&'a str>,
 	pub arguments: &'a [Node<Expression<'a>>],
 }
-
-// #[derive(Debug)]
-// pub enum EnumInitializer<'a> {
-// 	StructLike { struct_initializer: Node<StructInitializer<'a>> },
-// 	Transparent { expression: Node<Expression<'a>> },
-// }
 
 #[derive(Debug)]
 pub struct Defer<'a> {
@@ -698,9 +679,8 @@ pub enum Expression<'a> {
 
 	ArrayLiteral(ArrayLiteral<'a>),
 	StructLiteral(&'a StructLiteral<'a>),
-	// StructlikeEnumLiteral(&'a StructlikeEnumLiteral<'a>),
+
 	Call(&'a Call<'a>),
-	// MethodCall(&'a MethodCall<'a>),
 	Read(Read<'a>),
 	DotAccess(&'a DotAccess<'a>),
 	DotInfer(&'a DotInfer<'a>),

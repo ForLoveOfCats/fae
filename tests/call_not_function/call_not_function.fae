@@ -1,0 +1,7 @@
+fn main() {
+	Struct(nonexistant())
+	let a = true
+	a()
+}
+
+struct Struct {}

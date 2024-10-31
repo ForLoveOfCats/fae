@@ -3545,7 +3545,6 @@ pub fn validate_expression<'a>(
 			expression
 		}
 
-		// tree::Expression::InferredEnum(inferred_enum) => validate_inferred_enum(context, inferred_enum, span),
 		tree::Expression::UnaryOperation(operation) => {
 			context.can_is_bind = false;
 			let expression = validate_unary_operation(context, operation, span);
@@ -4664,8 +4663,9 @@ fn validate_symbol_call<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let SymbolKind::Function { function_shape_index } = symbol.kind else {
-		todo!("Implement transparent variant initialization");
-		// return Expression::any_collapse(context.type_store, span);
+		let message = error!("Cannot call `{}`, it is {}", symbol.name, symbol.kind);
+		context.message(message.span(span));
+		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let mut type_argument_lookup_errored = false;
@@ -5135,85 +5135,6 @@ fn validate_static_method_call<'a>(
 		debug_location: span.debug_location(context.parsed_files),
 	}
 }
-
-// fn validate_enum_variant_dot_initializer<'a>(
-// 	context: &mut Context<'a, '_, '_>,
-// 	method_call: &'a tree::MethodCall<'a>,
-// 	method_base_user_type: MethodBaseUserType,
-// 	span: Span,
-// ) -> Option<Expression<'a>> {
-// 	let shape_index = method_base_user_type.shape_index;
-// 	let specialization_index = method_base_user_type.specialization_index;
-
-// 	let user_type = context.type_store.user_types.read()[shape_index].clone();
-// 	let user_type = user_type.read();
-
-// 	let UserTypeKind::Enum { shape } = &user_type.kind else {
-// 		return None;
-// 	};
-
-// 	let specialization = &shape.specializations[specialization_index];
-// 	let Some(&variant_index) = specialization.variants_by_name.get(method_call.name.item) else {
-// 		return None;
-// 	};
-
-// 	let variant = specialization.variants[variant_index];
-// 	drop(user_type);
-
-// 	if !variant.is_transparent {
-// 		return None;
-// 	}
-
-// 	if !method_call.type_arguments.is_empty() {
-// 		let span = method_call
-// 			.type_arguments
-// 			.iter()
-// 			.fold(method_call.type_arguments.first().unwrap().span, |a, b| a + b.span);
-
-// 		let name = method_call.name.item;
-// 		let error = error!("Cannot construct transparent variant enum `{name}` with type arguments");
-// 		context.messages.message(error.span(span));
-// 	}
-
-// 	if method_call.arguments.len() != 1 {
-// 		let name = method_call.name.item;
-// 		let count = method_call.arguments.len();
-// 		let error = error!("Transparent variant enum `{name}` must be constructed with one value, found {count}");
-// 		context.messages.message(error.span(span));
-// 		return Some(Expression::any_collapse(context.type_store, span));
-// 	}
-
-// 	let expression = method_call.arguments.first().unwrap();
-
-// 	let expected_type_id = variant
-// 		.type_id
-// 		.as_struct(&mut context.type_store, |_, specialization| {
-// 			specialization.fields.first().unwrap().type_id
-// 		})
-// 		.unwrap();
-
-// 	let mut yields = false;
-// 	let mut returns = false;
-// 	let Some(field_initializers) =
-// 		validate_transparent_variant_initializer(context, &mut yields, &mut returns, expression, expected_type_id)
-// 	else {
-// 		return Some(Expression::any_collapse(context.type_store, span));
-// 	};
-
-// 	let type_id = variant.type_id;
-// 	let literal = StructLiteral { type_id, field_initializers };
-// 	let kind = ExpressionKind::StructLiteral(literal);
-// 	return Some(Expression {
-// 		span,
-// 		type_id,
-// 		is_itself_mutable: true,
-// 		is_pointer_access_mutable: true,
-// 		yields,
-// 		returns,
-// 		kind,
-// 		debug_location: span.debug_location(context.parsed_files),
-// 	});
-// }
 
 fn validate_read<'a>(context: &mut Context<'a, '_, '_>, read: &tree::Read<'a>, span: Span) -> Expression<'a> {
 	let Some(symbol) = context.lookup_symbol_by_name(read.name) else {
