@@ -1,0 +1,24 @@
+fn main() {
+	let _: i32<bool> = void
+	let _: Struct<i32>.abc = void
+	let _: Enum<i32>.abc = void
+	let _: Enum<i32>.A.B = void
+}
+
+generic T
+struct Struct {
+	field: T.abc
+	other_field: T<f32>
+}
+
+generic T
+enum Enum {
+	A
+	B
+}
+
+generic T
+fn function(): T.abc {
+	let _: T<i32> = void
+	return void
+}
