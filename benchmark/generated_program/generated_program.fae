@@ -1,5 +1,5 @@
 fn main() {
-	let result = file_0::logic_0(3)
+	let result = file_0.logic_0(3)
 	println("")
 	println(f"Resulting i32: {result}")
 }

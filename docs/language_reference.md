@@ -518,7 +518,7 @@ assert(slice[1] == 9)
 
 ## Allocation
 
-Pointers and slices to heap allocated data may be acquired by calling the collection of helper functions included in the standard library module `fae::memory`. These functions are designed to handle zero sized types automatically and transparently, allowing for use in generic code.
+Pointers and slices to heap allocated data may be acquired by calling the collection of helper functions included in the standard library module `fae.memory`. These functions are designed to handle zero sized types automatically and transparently, allowing for use in generic code.
 
 **Note**: These functions are currently backed by libc malloc/realloc/free but it is planned to make them take an allocator object and for most normal allocating code in Fae to be parameterized by an allocator.
 
@@ -834,7 +834,7 @@ Attempting to query the size of a zero size type with `size_of<T>()` will return
 
 Pointers to and slices of zero size types are represented with a value of `1` (one). They will not erroneously trigger comparisons against null, yet on systems with a protected zero page any access will still trigger a segmentation fault rather than silently misbehaving. Fae code should never hit this, but in the case of erroneously passing one of these pointers or slices across FFI to a language with no concept of zero size types, external code may attempt to dereference these pointers.
 
-The memory allocation functions in the standard library module `fae::memory` handle zero size types transparently and automatically. Furthermore the standard library provides helper intrinsics `create_non_null_invalid_pointer` and `create_non_null_invalid_slice` in the module `fae::intrinsics` to manually create these pointers and slices.
+The memory allocation functions in the standard library module `fae.memory` handle zero size types transparently and automatically. Furthermore the standard library provides helper intrinsics `create_non_null_invalid_pointer` and `create_non_null_invalid_slice` in the module `fae.intrinsics` to manually create these pointers and slices.
 
 
 ## `if-else` expression
@@ -1223,31 +1223,31 @@ An `import` statement may import one or more symbols from a file specified by th
 ```
 // Import `Symbol` from a file at the path "./path/to/file.fae"
 // relative to the root of the project source directory
-import path::to::file::Symbol
+import path.to.file.Symbol
 
 // Import `AnotherSymbol` from "./another.fae"
-import another::AnotherSymbol
+import another.AnotherSymbol
 
 // Import `YetAnother` from "./module/module.fae"
 // Note that the file becomes the folder it shares
 // the name of, such that the module path is not
-// written like `module::module::YetAnother`
-import module::YetAnother
+// written like `module.module.YetAnother`
+import module.YetAnother
 
 // Import `A`, `B` and `C` from "./some/path.fae"
-import some::path::A, B, C
+import some.path.A, B, C
 
 // Import `List<T>` from the standard library
-import fae::collections::list::List
+import fae.collections.list.List
 ```
 
 An `import` statement may also import a module itself so it may be referenced by name without the rest of the module path preceding the module in question.
 ```
-import fae::collections::list
+import fae.collections.list
 
 // ...
 
-let _ = list::List.new()
+let _ = list.List.new()
 ```
 
 **Note**: It is planned to provide the ability to import everything from within a module path with a glob import.
@@ -1357,7 +1357,7 @@ println(f"field: {value.field}") // "true"
 
 Methods may also be added to a struct or enum defined in another module or scope. These methods are known as extension methods and may *not* access `internal` fields or mutate `readable` fields.
 ```
-import fae::collections::list::List
+import fae.collections.list.List
 
 method mut List
 fn push_twice(value: T) {
@@ -1520,7 +1520,7 @@ fn unwrap(): T
 
 ## Intrinsic functions
 
-The Fae compiler implements a number of functions "built-into" the compiler to generate specific data or behavior. Unless otherwise specified, all listed intrinsics are located in the standard library module `fae::intrinsics`.
+The Fae compiler implements a number of functions "built-into" the compiler to generate specific data or behavior. Unless otherwise specified, all listed intrinsics are located in the standard library module `fae.intrinsics`.
 
 **Get a type's size**
 ```

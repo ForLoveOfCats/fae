@@ -8,7 +8,7 @@ Fae is an unsafe systems programming language with a focus on utility, comfort, 
 
 ```
 >>> cat main.fae
-import fae::collections::list::List
+import fae.collections.list.List
 
 fn main() {
     mut list = List<str>.new()
