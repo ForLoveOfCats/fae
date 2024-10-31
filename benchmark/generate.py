@@ -40,7 +40,7 @@ enum Enum {{
 		/* comment in here */ second_c: u8
 	}}
 	D
-	E {{ first_e: file_{index + 1}::Struct{index + 1} }}
+	E {{ first_e: file_{index + 1}.Struct{index + 1} }}
 }}
 
 enum TransparentEnum {{
@@ -56,7 +56,7 @@ enum Result {{
 	Error(E) // Oh no an error
 }}
 
-import file_{index + 1}::Entity{index + 1}
+import file_{index + 1}.Entity{index + 1}
 
 generic T
 struct EntityStore {{
@@ -104,8 +104,8 @@ fn new(): EnumEntityStore<T> {{
 }}
 
 method static EnumEntityStore
-fn new_variant(): EnumEntityStore::Variant<T> {{
-	return EnumEntityStore::Variant<T> {{
+fn new_variant(): EnumEntityStore<T>.Variant {{
+	return EnumEntityStore<T>.Variant {{
 		shared_entities: List<Entity{index + 1}<T>>.new()
 		variant_entities: List<Entity{index + 1}<T>>.new()
 	}}
@@ -201,7 +201,7 @@ fn logic_{index}(addend: i32): i32 {{
 
 	println("")
 
-	mut variant_store: EnumEntityStore::Variant<i32> = EnumEntityStore<i32>.new_variant()
+	mut variant_store: EnumEntityStore.Variant<i32> = EnumEntityStore<i32>.new_variant()
 	variant_store.shared_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -600 }})
 	variant_store.variant_entities.push(Entity{index + 1}<i32> {{ health: 100, payload: -700 }})
 	function<i32>(variant_store.shared_entities.&)
@@ -209,7 +209,7 @@ fn logic_{index}(addend: i32): i32 {{
 	println(f"{{variant_store.shared_entities.get(0).payload}}")
 	println(f"{{variant_store.variant_entities.get(0).payload}}")
 
-	return file_{index + 1}::logic_{index + 1}(addend) + addend
+	return file_{index + 1}.logic_{index + 1}(addend) + addend
 }}
 
 struct ErrorStruct {{
@@ -225,7 +225,7 @@ fn do_failable_thing(arg: T, index: i32): Result<T, ErrorStruct> {{
 
 def generate_normal_file(index):
 	return f"""
-import fae::collections::list::List
+import fae.collections.list.List
 
 {generate_normal_types(index)}
 
