@@ -1638,7 +1638,16 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 			};
 
 			let type_arguments = type_arguments.into_bump_slice();
-			let path = Type::Path { path_segments, type_arguments };
+
+			let mut entries = BumpVec::new_in(bump);
+			while tokens.peek_kind() == Ok(TokenKind::Period) {
+				tokens.next(messages)?;
+				let entry = tokens.expect(messages, TokenKind::Word)?;
+				entries.push(Node::from_token(entry.text, entry));
+			}
+
+			let dot_access_chain = entries.into_bump_slice();
+			let path = Type::Path { path_segments, type_arguments, dot_access_chain };
 			Node::new(path, span)
 		}
 	};

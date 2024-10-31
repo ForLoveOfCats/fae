@@ -1625,7 +1625,7 @@ impl<'a> TypeStore<'a> {
 		enclosing_generic_parameters: &GenericParameters<'a>,
 		parsed_type: &Node<tree::Type<'a>>,
 	) -> Option<TypeId> {
-		let (path_segments, type_arguments) = match &parsed_type.item {
+		let (path_segments, type_arguments, dot_access_chain) = match &parsed_type.item {
 			tree::Type::Void => return Some(self.void_type_id),
 
 			tree::Type::Pointer { pointee, mutable } => {
@@ -1658,9 +1658,12 @@ impl<'a> TypeStore<'a> {
 				return Some(self.slice_of(id, *mutable));
 			}
 
-			tree::Type::Path { path_segments, type_arguments } => (path_segments, type_arguments),
+			tree::Type::Path { path_segments, type_arguments, dot_access_chain } => {
+				(path_segments, type_arguments, dot_access_chain)
+			}
 		};
 
+		let last_path_span = path_segments.item.segments.last().unwrap().span;
 		let symbol =
 			symbols.lookup_path_symbol(messages, root_layers, self, function_initial_symbols_len, &path_segments.item)?;
 		let shape_index = match symbol.kind {
@@ -1670,18 +1673,45 @@ impl<'a> TypeStore<'a> {
 					return None;
 				}
 
+				if !dot_access_chain.is_empty() {
+					messages.message(error!("Builtin types may not be dot-accessed").span(parsed_type.span));
+					return None;
+				}
+
 				return Some(type_id);
 			}
 
 			SymbolKind::Type { shape_index, .. } => shape_index,
 
 			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
+				if !type_arguments.is_empty() {
+					messages.message(error!("Type generic parameters do not accept type arguments").span(parsed_type.span));
+					return None;
+				}
+
+				if let [first_access, ..] = dot_access_chain {
+					let message = error!("Type generic parameters may not be dot-accessed");
+					messages.message(message.span(last_path_span + first_access.span));
+					return None;
+				}
+
 				let user_type = &self.user_types.read()[shape_index];
 				let generic = user_type.read().generic_parameters.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
 
 			SymbolKind::FunctionGeneric { function_shape_index, generic_index } => {
+				if !type_arguments.is_empty() {
+					messages.message(error!("Function generic parameters do not accept type arguments").span(parsed_type.span));
+					return None;
+				}
+
+				if let [first_access, ..] = dot_access_chain {
+					let message = error!("Function generic parameters may not be dot-accessed");
+					messages.message(message.span(last_path_span + first_access.span));
+					return None;
+				}
+
 				let generics = &function_store.generics.read()[function_shape_index];
 				let generic = &generics.parameters()[generic_index];
 				return Some(generic.generic_type_id);
@@ -1708,7 +1738,41 @@ impl<'a> TypeStore<'a> {
 			type_arguments,
 		)?;
 
-		Some(type_id)
+		let [first_access, ..] = dot_access_chain else {
+			return Some(type_id);
+		};
+
+		// TODO: Weird error, should go away once enums can be arbitrarily nested
+		if dot_access_chain.len() > 1 {
+			let depth = dot_access_chain.len();
+			let message = error!("Types may not have more than one level of dot access, found {depth} levels");
+			let last_access_span = dot_access_chain.last().unwrap().span;
+			messages.message(message.span(last_path_span + last_access_span));
+			return None;
+		}
+
+		let entry = self.type_entries.get(type_id);
+		if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
+			let user_type = self.user_types.read()[shape_index].clone();
+			let user_type = user_type.read();
+			if let UserTypeKind::Enum { shape } = &user_type.kind {
+				let specialization = &shape.specializations[specialization_index];
+				if let Some(&variant_index) = specialization.variants_by_name.get(first_access.item) {
+					let variant = specialization.variants[variant_index];
+					return Some(variant.type_id);
+				} else {
+					let name = self.type_name(function_store, module_path, type_id);
+					let message = error!("Enum {name} has no variant named `{}`", first_access.item);
+					messages.message(message.span(first_access.span));
+					return None;
+				}
+			}
+		}
+
+		let name = self.type_name(function_store, module_path, type_id);
+		let message = error!("Type {name} may not be dot-accessed");
+		messages.message(message.span(last_path_span + first_access.span));
+		None
 	}
 
 	pub fn get_or_add_shape_specialization_in_scope(

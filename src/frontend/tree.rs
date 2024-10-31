@@ -131,6 +131,7 @@ pub enum Type<'a> {
 	Path {
 		path_segments: Node<PathSegments<'a>>,
 		type_arguments: &'a [Node<Type<'a>>],
+		dot_access_chain: &'a [Node<&'a str>],
 	},
 }
 
