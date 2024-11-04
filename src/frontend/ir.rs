@@ -167,7 +167,7 @@ pub struct FunctionShape<'a> {
 
 	pub method_base_index: Option<usize>,
 	pub generic_parameters: GenericParameters<'a>,
-	pub parameters: Vec<ParameterShape>,
+	pub parameters: Vec<ParameterShape<'a>>,
 	pub c_varargs: bool,
 	pub return_type: TypeId,
 	pub block: Option<Ref<Block<'a>>>,
@@ -184,7 +184,8 @@ pub struct FunctionSpecializationResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ParameterShape {
+pub struct ParameterShape<'a> {
+	pub label: Option<&'a str>,
 	pub type_id: TypeId,
 	pub readable_index: usize,
 	pub is_mutable: bool,
@@ -282,7 +283,7 @@ impl TypeArguments {
 pub struct Function {
 	pub type_arguments: Ref<TypeArguments>,
 	pub generic_poisoned: bool,
-	pub parameters: Vec<Parameter>,
+	pub parameters: SliceRef<Parameter>,
 	pub return_type: TypeId,
 }
 

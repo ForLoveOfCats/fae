@@ -84,19 +84,19 @@ fn main() {
 
 	println("")
 
-	if cat.visit_vet(.Mammal) is NotTreated {
+	if cat.visit_vet(specialty: .Mammal) is NotTreated {
 		println("The cat has not been treated")
 	}
 
 	println("")
 
-	if dog.visit_vet(.Mammal) is NotTreated {
+	if dog.visit_vet(specialty: .Mammal) is NotTreated {
 		println("The dog has not been treated")
 	}
 
 	println("")
 
-	if snake.visit_vet(.Mammal) is NotTreated {
+	if snake.visit_vet(specialty: .Mammal) is NotTreated {
 		println("The snake has not been treated")
 	}
 
@@ -126,7 +126,7 @@ fn main() {
 
 	println("")
 
-	let morty = adopt(25)
+	let morty = adopt(human_age: 25)
 	println(morty.unwrap().name)
 
 	// let morty = adopt(17)

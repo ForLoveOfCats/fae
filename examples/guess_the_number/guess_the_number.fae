@@ -9,7 +9,7 @@ fn main() {
 fn seed_rand() {
 	import fae.libc.TimeT, srand, time
 	let null = null_pointer<TimeT>()
-	srand(time(null).time_t.(u32))
+	srand(seed: time(null).time_t.(u32))
 }
 
 fn play_round() {

@@ -19,14 +19,14 @@ fn new(): List<T> {
 }
 
 method static List
-fn with_capacity(capacity: isize): List<T> {
+fn with_capacity(capacity=: isize): List<T> {
 	mut list = List<T>.new()
 	list.reserve_exact(capacity)
 	return list
 }
 
 method mut List
-fn push(item: T) {
+fn push(item=: T) {
 	self.reserve_at_least(self.items.length + 1)
 	let index = self.items.length
 	self.items.length += 1
@@ -34,7 +34,7 @@ fn push(item: T) {
 }
 
 method mut List
-fn insert(item: T, index: isize) {
+fn insert(item=: T, index=at: isize) {
 	self.reserve_at_least(self.items.length + 1)
 
 	let original_length = self.items.length
@@ -55,13 +55,13 @@ fn clear() {
 }
 
 method mut List
-fn truncate(to_length: isize) {
+fn truncate(to_length=to: isize) {
 	if to_length >= self.items.length => return
 	self.items.length = to_length
 }
 
 method mut List
-fn set_length(to_length: isize) {
+fn set_length(to_length=: isize) {
 	self.items.length = to_length
 }
 
@@ -71,16 +71,16 @@ fn length(): isize {
 }
 
 method mut List
-fn reserve_exact(new_capacity: isize) {
+fn reserve_exact(new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
 	if new_capacity <= self.capacity => return
 
-	reallocate_region<T>(self.items.pointer.&mut, new_capacity)
+	reallocate_region<T>(self.items.pointer.&mut, new_length: new_capacity)
 	self.capacity = new_capacity
 }
 
 method mut List
-fn reserve_at_least(mut new_capacity: isize) {
+fn reserve_at_least(mut new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
 	if new_capacity <= self.capacity => return
 
@@ -89,16 +89,16 @@ fn reserve_at_least(mut new_capacity: isize) {
 		new_capacity = self.capacity * GrowthFactor
 	}
 	
-	reallocate_region<T>(self.items.pointer.&mut, new_capacity)
+	reallocate_region<T>(self.items.pointer.&mut, new_length: new_capacity)
 	self.capacity = new_capacity
 }
 
 method mut List
-fn extend_from_slice(slice: []T) {
+fn extend_from_slice(slice=: []T) {
 	let result_length = self.items.length + slice.length
 	self.reserve_at_least(result_length)
 	let destination = self.items[self.items.length..result_length]
-	copy_slice_nonoverlapping<T>(slice, destination)
+	copy_slice_nonoverlapping<T>(source: slice, destination)
 	self.items.length = result_length
 }
 
@@ -160,62 +160,62 @@ fn pop(): Option<T> {
 }
 
 method mut List
-fn remove(index: isize) {
+fn remove(index=: isize) {
 	let source = self.items[index + 1..self.items.length]
 	let destination = self.items[index..self.items.length]
 	copy_slice_overlapping<T>(source, destination)
-	self.truncate(self.items.length - 1)
+	self.truncate(to: self.items.length - 1)
 }
 
 method mut List
-fn remove_range(range: Range) {
+fn remove_range(range=: Range) {
 	let source = self.items[range.end..self.items.length]
 	let destination = self.items[range.start..self.items.length]
 	copy_slice_overlapping<T>(source, destination)
-	self.truncate(range.start + source.length)
+	self.truncate(to: range.start + source.length)
 }
 
 method List
-fn get(index: isize): T {
+fn get(index=: isize): T {
 	return self.items[index]
 }
 
 method List
-fn get_ref(index: isize): *T {
+fn get_ref(index=: isize): *T {
 	return self.items[index].&
 }
 
 method mut List
-fn get_mut(index: isize): *mut T {
+fn get_mut(index=: isize): *mut T {
 	return self.items[index].&mut
 }
 
 method List
-fn get_unchecked(index: isize): T {
+fn get_unchecked(index=: isize): T {
 	let offset = index * size_of<T>()
-	let pointer = offset_pointer<T>(self.items.pointer, offset)	
+	let pointer = offset_pointer<T>(self.items.pointer, by_bytes: offset)	
 	return pointer.*
 }
 
 method List
-fn get_ref_unchecked(index: isize): *T {
+fn get_ref_unchecked(index=: isize): *T {
 	let offset = index * size_of<T>()
-	return offset_pointer<T>(self.items.pointer, offset)	
+	return offset_pointer<T>(self.items.pointer, by_bytes: offset)	
 }
 
 method mut List
-fn get_mut_unchecked(index: isize): *mut T {
+fn get_mut_unchecked(index=: isize): *mut T {
 	let offset = index * size_of<T>()
-	return offset_pointer_mut<T>(self.items.pointer, offset)	
+	return offset_pointer_mut<T>(self.items.pointer, by_bytes: offset)	
 }
 
 method List
-fn slice(range: Range): []T {
+fn slice(range=: Range): []T {
 	return self.items[range]
 }
 
 method mut List
-fn slice_mut(range: Range): []mut T {
+fn slice_mut(range=: Range): []mut T {
 	return self.items[range]
 }
 

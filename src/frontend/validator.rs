@@ -2371,7 +2371,7 @@ fn create_block_functions<'a>(
 
 					let readable_index = readables.push("self", type_id, ReadableKind::Let, mutable);
 					assert_eq!(readable_index, 0);
-					parameters.push(ParameterShape { type_id, readable_index, is_mutable: false });
+					parameters.push(ParameterShape { label: None, type_id, readable_index, is_mutable: false });
 				}
 			}
 
@@ -2403,8 +2403,9 @@ fn create_block_functions<'a>(
 				let readable_index = readables.push(name, type_id, readable_kind, true);
 				assert_eq!(readable_index, index + maybe_self);
 
+				let label = parameter.item.label;
 				let is_mutable = parameter.item.is_mutable;
-				parameters.push(ParameterShape { type_id, readable_index, is_mutable });
+				parameters.push(ParameterShape { label, type_id, readable_index, is_mutable });
 			}
 
 			drop(scope);
@@ -4715,94 +4716,14 @@ fn validate_symbol_call<'a>(
 		Some(span),
 	);
 
-	let mut yields = false;
-	let mut returns = false;
-	let mut arguments = Vec::with_capacity(call.arguments.len());
-	for (index, argument) in call.arguments.iter().enumerate() {
-		let mut scope = context.child_scope();
-		scope.expected_type = None;
-
-		if let Some(result) = &result {
-			let shape = lock.read();
-			let specialization = &shape.specializations[result.specialization_index];
-			scope.expected_type = match specialization.parameters.get(index) {
-				Some(parameter) => Some(parameter.type_id),
-				None => None,
-			};
-			drop(shape);
-		}
-
-		let mut argument = validate_expression(&mut scope, argument);
-		argument.into_value(&mut scope);
-		yields |= argument.yields;
-		returns |= argument.returns;
-		arguments.push(argument);
-	}
+	let specialization_index = result.as_ref().map(|result| result.specialization_index);
+	let MethodArgumentsResult { mut yields, mut returns, arguments } =
+		validate_function_arguments(context, &call.arguments, function_shape_index, specialization_index, span, false);
 
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
 		None => return Expression::any_collapse(context.type_store, span),
 	};
-
-	let shape = lock.read();
-	let specialization = &shape.specializations[specialization_index];
-	let specialization_parameters = specialization.parameters.clone();
-	let has_c_varargs = shape.c_varargs;
-	drop(shape);
-
-	// Don't bail immediately with type mismatch, we want to check every argument and the argument count
-	let mut arguments_type_mismatch = false;
-	for (index, argument) in arguments.iter_mut().enumerate() {
-		let parameter = match specialization_parameters.get(index) {
-			Some(parameter) => parameter,
-			None => break,
-		};
-
-		let collapsed = context
-			.type_store
-			.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
-			.unwrap_or(true);
-
-		if !collapsed {
-			let error = error!(
-				"Expected argument of type {}, got {}",
-				context.type_name(parameter.type_id),
-				context.type_name(argument.type_id)
-			);
-			context.messages.message(error.span(argument.span));
-			arguments_type_mismatch = true;
-		}
-	}
-
-	if has_c_varargs {
-		if arguments.len() < specialization_parameters.len() {
-			let error = error!("Expected at least {} arguments, got {}", specialization_parameters.len(), arguments.len());
-			context.message(error.span(span));
-			return Expression::any_collapse(context.type_store, span);
-		}
-
-		let mut vararg_error = false;
-		let remaining_arguments = &arguments[specialization_parameters.len()..];
-		for argument in remaining_arguments {
-			if argument.type_id.is_untyped_number(context.type_store) {
-				let error = error!("Cannot pass untyped number as vararg, try casting it to a concrete type first");
-				context.message(error.span(argument.span));
-				vararg_error = true;
-			}
-		}
-
-		if vararg_error {
-			return Expression::any_collapse(context.type_store, span);
-		}
-	} else if arguments.len() != specialization_parameters.len() {
-		let error = error!("Expected {} arguments, got {}", specialization_parameters.len(), arguments.len());
-		context.message(error.span(span));
-		return Expression::any_collapse(context.type_store, span);
-	}
-
-	if arguments_type_mismatch {
-		return Expression::any_collapse(context.type_store, span);
-	}
 
 	if return_type.is_noreturn(context.type_store) {
 		yields = true;
@@ -4896,15 +4817,15 @@ struct MethodArgumentsResult<'a> {
 	arguments: Vec<Expression<'a>>,
 }
 
-fn validate_method_arguments<'a>(
+fn validate_function_arguments<'a>(
 	context: &mut Context<'a, '_, '_>,
-	call_arguments: &'a [Node<tree::Expression<'a>>],
+	call_arguments: &'a [tree::Argument<'a>],
 	function_shape_index: usize,
-	function_specialization_index: usize,
+	function_specialization_index: Option<usize>,
 	span: Span,
-	is_static: bool,
-) -> Option<MethodArgumentsResult<'a>> {
-	let maybe_self = if is_static { 0 } else { 1 };
+	has_self: bool,
+) -> MethodArgumentsResult<'a> {
+	let maybe_self = if has_self { 1 } else { 0 };
 	let lock = context.function_store.shapes.read()[function_shape_index]
 		.as_ref()
 		.unwrap()
@@ -4914,17 +4835,41 @@ fn validate_method_arguments<'a>(
 	let mut returns = false;
 	let mut arguments = Vec::with_capacity(call_arguments.len());
 	for (index, argument) in call_arguments.iter().enumerate() {
+		let parameter_index = index + maybe_self;
 		let mut scope = context.child_scope();
 
 		let shape = lock.read();
-		let specialization = &shape.specializations[function_specialization_index];
-		scope.expected_type = match specialization.parameters.get(index + maybe_self) {
-			Some(parameter) => Some(parameter.type_id),
-			None => None,
-		};
+		let shape_parameter = shape.parameters.get(parameter_index);
+		if let Some(parameter_label) = shape_parameter.and_then(|parameter| parameter.label) {
+			if let Some(argument_label) = argument.label {
+				if argument_label.item != parameter_label {
+					let message = error!(
+						"Expected parameter label `{parameter_label}` for argument, found `{}`",
+						argument_label.item
+					);
+					scope.message(message.span(argument_label.span));
+				}
+			} else {
+				let message = error!("Expected parameter label `{parameter_label}` for argument");
+				scope.message(message.span(argument.expression.span));
+			}
+		} else if let Some(argument_label) = argument.label {
+			if !matches!(&argument.expression.item, tree::Expression::Read(_)) {
+				let message = error!("Expected no parameter label for argument");
+				scope.message(message.span(argument_label.span));
+			}
+		}
+
+		scope.expected_type = None;
+		if let Some(function_specialization_index) = function_specialization_index {
+			let specialization = &shape.specializations[function_specialization_index];
+			if let Some(parameter) = specialization.parameters.get(parameter_index) {
+				scope.expected_type = Some(parameter.type_id)
+			}
+		}
 		drop(shape);
 
-		let mut argument = validate_expression(&mut scope, argument);
+		let mut argument = validate_expression(&mut scope, &argument.expression);
 		argument.into_value(&mut scope);
 		yields |= argument.yields;
 		returns |= argument.returns;
@@ -4932,46 +4877,56 @@ fn validate_method_arguments<'a>(
 	}
 
 	let shape = lock.read();
-	let specialization = &shape.specializations[function_specialization_index];
-	let specialization_parameters = specialization.parameters.clone();
+	let overall_parameter_len = shape.parameters.len();
+	let selfless_parameter_len = overall_parameter_len - maybe_self;
+	let specialization_parameters = function_specialization_index.map(|index| shape.specializations[index].parameters.clone());
+	let has_c_varargs = shape.c_varargs;
 	drop(shape);
 
-	// Don't bail immediately with type mismatch, we want to check every argument and the argument count
-	let mut arguments_type_mismatch = false;
-	for (index, argument) in arguments.iter_mut().enumerate() {
-		let parameter = match specialization_parameters.get(index + maybe_self) {
-			Some(parameter) => parameter,
-			None => break,
-		};
+	if let Some(specialization_parameters) = specialization_parameters {
+		for (index, argument) in arguments.iter_mut().enumerate() {
+			let parameter_index = index + maybe_self;
+			let parameter = match specialization_parameters.get(parameter_index) {
+				Some(parameter) => parameter,
+				None => break,
+			};
 
-		let collapsed = context
-			.type_store
-			.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
-			.unwrap_or(true);
+			let collapsed = context
+				.type_store
+				.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
+				.unwrap_or(true);
 
-		if !collapsed {
-			let error = error!(
-				"Expected argument of type {}, got {}",
-				context.type_name(parameter.type_id),
-				context.type_name(argument.type_id)
-			);
-			context.messages.message(error.span(argument.span));
-			arguments_type_mismatch = true;
+			if !collapsed {
+				let error = error!(
+					"Expected argument of type {}, got {}",
+					context.type_name(parameter.type_id),
+					context.type_name(argument.type_id)
+				);
+				context.messages.message(error.span(argument.span));
+			}
 		}
 	}
 
-	if arguments.len() != specialization_parameters.len() - maybe_self {
-		let expected = specialization_parameters.len() - maybe_self;
+	if has_c_varargs {
+		if arguments.len() < selfless_parameter_len {
+			let message = error!("Expected at least {} arguments, got {}", selfless_parameter_len, arguments.len());
+			context.message(message.span(span));
+		}
+
+		let remaining_arguments = &arguments[selfless_parameter_len..];
+		for argument in remaining_arguments {
+			if argument.type_id.is_untyped_number(context.type_store) {
+				let message = error!("Cannot pass untyped number as vararg, try casting it to a concrete type first");
+				context.message(message.span(argument.span));
+			}
+		}
+	} else if arguments.len() != selfless_parameter_len {
+		let expected = selfless_parameter_len;
 		let message = error!("Expected {expected} arguments, got {}", arguments.len());
 		context.message(message.span(span));
-		return None;
 	}
 
-	if arguments_type_mismatch {
-		return None;
-	}
-
-	Some(MethodArgumentsResult { yields, returns, arguments })
+	MethodArgumentsResult { yields, returns, arguments }
 }
 
 fn validate_method_call<'a>(
@@ -5036,21 +4991,21 @@ fn validate_method_call<'a>(
 
 	let result =
 		get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_user_type, span);
+
+	let specialization_index = result.as_ref().map(|result| result.specialization_index);
+	let MethodArgumentsResult { mut yields, mut returns, arguments } =
+		validate_function_arguments(context, &call.arguments, function_shape_index, specialization_index, span, true);
+
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
 		None => return Expression::any_collapse(context.type_store, span),
-	};
-
-	let Some(MethodArgumentsResult { yields, mut returns, arguments }) =
-		validate_method_arguments(context, &call.arguments, function_shape_index, specialization_index, span, false)
-	else {
-		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
 	let method_call = MethodCall { base, function_id, arguments };
 
 	if return_type.is_noreturn(context.type_store) {
+		yields = true;
 		returns = true;
 	}
 
@@ -5114,21 +5069,21 @@ fn validate_static_method_call<'a>(
 
 	let result =
 		get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_user_type, span);
+
+	let specialization_index = result.as_ref().map(|result| result.specialization_index);
+	let MethodArgumentsResult { mut yields, mut returns, arguments } =
+		validate_function_arguments(context, &call.arguments, function_shape_index, specialization_index, span, false);
+
 	let FunctionSpecializationResult { specialization_index, return_type } = match result {
 		Some(results) => results,
 		None => return Expression::any_collapse(context.type_store, span),
-	};
-
-	let Some(MethodArgumentsResult { yields, mut returns, arguments }) =
-		validate_method_arguments(context, &call.arguments, function_shape_index, specialization_index, span, true)
-	else {
-		return Expression::any_collapse(context.type_store, span);
 	};
 
 	let function_id = FunctionId { function_shape_index, specialization_index };
 	let call = Call { span, name, function_id, arguments };
 
 	if return_type.is_noreturn(context.type_store) {
+		yields = true;
 		returns = true;
 	}
 
@@ -5508,7 +5463,7 @@ fn validate_transparent_variant_initialization<'a>(
 	context: &mut Context<'a, '_, '_>,
 	name: &str,
 	enum_variant: EnumVariant,
-	expressions: &'a [Node<tree::Expression<'a>>],
+	arguments: &'a [tree::Argument<'a>],
 	span: Span,
 ) -> Expression<'a> {
 	if !enum_variant.is_transparent {
@@ -5525,16 +5480,25 @@ fn validate_transparent_variant_initialization<'a>(
 		})
 		.unwrap();
 
-	let [expression] = expressions else {
-		let count = expressions.len();
-		let message = error!("Transparent variant enum `{name}` must be constructed with one value, found {count}");
+	let [argument] = arguments else {
+		let count = arguments.len();
+		let message = error!("Transparent enum variant `{name}` must be constructed with one value, found {count}");
 		context.message(message.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	};
 
+	// This is such a silly "oh well, I guess we have to detect this"
+	// It'd be so much better if transparent variant initialization didn't have to share a parser codepath with function calling
+	if let Some(label) = argument.label {
+		if !matches!(&argument.expression.item, tree::Expression::Read(_)) {
+			let message = error!("Transparent enum variant initialization expression may not have a label");
+			context.message(message.span(label.span));
+		}
+	}
+
 	let mut scope = context.child_scope();
 	scope.expected_type = Some(expected_type_id);
-	let mut expression = validate_expression(&mut scope, expression);
+	let mut expression = validate_expression(&mut scope, &argument.expression);
 	expression.into_value(&mut scope);
 	drop(scope);
 
