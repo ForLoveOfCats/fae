@@ -1145,13 +1145,28 @@ fn parse_arguments<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
-) -> ParseResult<Node<&'a [Node<Expression<'a>>]>> {
+) -> ParseResult<Node<&'a [Argument<'a>]>> {
 	let open_paren_token = tokens.expect(messages, TokenKind::OpenParen)?;
 	tokens.consume_newlines();
 
 	let mut expressions = BumpVec::new_in(bump);
 	while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
-		expressions.push(parse_expression(bump, messages, tokens, true)?);
+		let mut label = if tokens.peek_kind() == Ok(TokenKind::Word) && tokens.peek_kind_two_ahead() == Ok(TokenKind::Colon) {
+			let label_token = tokens.expect(messages, TokenKind::Word)?;
+			tokens.next(messages)?; // The colon
+			Some(Node::from_token(label_token.text, label_token))
+		} else {
+			None
+		};
+
+		let expression = parse_expression(bump, messages, tokens, true)?;
+		if let Expression::Read(read) = &expression.item {
+			if label.is_none() {
+				label = Some(read.name);
+			}
+		}
+
+		expressions.push(Argument { label, expression });
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {
 			break;
@@ -1735,12 +1750,25 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 		check_not_reserved(messages, name_token, "parameter name")?;
 		let name = Node::from_token(name_token.text, name_token);
 
+		let label = if tokens.peek_kind() == Ok(TokenKind::Equal) {
+			tokens.next(messages)?;
+			if tokens.peek_kind() == Ok(TokenKind::Word) {
+				let label_token = tokens.next(messages)?;
+				check_not_reserved(messages, label_token, "parameter label")?;
+				Some(label_token.text)
+			} else {
+				None
+			}
+		} else {
+			Some(name.item)
+		};
+
 		tokens.expect(messages, TokenKind::Colon)?;
 
 		let parsed_type = parse_type(bump, messages, tokens)?;
 
 		let span = name_token.span + parsed_type.span;
-		let parameter = Parameter { name, parsed_type, is_mutable };
+		let parameter = Parameter { name, label, parsed_type, is_mutable };
 		parameters.push(Node::new(parameter, span));
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseParen) {

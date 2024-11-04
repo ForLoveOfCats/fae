@@ -20,12 +20,12 @@ enum CreateMode {
 }
 
 method static File
-fn open(path: []u8, write: WriteMode, create: CreateMode): Option<File> {
+fn open(path=: []u8, write=: WriteMode, create=: CreateMode): Option<File> {
 	// TODO: Do like Rust and have an API for doing this on the stack
 	// if the result will be short enough to fit
-	let space = allocate_slice_space<u8>(path.length + 1)
+	let space = allocate_slice_space<u8>(length: path.length + 1)
 	defer free_slice<u8>(space)
-	copy_slice_nonoverlapping<u8>(path, space)
+	copy_slice_nonoverlapping<u8>(source: path, destination: space)
 	space[path.length] = 0
 
 	mut flags: i32 = 0
@@ -38,14 +38,14 @@ fn open(path: []u8, write: WriteMode, create: CreateMode): Option<File> {
 
 	let mode: i32 = 1638 // 0x666
 
-	let file_descriptor = open(space.pointer, flags, mode)
+	let file_descriptor = open(pathname: space.pointer, flags, mode)
 	if file_descriptor < 0 => return .None
 
 	return .Some(File { file_descriptor })
 }
 
 method static File
-fn from_fd(file_descriptor: i32): File {
+fn from_file_descriptor(file_descriptor=: i32): File {
 	return File { file_descriptor }
 }
 
@@ -61,10 +61,10 @@ fn close() {
 }
 
 method mut File
-fn write(data: []u8) {
+fn write(data=: []u8) {
 	if data.length <= 0 => return
 	// TODO: This should report failure to the caller
-	write(self.file_descriptor, data.pointer, data.length.(usize))
+	write(self.file_descriptor, buffer: data.pointer, size: data.length.(usize))
 }
 
 method File
@@ -81,15 +81,15 @@ fn read_all_string(): String {
 }
 
 method File
-fn read_all_into(buffer: *mut List<u8>) {
+fn read_all_into(buffer=: *mut List<u8>) {
 	const ChunkSize = 20
 
 	while true {
 		let original_length = buffer.items.length
 		buffer.reserve_at_least(original_length + ChunkSize)
-		let pointer = offset_pointer_mut<u8>(buffer.items.pointer, original_length)
+		let pointer = offset_pointer_mut<u8>(buffer.items.pointer, by_bytes: original_length)
 
-		let bytes_read = read(self.file_descriptor, pointer, ChunkSize)
+		let bytes_read = read(self.file_descriptor, buffer: pointer, size: ChunkSize)
 		buffer.set_length(original_length + bytes_read)
 
 		if bytes_read == 0 => break
@@ -102,7 +102,7 @@ fn lines_reader(): DelimitedReader {
 }
 
 method File
-fn delimited_reader(delimiter: u8): DelimitedReader {
+fn delimited_reader(delimiter=: u8): DelimitedReader {
 	return DelimitedReader {
 		file: self.*
 		delimiter
@@ -140,9 +140,9 @@ fn next(): Option<[]u8> {
 
 		let original_length = self.buffer.items.length
 		self.buffer.reserve_at_least(original_length + ChunkSize)
-		let pointer = offset_pointer_mut<u8>(self.buffer.items.pointer, original_length)
+		let pointer = offset_pointer_mut<u8>(self.buffer.items.pointer, by_bytes: original_length)
 
-		let bytes_read = read(self.file.file_descriptor, pointer, ChunkSize)
+		let bytes_read = read(self.file.file_descriptor, buffer: pointer, size: ChunkSize)
 		self.buffer.set_length(original_length + bytes_read)
 
 		if bytes_read == 0 => break
@@ -150,4 +150,3 @@ fn next(): Option<[]u8> {
 
 	return .None
 }
-

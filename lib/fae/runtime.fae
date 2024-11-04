@@ -57,7 +57,7 @@ fn panic_impl(message: fstr): noreturn {
 		null, null, null, null, null, null, null, null, null, null,
 	}
 
-	let symbol_count = backtrace(addresses.pointer, addresses.length.(i32)).(isize)
+	let symbol_count = backtrace(address_buffer: addresses.pointer, length: addresses.length.(i32)).(isize)
 	let addresses = addresses[0..symbol_count]
 
 	const Indentation = "  "
@@ -82,7 +82,7 @@ fn panic_impl(message: fstr): noreturn {
 	let symbols = symbols[0..symbol_count]
 
 	mut longest_width: isize = 0
-	fn handle_width(longest_width: *mut isize, width: isize) {
+	fn handle_width(longest_width=: *mut isize, width: isize) {
 		if width > longest_width.* => longest_width.* = width
 	}
 
@@ -100,21 +100,21 @@ fn panic_impl(message: fstr): noreturn {
 
 		if dladdr(address, info.&mut) == 0 {
 			symbols[index] = .Error
-			handle_width(longest_width.&mut, Error.length)
+			handle_width(longest_width.&mut, width: Error.length)
 			continue
 		}
 
 		let path_length = strlen(info.dli_fname).(isize)
-		let path = fae.intrinsics.create_str(info.dli_fname, path_length)
+		let path = fae.intrinsics.create_str(info.dli_fname, length: path_length)
 
 		if info.dli_saddr.(usize) == 0 {
 			symbols[index] = .Unknown { path }
-			handle_width(longest_width.&mut, Unknown.length)
+			handle_width(longest_width.&mut, width: Unknown.length)
 		} else {
 			let name_length = strlen(info.dli_sname).(isize)
-			let name = fae.intrinsics.create_str(info.dli_sname, name_length)
+			let name = fae.intrinsics.create_str(info.dli_sname, length: name_length)
 			symbols[index] = .Found { name, path }
-			handle_width(longest_width.&mut, name_length)
+			handle_width(longest_width.&mut, width: name_length)
 		}
 	}
 
@@ -139,7 +139,7 @@ fn panic_impl(message: fstr): noreturn {
 			}
 		}
 
-		print_width(longest_width - current_width)
+		for _ in 0..longest_width - current_width => eprint(" ")
 		eprintln(f"{Spacer}({path})")
 	}
 

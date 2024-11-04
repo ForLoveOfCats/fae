@@ -9,7 +9,7 @@ struct Arguments {
 
 method static Arguments
 fn parse_user_arguments(): Arguments {
-	let argv = create_slice<*u8>(ArgV, ArgC.(isize))
+	let argv = create_slice<*u8>(ArgV, length: ArgC.(isize))
 	mut parsed = List<str>.new()
 
 	for pointer in argv[1..argv.length] {
@@ -23,7 +23,7 @@ fn parse_user_arguments(): Arguments {
 
 method static Arguments
 fn parse_all_arguments(): Arguments {
-	let argv = create_slice<*u8>(ArgV, ArgC.(isize))
+	let argv = create_slice<*u8>(ArgV, length: ArgC.(isize))
 	mut parsed = List<str>.new()
 
 	for pointer in argv {

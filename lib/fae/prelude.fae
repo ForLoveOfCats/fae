@@ -16,46 +16,46 @@ fn null_pointer(): *mut T {
 generic T
 fn null_slice(): []mut T {
 	let null = null_pointer<T>()
-	return create_slice_mut<T>(null, 0)
+	return create_slice_mut<T>(null, length: 0)
 }
 
 generic T
-fn offset_pointer(pointer: *T, by_bytes: isize): *T {
+fn offset_pointer(pointer=: *T, by_bytes: isize): *T {
 	return (pointer.(isize) + by_bytes).(*T)
 }
 
 generic T
-fn offset_pointer_mut(pointer: *mut T, by_bytes: isize): *mut T {
+fn offset_pointer_mut(pointer=: *mut T, by_bytes: isize): *mut T {
 	return (pointer.(isize) + by_bytes).(*mut T)
 }
 
-fn print(message: fstr) {
-	let handle = fae.libc.StdOutFile
-	fae.string.format.print_to_file_handle(handle, message)
+fn print(message=: fstr) {
+	let stream = fae.libc.StdOutFile
+	fae.string.format.print_to_file_stream(stream, message)
 }
 
-fn println(message: fstr) {
-	let handle = fae.libc.StdOutFile
+fn println(message=: fstr) {
+	let stream = fae.libc.StdOutFile
 	let message = f"{message}\n"
-	fae.string.format.print_to_file_handle(handle, message)
+	fae.string.format.print_to_file_stream(stream, message)
 }
 
-fn eprint(message: fstr) {
-	let handle = fae.libc.StdErrFile
-	fae.string.format.print_to_file_handle(handle, message)
+fn eprint(message=: fstr) {
+	let stream = fae.libc.StdErrFile
+	fae.string.format.print_to_file_stream(stream, message)
 }
 
-fn eprintln(message: fstr) {
-	let handle = fae.libc.StdErrFile
+fn eprintln(message=: fstr) {
+	let stream = fae.libc.StdErrFile
 	let message = f"{message}\n"
-	fae.string.format.print_to_file_handle(handle, message)
+	fae.string.format.print_to_file_stream(stream, message)
 }
 
 fn panic(): noreturn {
-	fae.runtime.panic_impl("Explicit panic")
+	fae.runtime.panic_impl(message: "Explicit panic")
 }
 
-fn panicf(message: fstr): noreturn {
+fn panicf(message=: fstr): noreturn {
 	fae.runtime.panic_impl(message)
 }
 
@@ -67,31 +67,31 @@ fn exit_error(): noreturn {
 	fae.libc.exit(-1)
 }
 
-fn exit_errorf(message: fstr): noreturn {
+fn exit_errorf(message=: fstr): noreturn {
 	eprintln(message)
 	fae.libc.exit(-1)
 }
 
-fn assert(value: bool) {
+fn assert(value=: bool) {
 	if value.! => panicf("Assertion failed")
 }
 
-fn assertf(value: bool, message: fstr) {
+fn assertf(value=: bool, message=: fstr) {
 	if value.! => panicf(f"Assertion failed: {message}")
 }
 
 when DebugBuild {
-	fn debug_assert(value: bool) {
+	fn debug_assert(value=: bool) {
 		if value.! => panicf("Debug assertion failed")
 	}
 
-	fn debug_assertf(value: bool, message: fstr) {
+	fn debug_assertf(value=: bool, message=: fstr) {
 		if value.! => panicf(f"Debug assertion failed: {message}")
 	}
 } else when ReleaseBuild {
-	fn debug_assert(_value: bool) {}
+	fn debug_assert(_value=: bool) {}
 
-	fn debug_assertf(_value: bool, _message: fstr) {}
+	fn debug_assertf(_value=: bool, _message=: fstr) {}
 }
 
 #lang "range_type"
@@ -116,7 +116,7 @@ fn is_not_empty(): bool {
 }
 
 method Range
-fn contains(index: isize): bool {
+fn contains(index=: isize): bool {
 	return self.start <= index and index < self.end
 }
 

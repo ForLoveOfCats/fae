@@ -1,8 +1,8 @@
-fn parse_to_integer(string: str): Option<i64> {
+fn parse_to_integer(string=: str): Option<i64> {
 	return parse_bytes_to_integer(string.bytes)
 }
 
-fn parse_bytes_to_integer(bytes: []u8): Option<i64> {
+fn parse_bytes_to_integer(bytes=: []u8): Option<i64> {
 	let negative = bytes.length > 0 and bytes[0] == b'-'
 	mut result: i64 = 0
 

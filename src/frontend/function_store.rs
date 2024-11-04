@@ -5,7 +5,7 @@ use crate::frontend::ir::{
 use crate::frontend::span::Span;
 use crate::frontend::type_store::TypeStore;
 use crate::lock::RwLock;
-use crate::reference::Ref;
+use crate::reference::{Ref, SliceRef};
 
 #[derive(Debug)]
 pub struct FunctionStore<'a> {
@@ -97,7 +97,7 @@ impl<'a> FunctionStore<'a> {
 		let concrete = Function {
 			type_arguments: type_arguments.clone(),
 			generic_poisoned,
-			parameters,
+			parameters: SliceRef::from(parameters),
 			return_type,
 		};
 

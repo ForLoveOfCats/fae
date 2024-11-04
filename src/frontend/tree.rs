@@ -207,6 +207,7 @@ pub struct Parameters<'a> {
 #[derive(Debug)]
 pub struct Parameter<'a> {
 	pub name: Node<&'a str>,
+	pub label: Option<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
 	pub is_mutable: bool,
 }
@@ -459,7 +460,13 @@ pub struct Call<'a> {
 	pub base: Option<Node<Expression<'a>>>,
 	pub name: Node<&'a str>,
 	pub type_arguments: &'a [Node<Type<'a>>],
-	pub arguments: &'a [Node<Expression<'a>>],
+	pub arguments: &'a [Argument<'a>],
+}
+
+#[derive(Debug)]
+pub struct Argument<'a> {
+	pub label: Option<Node<&'a str>>,
+	pub expression: Node<Expression<'a>>,
 }
 
 #[derive(Debug)]
@@ -483,7 +490,7 @@ pub struct DotInfer<'a> {
 #[derive(Debug)]
 pub struct DotInferCall<'a> {
 	pub name: Node<&'a str>,
-	pub arguments: &'a [Node<Expression<'a>>],
+	pub arguments: &'a [Argument<'a>],
 }
 
 #[derive(Debug)]

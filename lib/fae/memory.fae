@@ -2,7 +2,7 @@ import fae.intrinsics.create_slice_mut, create_str, create_non_null_invalid_poin
 import fae.libc.malloc, memcpy, memmove, memset
 
 generic T
-fn swap(a: *mut T, b: *mut T) {
+fn swap(a=: *mut T, b=: *mut T) {
 	let temp = b.*
 	b.* = a.*
 	a.* = temp
@@ -19,26 +19,26 @@ fn allocate_space(): *mut T {
 }
 
 generic T
-fn allocate_copied(source: *T): *mut T {
+fn allocate_copied(source=: *T): *mut T {
 	if size_of<T>() <= 0 {
 		return create_non_null_invalid_pointer<T>()
 	}
 
 	let size = size_of<T>().(usize)
 	let pointer = malloc(size)
-	memcpy(pointer, source.(*u8), size)
+	memcpy(destination: pointer, source: source.(*u8), size)
 	return pointer.(*mut T)
 }
 
 generic T
-fn allocate_moved(source: T): *mut T {
+fn allocate_moved(source=: T): *mut T {
 	if size_of<T>() <= 0 {
 		return create_non_null_invalid_pointer<T>()
 	}
 
 	let size = size_of<T>().(usize)
 	let pointer = malloc(size)
-	memcpy(pointer, source.&.(*u8), size)
+	memcpy(destination: pointer, source: source.&.(*u8), size)
 	return pointer.(*mut T)
 }
 
@@ -54,7 +54,7 @@ fn allocate_region(length: isize): *mut T {
 }
 
 generic T
-fn reallocate_region(pointer: *mut *mut T, new_length: isize) {
+fn reallocate_region(pointer=: *mut *mut T, new_length: isize) {
 	assertf(new_length > 0, f"{new_length}")
 	if size_of<T>() <= 0 => return
 
@@ -64,7 +64,7 @@ fn reallocate_region(pointer: *mut *mut T, new_length: isize) {
 }
 
 generic T
-fn free(pointer: *T) {
+fn free(pointer=: *T) {
 	if size_of<T>() <= 0 => return
 	fae.libc.free(pointer.(*u8))
 }
@@ -88,19 +88,19 @@ fn allocate_slice_filled(length: isize, value: T): []mut T {
 }
 
 generic T
-fn allocate_slice_copied(source: []T): []mut T {
+fn allocate_slice_copied(source=: []T): []mut T {
 	if size_of<T>() <= 0 {
-		return create_non_null_invalid_slice<T>(source.length)
+		return create_non_null_invalid_slice<T>(length: source.length)
 	}
 
 	let size = (size_of<T>() * source.length).(usize)
 	let pointer = malloc(size)
-	memcpy(pointer, source.pointer.(*u8), size)
-	return create_slice_mut<T>(pointer.(*mut T), source.length)
+	memcpy(destination: pointer, source: source.pointer.(*u8), size)
+	return create_slice_mut<T>(pointer.(*mut T), length: source.length)
 }
 
 generic T
-fn reallocate_slice(source: *mut []mut T, new_length: isize) {
+fn reallocate_slice(source=: *mut []mut T, new_length: isize) {
 	if size_of<T>() <= 0 => return
 	if new_length == source.length => return
 
@@ -109,26 +109,26 @@ fn reallocate_slice(source: *mut []mut T, new_length: isize) {
 }
 
 generic T
-fn free_slice(slice: []T) {
+fn free_slice(slice=: []T) {
 	if size_of<T>() <= 0 => return
 	free<T>(slice.pointer)
 }
 
-fn allocate_string_copied(source: str): str {
+fn allocate_string_copied(source=: str): str {
 	let size = source.length.(usize)
 	let pointer = malloc(size)
-	memcpy(pointer, source.pointer, size)
-	return create_str(pointer, source.length)
+	memcpy(destination: pointer, source: source.pointer, size)
+	return create_str(pointer, length: source.length)
 }
 
-fn free_str(string: str) {
+fn free_str(string=: str) {
 	free<u8>(string.pointer)
 }
 
 generic T
 fn set_slice_bytes(destination: []mut T, value: u8) {
 	let byte_count = destination.length * size_of<T>()
-	memset(destination.pointer.(*mut u8), value, byte_count.(usize))
+	memset(destination: destination.pointer.(*mut u8), value, size: byte_count.(usize))
 }
 
 generic T
@@ -138,7 +138,7 @@ fn copy_slice_nonoverlapping(source: []T, destination: []mut T) {
 	if size_of<T>() <= 0 => return
 
 	let size = (size_of<T>() * source.length).(usize)
-	memcpy(destination.pointer.(*mut u8), source.pointer.(*u8), size)
+	memcpy(destination: destination.pointer.(*mut u8), source: source.pointer.(*u8), size)
 }
 
 generic T
@@ -148,5 +148,5 @@ fn copy_slice_overlapping(source: []T, destination: []mut T) {
 	if size_of<T>() <= 0 => return
 
 	let size = (size_of<T>() * source.length).(usize)
-	memmove(destination.pointer.(*mut u8), source.pointer.(*u8), size)
+	memmove(destination: destination.pointer.(*mut u8), source: source.pointer.(*u8), size)
 }

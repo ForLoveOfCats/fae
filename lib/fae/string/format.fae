@@ -1,4 +1,4 @@
-import fae.libc.FileHandle, fprintf, fwrite, fflush
+import fae.libc.FileStream, fprintf, fwrite, fflush
 
 #lang "format_string_item_type"
 enum FormatStringItem {
@@ -23,35 +23,35 @@ enum FormatStringItem {
 	FormatString(fstr)
 }
 
-fn print_to_file_handle(handle: *FileHandle, message: fstr) {
-	fn print_fstr(handle: *FileHandle, message: fstr) {
+fn print_to_file_stream(stream: *FileStream, message: fstr) {
+	fn print_fstr(stream=: *FileStream, message=: fstr) {
 		for item in message.items => match item {
-			I8 => fprintf(handle, "%hhd".pointer, item)
-			I16 => fprintf(handle, "%hd".pointer, item)
-			I32 => fprintf(handle, "%d".pointer, item)	
-			I64 => fprintf(handle, "%ld".pointer, item)
+			I8 => fprintf(stream, "%hhd".pointer, item)
+			I16 => fprintf(stream, "%hd".pointer, item)
+			I32 => fprintf(stream, "%d".pointer, item)	
+			I64 => fprintf(stream, "%ld".pointer, item)
 
-			U8 => fprintf(handle, "%hhu".pointer, item)
-			U16 => fprintf(handle, "%hu".pointer, item)
-			U32 => fprintf(handle, "%u".pointer, item)
-			U64 => fprintf(handle, "%lu".pointer, item)
+			U8 => fprintf(stream, "%hhu".pointer, item)
+			U16 => fprintf(stream, "%hu".pointer, item)
+			U32 => fprintf(stream, "%u".pointer, item)
+			U64 => fprintf(stream, "%lu".pointer, item)
 
-			Isize => fprintf(handle, "%ld".pointer, item)
-			Usize => fprintf(handle, "%lu".pointer, item)
+			Isize => fprintf(stream, "%ld".pointer, item)
+			Usize => fprintf(stream, "%lu".pointer, item)
 
-			F32 => fprintf(handle, "%f".pointer, item)
-			F64 => fprintf(handle, "%f".pointer, item)
+			F32 => fprintf(stream, "%f".pointer, item)
+			F64 => fprintf(stream, "%f".pointer, item)
 
 			Bool {
-				if item => fprintf(handle, "true".pointer)
-				else => fprintf(handle, "false".pointer)
+				if item => fprintf(stream, "true".pointer)
+				else => fprintf(stream, "false".pointer)
 			}
 
-			String => fwrite(item.pointer, 1, item.length.(usize), handle)
-			FormatString => print_fstr(handle, item)
+			String => fwrite(buffer: item.pointer, item_size: 1, count: item.length.(usize), stream)
+			FormatString => print_fstr(stream, item)
 		}
 	}
 
-	print_fstr(handle, message)
-	fflush(handle)
+	print_fstr(stream, message)
+	fflush(stream)
 }

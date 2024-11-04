@@ -184,9 +184,25 @@ impl<'a> Tokens<'a> {
 		Ok(self.tokens[self.index])
 	}
 
+	// Peek the token after the next token
+	#[inline]
+	pub fn peek_two_ahead(&mut self) -> ParseResult<Token<'a>> {
+		if self.index + 1 >= self.tokens.len() {
+			return Err(());
+		}
+
+		Ok(self.tokens[self.index + 1])
+	}
+
 	#[inline]
 	pub fn peek_kind(&mut self) -> ParseResult<TokenKind> {
 		self.peek().map(|token| token.kind)
+	}
+
+	// Peek the token after the next token
+	#[inline]
+	pub fn peek_kind_two_ahead(&mut self) -> ParseResult<TokenKind> {
+		self.peek_two_ahead().map(|token| token.kind)
 	}
 
 	#[inline]
