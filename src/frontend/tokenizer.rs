@@ -301,6 +301,7 @@ pub struct Tokenizer<'a> {
 	bytes: &'a [u8],
 	offset: usize,
 	line_index: u32,
+	line_starts: Vec<usize>,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -311,6 +312,7 @@ impl<'a> Tokenizer<'a> {
 			bytes: source.as_bytes(),
 			offset: 0,
 			line_index: 0,
+			line_starts: Vec::new(),
 		}
 	}
 
@@ -329,20 +331,24 @@ impl<'a> Tokenizer<'a> {
 			bytes: source.as_bytes(),
 			offset: starting_offset,
 			line_index,
+			line_starts: Vec::new(),
 		}
 	}
 
 	pub fn tokenize(&mut self, mut tokens: Vec<Token<'a>>, messages: &mut Messages) -> Tokens<'a> {
 		tokens.clear();
 
-		let mut line_starts = vec![0];
+		self.line_starts.clear();
+		self.line_starts.push(0);
+
 		while let Ok(token) = self.next(messages) {
 			if token.kind == TokenKind::Newline {
-				line_starts.push(token.span.end);
+				self.line_starts.push(token.span.end);
 			}
 			tokens.push(token);
 		}
 
+		let line_starts = std::mem::take(&mut self.line_starts);
 		Tokens { index: 0, tokens, line_starts, source: self.source }
 	}
 
@@ -533,7 +539,10 @@ impl<'a> Tokenizer<'a> {
 					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
-					if matches!(self.bytes[self.offset..], [b'/', b'*', ..]) {
+					if self.bytes[self.offset] == b'\n' {
+						self.line_index += 1;
+						self.line_starts.push(self.offset + 1);
+					} else if matches!(self.bytes[self.offset..], [b'/', b'*', ..]) {
 						open_count += 1;
 					} else if matches!(self.bytes[self.offset..], [b'*', b'/', ..]) {
 						if open_count <= 1 {
@@ -794,13 +803,17 @@ impl<'a> Tokenizer<'a> {
 
 			[b'f', b'\"', ..] => {
 				let start_index = self.offset;
+				let line_index = self.line_index;
 				self.offset += 1;
 
 				loop {
 					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
-					if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
+					if self.bytes[self.offset] == b'\n' {
+						self.line_index += 1;
+						self.line_starts.push(self.offset + 1);
+					} else if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
 						self.offset += 1;
 						continue;
 					}
@@ -816,17 +829,22 @@ impl<'a> Tokenizer<'a> {
 					start_index,
 					self.offset + 1,
 					self.file_index,
-					self.line_index,
+					line_index,
 				))
 			}
 
 			[b'\"', ..] => {
 				let start_index = self.offset;
+				let line_index = self.line_index;
+
 				loop {
 					self.offset += 1;
 					self.verify_not_eof(messages)?;
 
-					if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
+					if self.bytes[self.offset] == b'\n' {
+						self.line_index += 1;
+						self.line_starts.push(self.offset + 1);
+					} else if matches!(self.bytes[self.offset..], [b'\\', b'\\', ..] | [b'\\', b'"', ..]) {
 						self.offset += 1;
 						continue;
 					}
@@ -842,7 +860,7 @@ impl<'a> Tokenizer<'a> {
 					start_index,
 					self.offset + 1,
 					self.file_index,
-					self.line_index,
+					line_index,
 				))
 			}
 

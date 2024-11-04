@@ -1,0 +1,21 @@
+fn main() {
+	let _ = f"
+	{false}"
+	function()
+}
+
+/* Hello there
+how are you?
+*/
+
+// This is a single line
+
+const _A = "A
+B
+
+C
+"
+
+fn function(): str {
+	return true
+}
