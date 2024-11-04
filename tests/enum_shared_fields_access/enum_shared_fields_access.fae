@@ -50,7 +50,7 @@ fn main() {
 	function(second.&)
 }
 
-fn function(arg: *HasShared) {
+fn function(arg=: *HasShared) {
 	if arg is VariantA {
 		println("Variant A fields:")
 		println(f"{arg.a}")

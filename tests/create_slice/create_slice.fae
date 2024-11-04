@@ -2,7 +2,7 @@ import fae.libc.malloc, memcpy
 
 fn main() {
 	let source = "Hello world!"
-	let slice = fae.intrinsics.create_slice<u8>(source.pointer, source.length)
+	let slice = fae.intrinsics.create_slice<u8>(source.pointer, length: source.length)
 
 	mut index: isize = 0
 	while index < slice.length {
@@ -14,8 +14,8 @@ fn main() {
 
 	println("")
 
-	let pointer = malloc(10)
-	let slice = fae.intrinsics.create_slice_mut<u16>(pointer.(*mut u16), 5)
+	let pointer = malloc(size: 10)
+	let slice = fae.intrinsics.create_slice_mut<u16>(pointer.(*mut u16), length: 5)
 	slice[0] = 500
 	slice[1] = 511
 	slice[2] = 522
@@ -32,10 +32,10 @@ fn main() {
 
 	println("")
 
-	let pointer = malloc(10 * 4)
-	let slice = fae.intrinsics.create_slice_mut<i32>(pointer.(*mut i32), 10)
+	let pointer = malloc(size: 10 * 4)
+	let slice = fae.intrinsics.create_slice_mut<i32>(pointer.(*mut i32), length: 10)
 	let source = []i32 { -800, -700, -600, -500, -400, -300, -200, -100, 0, 100 }
-	memcpy(slice.pointer.(*mut u8), source.pointer.(*mut u8), 10 * 4)
+	memcpy(destination: slice.pointer.(*mut u8), source: source.pointer.(*mut u8), size: 10 * 4)
 
 	mut index: isize = 0
 	while index < slice.length {

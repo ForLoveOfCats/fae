@@ -4,15 +4,15 @@ fn c_raw_calloc(count: usize, size: usize): *mut u8
 generic T
 fn allocate(): *mut T {
 	let size = size_of<T>().(usize)
-	return c_raw_calloc(1, size).(*mut T)
+	return c_raw_calloc(count: 1, size).(*mut T)
 }
 
 generic T
-fn deallocate(ptr: *mut T) {
+fn deallocate(ptr=: *mut T) {
 	fae.libc.free(ptr.(*mut u8))
 }
 
-fn takes_ptr(ptr: *u64) {
+fn takes_ptr(ptr=: *u64) {
 	println(f"{ptr.*}")
 }
 

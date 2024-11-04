@@ -6,7 +6,7 @@ enum JsonValue {
 	Boolean { value: bool }
 }
 
-fn print_number(value: JsonValue) {
+fn print_number(value=: JsonValue) {
 	if value is number: Number {
 		println(f"Number is {number.value}")
 		println(f"It had offset {number.offset}")

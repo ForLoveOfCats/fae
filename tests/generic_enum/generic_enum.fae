@@ -1,7 +1,7 @@
 // Important note: This is not how error handling is intended to be done in Fae
 // This is a contrived program intended to test generic enums
 
-fn divide(value: i32, by: i32): Enum<i32, str> {
+fn divide(value=: i32, by=: i32): Enum<i32, str> {
 	if by == 0 => return .Error { value: "Divide by zero" }
 	return .Ok { value: value / by }
 }
@@ -45,6 +45,6 @@ enum Enum {
 }
 
 generic T
-fn print_error(arg: Enum.Error<T, str>) {
+fn print_error(arg=: Enum.Error<T, str>) {
 	println(f"Error: {arg.value}")
 }

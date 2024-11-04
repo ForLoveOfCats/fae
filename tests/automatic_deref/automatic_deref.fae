@@ -21,7 +21,7 @@ fn main() {
 	println(f"{value}")
 
 	ptr.print_details()
-	ptr.increment(2)
+	ptr.increment(by: 2)
 	ptr.print_details()
 
 	let slice = []f64 { 1 , 3.8, 5 }

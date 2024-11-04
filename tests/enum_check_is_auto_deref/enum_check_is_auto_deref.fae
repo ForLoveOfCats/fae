@@ -8,7 +8,7 @@ fn main() {
 	function(value.&)
 }
 
-fn function(ptr: *Enum) {
+fn function(ptr=: *Enum) {
 	if ptr is b: B {
 		println(f"{b.field}")
 	}

@@ -17,6 +17,6 @@ fn returns_int(): i32 {
 }
 
 generic T
-fn returns_generic(value: T): T {
+fn returns_generic(value=: T): T {
 	return value
 }

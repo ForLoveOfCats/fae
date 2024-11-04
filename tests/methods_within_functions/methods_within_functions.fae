@@ -6,7 +6,7 @@ fn main() {
 }
 
 generic T
-fn function(t: T): T {
+fn function(t=: T): T {
 	struct Struct {
 		t: T
 	}
@@ -16,7 +16,7 @@ fn function(t: T): T {
 		return self.t
 	}
 
-	fn inner(instance: Struct): T {
+	fn inner(instance=: Struct): T {
 		method Struct
 		fn inner_method(): T {
 			return self.returns_t()

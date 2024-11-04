@@ -5,7 +5,7 @@ fn main() {
 	func(Enum.D { other: b'A' })
 }
 
-fn func(arg: Enum) {
+fn func(arg=: Enum) {
 	match arg {
 		A, C => println("A or C")
 

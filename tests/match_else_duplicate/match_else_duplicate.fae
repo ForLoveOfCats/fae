@@ -5,7 +5,7 @@ fn main() {
 	func(Enum.D)
 }
 
-fn func(arg: Enum) {
+fn func(arg=: Enum) {
 	match arg {
 		A => println("A")
 		C => println("C")

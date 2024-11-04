@@ -10,7 +10,7 @@ struct EmptyA {
 
 struct EmptyB {}
 
-fn takes_empty(_: EmptyA): bool {
+fn takes_empty(_=: EmptyA): bool {
 	return true
 }
 
@@ -73,6 +73,6 @@ fn main() {
 }
 
 generic T
-fn generic_function(arg: T): T {
+fn generic_function(arg=: T): T {
 	return arg
 }

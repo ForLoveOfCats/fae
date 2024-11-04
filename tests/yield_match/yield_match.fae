@@ -8,7 +8,7 @@ enum Value {
 	B { field_b_1: bool, field_b_2: i32 }
 }
 
-fn function(arg: Value) {
+fn function(arg=: Value) {
 	let value = match arg {
 		A => yield arg.field_a_1
 		B => yield arg.field_b_2

@@ -2,7 +2,7 @@ struct Bytes {
 	bytes: []u8
 }
 
-fn function(arg: Bytes) {
+fn function(arg=: Bytes) {
 	let _ = arg.bytes
 	let _ = arg.bytes.pointer
 	let _ = arg.bytes.length

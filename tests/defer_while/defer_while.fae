@@ -1,15 +1,15 @@
 fn main() {
-	breaks(false)
+	breaks(early_break: false)
 	println("")
-	breaks(true)
+	breaks(early_break: true)
 
 	println("")
 	println("")
 	println("")
 
-	continues(false)
+	continues(early_continue: false)
 	println("")
-	continues(true)
+	continues(early_continue: true)
 }
 
 fn breaks(early_break: bool) {

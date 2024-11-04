@@ -1,4 +1,4 @@
-fn print_integers(integers: []i32) {
+fn print_integers(integers=: []i32) {
 	println("Integer slice:")
 
 	mut index: isize = 0

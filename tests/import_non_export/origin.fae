@@ -11,6 +11,6 @@ enum MyEnum {
 	B
 }
 
-fn my_function(arg: bool): bool {
+fn my_function(arg=: bool): bool {
 	return arg.!
 }

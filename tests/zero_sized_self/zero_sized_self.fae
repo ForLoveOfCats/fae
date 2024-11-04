@@ -1,7 +1,7 @@
 struct A {}
 
 method mut A
-fn method_a(arg: i32) {
+fn method_a(arg=: i32) {
 	self.* = A {}
 	println(f"{arg}")
 }

@@ -4,7 +4,7 @@ fn main() {
 	case("World")
 }
 
-fn case(string: str) {
+fn case(string=: str) {
 	let bytes = string.bytes
 	println(f"Length: {string.length}, {bytes.length}")
 

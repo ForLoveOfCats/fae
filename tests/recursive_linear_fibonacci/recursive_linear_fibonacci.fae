@@ -11,7 +11,7 @@ fn fib(to: u64) {
 		return
 	}
 
-	fn recurse(a: u64, b: u64, to: u64, depth: u64) {
+	fn recurse(a=: u64, b=: u64, to=: u64, depth=: u64) {
 		let sum = a + b
 		println(f"{sum}")
 
@@ -26,5 +26,5 @@ fn fib(to: u64) {
 }
 
 fn main() {
-	fib(20)
+	fib(to: 20)
 }

@@ -4,4 +4,4 @@ struct B {
 	field: u16
 }
 
-fn func(_: A) {}
+fn func(_=: A) {}

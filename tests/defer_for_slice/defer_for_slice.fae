@@ -1,20 +1,20 @@
 fn main() {
 	let slice = []{ "Hello", "Fae", "world" }
 
-	breaks(slice, false)
+	breaks(slice, early_break: false)
 	println("")
-	breaks(slice, true)
+	breaks(slice, early_break: true)
 
 	println("")
 	println("")
 	println("")
 
-	continues(slice, false)
+	continues(slice, early_continue: false)
 	println("")
-	continues(slice, true)
+	continues(slice, early_continue: true)
 }
 
-fn breaks(slice: []str, early_break: bool) {
+fn breaks(slice=: []str, early_break: bool) {
 	println("A")
 	defer println("1")
 
@@ -33,7 +33,7 @@ fn breaks(slice: []str, early_break: bool) {
 	println("C")
 }
 
-fn continues(slice: []str, early_continue: bool) {
+fn continues(slice=: []str, early_continue: bool) {
 	println("A")
 	defer println("1")
 

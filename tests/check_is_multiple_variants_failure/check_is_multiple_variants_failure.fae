@@ -5,7 +5,7 @@ fn main() {
 	func(Enum.D { other: b'A' })
 }
 
-fn func(arg: Enum) {
+fn func(arg=: Enum) {
 	if arg is A, D, A {
 		println(f"{arg.other}")
 		println("Is either A or D")

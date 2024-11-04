@@ -1,4 +1,4 @@
-fn func(slice: []mut i32) {
+fn func(slice=: []mut i32) {
 	println(f"{slice[0]}")
 	println(f"{slice[1]}")
 }

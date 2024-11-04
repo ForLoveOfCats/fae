@@ -46,7 +46,7 @@ struct Entity {
 }
 
 generic T
-fn function(_arg: *List<Entity<T>>) {}
+fn function(_arg=: *List<Entity<T>>) {}
 
 fn main() {
 	mut store = EntityStore<i16>.new()
