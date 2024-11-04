@@ -1,0 +1,19 @@
+Validation error: ./tests/parameter_label_failure/parameter_label_failure.fae, line 2: Expected parameter label `label` for argument
+  2|     function(0, 1, 2)
+                  ^
+
+Validation error: ./tests/parameter_label_failure/parameter_label_failure.fae, line 2: Expected parameter label `two` for argument
+  2|     function(0, 1, 2)
+                     ^
+
+Validation error: ./tests/parameter_label_failure/parameter_label_failure.fae, line 3: Expected parameter label `label` for argument, found `one`
+  3|     function(one: 3, label: 4, other: 5)
+                  ^^^
+
+Validation error: ./tests/parameter_label_failure/parameter_label_failure.fae, line 3: Expected parameter label `two` for argument, found `label`
+  3|     function(one: 3, label: 4, other: 5)
+                          ^^^^^
+
+Validation error: ./tests/parameter_label_failure/parameter_label_failure.fae, line 3: Expected no parameter label for argument
+  3|     function(one: 3, label: 4, other: 5)
+                                    ^^^^^

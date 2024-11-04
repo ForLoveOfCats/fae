@@ -1,0 +1,7 @@
+fn main() {
+	function(label: 0, two: 1, 2)
+}
+
+fn function(one=label: i64, two: i64, three=: i64) {
+	println(f"{one}, {two}, {three}")
+}
