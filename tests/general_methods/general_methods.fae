@@ -19,7 +19,7 @@ struct List {
 }
 
 method static List
-fn from_pointer(pointer: *T): List<T> {
+fn from_pointer(pointer=: *T): List<T> {
 	return List<T> { pointer: pointer }
 }
 
@@ -28,7 +28,7 @@ fn main() {
 	let list = List<i32>.from_pointer(a.&)
 	println(f"{list.pointer.*}")
 
-	mut lola = Pet.adopt_baby("Lola")
+	mut lola = Pet.adopt_baby(name: "Lola")
 	println(f"{lola.name} {lola.age}")
 
 	lola.birthday_happened()

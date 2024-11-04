@@ -1,14 +1,14 @@
-fn returns_true(string: str): bool {
+fn returns_true(string=: str): bool {
 	println(string)
 	return true
 }
 
-fn returns_false(string: str): bool {
+fn returns_false(string=: str): bool {
 	println(string)
 	return false
 }
 
-fn print_case(value: bool) {
+fn print_case(value=: bool) {
 	println(f"{value}")
 	println("")
 }

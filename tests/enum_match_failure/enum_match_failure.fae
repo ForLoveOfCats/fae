@@ -5,7 +5,7 @@ fn main() {
 	function(Enum.D { other: b'A' })
 }
 
-fn function(arg: Enum) {
+fn function(arg=: Enum) {
 	match arg {
 		C => println("C")
 

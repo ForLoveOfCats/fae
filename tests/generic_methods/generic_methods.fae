@@ -5,7 +5,7 @@ struct Pair {
 }
 
 generic T
-fn generic_function(one: T, two: T, condition: bool): T {
+fn generic_function(one=: T, two=: T, condition=: bool): T {
 	generic B
 	struct Structure {
 		one: T
@@ -14,7 +14,7 @@ fn generic_function(one: T, two: T, condition: bool): T {
 	}
 
 	method Structure
-	fn select(condition: bool): T {
+	fn select(condition=: bool): T {
 		if condition {
 			return self.*.one
 		} else {
@@ -29,7 +29,7 @@ fn generic_function(one: T, two: T, condition: bool): T {
 
 	generic U
 	method Structure
-	fn generic_method(arg: U): Pair<T, U> {
+	fn generic_method(arg=: U): Pair<T, U> {
 		return Pair<T, U> { a: self.*.one, b: arg }
 	}
 

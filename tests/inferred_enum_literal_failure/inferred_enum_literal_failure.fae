@@ -22,7 +22,7 @@ fn main() {
 	else => yield .B
 }
 
-fn dump_enum(arg: Enum) {
+fn dump_enum(arg=: Enum) {
 	match arg {
 		A => println("A")
 
@@ -52,7 +52,7 @@ struct Struct {
 }
 
 method static Struct
-fn new(enums: Enum, second: i32): Struct {
+fn new(enums=: Enum, second=: i32): Struct {
 	return Struct {
 		first: enums
 		second
@@ -61,7 +61,7 @@ fn new(enums: Enum, second: i32): Struct {
 }
 
 method mut Struct
-fn update_enum(arg: Enum) {
+fn update_enum(arg=: Enum) {
 	self.first  = arg
 	self.third = arg
 }

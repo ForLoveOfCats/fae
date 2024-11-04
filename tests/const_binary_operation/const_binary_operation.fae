@@ -17,6 +17,6 @@ fn main() {
 	print_signed(Six)
 }
 
-fn print_signed(value: i64) {
+fn print_signed(value=: i64) {
 	println(f"{value}")
 }

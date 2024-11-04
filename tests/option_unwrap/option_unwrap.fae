@@ -6,6 +6,6 @@ fn main() {
 	print_case(b.unwrap())
 }
 
-fn print_case(arg: u8) {
+fn print_case(arg=: u8) {
 	println(f"{arg}")
 }

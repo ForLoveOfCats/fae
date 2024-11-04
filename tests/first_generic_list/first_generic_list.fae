@@ -22,7 +22,7 @@ fn list_new(): List<T> {
 }
 
 generic T
-fn list_push(list: *mut List<T>, item: T) {
+fn list_push(list=: *mut List<T>, item=: T) {
 	// I really want auto-deref for pointers
 	if list.*.length + 1 >= list.*.capacity {
 		mut new_capacity = list.*.capacity * 2
@@ -31,7 +31,7 @@ fn list_push(list: *mut List<T>, item: T) {
 		}
 
 		let new_size = size_of<T>() * new_capacity
-		let ptr = realloc(list.*.ptr.(*mut u8), new_size.(usize))
+		let ptr = realloc(list.*.ptr.(*mut u8), new_size: new_size.(usize))
 		if ptr.(usize) != list.*.ptr.(usize) {
 			free(list.*.ptr.(*mut u8))
 		}
@@ -48,7 +48,7 @@ fn list_push(list: *mut List<T>, item: T) {
 }
 
 generic T
-fn list_get(list: *mut List<T>, index: isize): *mut T {
+fn list_get(list=: *mut List<T>, index=: isize): *mut T {
 	if index < 0 or list.*.length <= index {
 		// such a scuffed panic lmao
 		println(f"Index {index} out of range of list with length {list.*.length}")

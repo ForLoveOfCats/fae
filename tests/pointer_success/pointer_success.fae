@@ -1,4 +1,4 @@
-fn add_pointers(a: *u32, b: *u32): u32 {
+fn add_pointers(a=: *u32, b=: *u32): u32 {
 	return a.* + b.*
 }
 
@@ -16,11 +16,11 @@ fn main() {
 	println(f"{dereference<i64>(ptr)}") // -42
 }
 
-fn add_to_pointer(a: *mut f64, b: f64) {
+fn add_to_pointer(a=: *mut f64, b=: f64) {
 	a.* = a.* + b
 }
 
 generic T
-fn dereference(ptr: *T): T {
+fn dereference(ptr=: *T): T {
 	return ptr.*
 }

@@ -18,10 +18,10 @@ fn function(): isize {
 }
 
 generic T
-fn identity(value: T): T {
+fn identity(value=: T): T {
 	return value
 }
 
-fn print_range(range: Range) {
+fn print_range(range=: Range) {
 	println(f"Range start: {range.start}, end: {range.end}")
 }

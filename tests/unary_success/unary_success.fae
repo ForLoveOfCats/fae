@@ -1,5 +1,5 @@
 generic T
-fn identity(arg: T): T {
+fn identity(arg=: T): T {
 	return arg
 }
 

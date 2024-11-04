@@ -27,26 +27,26 @@ fn main() {
 	if scene is InGame => println(f"shield_health: {scene.shield_health}")
 }
 
-fn tick_a(context: *mut Context) {
+fn tick_a(context=: *mut Context) {
 	if context.scene is scene: InGame {
 		scene.shield_health -= 1
 	}
 }
 
-fn tick_b(scene: *mut Scene) {
+fn tick_b(scene=: *mut Scene) {
 	let scene: *mut Scene = scene
 	if scene is scene: InGame {
 		scene.shield_health -= 1
 	}
 }
 
-fn tick_c(context: *mut Context, argument: bool) {
+fn tick_c(context=: *mut Context, argument=: bool) {
 	if argument and context.scene is scene: InGame {
 		scene.shield_health -= 2
 	}
 }
 
-fn tick_d(context: *mut Context, argument: bool) {
+fn tick_d(context=: *mut Context, argument=: bool) {
 	if context.scene is scene: InGame and argument {
 		scene.shield_health -= 3
 	}

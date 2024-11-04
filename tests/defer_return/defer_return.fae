@@ -1,9 +1,9 @@
 fn main() {
-	function(false)
+	function(early_return: false)
 
 	println("")
 
-	function(true)
+	function(early_return: true)
 }
 
 fn function(early_return: bool) {

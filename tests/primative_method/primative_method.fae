@@ -14,12 +14,12 @@ fn modify() {
 }
 
 method bool
-fn op_and(other: bool): bool {
+fn op_and(other=: bool): bool {
 	return self.* & other
 }
 
 method bool
-fn op_or(other: bool): bool {
+fn op_or(other=: bool): bool {
 	return self.* | other
 }
 

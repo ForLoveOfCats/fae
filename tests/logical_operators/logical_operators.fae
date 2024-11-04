@@ -1,10 +1,10 @@
-fn logical_and(a: bool, b: bool, letter: str) {
+fn logical_and(a=: bool, b=: bool, letter=: str) {
 	if a and b {
 		println(letter)
 	}
 }
 
-fn logical_or(a: bool, b: bool, letter: str) {
+fn logical_or(a=: bool, b=: bool, letter=: str) {
 	if a or b {
 		println(letter)
 	}

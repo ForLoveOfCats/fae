@@ -20,7 +20,7 @@ fn main() {
 	})
 }
 
-fn print_cases(cases: []str) {
+fn print_cases(cases=: []str) {
 	mut index: isize = 0
 	while index < cases.length {
 		println(cases[index])

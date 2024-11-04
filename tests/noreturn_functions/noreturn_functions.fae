@@ -3,7 +3,7 @@ fn main() {
 	println(f"{must_return(false)}")
 }
 
-fn must_return(arg: bool): i32 {
+fn must_return(arg=: bool): i32 {
 	if arg => return 42
 	else => does_not_return()
 }

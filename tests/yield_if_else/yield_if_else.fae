@@ -14,7 +14,7 @@ fn main() {
 	println(a)
 }
 
-fn within_block(arg: bool) {
+fn within_block(arg=: bool) {
 	let message = {
 		if arg => yield "Hello"
 		else => yield "World"
@@ -23,7 +23,7 @@ fn within_block(arg: bool) {
 	println(message)
 }
 
-fn bare_if_else(arg: bool) {
+fn bare_if_else(arg=: bool) {
 	let message = if arg {
 		yield "Cat"
 	} else {

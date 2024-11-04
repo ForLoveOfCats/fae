@@ -9,16 +9,16 @@ struct ContainsMultiple {
 	second: i32
 }
 
-fn func_a(a: A): A {
+fn func_a(a=: A): A {
 	return a
 }
 
-fn func_b(c: ContainsMultiple): ContainsA {
+fn func_b(c=: ContainsMultiple): ContainsA {
 	let contains = c.first
 	return contains
 }
 
-fn func_c(ptr: *mut A) {
+fn func_c(ptr=: *mut A) {
 	ptr.* = A {}
 }
 

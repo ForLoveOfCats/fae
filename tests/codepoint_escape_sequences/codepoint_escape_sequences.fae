@@ -18,10 +18,10 @@ fn main() {
 	byte_case(b'\0')
 }
 
-fn case(value: u32) {
+fn case(value=: u32) {
 	println(f"{value}")
 }
 
-fn byte_case(value: u8) {
+fn byte_case(value=: u8) {
 	println(f"{value}")
 }

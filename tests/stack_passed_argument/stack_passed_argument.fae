@@ -1,4 +1,4 @@
-fn function(mut object: Object, x: i32) {
+fn function(mut object=: Object, x=: i32) {
 	object.a += 1
 	object.b -= 1
 	object.c = 100
