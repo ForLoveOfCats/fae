@@ -118,7 +118,7 @@ struct Entity{index} {{
 }}
 
 method static Entity{index}
-fn new(payload: T): Entity{index}<T> {{
+fn new(payload=: T): Entity{index}<T> {{
 	return Entity{index}<T> {{ health: 100, payload }}
 }}
 
@@ -132,7 +132,7 @@ fn tick(delta: f64) {{
 def generate_normal_logic(index):
 	return f"""
 generic T
-fn function(_arg: *List<Entity{index + 1}<T>>) {{}}
+fn function(_arg=: *List<Entity{index + 1}<T>>) {{}}
 
 fn logic_{index}(addend: i32): i32 {{
 	mut the_struct: Struct{index} = Struct{index} {{
@@ -217,7 +217,7 @@ struct ErrorStruct {{
 }}
 
 generic T
-fn do_failable_thing(arg: T, index: i32): Result<T, ErrorStruct> {{
+fn do_failable_thing(arg=: T, index=: i32): Result<T, ErrorStruct> {{
 	if index > 10 => return .Error(ErrorStruct {{ index }})
 	else => return .Okay(arg)
 }}
