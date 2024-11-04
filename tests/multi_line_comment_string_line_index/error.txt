@@ -1,0 +1,3 @@
+Validation error: ./tests/multi_line_comment_string_line_index/multi_line_comment_string_line_index.fae, line 20: Expected return type of `str`, got `bool`
+  20|     return true
+          ^^^^^^^^^^^
