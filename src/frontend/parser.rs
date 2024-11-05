@@ -1494,8 +1494,11 @@ fn parse_path_expression<'a>(
 ) -> ParseResult<Node<Expression<'a>>> {
 	let word_token = tokens.expect(messages, TokenKind::Word)?;
 	let name = Node::from_token(word_token.text, word_token);
+
 	let type_arguments_node = parse_type_arguments(bump, messages, tokens)?;
 	let name_span = type_arguments_node.map(|a| name.span + a.span).unwrap_or(name.span);
+	let including_previous_span = previous.as_ref().map(|p| p.span + name_span).unwrap_or(name_span);
+
 	let type_arguments = type_arguments_node.map(|a| a.item).unwrap_or_default();
 
 	let (is_call, is_struct_literal) = match tokens.peek_kind() {
@@ -1507,24 +1510,23 @@ fn parse_path_expression<'a>(
 	if is_call {
 		let arguments_node = parse_arguments(bump, messages, tokens)?;
 		let arguments = arguments_node.item;
-		let span = name_span + arguments_node.span;
+		let span = including_previous_span + arguments_node.span;
 
 		let call = Call { base: previous, name, type_arguments, arguments };
 		return Ok(Node::new(Expression::Call(bump.alloc(call)), span));
 	}
 
 	let expression = if let Some(previous) = previous {
-		let span = previous.span + name_span;
 		let access = bump.alloc(DotAccess { base: previous, name, type_arguments });
-		Node::new(Expression::DotAccess(access), span)
+		Node::new(Expression::DotAccess(access), including_previous_span)
 	} else {
 		let read = Read { name, type_arguments };
-		Node::new(Expression::Read(read), name_span)
+		Node::new(Expression::Read(read), including_previous_span)
 	};
 
 	if is_struct_literal && allow_struct_literal {
 		let initializer = parse_struct_initializer(bump, messages, tokens)?;
-		let span = name_span + initializer.span;
+		let span = including_previous_span + initializer.span;
 
 		let literal = bump.alloc(StructLiteral { base: expression, initializer });
 		return Ok(Node::new(Expression::StructLiteral(literal), span));

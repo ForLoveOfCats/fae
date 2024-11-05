@@ -4,6 +4,8 @@ fn main() {
 
 	v = .B.mutable_method()
 	v.print()
+
+	v = .B.returns_bool()
 }
 
 enum Enum {
@@ -37,4 +39,9 @@ method mut Enum.B
 fn mutable_method(): Enum {
 	println("mut method B")
 	return self.*
+}
+
+method static Enum.B
+fn returns_bool(): bool {
+	return true
 }
