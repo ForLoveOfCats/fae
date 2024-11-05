@@ -1266,7 +1266,7 @@ static StaticName: Type
 
 ## Functions
 
-Functions take the following forms and can be defined in any block, including within other functions, and can inherit the generic type parameters from any outer function.
+Functions can be defined in any block, including within other functions, and can inherit the generic type parameters from any outer function. They take the following general forms.
 ```
 // `void` function taking no arguments
 fn function_name() {
@@ -1304,12 +1304,73 @@ fn push_four_times(list: &mut List<T>, value: T) {
         list.push(value)
     }
 
+    // Implicit parameter labels
     push_twice(list, value)
     push_twice(list, value)
 }
 ```
 
 **Note**: It is planned to add traits to the language, extending what generic code can achieve. For example, while the current semantics allow for creating collections such as a type safe heap allocated `List<T>` they are not yet sufficient to create a `HashMap<K, V>`.
+
+Function parameters by default are *labeled* with their name, requiring call sites to label their arguments with the corresponding parameter label.
+```
+fn double(input: i32): i32 {
+    return input * 2
+}
+
+double(input: 21) // Returns 42
+double(5) // Compile error!
+```
+
+Arguments with parameter labels must still be passed in the canonical order as defined in the function signature.
+```
+generic T
+fn copy(from: *T, to: *mut T) {
+    to.* = from.*
+}
+
+let a = true
+mut b = false
+
+copy(from: a.&, to: b.&mut)
+assert(a == b)
+
+copy(to: b.&mut, from: a.&) // Compile error!
+```
+
+Much like field initialization, when an argument is a simple read from a symbol in scope the parameter label *may* be omitted assuming the symbol being read from has the same name as the expected parameter label.
+```
+fn function(value: i32) {
+    println(f"{value}")
+}
+
+let value = 42
+let other = 50
+
+function(value) // Prints 42
+function(value: other) // Prints 50
+function(other) // Compile error!
+```
+
+A parameter's label can be specified to be something other from the parameter label by placing an equals sign and the label name after the parameter name.
+```
+fn offset(index=initial: i32, by: i32): i32 {
+    return index + by
+}
+
+offset(initial: 40, by: 2) // Returns 42
+offset(index: 20, by: 5) // Compile error!
+```
+
+A parameter may have *no* label by placing only an equal sign after the parameter name, at which point the call site need only pass a value without labeling it.
+```
+fn log(message=: str) {
+    eprintln(message)
+}
+
+log("Hello world!") // Prints "Hello world!" to stderr
+log(message: "Howdy!") // Compile error!
+```
 
 By prepending with a `method` annotation, a function may be placed as methods on structs and enums within the same scope. These methods are allowed to access `internal` fields and mutate `readable` fields. When the struct or enum has generic type parameters, the method automatically inherits these type parameters.
 ```
@@ -1433,33 +1494,33 @@ fn null_slice(): []mut T
 **Offset a pointer by specified signed byte distance**
 ```
 generic T
-fn offset_pointer(pointer: &T, by_bytes: isize): &T
+fn offset_pointer(pointer=: &T, by_bytes: isize): &T
 ```
 
 **Offset a mutable pointer by specified signed byte distance**
 ```
 generic T
-fn offset_pointer_mut(pointer: &mut T, by_bytes: isize): &mut T
+fn offset_pointer_mut(pointer=: &mut T, by_bytes: isize): &mut T
 ```
 
 **Print a formatted message to stdout**
 ```
-fn print(message: fstr)
+fn print(message=: fstr)
 ```
 
 **Print a formatted message and a newline to stdout**
 ```
-fn println(message: fstr)
+fn println(message=: fstr)
 ```
 
 **Print a formatted message to stderr**
 ```
-fn eprint(message: fstr)
+fn eprint(message=: fstr)
 ```
 
 **Print a formatted message and a newline to stderr**
 ```
-fn eprintln(message: fstr)
+fn eprintln(message=: fstr)
 ```
 
 **Terminate the application immediately** _with_ a stack trace
@@ -1469,7 +1530,7 @@ fn panic(): noreturn
 
 **Print a formatted _failure_ message to stderr and terminate the application** _with_ a stack trace
 ```
-fn panicf(message: fstr): noreturn
+fn panicf(message=: fstr): noreturn
 ```
 
 **Terminate the application** with a success code _without_ a stack trace
@@ -1484,17 +1545,17 @@ fn exit_error(): noreturn
 
 **Print a formatted _user error_ message to stderr and terminate the application** _without_ a stack trace
 ```
-fn exit_errorf(message: fstr): noreturn
+fn exit_errorf(message=: fstr): noreturn
 ```
 
 **If the value is false, terminate the application**, included in all build configurations
 ```
-fn assert(value: bool)
+fn assert(value=: bool)
 ```
 
 **If the value is false, print a formatted message to stderr and terminate the application**, included in all build configurations
 ```
-fn assertf(value: bool, message: fstr)
+fn assertf(value=: bool, message=: fstr)
 ```
 
 **Range type** produced by range initialization binary operator and used to slice index on slices
@@ -1503,6 +1564,15 @@ struct Range {
     start: isize
     end: isize
 }
+
+method Range
+fn is_empty(): bool
+
+method Range
+fn is_not_empty(): bool
+
+method Range
+fn contains(index=: isize): bool
 ```
 
 **Optional type** modeling optionality of a value
@@ -1539,18 +1609,18 @@ fn alignment_of(): isize
 **Create slice** from pointer and length
 ```
 generic T
-fn create_slice(pointer: &T, length: isize): []T
+fn create_slice(pointer=: &T, length: isize): []T
 ```
 
 **Create mutable slice** from mutable pointer and length
 ```
 generic T
-fn create_slice_mut(pointer: &mut T, length: isize): []mut T
+fn create_slice_mut(pointer=: &mut T, length: isize): []mut T
 ```
 
 **Create str** from pointer and length
 ```
-fn create_str(pointer: &u8, length: isize): str
+fn create_str(pointer=: &u8, length: isize): str
 ```
 
 **Create non-null invalid pointer** for "pointing to" a zero size "value"
