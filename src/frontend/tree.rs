@@ -185,6 +185,20 @@ pub struct Field<'a> {
 }
 
 #[derive(Debug)]
+pub struct Trait<'a> {
+	pub name: Node<&'a str>,
+	pub methods: &'a [TraitMethod<'a>],
+}
+
+#[derive(Debug)]
+pub struct TraitMethod<'a> {
+	pub kind: MethodKind,
+	pub name: Node<&'a str>,
+	pub parameters: Parameters<'a>,
+	pub parsed_type: Option<Node<Type<'a>>>,
+}
+
+#[derive(Debug)]
 pub struct Function<'a> {
 	pub generics: &'a [Node<&'a str>],
 	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
@@ -529,6 +543,7 @@ pub enum Statement<'a> {
 
 	Struct(Struct<'a>),
 	Enum(Enum<'a>),
+	Trait(Trait<'a>),
 	Function(&'a Function<'a>),
 
 	Const(&'a Node<Const<'a>>),
@@ -559,6 +574,7 @@ impl<'a> Statement<'a> {
 			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
 			Enum(statement) => statement.name.span,
+			Trait(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
 			Const(statement) => statement.span,
 			Static(statement) => statement.span,
@@ -585,6 +601,7 @@ impl<'a> Statement<'a> {
 			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
 			Enum(..) => "An enum definition",
+			Trait(..) => "A trait definition",
 			Function(..) => "A function definition",
 			Const(..) => "A const definition",
 			Static(..) => "A static definition",

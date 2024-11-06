@@ -211,6 +211,30 @@ pub struct RegisterTypeResult {
 	pub methods_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, Hash)]
+pub struct TraitId {
+	entry: u32,
+}
+
+#[derive(Debug)]
+pub struct Trait<'a> {
+	pub name: Node<&'a str>, // TODO: Does this need to be a node?
+	pub methods: Vec<TraitMethod<'a>>,
+}
+
+#[derive(Debug)]
+pub struct TraitMethod<'a> {
+	pub kind: tree::MethodKind,
+	pub name: Node<&'a str>,
+	pub parameters: Vec<TraitParameter>,
+	pub return_type: TypeId,
+}
+
+#[derive(Debug)]
+pub struct TraitParameter {
+	pub type_id: TypeId,
+}
+
 #[derive(Debug)]
 pub struct StructShape<'a> {
 	/* A race condition can occur if one thread attempts to create a new specialization while
@@ -696,6 +720,7 @@ pub struct TypeStore<'a> {
 	pub type_entries: TypeEntries,
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
 	pub method_collections: Ref<RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>>,
+	pub traits: Ref<RwLock<Vec<Trait<'a>>>>,
 
 	module_type_id: TypeId,
 	type_type_id: TypeId,
@@ -797,6 +822,7 @@ impl<'a> TypeStore<'a> {
 			type_entries,
 			user_types: Ref::new(RwLock::new(Vec::new())),
 			method_collections: Ref::new(RwLock::new(method_collections)),
+			traits: Ref::new(RwLock::new(Vec::new())),
 			module_type_id,
 			type_type_id,
 			any_collapse_type_id,
@@ -1429,6 +1455,13 @@ impl<'a> TypeStore<'a> {
 		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
 
 		RegisterTypeResult { shape_index, methods_index }
+	}
+
+	pub fn register_trait(&self, trait_instance: Trait<'a>) -> TraitId {
+		let mut traits = self.traits.write();
+		let entry = traits.len() as u32;
+		traits.push(trait_instance);
+		TraitId { entry }
 	}
 
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {

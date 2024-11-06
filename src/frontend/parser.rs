@@ -213,6 +213,24 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "trait", .. } => {
+			const ALLOWED: AllowedAttributes = AllowedAttributes {
+				generic_attribute: false,
+				extern_attribute: false,
+				export_attribute: false,
+				method_attribute: false,
+				intrinsic_attribute: false,
+				lang_attribute: false,
+			};
+			disallow_attributes(messages, &attributes, ALLOWED, "A trait definition");
+
+			if let Ok(statement) = parse_trait_declaration(bump, messages, tokens) {
+				return Some(Statement::Trait(statement));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "if", .. } => {
 			disallow_all_attributes(messages, attributes, peeked.span, "An if-else statement");
 			if let Ok(chain) = parse_if_else_chain(bump, messages, tokens) {
@@ -1694,7 +1712,7 @@ fn parse_function_declaration<'a>(
 	check_not_reserved(messages, name_token, "function name")?;
 	let name = Node::from_token(name_token.text, name_token);
 
-	let parameters = parse_parameters(bump, messages, tokens)?;
+	let parameters = parse_parameters(bump, messages, tokens, true)?;
 
 	let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 		tokens.next(messages)?;
@@ -1725,7 +1743,12 @@ fn parse_function_declaration<'a>(
 	})
 }
 
-fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Parameters<'a>> {
+fn parse_parameters<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	allow_mut: bool,
+) -> ParseResult<Parameters<'a>> {
 	tokens.expect(messages, TokenKind::OpenParen)?;
 	tokens.consume_newlines();
 
@@ -1733,14 +1756,10 @@ fn parse_parameters<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut To
 	let mut c_vararg = None;
 
 	while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
-		let is_mutable = match tokens.peek() {
-			Ok(Token { text: "mut", .. }) => {
-				tokens.next(messages)?;
-				true
-			}
-
-			_ => false,
-		};
+		let is_mutable = allow_mut && matches!(tokens.peek(), Ok(Token { text: "mut", .. }));
+		if is_mutable {
+			tokens.next(messages)?; // The `mut` token
+		}
 
 		if tokens.peek_kind() == Ok(TokenKind::TriplePeriod) {
 			let triple_period = tokens.next(messages)?;
@@ -1991,6 +2010,62 @@ fn parse_field<'a>(
 	};
 
 	Ok(Field { name, parsed_type, attribute, read_only })
+}
+
+fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Trait<'a>> {
+	tokens.expect_word(messages, "trait")?;
+
+	let struct_name_token = tokens.expect(messages, TokenKind::Word)?;
+	check_not_reserved(messages, struct_name_token, "trait name")?;
+	let name = Node::from_token(struct_name_token.text, struct_name_token);
+
+	tokens.expect(messages, TokenKind::OpenBrace)?;
+	tokens.consume_newlines();
+
+	let mut methods = BumpVec::new_in(bump);
+	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+		tokens.expect_word(messages, "method")?;
+
+		let kind = match tokens.peek() {
+			Ok(Token { text: "mut", kind: TokenKind::Word, .. }) => MethodKind::MutableSelf,
+			Ok(Token { text: "static", kind: TokenKind::Word, .. }) => MethodKind::Static,
+			_ => MethodKind::ImmutableSelf,
+		};
+
+		tokens.expect(messages, TokenKind::Newline)?;
+		tokens.expect_word(messages, "fn")?;
+
+		let name_token = tokens.expect(messages, TokenKind::Word)?;
+		check_not_reserved(messages, name_token, "trait method name")?;
+		let name = Node::from_token(name_token.text, name_token);
+
+		let parameters = parse_parameters(bump, messages, tokens, false)?;
+
+		let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
+			tokens.next(messages)?;
+			Some(parse_type(bump, messages, tokens)?)
+		} else {
+			None
+		};
+
+		tokens.expect(messages, TokenKind::Newline)?;
+		methods.push(TraitMethod { kind, name, parameters, parsed_type });
+
+		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+			break;
+		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+			tokens.next(messages)?;
+			tokens.consume_newlines();
+		} else {
+			tokens.expect(messages, TokenKind::Newline)?;
+			tokens.consume_newlines();
+		}
+	}
+
+	tokens.expect(messages, TokenKind::CloseBrace)?;
+	tokens.expect(messages, TokenKind::Newline)?;
+
+	Ok(Trait { name, methods: methods.into_bump_slice() })
 }
 
 fn parse_const_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Const<'a>>> {

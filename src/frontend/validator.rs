@@ -392,6 +392,7 @@ pub fn validate<'a>(
 				fill_root_types(
 					when_context,
 					&root_messages,
+					lang_items,
 					&mut type_store,
 					function_store,
 					root_layers,
@@ -697,6 +698,7 @@ fn resolve_root_type_imports<'a>(
 fn fill_root_types<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
+	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	root_layers: &RootLayers<'a>,
@@ -710,6 +712,9 @@ fn fill_root_types<'a>(
 		};
 		drop(guard);
 
+		let file_index = parsed_file.source_file.index;
+		let scope_id = ScopeId { file_index, scope_index: 0 };
+
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
 		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index as usize].write();
@@ -718,9 +723,10 @@ fn fill_root_types<'a>(
 		let mut generic_usages = Vec::new();
 		let mut messages = Messages::new(parsed_file.module_path);
 
-		fill_block_types(
+		fill_block_types_and_create_traits(
 			when_context,
 			&mut messages,
+			lang_items,
 			type_store,
 			function_store,
 			&mut generic_usages,
@@ -728,7 +734,9 @@ fn fill_root_types<'a>(
 			&mut symbols,
 			parsed_file.module_path,
 			0,
+			&GenericParameters::new_from_explicit(Vec::new()),
 			&parsed_file.block,
+			scope_id,
 			&mut type_shape_indicies.iter(),
 		);
 		type_shape_indicies.clear();
@@ -1268,6 +1276,7 @@ fn create_block_types<'a>(
 				| tree::Statement::WhenElseChain(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Enum(..)
+				| tree::Statement::Trait(..)
 				| tree::Statement::Function(..)
 				| tree::Statement::Const(..)
 				| tree::Statement::Static(..) => {}
@@ -1526,9 +1535,10 @@ fn create_block_enum<'a>(
 	shape_index
 }
 
-fn fill_block_types<'a>(
+fn fill_block_types_and_create_traits<'a>(
 	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
+	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
@@ -1536,7 +1546,9 @@ fn fill_block_types<'a>(
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
 	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
+	scope_id: ScopeId,
 	shape_index_iter: &mut std::slice::Iter<usize>,
 ) {
 	for statement in block.statements {
@@ -1571,11 +1583,27 @@ fn fill_block_types<'a>(
 				);
 			}
 
+			tree::Statement::Trait(statement) => {
+				create_block_trait(
+					messages,
+					root_layers,
+					type_store,
+					function_store,
+					generic_usages,
+					symbols,
+					module_path,
+					function_initial_symbols_length,
+					enclosing_generic_parameters,
+					statement,
+				);
+			}
+
 			tree::Statement::WhenElseChain(statement) => {
 				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
-					fill_block_types(
+					fill_block_types_and_create_traits(
 						when_context,
 						messages,
+						lang_items,
 						type_store,
 						function_store,
 						generic_usages,
@@ -1583,7 +1611,9 @@ fn fill_block_types<'a>(
 						symbols,
 						module_path,
 						function_initial_symbols_length,
+						enclosing_generic_parameters,
 						&body.item,
+						scope_id,
 						shape_index_iter,
 					);
 				}
@@ -1592,6 +1622,86 @@ fn fill_block_types<'a>(
 			_ => {}
 		}
 	}
+}
+
+fn create_block_trait<'a>(
+	messages: &mut Messages<'a>,
+	root_layers: &RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	statement: &tree::Trait<'a>,
+) {
+	let mut methods = Vec::new();
+	for method in statement.methods {
+		if let Some(varargs_span) = method.parameters.c_varargs {
+			let message = error!("Trait method may not accept C varargs");
+			messages.message(message.span(varargs_span));
+		}
+
+		let mut parameters = Vec::new();
+		for parameter in method.parameters.parameters {
+			let type_id = type_store.lookup_type(
+				messages,
+				&function_store,
+				module_path,
+				generic_usages,
+				root_layers,
+				symbols,
+				function_initial_symbols_length,
+				&enclosing_generic_parameters,
+				&parameter.item.parsed_type,
+			);
+
+			let type_id = match type_id {
+				Some(type_id) => type_id,
+				None => type_store.any_collapse_type_id(),
+			};
+
+			parameters.push(TraitParameter { type_id });
+		}
+
+		let return_type = if let Some(parsed_type) = &method.parsed_type {
+			let type_id = type_store.lookup_type(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				root_layers,
+				symbols,
+				function_initial_symbols_length,
+				enclosing_generic_parameters,
+				parsed_type,
+			);
+
+			let return_type = match type_id {
+				Some(type_id) => type_id,
+				None => type_store.any_collapse_type_id(),
+			};
+
+			if return_type.is_void(type_store) {
+				let warning = warning!("`void` return type can be omitted");
+				messages.message(warning.span(parsed_type.span));
+			}
+
+			return_type
+		} else {
+			type_store.void_type_id()
+		};
+
+		methods.push(TraitMethod {
+			kind: method.kind,
+			name: method.name,
+			parameters,
+			return_type,
+		});
+	}
+
+	type_store.register_trait(Trait { name: statement.name, methods });
 }
 
 fn fill_block_struct<'a>(
@@ -2421,8 +2531,8 @@ fn create_block_functions<'a>(
 			let c_varargs = statement.parameters.c_varargs.is_some();
 			if let Some(varargs_span) = statement.parameters.c_varargs {
 				if statement.extern_attribute.is_none() {
-					let error = error!("Function must be an extern to accept C varargs");
-					messages.message(error.span(varargs_span));
+					let message = error!("Function must be an extern to accept C varargs");
+					messages.message(message.span(varargs_span));
 				}
 			}
 
@@ -2680,9 +2790,10 @@ fn validate_block_in_context<'a>(
 			should_import_prelude,
 		);
 
-		fill_block_types(
+		fill_block_types_and_create_traits(
 			context.when_context,
 			context.messages,
+			context.lang_items,
 			context.type_store,
 			context.function_store,
 			context.function_generic_usages,
@@ -2690,7 +2801,9 @@ fn validate_block_in_context<'a>(
 			context.symbols_scope.symbols,
 			context.module_path,
 			context.function_initial_symbols_length,
+			context.generic_parameters,
 			block,
+			scope_id,
 			&mut context.type_shape_indicies.iter(),
 		);
 		context.type_shape_indicies.clear();
@@ -2859,6 +2972,8 @@ fn validate_statement<'a>(
 		tree::Statement::Struct(..) => {}
 
 		tree::Statement::Enum(..) => {}
+
+		tree::Statement::Trait(..) => {}
 
 		tree::Statement::Function(statement) => {
 			let index = *index_in_block;
