@@ -630,6 +630,7 @@ fn create_root_types<'a>(
 			when_context,
 			&mut messages,
 			lang_items,
+			root_layers,
 			type_store,
 			function_store,
 			&mut symbols,
@@ -1242,6 +1243,7 @@ fn create_block_types<'a>(
 	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1287,6 +1289,7 @@ fn create_block_types<'a>(
 			let shape_index = create_block_struct(
 				messages,
 				lang_items,
+				root_layers,
 				type_store,
 				function_store,
 				symbols,
@@ -1300,6 +1303,7 @@ fn create_block_types<'a>(
 			let shape_index = create_block_enum(
 				messages,
 				lang_items,
+				root_layers,
 				type_store,
 				function_store,
 				symbols,
@@ -1315,6 +1319,7 @@ fn create_block_types<'a>(
 					when_context,
 					messages,
 					lang_items,
+					root_layers,
 					type_store,
 					function_store,
 					symbols,
@@ -1333,6 +1338,7 @@ fn create_block_types<'a>(
 fn create_block_struct<'a>(
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1351,9 +1357,17 @@ fn create_block_struct<'a>(
 	let mut user_types = user_types.write(); // This write lock is quite unfortunate
 
 	let shape_index = user_types.len();
-	for (generic_index, &generic) in statement.generics.iter().enumerate() {
+	for (generic_index, generic) in statement.generics.iter().enumerate() {
 		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
-		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
+		let constraints = type_store.lookup_constraints(
+			messages,
+			root_layers,
+			type_store,
+			symbols,
+			function_initial_symbols_length,
+			generic.constraints,
+		);
+		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
 	}
 
 	let explicit_generics_len = explicit_generics.len();
@@ -1361,7 +1375,8 @@ fn create_block_struct<'a>(
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
 		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
-		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+		let constraints = parent_parameter.constraints.clone();
+		let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
 
@@ -1372,6 +1387,7 @@ fn create_block_struct<'a>(
 	let RegisterTypeResult { shape_index, methods_index } = TypeStore::register_type(
 		&mut user_types,
 		&type_store.method_collections,
+		&type_store.implementations,
 		name,
 		generic_parameters,
 		kind,
@@ -1405,6 +1421,7 @@ fn create_block_struct<'a>(
 fn create_block_enum<'a>(
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1420,9 +1437,17 @@ fn create_block_enum<'a>(
 	let mut user_types = user_types.write(); // This write lock is quite unfortunate
 
 	let enum_shape_index = user_types.len() + statement.variants.len();
-	for (generic_index, &generic) in statement.generics.iter().enumerate() {
+	for (generic_index, generic) in statement.generics.iter().enumerate() {
 		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
-		explicit_generics.push(GenericParameter { name: generic, generic_type_id });
+		let constraints = type_store.lookup_constraints(
+			messages,
+			root_layers,
+			type_store,
+			symbols,
+			function_initial_symbols_length,
+			generic.constraints,
+		);
+		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
 	}
 
 	let explicit_generics_len = explicit_generics.len();
@@ -1430,7 +1455,8 @@ fn create_block_enum<'a>(
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
 		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
-		let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+		let constraints = parent_parameter.constraints.clone();
+		let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
 
@@ -1448,7 +1474,12 @@ fn create_block_enum<'a>(
 		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
 		for (generic_index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
 			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
-			variant_explicit_generics.push(GenericParameter { name: enum_explicit_generic.name, generic_type_id });
+			let constraints = enum_explicit_generic.constraints.clone();
+			variant_explicit_generics.push(GenericParameter {
+				name: enum_explicit_generic.name,
+				constraints,
+				generic_type_id,
+			});
 		}
 
 		let explicit_generics_len = variant_explicit_generics.len();
@@ -1456,7 +1487,8 @@ fn create_block_enum<'a>(
 		for (index, enum_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
 			let generic_index = explicit_generics_len + index;
 			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
-			let parameter = GenericParameter { name: enum_parameter.name, generic_type_id };
+			let constraints = enum_parameter.constraints.clone();
+			let parameter = GenericParameter { name: enum_parameter.name, constraints, generic_type_id };
 			variant_generic_parameters.push_implicit(parameter);
 		}
 
@@ -1473,6 +1505,7 @@ fn create_block_enum<'a>(
 		let RegisterTypeResult { methods_index, .. } = TypeStore::register_type(
 			&mut user_types,
 			&type_store.method_collections,
+			&type_store.implementations,
 			name,
 			variant_generic_parameters,
 			kind,
@@ -1505,6 +1538,7 @@ fn create_block_enum<'a>(
 	let RegisterTypeResult { shape_index, methods_index } = TypeStore::register_type(
 		&mut user_types,
 		&type_store.method_collections,
+		&type_store.implementations,
 		name,
 		generic_parameters,
 		kind,
@@ -1701,7 +1735,16 @@ fn create_block_trait<'a>(
 		});
 	}
 
-	type_store.register_trait(Trait { name: statement.name, methods });
+	let trait_id = type_store.register_trait(Trait { name: statement.name, methods });
+
+	let symbol = Symbol {
+		name: statement.name.item,
+		kind: SymbolKind::Trait { trait_id },
+		span: Some(statement.name.span),
+		used: false,
+		imported: false,
+	};
+	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 }
 
 fn fill_block_struct<'a>(
@@ -2348,15 +2391,23 @@ fn create_block_functions<'a>(
 				+ base_shape_generics.as_ref().map(|p| p.parameters().len()).unwrap_or(0);
 			let mut explicit_generics = Vec::with_capacity(capacity);
 
-			for (generic_index, &generic) in statement.generics.iter().enumerate() {
+			for (generic_index, generic) in statement.generics.iter().enumerate() {
 				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-				explicit_generics.push(GenericParameter { name: generic, generic_type_id });
+				let constraints = type_store.lookup_constraints(
+					messages,
+					root_layers,
+					type_store,
+					scope.symbols,
+					function_initial_symbols_length,
+					generic.constraints,
+				);
+				explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 				let symbol = Symbol {
-					name: generic.item,
+					name: generic.name.item,
 					kind,
-					span: Some(generic.span),
+					span: Some(generic.name.span),
 					used: true,
 					imported: false,
 				};
@@ -2369,7 +2420,8 @@ fn create_block_functions<'a>(
 				for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + index;
 					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-					let parameter = GenericParameter { name: parent_parameter.name, generic_type_id };
+					let constraints = parent_parameter.constraints.clone();
+					let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 					generic_parameters.push_implicit(parameter);
 
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
@@ -2393,9 +2445,12 @@ fn create_block_functions<'a>(
 				for (index, base_type_parameter) in base_shape_generics.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + implicit_generics_len + index;
 					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
-					let parameter = GenericParameter { name: base_type_parameter.name, generic_type_id };
+					let constraints = base_type_parameter.constraints.clone();
+					let parameter = GenericParameter { name: base_type_parameter.name, constraints, generic_type_id };
 					generic_parameters.push_method_base(parameter);
-					base_type_arguments.ids.push(parameter.generic_type_id);
+					base_type_arguments
+						.ids
+						.push(Node::new(generic_type_id, base_type_parameter.name.span));
 
 					let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
 					let span = Some(base_type_parameter.name.span);
@@ -2442,14 +2497,15 @@ fn create_block_functions<'a>(
 					messages.message(warning.span(parsed_type.span));
 				}
 
-				return_type
+				Node::new(return_type, parsed_type.span)
 			} else {
-				type_store.void_type_id()
+				// TODO: This span isn't exactly ideal
+				Node::new(type_store.void_type_id(), statement.name.span)
 			};
 
 			let mut parameters = Vec::new();
 			if let Some(method_attribute) = &statement.method_attribute {
-				let mutable = match method_attribute.item.kind {
+				let mutable = match method_attribute.item.kind.item {
 					MethodKind::ImmutableSelf => Some(false),
 					MethodKind::MutableSelf => Some(true),
 					MethodKind::Static => None,
@@ -2481,12 +2537,18 @@ fn create_block_functions<'a>(
 
 					let readable_index = readables.push("self", type_id, ReadableKind::Let, mutable);
 					assert_eq!(readable_index, 0);
-					parameters.push(ParameterShape { label: None, type_id, readable_index, is_mutable: false });
+					parameters.push(ParameterShape {
+						span: Span::unusable(),
+						label: None,
+						type_id,
+						readable_index,
+						is_mutable: false,
+					});
 				}
 			}
 
 			let maybe_self = parameters.len();
-			for (index, parameter) in statement.parameters.parameters.iter().enumerate() {
+			for (index, parameter) in statement.parameters.item.parameters.iter().enumerate() {
 				let type_id = type_store.lookup_type(
 					messages,
 					&function_store,
@@ -2513,9 +2575,10 @@ fn create_block_functions<'a>(
 				let readable_index = readables.push(name, type_id, readable_kind, true);
 				assert_eq!(readable_index, index + maybe_self);
 
+				let span = parameter.span;
 				let label = parameter.item.label;
 				let is_mutable = parameter.item.is_mutable;
-				parameters.push(ParameterShape { label, type_id, readable_index, is_mutable });
+				parameters.push(ParameterShape { span, label, type_id, readable_index, is_mutable });
 			}
 
 			drop(scope);
@@ -2528,8 +2591,8 @@ fn create_block_functions<'a>(
 				}
 			}
 
-			let c_varargs = statement.parameters.c_varargs.is_some();
-			if let Some(varargs_span) = statement.parameters.c_varargs {
+			let c_varargs = statement.parameters.item.c_varargs;
+			if let Some(varargs_span) = c_varargs {
 				if statement.extern_attribute.is_none() {
 					let message = error!("Function must be an extern to accept C varargs");
 					messages.message(message.span(varargs_span));
@@ -2554,7 +2617,7 @@ fn create_block_functions<'a>(
 				intrinsic_attribute: statement.intrinsic_attribute,
 				lang_attribute: statement.lang_attribute,
 				method_base_index: method_base_shape_index,
-				parameters,
+				parameters: Node::new(parameters, statement.parameters.span),
 				c_varargs,
 				return_type,
 				block: None,
@@ -2664,7 +2727,7 @@ fn determine_method_info<'a>(
 		},
 
 		SymbolKind::Type { shape_index, methods_index } => {
-			if method_attribute.item.kind == MethodKind::Static {
+			if method_attribute.item.kind.item == MethodKind::Static {
 				let lock = type_store.user_types.read()[*shape_index].clone();
 				let user_type = lock.read();
 				let base_name = user_type.name;
@@ -2767,6 +2830,7 @@ fn validate_block_in_context<'a>(
 			context.when_context,
 			context.messages,
 			context.lang_items,
+			context.root_layers,
 			context.type_store,
 			context.function_store,
 			context.symbols_scope.symbols,
@@ -3179,7 +3243,7 @@ fn validate_function<'a>(
 	let return_type = shape.return_type;
 	let generics = shape.generic_parameters.clone();
 
-	let mut scope = context.child_scope_for_function(return_type, &generics);
+	let mut scope = context.child_scope_for_function(return_type.item, &generics);
 	let initial_generic_usages_len = scope.function_generic_usages.len();
 
 	for (generic_index, generic) in generics.parameters().iter().enumerate() {
@@ -3205,14 +3269,14 @@ fn validate_function<'a>(
 			scope.is_extension_method = scope_id != base_scope_id;
 		}
 
-		let (is_method, is_mutable) = match method_attribute.item.kind {
+		let (is_method, is_mutable) = match method_attribute.item.kind.item {
 			MethodKind::ImmutableSelf => (true, false),
 			MethodKind::MutableSelf => (true, true),
 			MethodKind::Static => (false, false),
 		};
 
 		if is_method {
-			let type_id = shape.parameters[0].type_id;
+			let type_id = shape.parameters.item[0].type_id;
 			let readable_index = scope.readables.push("self", type_id, ReadableKind::Let, is_mutable);
 			let kind = SymbolKind::Let { readable_index };
 			let symbol = Symbol { name: "self", kind, span: None, used: true, imported: false };
@@ -3222,11 +3286,11 @@ fn validate_function<'a>(
 		}
 	}
 
-	for (index, parameter) in statement.parameters.parameters.iter().enumerate() {
+	for (index, parameter) in statement.parameters.item.parameters.iter().enumerate() {
 		let span = parameter.item.name.span;
 		let parameter = &parameter.item;
 
-		let parameter_shape = &shape.parameters[index + maybe_self];
+		let parameter_shape = &shape.parameters.item[index + maybe_self];
 		let stored_readable_index = parameter_shape.readable_index;
 		let parameter_shape_type_id = parameter_shape.type_id;
 
@@ -3245,7 +3309,7 @@ fn validate_function<'a>(
 		let name = parameter.name.item;
 		scope.push_symbol(Symbol { name, kind, span: Some(span), used: false, imported: false });
 
-		let previous = &statement.parameters.parameters[..index];
+		let previous = &statement.parameters.item.parameters[..index];
 		if let Some(existing) = previous.iter().find(|f| f.item.name.item == name) {
 			let error = error!("Duplicate parameter `{name}` of function `{}`", statement.name.item);
 			let note = note!(existing.item.name.span, "Original parameter here");
@@ -3258,7 +3322,7 @@ fn validate_function<'a>(
 	let tree_block = &statement.block.as_ref().unwrap().item;
 	let block = validate_block(scope, tree_block, false);
 
-	if !return_type.is_void(context.type_store) && !block.returns {
+	if !return_type.item.is_void(context.type_store) && !block.returns {
 		let error = error!("Not all code paths for function `{}` return a value", statement.name.item);
 		context.message(error.span(statement.name.span));
 	}
@@ -3308,12 +3372,12 @@ fn validate_function<'a>(
 
 	if shape.is_main {
 		assert_eq!(shape.generic_parameters.implicit_len(), 0);
-		let has_return_type = !shape.return_type.is_void(context.type_store);
+		let has_return_type = !shape.return_type.item.is_void(context.type_store);
 
 		let export_span = shape.export_attribute.map(|a| a.span);
 		drop(shape);
 
-		let parameters = statement.parameters.parameters.iter();
+		let parameters = statement.parameters.item.parameters.iter();
 		let parameter_span = parameters.fold(None, |sum, p| match sum {
 			Some(sum) => Some(sum + p.span),
 			None => Some(p.span),
@@ -4795,7 +4859,7 @@ fn validate_symbol_call<'a>(
 	let mut explicit_arguments = Vec::new();
 	for type_argument in call.type_arguments {
 		if let Some(type_id) = context.lookup_type(type_argument) {
-			explicit_arguments.push(type_id);
+			explicit_arguments.push(Node::new(type_id, type_argument.span));
 		} else {
 			type_argument_lookup_errored = true;
 		}
@@ -4816,7 +4880,7 @@ fn validate_symbol_call<'a>(
 		// in scope then that means it must be somewhere within ourselves or our function parent chain
 		let count = shape.generic_parameters.implicit_len();
 		for parameter in &context.generic_parameters.parameters()[0..count] {
-			type_arguments.push_implicit(parameter.generic_type_id);
+			type_arguments.push_implicit(Node::new(parameter.generic_type_id, parameter.name.span));
 		}
 	}
 	drop(shape);
@@ -4876,7 +4940,7 @@ fn get_method_function_specialization<'a>(
 	let mut explicit_arguments = Vec::new();
 	for type_argument in call_type_arguments {
 		if let Some(type_id) = context.lookup_type(type_argument) {
-			explicit_arguments.push(type_id);
+			explicit_arguments.push(Node::new(type_id, type_argument.span));
 		} else {
 			type_argument_lookup_errored = true;
 		}
@@ -4897,7 +4961,7 @@ fn get_method_function_specialization<'a>(
 		// in scope then that means it must be somewhere within ourselves or our function parent chain
 		let count = shape.generic_parameters.implicit_len();
 		for parameter in &context.generic_parameters.parameters()[0..count] {
-			type_arguments.push_implicit(parameter.generic_type_id);
+			type_arguments.push_implicit(Node::new(parameter.generic_type_id, parameter.name.span));
 		}
 	}
 	drop(shape);
@@ -4954,7 +5018,7 @@ fn validate_function_arguments<'a>(
 		let mut scope = context.child_scope();
 
 		let shape = lock.read();
-		let shape_parameter = shape.parameters.get(parameter_index);
+		let shape_parameter = shape.parameters.item.get(parameter_index);
 		if let Some(parameter_label) = shape_parameter.and_then(|parameter| parameter.label) {
 			if let Some(argument_label) = argument.label {
 				if argument_label.item != parameter_label {
@@ -4992,10 +5056,10 @@ fn validate_function_arguments<'a>(
 	}
 
 	let shape = lock.read();
-	let overall_parameter_len = shape.parameters.len();
+	let overall_parameter_len = shape.parameters.item.len();
 	let selfless_parameter_len = overall_parameter_len - maybe_self;
 	let specialization_parameters = function_specialization_index.map(|index| shape.specializations[index].parameters.clone());
-	let has_c_varargs = shape.c_varargs;
+	let has_c_varargs = shape.c_varargs.is_some();
 	drop(shape);
 
 	if let Some(specialization_parameters) = specialization_parameters {
@@ -5088,7 +5152,7 @@ fn validate_method_call<'a>(
 
 	let name = call.name.item;
 	let function_shape_index = method_info.function_shape_index;
-	let mutable_self = match method_info.kind {
+	let mutable_self = match method_info.kind.item {
 		MethodKind::ImmutableSelf => false,
 		MethodKind::MutableSelf => true,
 
@@ -5167,7 +5231,7 @@ fn validate_static_method_call<'a>(
 	};
 
 	let name = call.name.item;
-	match method_info.kind {
+	match method_info.kind.item {
 		MethodKind::ImmutableSelf | MethodKind::MutableSelf => {
 			if base_expression.into_value(context) {
 				return validate_method_call(context, method_info, base_expression, call, span);

@@ -14,9 +14,10 @@ use crate::frontend::validator::Context;
 use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct GenericParameter<'a> {
 	pub name: Node<&'a str>,
+	pub constraints: SliceRef<TraitId>,
 	pub generic_type_id: TypeId,
 }
 
@@ -103,14 +104,14 @@ impl GenericUsage {
 			GenericUsage::UserType { type_arguments, shape_index } => {
 				let mut specialized_type_arguments = TypeArguments::clone(type_arguments);
 				for type_argument in &mut specialized_type_arguments.ids {
-					*type_argument = type_store.specialize_with_function_generics(
+					type_argument.item = type_store.specialize_with_function_generics(
 						messages,
 						function_store,
 						module_path,
 						generic_usages,
 						function_shape_index,
 						function_type_arguments,
-						*type_argument,
+						type_argument.item,
 					);
 				}
 
@@ -167,9 +168,9 @@ pub struct FunctionShape<'a> {
 
 	pub method_base_index: Option<usize>,
 	pub generic_parameters: GenericParameters<'a>,
-	pub parameters: Vec<ParameterShape<'a>>,
-	pub c_varargs: bool,
-	pub return_type: TypeId,
+	pub parameters: Node<Vec<ParameterShape<'a>>>,
+	pub c_varargs: Option<Span>,
+	pub return_type: Node<TypeId>,
 	pub block: Option<Ref<Block<'a>>>,
 	pub generic_usages: SliceRef<GenericUsage>,
 
@@ -185,6 +186,7 @@ pub struct FunctionSpecializationResult {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ParameterShape<'a> {
+	pub span: Span,
 	pub label: Option<&'a str>,
 	pub type_id: TypeId,
 	pub readable_index: usize,
@@ -196,7 +198,7 @@ pub struct TypeArguments {
 	pub explicit_len: usize,
 	pub implicit_len: usize,
 	pub method_base_len: usize,
-	pub ids: Vec<TypeId>,
+	pub ids: Vec<Node<TypeId>>,
 }
 
 impl std::cmp::Eq for TypeArguments {}
@@ -216,7 +218,7 @@ impl std::cmp::PartialEq for TypeArguments {
 		}
 
 		for (a, b) in self.ids.iter().copied().zip(other.ids.iter().copied()) {
-			if a.index() != b.index() {
+			if a.item.index() != b.item.index() {
 				return true;
 			}
 		}
@@ -226,7 +228,7 @@ impl std::cmp::PartialEq for TypeArguments {
 }
 
 impl TypeArguments {
-	pub fn new_from_explicit(explicit: Vec<TypeId>) -> TypeArguments {
+	pub fn new_from_explicit(explicit: Vec<Node<TypeId>>) -> TypeArguments {
 		let explicit_len = explicit.len();
 		TypeArguments {
 			ids: explicit,
@@ -236,13 +238,13 @@ impl TypeArguments {
 		}
 	}
 
-	pub fn push_implicit(&mut self, implict: TypeId) {
+	pub fn push_implicit(&mut self, implict: Node<TypeId>) {
 		assert_eq!(self.method_base_len, 0);
 		self.ids.push(implict);
 		self.implicit_len += 1;
 	}
 
-	pub fn push_method_base(&mut self, type_id: TypeId) {
+	pub fn push_method_base(&mut self, type_id: Node<TypeId>) {
 		self.ids.push(type_id);
 		self.method_base_len += 1;
 	}
@@ -251,7 +253,7 @@ impl TypeArguments {
 		self.ids.is_empty()
 	}
 
-	pub fn explicit_ids(&self) -> &[TypeId] {
+	pub fn explicit_ids(&self) -> &[Node<TypeId>] {
 		&self.ids[0..self.explicit_len]
 	}
 
@@ -266,14 +268,14 @@ impl TypeArguments {
 		function_type_arguments: &TypeArguments,
 	) {
 		for original_id in &mut self.ids {
-			*original_id = type_store.specialize_with_function_generics(
+			original_id.item = type_store.specialize_with_function_generics(
 				messages,
 				function_store,
 				module_path,
 				generic_usages,
 				function_shape_index,
 				function_type_arguments,
-				*original_id,
+				original_id.item,
 			);
 		}
 	}

@@ -1344,20 +1344,40 @@ fn parse_generic_attribute<'a>(
 	tokens: &mut Tokens<'a>,
 ) -> ParseResult<Node<GenericAttribute<'a>>> {
 	let generic_token = tokens.expect_word(messages, "generic")?;
+	let mut span = generic_token.span;
 
 	let mut names = BumpVec::new_in(bump);
 	loop {
 		let name_token = tokens.expect(messages, TokenKind::Word)?;
-		names.push(Node::new(name_token.text, name_token.span));
+		span += name_token.span;
+		let name = Node::new(name_token.text, name_token.span);
+
+		let mut constraints = BumpVec::new_in(bump);
+		if tokens.peek_kind() == Ok(TokenKind::Colon) {
+			span += tokens.next(messages)?.span;
+
+			loop {
+				let constraint = parse_path_segments(bump, messages, tokens)?;
+				span += constraint.span;
+				constraints.push(constraint);
+
+				if tokens.peek_kind() != Ok(TokenKind::Add) {
+					break;
+				}
+
+				span += tokens.next(messages)?.span;
+			}
+		}
+
+		names.push(GenericName { name, constraints: constraints.into_bump_slice() });
 
 		if tokens.peek_kind() == Ok(TokenKind::Newline) {
 			tokens.next(messages)?;
 			break;
 		}
-		tokens.expect(messages, TokenKind::Comma)?;
+		span += tokens.expect(messages, TokenKind::Comma)?.span;
 	}
 
-	let span = generic_token.span + names.last().as_ref().unwrap().span;
 	let generic_atttribute = GenericAttribute { names: names.into_bump_slice() };
 	Ok(Node::new(generic_atttribute, span))
 }
@@ -1391,16 +1411,16 @@ fn parse_method_attribute<'a>(
 
 	let kind = match tokens.peek() {
 		Ok(Token { text: "mut", .. }) => {
-			tokens.next(messages)?;
-			MethodKind::MutableSelf
+			let span = tokens.next(messages)?.span;
+			Node::new(MethodKind::MutableSelf, span)
 		}
 
 		Ok(Token { text: "static", .. }) => {
-			tokens.next(messages)?;
-			MethodKind::Static
+			let span = tokens.next(messages)?.span;
+			Node::new(MethodKind::Static, span)
 		}
 
-		_ => MethodKind::ImmutableSelf,
+		_ => Node::new(MethodKind::ImmutableSelf, method_token.span),
 	};
 
 	let base_type = parse_path_segments(bump, messages, tokens)?;
@@ -1748,8 +1768,8 @@ fn parse_parameters<'a>(
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	allow_mut: bool,
-) -> ParseResult<Parameters<'a>> {
-	tokens.expect(messages, TokenKind::OpenParen)?;
+) -> ParseResult<Node<Parameters<'a>>> {
+	let open_token = tokens.expect(messages, TokenKind::OpenParen)?;
 	tokens.consume_newlines();
 
 	let mut parameters = BumpVec::new_in(bump);
@@ -1803,12 +1823,13 @@ fn parse_parameters<'a>(
 		}
 	}
 
-	tokens.expect(messages, TokenKind::CloseParen)?;
-
-	Ok(Parameters {
+	let close_token = tokens.expect(messages, TokenKind::CloseParen)?;
+	let parameters = Parameters {
 		parameters: parameters.into_bump_slice(),
 		c_varargs: c_vararg,
-	})
+	};
+
+	Ok(Node::new(parameters, open_token.span + close_token.span))
 }
 
 fn parse_struct_declaration<'a>(
@@ -2015,9 +2036,9 @@ fn parse_field<'a>(
 fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Trait<'a>> {
 	tokens.expect_word(messages, "trait")?;
 
-	let struct_name_token = tokens.expect(messages, TokenKind::Word)?;
-	check_not_reserved(messages, struct_name_token, "trait name")?;
-	let name = Node::from_token(struct_name_token.text, struct_name_token);
+	let trait_name_token = tokens.expect(messages, TokenKind::Word)?;
+	check_not_reserved(messages, trait_name_token, "trait name")?;
+	let name = Node::from_token(trait_name_token.text, trait_name_token);
 
 	tokens.expect(messages, TokenKind::OpenBrace)?;
 	tokens.consume_newlines();
@@ -2039,7 +2060,7 @@ fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: 
 		check_not_reserved(messages, name_token, "trait method name")?;
 		let name = Node::from_token(name_token.text, name_token);
 
-		let parameters = parse_parameters(bump, messages, tokens, false)?;
+		let parameters = parse_parameters(bump, messages, tokens, false)?.item;
 
 		let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 			tokens.next(messages)?;

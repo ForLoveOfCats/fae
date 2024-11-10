@@ -424,7 +424,7 @@ impl LLVMAbi for SysvAbi {
 					LLVMVoidTypeInContext(context),
 					self.parameter_type_buffer.as_mut_ptr(),
 					self.parameter_type_buffer.len() as u32,
-					varargs as _,
+					varargs.is_some() as _,
 				)
 			},
 
@@ -433,7 +433,7 @@ impl LLVMAbi for SysvAbi {
 					abi_type,
 					self.parameter_type_buffer.as_mut_ptr(),
 					self.parameter_type_buffer.len() as u32,
-					varargs as _,
+					varargs.is_some() as _,
 				)
 			},
 		};
@@ -448,7 +448,7 @@ impl LLVMAbi for SysvAbi {
 				return_type,
 				return_type_id,
 				parameter_information: self.parameter_information_buffer.clone(),
-				c_varargs: function_shape.c_varargs,
+				c_varargs: function_shape.c_varargs.is_some(),
 				parameter_bindings: Vec::new(),
 				alloca_block: None,
 				logic_begin_block: None,
@@ -578,7 +578,7 @@ impl LLVMAbi for SysvAbi {
 			return_type,
 			return_type_id,
 			parameter_information: self.parameter_information_buffer.clone(),
-			c_varargs: function_shape.c_varargs,
+			c_varargs: function_shape.c_varargs.is_some(),
 			parameter_bindings,
 			alloca_block: Some(alloca_block),
 			logic_begin_block: Some(logic_begin_block),

@@ -1,3 +1,5 @@
+use std::collections::hash_map;
+
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rustc_hash::FxHashMap;
@@ -11,7 +13,7 @@ use crate::frontend::ir::{
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
-use crate::frontend::tree::{self, FieldAttribute, Node};
+use crate::frontend::tree::{self, FieldAttribute, MethodKind, Node, PathSegments};
 use crate::lock::{ReentrantMutex, RwLock};
 use crate::reference::{Ref, SliceRef};
 
@@ -211,9 +213,15 @@ pub struct RegisterTypeResult {
 	pub methods_index: usize,
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct TraitId {
 	entry: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImplementationStatus {
+	Implemented,
+	NotImplemented,
 }
 
 #[derive(Debug)]
@@ -381,7 +389,7 @@ impl<'a> MethodCollection<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct MethodInfo {
 	pub function_shape_index: usize,
-	pub kind: tree::MethodKind,
+	pub kind: Node<tree::MethodKind>,
 }
 
 #[derive(Debug)]
@@ -529,7 +537,7 @@ impl TypeEntry {
 							.type_arguments
 							.ids
 							.iter()
-							.any(|t| type_store.type_entries.get(*t).generic_poisoned)
+							.any(|t| type_store.type_entries.get(t.item).generic_poisoned)
 					}
 
 					UserTypeKind::Enum { shape } => {
@@ -538,7 +546,7 @@ impl TypeEntry {
 							.type_arguments
 							.ids
 							.iter()
-							.any(|t| type_store.type_entries.get(*t).generic_poisoned)
+							.any(|t| type_store.type_entries.get(t.item).generic_poisoned)
 					}
 				}
 			}
@@ -583,11 +591,13 @@ pub enum TypeEntryKind {
 	UserTypeGeneric {
 		shape_index: usize,
 		generic_index: usize,
+		methods_index: usize,
 	},
 
 	FunctionGeneric {
 		function_shape_index: usize,
 		generic_index: usize,
+		methods_index: usize,
 	},
 }
 
@@ -605,10 +615,13 @@ impl TypeEntryKind {
 	}
 
 	pub fn methods_index(self) -> Option<usize> {
+		use TypeEntryKind::*;
+
 		match self {
-			TypeEntryKind::BuiltinType { methods_index, .. } | TypeEntryKind::UserType { methods_index, .. } => {
-				Some(methods_index)
-			}
+			BuiltinType { methods_index, .. }
+			| UserType { methods_index, .. }
+			| UserTypeGeneric { methods_index, .. }
+			| FunctionGeneric { methods_index, .. } => Some(methods_index),
 
 			_ => None,
 		}
@@ -721,6 +734,7 @@ pub struct TypeStore<'a> {
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
 	pub method_collections: Ref<RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>>,
 	pub traits: Ref<RwLock<Vec<Trait<'a>>>>,
+	pub implementations: Ref<RwLock<Vec<RwLock<FxHashMap<TraitId, ImplementationStatus>>>>>,
 
 	module_type_id: TypeId,
 	type_type_id: TypeId,
@@ -758,6 +772,7 @@ impl<'a> TypeStore<'a> {
 		let mut primative_type_symbols = Vec::new();
 		let mut type_entries = TypeEntries::new();
 		let mut method_collections = Vec::new();
+		let mut implementations = Vec::new();
 
 		let module_type_id = {
 			let kind = TypeEntryKind::Module;
@@ -774,6 +789,9 @@ impl<'a> TypeStore<'a> {
 		let mut push_primative = |name: Option<&'a str>, kind| {
 			let methods_index = method_collections.len();
 			method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+
+			assert_eq!(implementations.len(), methods_index);
+			implementations.push(RwLock::new(FxHashMap::default()));
 
 			let kind = TypeEntryKind::BuiltinType { kind, methods_index };
 			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
@@ -823,6 +841,7 @@ impl<'a> TypeStore<'a> {
 			user_types: Ref::new(RwLock::new(Vec::new())),
 			method_collections: Ref::new(RwLock::new(method_collections)),
 			traits: Ref::new(RwLock::new(Vec::new())),
+			implementations: Ref::new(RwLock::new(implementations)),
 			module_type_id,
 			type_type_id,
 			any_collapse_type_id,
@@ -1428,9 +1447,11 @@ impl<'a> TypeStore<'a> {
 		}
 	}
 
+	// TODO: Why is this not a method?
 	pub fn register_type(
 		user_types: &mut Vec<Ref<RwLock<UserType<'a>>>>,
 		method_collections: &RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>,
+		implementations: &RwLock<Vec<RwLock<FxHashMap<TraitId, ImplementationStatus>>>>,
 		name: &'a str,
 		generic_parameters: GenericParameters<'a>,
 		kind: UserTypeKind<'a>,
@@ -1454,7 +1475,17 @@ impl<'a> TypeStore<'a> {
 		user_types.push(Ref::new(RwLock::new(user_type)));
 		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
 
+		let mut implementations = implementations.write();
+		assert_eq!(implementations.len(), methods_index);
+		implementations.push(RwLock::new(FxHashMap::default()));
+		drop(implementations);
+
 		RegisterTypeResult { shape_index, methods_index }
+	}
+
+	pub fn trait_name(&self, trait_id: TraitId) -> Node<&'a str> {
+		let traits = self.traits.read();
+		traits[trait_id.entry as usize].name
 	}
 
 	pub fn register_trait(&self, trait_instance: Trait<'a>) -> TraitId {
@@ -1464,14 +1495,62 @@ impl<'a> TypeStore<'a> {
 		TraitId { entry }
 	}
 
+	pub fn lookup_constraints(
+		&self,
+		messages: &mut Messages<'a>,
+		root_layers: &RootLayers<'a>,
+		type_store: &TypeStore<'a>,
+		symbols: &mut Symbols<'a>,
+		function_initial_symbols_length: usize,
+		constraints: &[Node<PathSegments<'a>>],
+	) -> SliceRef<TraitId> {
+		let mut trait_ids = Vec::new();
+		for constraint in constraints {
+			let Some(symbol) =
+				symbols.lookup_path_symbol(messages, root_layers, type_store, function_initial_symbols_length, &constraint.item)
+			else {
+				continue;
+			};
+
+			if let SymbolKind::Trait { trait_id } = symbol.kind {
+				trait_ids.push(trait_id);
+			} else {
+				let message = error!("Generic constraint must be a trait, found {}", symbol.kind);
+				messages.message(message.span(constraint.span));
+			}
+		}
+
+		SliceRef::from(trait_ids)
+	}
+
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {
-		let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index };
+		let mut method_collections = self.method_collections.write();
+		let methods_index = method_collections.len();
+		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+		drop(method_collections);
+
+		let mut implementations = self.implementations.write();
+		assert_eq!(implementations.len(), methods_index);
+		implementations.push(RwLock::new(FxHashMap::default()));
+		drop(implementations);
+
+		let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index, methods_index };
 		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
 		self.type_entries.push_entry(type_entry)
 	}
 
 	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
-		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index };
+		let mut method_collections = self.method_collections.write();
+		let methods_index = method_collections.len();
+		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+		drop(method_collections);
+
+		let mut implementations = self.implementations.write();
+		assert_eq!(implementations.len(), methods_index);
+		implementations.push(RwLock::new(FxHashMap::default()));
+		drop(implementations);
+
+		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index, methods_index };
 		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
 		self.type_entries.push_entry(type_entry)
 	}
@@ -1573,6 +1652,132 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::Module | TypeEntryKind::Type => panic!("Forbidden"),
 		}
+	}
+
+	pub fn check_type_implements_trait(
+		&mut self,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &[String],
+		type_id: Node<TypeId>,
+		trait_id: TraitId,
+	) -> ImplementationStatus {
+		let entry = self.type_entries.get(type_id.item);
+		let methods_index = match entry.kind {
+			TypeEntryKind::BuiltinType { methods_index, .. }
+			| TypeEntryKind::UserType { methods_index, .. }
+			| TypeEntryKind::UserTypeGeneric { methods_index, .. }
+			| TypeEntryKind::FunctionGeneric { methods_index, .. } => methods_index,
+
+			TypeEntryKind::Pointer { .. } | TypeEntryKind::Slice(_) => {
+				let type_name = self.type_name(function_store, module_path, type_id.item);
+				let trait_name = self.trait_name(trait_id).item;
+				let message = error!("Type {type_name} is unable to conform to trait `{trait_name}` as it cannot have methods");
+				messages.message(message.span(type_id.span));
+				return ImplementationStatus::NotImplemented;
+			}
+
+			TypeEntryKind::Module => unreachable!(),
+			TypeEntryKind::Type => unreachable!(),
+		};
+
+		let methods_collections = self.method_collections.read();
+		let methods_collection = methods_collections[methods_index].clone();
+		let methods_collection = methods_collection.read();
+		drop(methods_collections);
+
+		let implementations = self.implementations.clone();
+		let implementations = implementations.read();
+		let mut statuses = implementations[methods_index].write();
+
+		let map_entry = statuses.entry(trait_id);
+		let vacancy = match map_entry {
+			hash_map::Entry::Occupied(status) => return *status.get(),
+			hash_map::Entry::Vacant(vacancy) => vacancy,
+		};
+
+		let traits = self.traits.clone();
+		let traits = traits.read();
+		let trait_instance = &traits[trait_id.entry as usize];
+
+		let mut status = ImplementationStatus::Implemented;
+		let mut notes = Vec::new();
+		for trait_method in &trait_instance.methods {
+			let name = trait_method.name.item;
+			let Some(actual_method) = methods_collection.methods.get(name) else {
+				notes.push(note!(trait_method.name.span, "Type does not implement method `{name}`"));
+				status = ImplementationStatus::NotImplemented;
+				continue;
+			};
+
+			let expected_mutable = trait_method.kind == MethodKind::MutableSelf;
+			let actual_immutable = actual_method.kind.item == MethodKind::ImmutableSelf;
+			let mutability_downcast = expected_mutable && actual_immutable;
+			if actual_method.kind.item != trait_method.kind && !mutability_downcast {
+				notes.push(note!(
+					actual_method.kind.span,
+					"Expected method `{name}` to be {} but found it to be {}",
+					trait_method.kind.name(),
+					actual_method.kind.item.name()
+				));
+				status = ImplementationStatus::NotImplemented;
+			}
+
+			let function_shapes = function_store.shapes.read();
+			let shape = function_shapes[actual_method.function_shape_index].as_ref().unwrap();
+			let shape = shape.read();
+
+			if !self.direct_match(shape.return_type.item, trait_method.return_type) {
+				let span = shape.return_type.span;
+				let expected = self.type_name(function_store, module_path, trait_method.return_type);
+				let actual = self.type_name(function_store, module_path, shape.return_type.item);
+				notes.push(note!(
+					span,
+					"Expected method `{name}` to have the return type {expected}, found return type {actual}"
+				));
+				status = ImplementationStatus::NotImplemented;
+			}
+
+			if let Some(varargs) = shape.c_varargs {
+				notes.push(note!(varargs, "Trait methods may not have accept varargs"));
+				status = ImplementationStatus::NotImplemented;
+			}
+
+			if shape.parameters.item.len() - 1 != trait_method.parameters.len() {
+				notes.push(note!(
+					shape.parameters.span,
+					"Expected method `{name}` to have {} parameters, found {}",
+					trait_method.parameters.len(),
+					shape.parameters.item.len() - 1
+				));
+				status = ImplementationStatus::NotImplemented;
+			}
+
+			for (actual, expected) in shape.parameters.item.iter().skip(1).zip(&trait_method.parameters) {
+				if !self.direct_match(actual.type_id, expected.type_id) {
+					let span = actual.span;
+					let expected = self.type_name(function_store, module_path, expected.type_id);
+					let actual = self.type_name(function_store, module_path, actual.type_id);
+					notes.push(note!(span, "Expected parameter of type {expected}, found type {actual}"));
+					status = ImplementationStatus::NotImplemented;
+				}
+			}
+		}
+
+		vacancy.insert(status);
+		if status == ImplementationStatus::Implemented {
+			return ImplementationStatus::Implemented;
+		}
+
+		let trait_name = self.trait_name(trait_id).item;
+		let mut message = error!("Type is expected to conform to trait `{trait_name}` but does not");
+
+		for note in notes {
+			message = message.note(note);
+		}
+
+		messages.message(message.span(type_id.span));
+		ImplementationStatus::NotImplemented
 	}
 
 	pub fn find_user_type_dependency_chain(&mut self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
@@ -1729,7 +1934,8 @@ impl<'a> TypeStore<'a> {
 				}
 
 				let user_type = &self.user_types.read()[shape_index];
-				let generic = user_type.read().generic_parameters.parameters()[generic_index];
+				let user_type = user_type.read();
+				let generic = &user_type.generic_parameters.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
 
@@ -1835,7 +2041,7 @@ impl<'a> TypeStore<'a> {
 				enclosing_generic_parameters,
 				argument,
 			)?;
-			explicit_arguments.push(type_id);
+			explicit_arguments.push(Node::new(type_id, argument.span));
 		}
 
 		let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
@@ -1845,7 +2051,8 @@ impl<'a> TypeStore<'a> {
 		assert_eq!(shape.generic_parameters.method_base_len(), 0);
 		if shape.generic_parameters.implicit_len() > 0 {
 			assert_eq!(shape.generic_parameters.implicit_len(), enclosing_generic_parameters.parameters().len());
-			for implicit in enclosing_generic_parameters.parameters().iter().map(|p| p.generic_type_id) {
+			let enclosing_parameters = enclosing_generic_parameters.parameters().iter();
+			for implicit in enclosing_parameters.map(|p| Node::new(p.generic_type_id, p.name.span)) {
 				type_arguments.push_implicit(implicit);
 			}
 		}
@@ -1953,6 +2160,22 @@ impl<'a> TypeStore<'a> {
 			return Some(existing.type_id);
 		}
 
+		let mut constraint_failure = false;
+		let generic_parameters_iter = user_type.generic_parameters.explicit_parameters().iter();
+		let generic_arguments_iter = type_arguments.explicit_ids().iter();
+		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
+			for &contraint in type_parameter.constraints.iter() {
+				match self.check_type_implements_trait(messages, function_store, module_path, type_argument, contraint) {
+					ImplementationStatus::Implemented => {}
+					ImplementationStatus::NotImplemented => constraint_failure = true,
+				}
+			}
+		}
+
+		if constraint_failure {
+			return None;
+		}
+
 		let mut fields = Vec::with_capacity(shape.fields.len());
 		for field in &shape.fields {
 			fields.push(Field {
@@ -1968,7 +2191,7 @@ impl<'a> TypeStore<'a> {
 		let type_arguments_generic_poisoned = type_arguments
 			.ids
 			.iter()
-			.any(|id| self.type_entries.get(*id).generic_poisoned);
+			.any(|id| self.type_entries.get(id.item).generic_poisoned);
 
 		for field in &mut fields {
 			field.type_id = self.specialize_with_user_type_generics(
@@ -2070,6 +2293,22 @@ impl<'a> TypeStore<'a> {
 			return Some(existing.type_id);
 		}
 
+		let mut constraint_failure = false;
+		let generic_parameters_iter = user_type.generic_parameters.explicit_parameters().iter();
+		let generic_arguments_iter = type_arguments.explicit_ids().iter();
+		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
+			for &contraint in type_parameter.constraints.iter() {
+				match self.check_type_implements_trait(messages, function_store, module_path, type_argument, contraint) {
+					ImplementationStatus::Implemented => {}
+					ImplementationStatus::NotImplemented => constraint_failure = true,
+				}
+			}
+		}
+
+		if constraint_failure {
+			return None;
+		}
+
 		let mut shared_fields = Vec::with_capacity(shape.shared_fields.len() + 1);
 		let unspecialized_shared_fields = shape.shared_fields.clone();
 		drop(user_type);
@@ -2077,7 +2316,7 @@ impl<'a> TypeStore<'a> {
 		let type_arguments_generic_poisoned = type_arguments
 			.ids
 			.iter()
-			.any(|id| self.type_entries.get(*id).generic_poisoned);
+			.any(|id| self.type_entries.get(id.item).generic_poisoned);
 
 		for field in unspecialized_shared_fields.iter() {
 			let type_id = self.specialize_with_user_type_generics(
@@ -2114,17 +2353,17 @@ impl<'a> TypeStore<'a> {
 			let mut new_struct_type_arguments = TypeArguments::clone(&type_arguments);
 
 			for struct_type_argument in &mut new_struct_type_arguments.ids {
-				let entry = self.type_entries.get(*struct_type_argument);
+				let entry = self.type_entries.get(struct_type_argument.item);
 				match entry.kind {
 					TypeEntryKind::UserType { .. } => {
-						*struct_type_argument = self.specialize_with_user_type_generics(
+						struct_type_argument.item = self.specialize_with_user_type_generics(
 							messages,
 							function_store,
 							module_path,
 							generic_usages,
 							enum_shape_index,
 							type_arguments.clone(),
-							*struct_type_argument,
+							struct_type_argument.item,
 						);
 					}
 
@@ -2241,22 +2480,22 @@ impl<'a> TypeStore<'a> {
 						drop(user_type);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
-							let entry = self.type_entries.get(*struct_type_argument);
+							let entry = self.type_entries.get(struct_type_argument.item);
 							match entry.kind {
-								TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+								TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
 									assert_eq!(type_shape_index, shape_index);
 									*struct_type_argument = type_arguments.ids[generic_index];
 								}
 
 								TypeEntryKind::UserType { .. } => {
-									*struct_type_argument = self.specialize_with_user_type_generics(
+									struct_type_argument.item = self.specialize_with_user_type_generics(
 										messages,
 										function_store,
 										module_path,
 										generic_usages,
 										type_shape_index,
 										type_arguments.clone(),
-										*struct_type_argument,
+										struct_type_argument.item,
 									);
 								}
 
@@ -2282,22 +2521,22 @@ impl<'a> TypeStore<'a> {
 						drop(user_type);
 
 						for enum_type_argument in &mut new_enum_type_arguments.ids {
-							let entry = self.type_entries.get(*enum_type_argument);
+							let entry = self.type_entries.get(enum_type_argument.item);
 							match entry.kind {
-								TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+								TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
 									assert_eq!(type_shape_index, shape_index);
 									*enum_type_argument = type_arguments.ids[generic_index];
 								}
 
 								TypeEntryKind::UserType { .. } => {
-									*enum_type_argument = self.specialize_with_user_type_generics(
+									enum_type_argument.item = self.specialize_with_user_type_generics(
 										messages,
 										function_store,
 										module_path,
 										generic_usages,
 										type_shape_index,
 										type_arguments.clone(),
-										*enum_type_argument,
+										enum_type_argument.item,
 									);
 								}
 
@@ -2345,12 +2584,12 @@ impl<'a> TypeStore<'a> {
 				self.slice_of(type_id, *mutable)
 			}
 
-			&TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+			&TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
 				assert_eq!(type_shape_index, shape_index);
-				type_arguments.ids[generic_index]
+				type_arguments.ids[generic_index].item
 			}
 
-			&TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
+			&TypeEntryKind::FunctionGeneric { function_shape_index, generic_index, .. } => {
 				function_store.shapes.read()[function_shape_index]
 					.as_ref()
 					.unwrap()
@@ -2388,14 +2627,14 @@ impl<'a> TypeStore<'a> {
 						drop(user_type);
 
 						for struct_type_argument in &mut new_struct_type_arguments.ids {
-							*struct_type_argument = self.specialize_with_function_generics(
+							struct_type_argument.item = self.specialize_with_function_generics(
 								messages,
 								function_store,
 								module_path,
 								generic_usages,
 								function_shape_index,
 								function_type_arguments,
-								*struct_type_argument,
+								struct_type_argument.item,
 							);
 						}
 
@@ -2418,14 +2657,14 @@ impl<'a> TypeStore<'a> {
 
 						let mut new_enum_type_arguments = TypeArguments::clone(&type_arguments);
 						for enum_type_argument in &mut new_enum_type_arguments.ids {
-							*enum_type_argument = self.specialize_with_function_generics(
+							enum_type_argument.item = self.specialize_with_function_generics(
 								messages,
 								function_store,
 								module_path,
 								generic_usages,
 								function_shape_index,
 								function_type_arguments,
-								*enum_type_argument,
+								enum_type_argument.item,
 							);
 						}
 
@@ -2469,14 +2708,14 @@ impl<'a> TypeStore<'a> {
 				self.slice_of(type_id, *mutable)
 			}
 
-			&TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+			&TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
 				// TODO: This could have unintended consequences
 				self.user_types.read()[shape_index].read().generic_parameters.parameters()[generic_index].generic_type_id
 			}
 
-			&TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index } => {
+			&TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index, .. } => {
 				assert_eq!(function_shape_index, shape_index);
-				function_type_arguments.ids[generic_index]
+				function_type_arguments.ids[generic_index].item
 			}
 
 			TypeEntryKind::Module | TypeEntryKind::Type => panic!("{:?}", &entry.kind),
@@ -2533,7 +2772,15 @@ impl<'a> TypeStore<'a> {
 
 						let type_arguments = type_arguments
 							.iter()
-							.map(|a| self.internal_type_name(function_store, _module_path, *a, debug_generics, debug_type_ids))
+							.map(|argument| {
+								self.internal_type_name(
+									function_store,
+									_module_path,
+									argument.item,
+									debug_generics,
+									debug_type_ids,
+								)
+							})
 							.collect::<Vec<_>>()
 							.join(", ");
 
@@ -2563,7 +2810,15 @@ impl<'a> TypeStore<'a> {
 						drop(user_type);
 						let type_arguments = type_arguments
 							.iter()
-							.map(|a| self.internal_type_name(function_store, _module_path, *a, debug_generics, debug_type_ids))
+							.map(|argument| {
+								self.internal_type_name(
+									function_store,
+									_module_path,
+									argument.item,
+									debug_generics,
+									debug_type_ids,
+								)
+							})
 							.collect::<Vec<_>>()
 							.join(", ");
 
@@ -2588,14 +2843,12 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index } => {
+			TypeEntryKind::FunctionGeneric { function_shape_index, generic_index, .. } => {
 				if let Some(function_store) = function_store {
-					let generic = function_store.shapes.read()[function_shape_index]
-						.as_ref()
-						.unwrap()
-						.read()
-						.generic_parameters
-						.parameters()[generic_index];
+					let shapes = function_store.shapes.read();
+					let shape = shapes[function_shape_index].as_ref().unwrap();
+					let shape = shape.read();
+					let generic = &shape.generic_parameters.parameters()[generic_index];
 
 					if debug_generics {
 						format!("FunctionGeneric {function_shape_index} {generic_index} {}", generic.name.item)
@@ -2611,9 +2864,10 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::UserTypeGeneric { shape_index, generic_index } => {
+			TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
 				let user_type = &self.user_types.read()[shape_index];
-				let generic = user_type.read().generic_parameters.parameters()[generic_index];
+				let user_type = user_type.read();
+				let generic = &user_type.generic_parameters.parameters()[generic_index];
 
 				if debug_generics {
 					format!("UserTypeGeneric {shape_index} {generic_index} {}", generic.name.item)

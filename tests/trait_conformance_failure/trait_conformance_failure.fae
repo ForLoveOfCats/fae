@@ -1,0 +1,32 @@
+fn main() {
+	test_generic_function<i32>()
+	test_generic_function<Struct>()
+}
+
+generic T: Trait
+fn test_generic_function() {}
+
+// generic T: Trait
+// struct TestGenericStruct {}
+
+// generic T: Trait
+// enum TestGenericEnum {}
+
+trait Trait {
+	method
+	fn trait_method(): u64
+}
+
+struct Struct {
+	field: i32
+}
+
+method mut Struct
+fn trait_method(addend: u64): u64 {
+	return self.field.(u64) + addend
+}
+
+method i32
+fn trait_method(): i32 {
+	return self.*
+}

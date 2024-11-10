@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::hash::Hash;
 
 use rust_decimal::Decimal;
 
@@ -27,7 +28,13 @@ pub struct Import<'a> {
 
 #[derive(Debug)]
 pub struct GenericAttribute<'a> {
-	pub names: &'a [Node<&'a str>],
+	pub names: &'a [GenericName<'a>],
+}
+
+#[derive(Debug)]
+pub struct GenericName<'a> {
+	pub name: Node<&'a str>,
+	pub constraints: &'a [Node<PathSegments<'a>>],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,10 +54,20 @@ pub enum MethodKind {
 	MutableSelf,
 }
 
+impl MethodKind {
+	pub fn name(self) -> &'static str {
+		match self {
+			MethodKind::Static => "static",
+			MethodKind::ImmutableSelf => "immutable",
+			MethodKind::MutableSelf => "mutable",
+		}
+	}
+}
+
 #[derive(Debug)]
 pub struct MethodAttribute<'a> {
 	pub base_type: Node<PathSegments<'a>>,
-	pub kind: MethodKind,
+	pub kind: Node<MethodKind>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -138,7 +155,7 @@ pub enum Type<'a> {
 #[derive(Debug)]
 pub struct Struct<'a> {
 	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
-	pub generics: &'a [Node<&'a str>],
+	pub generics: &'a [GenericName<'a>],
 	pub name: Node<&'a str>,
 	pub fields: &'a [Field<'a>],
 }
@@ -146,7 +163,7 @@ pub struct Struct<'a> {
 #[derive(Debug)]
 pub struct Enum<'a> {
 	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
-	pub generics: &'a [Node<&'a str>],
+	pub generics: &'a [GenericName<'a>],
 	pub name: Node<&'a str>,
 	pub shared_fields: &'a [Field<'a>],
 	pub variants: &'a [EnumVariant<'a>],
@@ -200,14 +217,14 @@ pub struct TraitMethod<'a> {
 
 #[derive(Debug)]
 pub struct Function<'a> {
-	pub generics: &'a [Node<&'a str>],
+	pub generics: &'a [GenericName<'a>],
 	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<&'a Node<ExportAttribute<'a>>>,
 	pub method_attribute: Option<&'a Node<MethodAttribute<'a>>>,
 	pub intrinsic_attribute: Option<&'a Node<IntrinsicAttribute>>,
 	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 	pub name: Node<&'a str>,
-	pub parameters: Parameters<'a>,
+	pub parameters: Node<Parameters<'a>>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub block: Option<Node<Block<'a>>>,
 }
@@ -736,5 +753,12 @@ impl<T: Copy> Copy for Node<T> {}
 impl<T: Clone> Clone for Node<T> {
 	fn clone(&self) -> Self {
 		Self { item: self.item.clone(), span: self.span }
+	}
+}
+
+// This could be a potential footgun 😅
+impl<T: Hash> Hash for Node<T> {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.item.hash(state);
 	}
 }

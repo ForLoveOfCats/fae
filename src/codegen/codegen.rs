@@ -50,7 +50,7 @@ pub fn generate<'a, G: Generator>(
 			}
 
 			for &type_argument in &specialization.type_arguments.ids {
-				let entry = type_store.type_entries.get(type_argument);
+				let entry = type_store.type_entries.get(type_argument.item);
 				if entry.generic_poisoned {
 					panic!("The legacy C backend had this, does it ever get hit?")
 					// continue;
@@ -119,7 +119,7 @@ pub fn generate_function<'a, G: Generator>(
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	for &type_argument in &specialization.type_arguments.ids {
-		let entry = type_store.type_entries.get(type_argument);
+		let entry = type_store.type_entries.get(type_argument.item);
 		if entry.generic_poisoned {
 			return;
 		}
@@ -1054,7 +1054,7 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 	match call.name {
 		"size_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 1);
-			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0].item);
 			let size = Decimal::from(context.type_store.type_layout(type_id).size);
 			let integer = NumberValue::new_collapsed(size, span, context.type_store.isize_type_id());
 			generate_number_value(context, generator, &integer)
@@ -1062,7 +1062,7 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 
 		"alignment_of" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 1);
-			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0].item);
 			let alignment = Decimal::from(context.type_store.type_layout(type_id).alignment);
 			let integer = NumberValue::new_collapsed(alignment, span, context.type_store.isize_type_id());
 			generate_number_value(context, generator, &integer)
@@ -1095,7 +1095,7 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 			assert_eq!(specialization.parameters.len(), 0);
 			assert_eq!(call.arguments.len(), 0);
 
-			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0].item);
 			let pointer_type_id = context.type_store.pointer_to(type_id, true);
 			Some(generator.generate_non_null_invalid_pointer(pointer_type_id, debug_location))
 		}
@@ -1105,7 +1105,7 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 			assert_eq!(specialization.parameters.len(), 1);
 			assert_eq!(call.arguments.len(), 1);
 
-			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0]);
+			let type_id = context.specialize_type_id(specialization.type_arguments.explicit_ids()[0].item);
 			let pointer_type_id = context.type_store.pointer_to(type_id, true);
 			let length = generate_expression(context, generator, &call.arguments[0]).unwrap();
 			Some(generator.generate_non_null_invalid_slice(pointer_type_id, length, debug_location))

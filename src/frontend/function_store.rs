@@ -3,7 +3,7 @@ use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
 };
 use crate::frontend::span::Span;
-use crate::frontend::type_store::TypeStore;
+use crate::frontend::type_store::{ImplementationStatus, TypeStore};
 use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
@@ -58,15 +58,32 @@ impl<'a> FunctionStore<'a> {
 			return Some(FunctionSpecializationResult { specialization_index, return_type });
 		}
 
+		let mut constraint_failure = false;
+		let generic_parameters_iter = shape.generic_parameters.explicit_parameters().iter();
+		let generic_arguments_iter = type_arguments.explicit_ids().iter();
+		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
+			for &contraint in type_parameter.constraints.iter() {
+				match type_store.check_type_implements_trait(messages, self, module_path, type_argument, contraint) {
+					ImplementationStatus::Implemented => {}
+					ImplementationStatus::NotImplemented => constraint_failure = true,
+				}
+			}
+		}
+
+		if constraint_failure {
+			return None;
+		}
+
 		let generic_poisoned = type_arguments
 			.ids
 			.iter()
-			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
+			.any(|id| type_store.type_entries.get(id.item).generic_poisoned);
 
 		let unspecialized_return_type = shape.return_type;
 		let parameters = shape.parameters.clone();
 
 		let parameters = parameters
+			.item
 			.iter()
 			.map(|parameter| {
 				let type_id = type_store.specialize_with_function_generics(
@@ -90,7 +107,7 @@ impl<'a> FunctionStore<'a> {
 			generic_usages,
 			function_shape_index,
 			&type_arguments,
-			unspecialized_return_type,
+			unspecialized_return_type.item,
 		);
 
 		let specialization_index = shape.specializations.len();
@@ -148,7 +165,7 @@ impl<'a> FunctionStore<'a> {
 			.type_arguments
 			.ids
 			.iter()
-			.any(|id| type_store.type_entries.get(*id).generic_poisoned);
+			.any(|id| type_store.type_entries.get(id.item).generic_poisoned);
 		if !generic_poisoned {
 			return function_id;
 		}
