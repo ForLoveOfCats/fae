@@ -1,0 +1,9 @@
+trait One {}
+
+trait Two {}
+
+trait Three {}
+
+// TODO: Allow imports to mark things as used
+generic T: One + Two + Three
+fn _function() {}

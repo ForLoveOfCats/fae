@@ -1,0 +1,16 @@
+fn main() {
+	trait Trait {
+		method
+		fn method_name()
+	}
+
+	generic T: Trait
+	fn function() {}
+
+	method i32
+	fn method_name(): i32 {
+		return self.*
+	}
+
+	function<i32>()
+}

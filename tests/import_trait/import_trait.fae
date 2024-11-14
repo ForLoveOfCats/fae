@@ -1,0 +1,14 @@
+import other.One
+
+generic T: One
+struct A {}
+
+fn main() {
+	import other.Two
+
+	generic T: Two
+	struct B {}
+
+	generic T: other.Three
+	struct C {}
+}

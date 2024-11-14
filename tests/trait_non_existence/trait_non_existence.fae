@@ -1,0 +1,10 @@
+fn main() {}
+
+generic T: Abc
+fn function() {}
+
+generic B: One
+struct Struct {}
+
+generic E: Two
+enum Enum {}
