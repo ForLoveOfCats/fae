@@ -1,16 +1,30 @@
 Validation error: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 2: Type is expected to conform to trait `Trait` but does not
   2|     test_generic_function<i32>()
                                ^^^
-Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 30: Expected method `trait_method` to have the return type `u64`, found return type `i32`
-  30| fn trait_method(): i32 {
+Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 34: Expected method `trait_method` to have the return type `u64`, found return type `i32`
+  34| fn trait_method(): i32 {
                          ^^^
 
 Validation error: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 3: Type is expected to conform to trait `Trait` but does not
   3|     test_generic_function<Struct>()
                                ^^^^^^
-Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 24: Expected method `trait_method` to be immutable but found it to be mutable
-  24| method mut Struct
+Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 28: Expected method `trait_method` to be immutable but found it to be mutable
+  28| method mut Struct
              ^^^
-Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 25: Expected method `trait_method` to have 0 parameters, found 1
-  25| fn trait_method(addend: u64): u64 {
+Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 29: Expected method `trait_method` to have 0 parameters, found 1
+  29| fn trait_method(addend: u64): u64 {
                      ^^^^^^^^^^^^^
+
+Validation error: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 4: Type is expected to conform to trait `Trait` but does not
+  4|     TestGenericStruct<u8> {}
+                           ^^
+Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 21: Type does not implement method `trait_method`
+  21|     fn trait_method(): u64
+             ^^^^^^^^^^^^
+
+Validation error: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 5: Type is expected to conform to trait `Trait` but does not
+  5|     TestGenericEnum<i64>.Variant
+                         ^^^
+Note: ./tests/trait_conformance_failure/trait_conformance_failure.fae, line 21: Type does not implement method `trait_method`
+  21|     fn trait_method(): u64
+             ^^^^^^^^^^^^

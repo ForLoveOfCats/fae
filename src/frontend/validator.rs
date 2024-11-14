@@ -33,6 +33,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub messages: &'b mut Messages<'a>,
 
 	pub type_shape_indicies: &'b mut Vec<usize>,
+	pub trait_ids: &'b mut Vec<TraitId>,
 
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b FunctionStore<'a>,
@@ -103,6 +104,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			messages: self.messages,
 
 			type_shape_indicies: self.type_shape_indicies,
+			trait_ids: self.trait_ids,
 
 			type_store: self.type_store,
 			function_store: self.function_store,
@@ -175,6 +177,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			messages: self.messages,
 
 			type_shape_indicies: self.type_shape_indicies,
+			trait_ids: self.trait_ids,
 
 			type_store: self.type_store,
 			function_store: self.function_store,
@@ -332,6 +335,11 @@ pub fn validate<'a>(
 	statics: &RwLock<Statics<'a>>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
+	let mut trait_ids = Vec::with_capacity(parsed_files.len());
+	for _ in 0..parsed_files.len() {
+		trait_ids.push(RwLock::new(Vec::new()));
+	}
+
 	let mut type_shape_indicies = Vec::with_capacity(parsed_files.len());
 	for _ in 0..parsed_files.len() {
 		type_shape_indicies.push(RwLock::new(Vec::new()));
@@ -344,16 +352,19 @@ pub fn validate<'a>(
 
 	let root_messages = RwLock::new(root_messages);
 
-	let parsed_files_iter_1 = RwLock::new(parsed_files.iter());
-	let parsed_files_iter_2 = RwLock::new(parsed_files.iter());
-	let parsed_files_iter_3 = RwLock::new(parsed_files.iter());
-	let parsed_files_iter_4 = RwLock::new(parsed_files.iter());
-	let parsed_files_iter_5 = RwLock::new(parsed_files.iter());
-	let parsed_files_iter_6 = RwLock::new(parsed_files.iter());
-	let parsed_files_iter_7 = RwLock::new(parsed_files.iter());
+	let parsed_files_iter = RwLock::new(parsed_files.iter());
 
 	let thread_count = if cli_arguments.parallel_validator { 6 } else { 1 };
-	let barrier = std::sync::Barrier::new(thread_count);
+	let finish_step_barrier = std::sync::Barrier::new(thread_count);
+	let replenish_iter_barrier = std::sync::Barrier::new(thread_count);
+	let wait_on_barriers_and_replenish_iter = || {
+		if finish_step_barrier.wait().is_leader() {
+			*parsed_files_iter.write() = parsed_files.iter();
+		}
+
+		replenish_iter_barrier.wait();
+	};
+
 	let constants = RwLock::new(Vec::new());
 
 	std::thread::scope(|scope| {
@@ -365,6 +376,21 @@ pub fn validate<'a>(
 				let herd_member = herd.get();
 				let mut function_generic_usages = Vec::new();
 
+				create_root_traits(when_context, &root_messages, &mut type_store, root_layers, &parsed_files_iter, &trait_ids);
+
+				wait_on_barriers_and_replenish_iter();
+
+				resolve_root_trait_imports(
+					cli_arguments,
+					&herd_member,
+					when_context,
+					&root_messages,
+					root_layers,
+					&parsed_files_iter,
+				);
+
+				wait_on_barriers_and_replenish_iter();
+
 				create_root_types(
 					when_context,
 					&root_messages,
@@ -372,11 +398,11 @@ pub fn validate<'a>(
 					&mut type_store,
 					function_store,
 					root_layers,
-					&parsed_files_iter_1,
+					&parsed_files_iter,
 					&type_shape_indicies,
 				);
 
-				barrier.wait();
+				wait_on_barriers_and_replenish_iter();
 
 				resolve_root_type_imports(
 					cli_arguments,
@@ -384,10 +410,23 @@ pub fn validate<'a>(
 					when_context,
 					&root_messages,
 					root_layers,
-					&parsed_files_iter_2,
+					&parsed_files_iter,
 				);
 
-				barrier.wait();
+				wait_on_barriers_and_replenish_iter();
+
+				fill_root_traits(
+					when_context,
+					&root_messages,
+					lang_items,
+					&mut type_store,
+					function_store,
+					root_layers,
+					&parsed_files_iter,
+					&trait_ids,
+				);
+
+				wait_on_barriers_and_replenish_iter();
 
 				fill_root_types(
 					when_context,
@@ -396,11 +435,11 @@ pub fn validate<'a>(
 					&mut type_store,
 					function_store,
 					root_layers,
-					&parsed_files_iter_3,
+					&parsed_files_iter,
 					&type_shape_indicies,
 				);
 
-				barrier.wait();
+				wait_on_barriers_and_replenish_iter();
 
 				let mut readables = Readables::new();
 				create_root_functions(
@@ -413,12 +452,12 @@ pub fn validate<'a>(
 					&mut function_generic_usages,
 					&externs,
 					&mut readables,
-					&parsed_files_iter_4,
+					&parsed_files_iter,
 					&local_function_shape_indicies,
 				);
 				function_generic_usages.clear();
 
-				barrier.wait();
+				wait_on_barriers_and_replenish_iter();
 
 				let mut yield_targets = YieldTargets::new();
 				validate_root_consts(
@@ -437,11 +476,12 @@ pub fn validate<'a>(
 					&mut readables,
 					&mut yield_targets,
 					parsed_files,
-					&parsed_files_iter_5,
+					&parsed_files_iter,
 					&type_shape_indicies,
+					&trait_ids,
 				);
 
-				barrier.wait();
+				wait_on_barriers_and_replenish_iter();
 
 				validate_root_statics(
 					cli_arguments,
@@ -459,12 +499,13 @@ pub fn validate<'a>(
 					&mut readables,
 					&mut yield_targets,
 					parsed_files,
-					&parsed_files_iter_6,
+					&parsed_files_iter,
 					&type_shape_indicies,
+					&trait_ids,
 				);
 				assert_eq!(function_generic_usages.len(), 0);
 
-				barrier.wait();
+				wait_on_barriers_and_replenish_iter();
 
 				deep_pass(
 					cli_arguments,
@@ -482,8 +523,9 @@ pub fn validate<'a>(
 					&mut readables,
 					&mut yield_targets,
 					parsed_files,
-					&parsed_files_iter_7,
+					&parsed_files_iter,
 					&type_shape_indicies,
+					&trait_ids,
 					&local_function_shape_indicies,
 				);
 
@@ -517,6 +559,7 @@ fn deep_pass<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
+	trait_ids: &[RwLock<Vec<TraitId>>],
 	local_function_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
@@ -528,6 +571,7 @@ fn deep_pass<'a>(
 
 		let file_index = parsed_file.source_file.index as usize;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
+		let mut trait_ids = trait_ids[file_index].write();
 		let mut local_function_shape_indicies = local_function_shape_indicies[file_index].write();
 
 		let module_path = parsed_file.module_path;
@@ -555,6 +599,7 @@ fn deep_pass<'a>(
 			scope_index: 0,
 			messages: &mut messages,
 			type_shape_indicies: &mut type_shape_indicies,
+			trait_ids: &mut trait_ids,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -595,6 +640,54 @@ fn deep_pass<'a>(
 	}
 }
 
+fn create_root_traits<'a>(
+	when_context: &WhenContext,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
+	type_store: &mut TypeStore<'a>,
+	root_layers: &RootLayers<'a>,
+	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
+	trait_ids: &[RwLock<Vec<TraitId>>],
+) {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
+		let file_index = parsed_file.source_file.index;
+		let mut trait_ids = trait_ids[file_index as usize].write();
+		let layer = root_layers.create_module_path(parsed_file.module_path);
+		let mut symbols = layer.read().symbols.clone();
+
+		let importable_traits_start = symbols.symbols.len();
+		assert_eq!(importable_traits_start, 0);
+
+		let mut messages = Messages::new(parsed_file.module_path);
+
+		create_block_traits(
+			when_context,
+			&mut messages,
+			type_store,
+			&mut symbols,
+			0,
+			&parsed_file.block,
+			true,
+			&mut trait_ids,
+		);
+
+		let importable_traits_end = symbols.symbols.len();
+		let mut layer_guard = layer.write();
+		layer_guard.importable_traits_range = importable_traits_start..importable_traits_end;
+		layer_guard.symbols = symbols;
+		drop(layer_guard);
+
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
+	}
+}
+
 fn create_root_types<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
@@ -622,8 +715,6 @@ fn create_root_types<'a>(
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
 		let importable_types_start = symbols.symbols.len();
-		assert_eq!(importable_types_start, 0);
-
 		let mut messages = Messages::new(parsed_file.module_path);
 
 		create_block_types(
@@ -638,7 +729,6 @@ fn create_root_types<'a>(
 			&blank_generic_parameters,
 			block,
 			scope_id,
-			true,
 			&mut type_shape_indicies,
 		);
 
@@ -647,6 +737,48 @@ fn create_root_types<'a>(
 		layer_guard.importable_types_range = importable_types_start..importable_types_end;
 		layer_guard.symbols = symbols;
 		drop(layer_guard);
+
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
+	}
+}
+
+fn resolve_root_trait_imports<'a>(
+	cli_arguments: &CliArguments,
+	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
+	root_layers: &RootLayers<'a>,
+	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
+) {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
+		let mut symbols = layer.read().symbols.clone();
+
+		let mut messages = Messages::new(parsed_file.module_path);
+		let module_path = parsed_file.module_path;
+		let block = &parsed_file.block;
+
+		resolve_block_trait_imports(
+			herd_member,
+			when_context,
+			&mut messages,
+			root_layers,
+			&mut symbols,
+			module_path,
+			0,
+			block,
+			cli_arguments.std_enabled,
+		);
+
+		layer.write().symbols = symbols;
 
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
@@ -696,6 +828,60 @@ fn resolve_root_type_imports<'a>(
 	}
 }
 
+fn fill_root_traits<'a>(
+	when_context: &WhenContext,
+	root_messages: &RwLock<&mut RootMessages<'a>>,
+	lang_items: &RwLock<LangItems>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	root_layers: &RootLayers<'a>,
+	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
+	trait_ids: &[RwLock<Vec<TraitId>>],
+) {
+	loop {
+		let mut guard = parsed_files.write();
+		let Some(parsed_file) = guard.next() else {
+			return;
+		};
+		drop(guard);
+
+		let file_index = parsed_file.source_file.index;
+		let scope_id = ScopeId { file_index, scope_index: 0 };
+
+		let layer = root_layers.lookup_module_path(parsed_file.module_path);
+		let mut symbols = layer.read().symbols.clone();
+		let mut trait_ids = trait_ids[parsed_file.source_file.index as usize].write();
+
+		// TODO: This is definitely wrong
+		let mut generic_usages = Vec::new();
+		let mut messages = Messages::new(parsed_file.module_path);
+
+		fill_block_traits(
+			when_context,
+			&mut messages,
+			lang_items,
+			type_store,
+			function_store,
+			&mut generic_usages,
+			root_layers,
+			&mut symbols,
+			parsed_file.module_path,
+			0,
+			&GenericParameters::new_from_explicit(Vec::new()),
+			&parsed_file.block,
+			scope_id,
+			&mut trait_ids.iter(),
+		);
+		trait_ids.clear();
+
+		layer.write().symbols = symbols;
+
+		if messages.any_messages() {
+			root_messages.write().add_messages_if_any(messages);
+		}
+	}
+}
+
 fn fill_root_types<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
@@ -724,7 +910,7 @@ fn fill_root_types<'a>(
 		let mut generic_usages = Vec::new();
 		let mut messages = Messages::new(parsed_file.module_path);
 
-		fill_block_types_and_create_traits(
+		fill_block_types(
 			when_context,
 			&mut messages,
 			lang_items,
@@ -830,6 +1016,7 @@ fn validate_root_consts<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
+	trait_ids: &[RwLock<Vec<TraitId>>],
 ) {
 	loop {
 		let mut guard = parsed_files_iter.write();
@@ -841,6 +1028,7 @@ fn validate_root_consts<'a>(
 		let file_index = parsed_file.source_file.index as usize;
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
+		let mut trait_ids = trait_ids[file_index].write();
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
@@ -867,6 +1055,7 @@ fn validate_root_consts<'a>(
 			scope_index: 0,
 			messages: &mut messages,
 			type_shape_indicies: &mut type_shape_indicies,
+			trait_ids: &mut trait_ids,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -934,6 +1123,7 @@ fn validate_root_statics<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
+	trait_ids: &[RwLock<Vec<TraitId>>],
 ) {
 	loop {
 		let mut guard = parsed_files_iter.write();
@@ -945,6 +1135,7 @@ fn validate_root_statics<'a>(
 		let file_index = parsed_file.source_file.index as usize;
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
+		let mut trait_ids = trait_ids[file_index].write();
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
@@ -971,6 +1162,7 @@ fn validate_root_statics<'a>(
 			scope_index: 0,
 			messages: &mut messages,
 			type_shape_indicies: &mut type_shape_indicies,
+			trait_ids: &mut trait_ids,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -1017,6 +1209,53 @@ fn validate_root_statics<'a>(
 		if messages.any_messages() {
 			root_messages.write().add_messages_if_any(messages);
 		}
+	}
+}
+
+fn resolve_block_trait_imports<'a>(
+	herd_member: &bumpalo_herd::Member<'a>,
+	when_context: &WhenContext,
+	messages: &mut Messages,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_length: usize,
+	block: &tree::Block<'a>,
+	should_import_prelude: bool,
+) {
+	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
+		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
+		let path = PathSegments { segments };
+		resolve_import_for_block_traits(messages, root_layers, symbols, function_initial_symbols_length, &path, None, true);
+	}
+
+	for statement in block.statements {
+		let import_statement = match statement {
+			tree::Statement::Import(import_statement) => import_statement,
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+					resolve_block_trait_imports(
+						herd_member,
+						when_context,
+						messages,
+						root_layers,
+						symbols,
+						module_path,
+						function_initial_symbols_length,
+						&body.item,
+						false,
+					)
+				}
+				continue;
+			}
+
+			_ => continue,
+		};
+
+		let path = &import_statement.item.path_segments;
+		let names = Some(import_statement.item.symbol_names);
+		resolve_import_for_block_traits(messages, root_layers, symbols, function_initial_symbols_length, path, names, false);
 	}
 }
 
@@ -1067,6 +1306,47 @@ fn resolve_block_type_imports<'a>(
 	}
 }
 
+fn resolve_import_for_block_traits<'a>(
+	messages: &mut Messages,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	function_initial_symbols_length: usize,
+	path: &PathSegments<'a>,
+	names: Option<&[Node<&'a str>]>,
+	is_prelude: bool,
+) {
+	let Some(layer) = root_layers.layer_for_path(None, path) else {
+		return;
+	};
+
+	let layer_guard = layer.read();
+	if layer_guard.symbols.symbols.is_empty() {
+		return;
+	}
+	let importable_traits_range = layer_guard.importable_traits_range.clone();
+	let source_symbols = layer_guard.symbols.clone();
+	drop(layer_guard);
+
+	if let Some(names) = names {
+		let importable_traits = &source_symbols.symbols[importable_traits_range];
+		for name in names {
+			if let Some(importing) = importable_traits.iter().find(|i| i.name == name.item) {
+				symbols.push_imported_symbol(
+					messages,
+					function_initial_symbols_length,
+					importing.clone(),
+					Some(name.span),
+					is_prelude,
+				);
+			}
+		}
+	} else {
+		for importing in &source_symbols.symbols[importable_traits_range] {
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing.clone(), None, is_prelude);
+		}
+	}
+}
+
 fn resolve_import_for_block_types<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
@@ -1108,7 +1388,7 @@ fn resolve_import_for_block_types<'a>(
 	}
 }
 
-fn resolve_block_non_type_imports<'a>(
+fn resolve_block_non_range_imports<'a>(
 	herd_member: &bumpalo_herd::Member<'a>,
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
@@ -1121,7 +1401,7 @@ fn resolve_block_non_type_imports<'a>(
 	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_length, &path, None, true);
+		resolve_import_for_block_non_range(messages, root_layers, symbols, function_initial_symbols_length, &path, None, true);
 	}
 
 	for statement in block.statements {
@@ -1132,11 +1412,11 @@ fn resolve_block_non_type_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names);
-		resolve_import_for_block_non_types(messages, root_layers, symbols, function_initial_symbols_length, path, names, false);
+		resolve_import_for_block_non_range(messages, root_layers, symbols, function_initial_symbols_length, path, names, false);
 	}
 }
 
-fn resolve_import_for_block_non_types<'a>(
+fn resolve_import_for_block_non_range<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1173,6 +1453,7 @@ fn resolve_import_for_block_non_types<'a>(
 		return;
 	}
 
+	let importable_traits_range = layer_guard.importable_traits_range.clone();
 	let importable_types_range = layer_guard.importable_types_range.clone();
 	let importable_functions_range = layer_guard.importable_functions_range.clone();
 	let importable_consts_range = layer_guard.importable_consts_range.clone();
@@ -1180,6 +1461,7 @@ fn resolve_import_for_block_non_types<'a>(
 	let source_symbols = layer_guard.symbols.clone();
 
 	if let Some(names) = names {
+		let importable_traits = &source_symbols.symbols[importable_traits_range];
 		let importable_types = &source_symbols.symbols[importable_types_range];
 		let importable_functions = &source_symbols.symbols[importable_functions_range];
 		let importable_consts = &source_symbols.symbols[importable_consts_range];
@@ -1210,6 +1492,7 @@ fn resolve_import_for_block_non_types<'a>(
 					Some(name.span),
 					is_prelude,
 				);
+			} else if importable_traits.iter().find(|i| i.name == name.item).is_some() {
 			} else if importable_types.iter().find(|i| i.name == name.item).is_some() {
 			} else if let Some(layer) = layer_guard.children.get(name.item) {
 				let span = Some(name.span);
@@ -1239,20 +1522,15 @@ fn resolve_import_for_block_non_types<'a>(
 	}
 }
 
-fn create_block_types<'a>(
+fn create_block_traits<'a>(
 	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
-	lang_items: &RwLock<LangItems>,
-	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
-	function_store: &FunctionStore<'a>,
 	symbols: &mut Symbols<'a>,
 	function_initial_symbols_length: usize,
-	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
-	scope_id: ScopeId,
 	is_root: bool,
-	type_shape_indicies: &mut Vec<usize>,
+	trait_ids: &mut Vec<TraitId>,
 ) {
 	for statement in block.statements {
 		if is_root {
@@ -1285,6 +1563,41 @@ fn create_block_types<'a>(
 			}
 		}
 
+		if let tree::Statement::Trait(statement) = statement {
+			let trait_id = create_block_trait(messages, type_store, symbols, function_initial_symbols_length, statement);
+			trait_ids.push(trait_id);
+		} else if let tree::Statement::WhenElseChain(statement) = statement {
+			if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+				create_block_traits(
+					when_context,
+					messages,
+					type_store,
+					symbols,
+					function_initial_symbols_length,
+					&body.item,
+					is_root,
+					trait_ids,
+				);
+			};
+		}
+	}
+}
+
+fn create_block_types<'a>(
+	when_context: &WhenContext,
+	messages: &mut Messages<'a>,
+	lang_items: &RwLock<LangItems>,
+	root_layers: &RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	symbols: &mut Symbols<'a>,
+	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	block: &tree::Block<'a>,
+	scope_id: ScopeId,
+	type_shape_indicies: &mut Vec<usize>,
+) {
+	for statement in block.statements {
 		if let tree::Statement::Struct(statement) = statement {
 			let shape_index = create_block_struct(
 				messages,
@@ -1327,7 +1640,6 @@ fn create_block_types<'a>(
 					enclosing_generic_parameters,
 					&body.item,
 					scope_id,
-					is_root,
 					type_shape_indicies,
 				);
 			};
@@ -1569,7 +1881,67 @@ fn create_block_enum<'a>(
 	shape_index
 }
 
-fn fill_block_types_and_create_traits<'a>(
+fn fill_block_traits<'a>(
+	when_context: &WhenContext,
+	messages: &mut Messages<'a>,
+	lang_items: &RwLock<LangItems>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	block: &tree::Block<'a>,
+	scope_id: ScopeId,
+	trait_ids_iter: &mut std::slice::Iter<TraitId>,
+) {
+	for statement in block.statements {
+		match statement {
+			tree::Statement::Trait(statement) => {
+				fill_block_trait(
+					messages,
+					root_layers,
+					type_store,
+					function_store,
+					generic_usages,
+					symbols,
+					module_path,
+					function_initial_symbols_length,
+					enclosing_generic_parameters,
+					statement,
+					*trait_ids_iter.next().unwrap(),
+				);
+			}
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+					fill_block_traits(
+						when_context,
+						messages,
+						lang_items,
+						type_store,
+						function_store,
+						generic_usages,
+						root_layers,
+						symbols,
+						module_path,
+						function_initial_symbols_length,
+						enclosing_generic_parameters,
+						&body.item,
+						scope_id,
+						trait_ids_iter,
+					);
+				}
+			}
+
+			_ => {}
+		}
+	}
+}
+
+fn fill_block_types<'a>(
 	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
 	lang_items: &RwLock<LangItems>,
@@ -1617,24 +1989,9 @@ fn fill_block_types_and_create_traits<'a>(
 				);
 			}
 
-			tree::Statement::Trait(statement) => {
-				create_block_trait(
-					messages,
-					root_layers,
-					type_store,
-					function_store,
-					generic_usages,
-					symbols,
-					module_path,
-					function_initial_symbols_length,
-					enclosing_generic_parameters,
-					statement,
-				);
-			}
-
 			tree::Statement::WhenElseChain(statement) => {
 				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
-					fill_block_types_and_create_traits(
+					fill_block_types(
 						when_context,
 						messages,
 						lang_items,
@@ -1660,6 +2017,27 @@ fn fill_block_types_and_create_traits<'a>(
 
 fn create_block_trait<'a>(
 	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	symbols: &mut Symbols<'a>,
+	function_initial_symbols_length: usize,
+	statement: &tree::Trait<'a>,
+) -> TraitId {
+	let trait_id = type_store.register_trait(Trait { filled: false, name: statement.name, methods: Vec::new() });
+
+	let symbol = Symbol {
+		name: statement.name.item,
+		kind: SymbolKind::Trait { trait_id },
+		span: Some(statement.name.span),
+		used: false,
+		imported: false,
+	};
+	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+
+	trait_id
+}
+
+fn fill_block_trait<'a>(
+	messages: &mut Messages<'a>,
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
@@ -1669,6 +2047,7 @@ fn create_block_trait<'a>(
 	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	statement: &tree::Trait<'a>,
+	trait_id: TraitId,
 ) {
 	let mut methods = Vec::new();
 	for method in statement.methods {
@@ -1735,16 +2114,14 @@ fn create_block_trait<'a>(
 		});
 	}
 
-	let trait_id = type_store.register_trait(Trait { name: statement.name, methods });
+	let mut traits = type_store.traits.write();
+	let trait_instance = &mut traits[trait_id.index()];
 
-	let symbol = Symbol {
-		name: statement.name.item,
-		kind: SymbolKind::Trait { trait_id },
-		span: Some(statement.name.span),
-		used: false,
-		imported: false,
-	};
-	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+	assert!(!trait_instance.filled);
+	assert!(trait_instance.methods.is_empty());
+
+	trait_instance.methods = methods;
+	trait_instance.filled = true;
 }
 
 fn fill_block_struct<'a>(
@@ -2826,6 +3203,29 @@ fn validate_block_in_context<'a>(
 	should_import_prelude: bool,
 ) -> Block<'a> {
 	if !is_root {
+		create_block_traits(
+			context.when_context,
+			context.messages,
+			context.type_store,
+			context.symbols_scope.symbols,
+			context.function_initial_symbols_length,
+			block,
+			is_root,
+			context.trait_ids,
+		);
+
+		resolve_block_trait_imports(
+			context.herd_member,
+			context.when_context,
+			context.messages,
+			context.root_layers,
+			context.symbols_scope.symbols,
+			context.module_path,
+			context.function_initial_symbols_length,
+			block,
+			should_import_prelude,
+		);
+
 		create_block_types(
 			context.when_context,
 			context.messages,
@@ -2838,7 +3238,6 @@ fn validate_block_in_context<'a>(
 			context.generic_parameters,
 			block,
 			scope_id,
-			is_root,
 			context.type_shape_indicies,
 		);
 
@@ -2854,7 +3253,24 @@ fn validate_block_in_context<'a>(
 			should_import_prelude,
 		);
 
-		fill_block_types_and_create_traits(
+		fill_block_traits(
+			context.when_context,
+			context.messages,
+			context.lang_items,
+			context.type_store,
+			context.function_store,
+			context.function_generic_usages,
+			context.root_layers,
+			context.symbols_scope.symbols,
+			context.module_path,
+			context.function_initial_symbols_length,
+			context.generic_parameters,
+			block,
+			scope_id,
+			&mut context.trait_ids.iter(),
+		);
+
+		fill_block_types(
 			context.when_context,
 			context.messages,
 			context.lang_items,
@@ -2873,7 +3289,7 @@ fn validate_block_in_context<'a>(
 		context.type_shape_indicies.clear();
 	}
 
-	resolve_block_non_type_imports(
+	resolve_block_non_range_imports(
 		context.herd_member,
 		context.messages,
 		context.root_layers,

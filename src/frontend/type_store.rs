@@ -218,6 +218,12 @@ pub struct TraitId {
 	entry: u32,
 }
 
+impl TraitId {
+	pub fn index(self) -> usize {
+		self.entry as usize
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImplementationStatus {
 	Implemented,
@@ -226,6 +232,7 @@ pub enum ImplementationStatus {
 
 #[derive(Debug)]
 pub struct Trait<'a> {
+	pub filled: bool,
 	pub name: Node<&'a str>, // TODO: Does this need to be a node?
 	pub methods: Vec<TraitMethod<'a>>,
 }
@@ -1699,6 +1706,7 @@ impl<'a> TypeStore<'a> {
 		let traits = self.traits.clone();
 		let traits = traits.read();
 		let trait_instance = &traits[trait_id.entry as usize];
+		assert!(trait_instance.filled);
 
 		let mut status = ImplementationStatus::Implemented;
 		let mut notes = Vec::new();

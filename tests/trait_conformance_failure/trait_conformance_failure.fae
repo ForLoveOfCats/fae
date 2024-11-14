@@ -1,16 +1,20 @@
 fn main() {
 	test_generic_function<i32>()
 	test_generic_function<Struct>()
+	TestGenericStruct<u8> {}
+	TestGenericEnum<i64>.Variant
 }
 
 generic T: Trait
 fn test_generic_function() {}
 
-// generic T: Trait
-// struct TestGenericStruct {}
+generic T: Trait
+struct TestGenericStruct {}
 
-// generic T: Trait
-// enum TestGenericEnum {}
+generic T: Trait
+enum TestGenericEnum {
+	Variant
+}
 
 trait Trait {
 	method
