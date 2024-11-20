@@ -224,10 +224,10 @@ impl TraitId {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImplementationStatus {
-	Implemented,
 	NotImplemented,
+	Implemented { actual_method_indicies: Vec<usize> },
 }
 
 #[derive(Debug)]
@@ -239,10 +239,11 @@ pub struct Trait<'a> {
 
 #[derive(Debug)]
 pub struct TraitMethod<'a> {
-	pub kind: tree::MethodKind,
+	pub kind: Node<MethodKind>,
 	pub name: Node<&'a str>,
 	pub parameters: Vec<TraitParameter>,
 	pub return_type: TypeId,
+	pub fake_function_shape_index: usize,
 }
 
 #[derive(Debug)]
@@ -384,19 +385,42 @@ pub struct UserType<'a> {
 
 #[derive(Debug)]
 pub struct MethodCollection<'a> {
-	pub methods: FxHashMap<&'a str, MethodInfo>,
+	pub methods_by_name: FxHashMap<&'a str, usize>, // Indicies into methods vec below
+	pub methods: Vec<MethodInfo>,
 }
 
 impl<'a> MethodCollection<'a> {
-	pub fn new() -> Self {
-		MethodCollection { methods: FxHashMap::default() }
+	pub fn blank() -> Self {
+		MethodCollection { methods_by_name: FxHashMap::default(), methods: Vec::new() }
+	}
+
+	pub fn for_generic_satisfying_constraints(type_store: &TypeStore<'a>, constraints: &[TraitId]) -> Self {
+		let mut methods_by_name = FxHashMap::default();
+		let mut methods = Vec::new();
+
+		let traits = type_store.traits.read();
+		for constraint in constraints {
+			let trait_instance = &traits[constraint.index()];
+			for trait_method in &trait_instance.methods {
+				let function_shape_index = trait_method.fake_function_shape_index;
+				let kind = trait_method.kind;
+				let info = MethodInfo { function_shape_index, kind };
+
+				let index = methods.len();
+				methods.push(info);
+				// TODO: Detect duplicate trait methods
+				assert!(methods_by_name.insert(trait_method.name.item, index).is_none());
+			}
+		}
+
+		MethodCollection { methods_by_name, methods }
 	}
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct MethodInfo {
 	pub function_shape_index: usize,
-	pub kind: Node<tree::MethodKind>,
+	pub kind: Node<MethodKind>,
 }
 
 #[derive(Debug)]
@@ -795,7 +819,7 @@ impl<'a> TypeStore<'a> {
 
 		let mut push_primative = |name: Option<&'a str>, kind| {
 			let methods_index = method_collections.len();
-			method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+			method_collections.push(Ref::new(RwLock::new(MethodCollection::blank())));
 
 			assert_eq!(implementations.len(), methods_index);
 			implementations.push(RwLock::new(FxHashMap::default()));
@@ -1480,7 +1504,7 @@ impl<'a> TypeStore<'a> {
 		};
 
 		user_types.push(Ref::new(RwLock::new(user_type)));
-		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+		method_collections.push(Ref::new(RwLock::new(MethodCollection::blank())));
 
 		let mut implementations = implementations.write();
 		assert_eq!(implementations.len(), methods_index);
@@ -1533,7 +1557,7 @@ impl<'a> TypeStore<'a> {
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {
 		let mut method_collections = self.method_collections.write();
 		let methods_index = method_collections.len();
-		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+		method_collections.push(Ref::new(RwLock::new(MethodCollection::blank())));
 		drop(method_collections);
 
 		let mut implementations = self.implementations.write();
@@ -1546,10 +1570,16 @@ impl<'a> TypeStore<'a> {
 		self.type_entries.push_entry(type_entry)
 	}
 
-	pub fn register_function_generic(&mut self, function_shape_index: usize, generic_index: usize) -> TypeId {
+	pub fn register_function_generic(
+		&mut self,
+		function_shape_index: usize,
+		generic_index: usize,
+		constraints: &[TraitId],
+	) -> TypeId {
 		let mut method_collections = self.method_collections.write();
 		let methods_index = method_collections.len();
-		method_collections.push(Ref::new(RwLock::new(MethodCollection::new())));
+		let collection = MethodCollection::for_generic_satisfying_constraints(self, constraints);
+		method_collections.push(Ref::new(RwLock::new(collection)));
 		drop(method_collections);
 
 		let mut implementations = self.implementations.write();
@@ -1668,7 +1698,7 @@ impl<'a> TypeStore<'a> {
 		module_path: &[String],
 		type_id: Node<TypeId>,
 		trait_id: TraitId,
-	) -> ImplementationStatus {
+	) -> bool {
 		let entry = self.type_entries.get(type_id.item);
 		let methods_index = match entry.kind {
 			TypeEntryKind::BuiltinType { methods_index, .. }
@@ -1681,7 +1711,7 @@ impl<'a> TypeStore<'a> {
 				let trait_name = self.trait_name(trait_id).item;
 				let message = error!("Type {type_name} is unable to conform to trait `{trait_name}` as it cannot have methods");
 				messages.message(message.span(type_id.span));
-				return ImplementationStatus::NotImplemented;
+				return false;
 			}
 
 			TypeEntryKind::Module => unreachable!(),
@@ -1699,7 +1729,7 @@ impl<'a> TypeStore<'a> {
 
 		let map_entry = statuses.entry(trait_id);
 		let vacancy = match map_entry {
-			hash_map::Entry::Occupied(status) => return *status.get(),
+			hash_map::Entry::Occupied(status) => return matches!(status.get(), ImplementationStatus::Implemented { .. }),
 			hash_map::Entry::Vacant(vacancy) => vacancy,
 		};
 
@@ -1708,27 +1738,29 @@ impl<'a> TypeStore<'a> {
 		let trait_instance = &traits[trait_id.entry as usize];
 		assert!(trait_instance.filled);
 
-		let mut status = ImplementationStatus::Implemented;
+		let mut implemented = true;
+		let mut actual_method_indicies = Vec::new();
 		let mut notes = Vec::new();
 		for trait_method in &trait_instance.methods {
 			let name = trait_method.name.item;
-			let Some(actual_method) = methods_collection.methods.get(name) else {
+			let Some(&actual_method_index) = methods_collection.methods_by_name.get(name) else {
 				notes.push(note!(trait_method.name.span, "Type does not implement method `{name}`"));
-				status = ImplementationStatus::NotImplemented;
+				implemented = false;
 				continue;
 			};
+			let actual_method = methods_collection.methods[actual_method_index];
 
-			let expected_mutable = trait_method.kind == MethodKind::MutableSelf;
+			let expected_mutable = trait_method.kind.item == MethodKind::MutableSelf;
 			let actual_immutable = actual_method.kind.item == MethodKind::ImmutableSelf;
 			let mutability_downcast = expected_mutable && actual_immutable;
-			if actual_method.kind.item != trait_method.kind && !mutability_downcast {
+			if actual_method.kind.item != trait_method.kind.item && !mutability_downcast {
 				notes.push(note!(
 					actual_method.kind.span,
 					"Expected method `{name}` to be {} but found it to be {}",
-					trait_method.kind.name(),
+					trait_method.kind.item.name(),
 					actual_method.kind.item.name()
 				));
-				status = ImplementationStatus::NotImplemented;
+				implemented = false;
 			}
 
 			let function_shapes = function_store.shapes.read();
@@ -1743,12 +1775,12 @@ impl<'a> TypeStore<'a> {
 					span,
 					"Expected method `{name}` to have the return type {expected}, found return type {actual}"
 				));
-				status = ImplementationStatus::NotImplemented;
+				implemented = false;
 			}
 
 			if let Some(varargs) = shape.c_varargs {
 				notes.push(note!(varargs, "Trait methods may not have accept varargs"));
-				status = ImplementationStatus::NotImplemented;
+				implemented = false;
 			}
 
 			if shape.parameters.item.len() - 1 != trait_method.parameters.len() {
@@ -1758,7 +1790,7 @@ impl<'a> TypeStore<'a> {
 					trait_method.parameters.len(),
 					shape.parameters.item.len() - 1
 				));
-				status = ImplementationStatus::NotImplemented;
+				implemented = false;
 			}
 
 			for (actual, expected) in shape.parameters.item.iter().skip(1).zip(&trait_method.parameters) {
@@ -1767,14 +1799,38 @@ impl<'a> TypeStore<'a> {
 					let expected = self.type_name(function_store, module_path, expected.type_id);
 					let actual = self.type_name(function_store, module_path, actual.type_id);
 					notes.push(note!(span, "Expected parameter of type {expected}, found type {actual}"));
-					status = ImplementationStatus::NotImplemented;
+					implemented = false;
 				}
+			}
+			drop(shape);
+
+			let mut generic_usages = Vec::new();
+			function_store
+				.get_or_add_specialization(
+					messages,
+					self,
+					module_path,
+					&mut generic_usages,
+					actual_method.function_shape_index,
+					Ref::new(TypeArguments::new_from_explicit(Vec::new())),
+					None,
+				)
+				.unwrap();
+			assert!(generic_usages.is_empty());
+
+			if implemented {
+				actual_method_indicies.push(actual_method_index);
 			}
 		}
 
+		let status = match implemented {
+			true => ImplementationStatus::Implemented { actual_method_indicies },
+			false => ImplementationStatus::NotImplemented,
+		};
 		vacancy.insert(status);
-		if status == ImplementationStatus::Implemented {
-			return ImplementationStatus::Implemented;
+
+		if implemented {
+			return true;
 		}
 
 		let trait_name = self.trait_name(trait_id).item;
@@ -1785,7 +1841,7 @@ impl<'a> TypeStore<'a> {
 		}
 
 		messages.message(message.span(type_id.span));
-		ImplementationStatus::NotImplemented
+		false
 	}
 
 	pub fn find_user_type_dependency_chain(&mut self, from: TypeId, to: TypeId) -> Option<Vec<UserTypeChainLink<'a>>> {
@@ -2173,9 +2229,8 @@ impl<'a> TypeStore<'a> {
 		let generic_arguments_iter = type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
 			for &contraint in type_parameter.constraints.iter() {
-				match self.check_type_implements_trait(messages, function_store, module_path, type_argument, contraint) {
-					ImplementationStatus::Implemented => {}
-					ImplementationStatus::NotImplemented => constraint_failure = true,
+				if !self.check_type_implements_trait(messages, function_store, module_path, type_argument, contraint) {
+					constraint_failure = true;
 				}
 			}
 		}
@@ -2306,9 +2361,8 @@ impl<'a> TypeStore<'a> {
 		let generic_arguments_iter = type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
 			for &contraint in type_parameter.constraints.iter() {
-				match self.check_type_implements_trait(messages, function_store, module_path, type_argument, contraint) {
-					ImplementationStatus::Implemented => {}
-					ImplementationStatus::NotImplemented => constraint_failure = true,
+				if !self.check_type_implements_trait(messages, function_store, module_path, type_argument, contraint) {
+					constraint_failure = true;
 				}
 			}
 		}

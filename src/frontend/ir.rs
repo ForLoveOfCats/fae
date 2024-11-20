@@ -94,7 +94,7 @@ impl GenericUsage {
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
@@ -161,6 +161,8 @@ pub struct FunctionShape<'a> {
 	pub module_path: &'a [String],
 	pub is_main: bool,
 
+	pub trait_method_marker: Option<TraitMethodMarker>,
+
 	pub extern_attribute: Option<&'a Node<ExternAttribute<'a>>>,
 	pub export_attribute: Option<&'a Node<ExportAttribute<'a>>>,
 	pub intrinsic_attribute: Option<&'a Node<IntrinsicAttribute>>,
@@ -176,6 +178,12 @@ pub struct FunctionShape<'a> {
 
 	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
 	pub specializations: Vec<Function>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TraitMethodMarker {
+	pub trait_id: TraitId,
+	pub trait_method_index: usize,
 }
 
 // Anonymous structs pls save me
@@ -262,7 +270,7 @@ impl TypeArguments {
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,

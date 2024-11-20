@@ -3,7 +3,7 @@ use crate::frontend::ir::{
 	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
 };
 use crate::frontend::span::Span;
-use crate::frontend::type_store::{ImplementationStatus, TypeStore};
+use crate::frontend::type_store::{ImplementationStatus, TypeEntryKind, TypeId, TypeStore};
 use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
@@ -31,7 +31,7 @@ impl<'a> FunctionStore<'a> {
 		&self,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
-		module_path: &'a [String],
+		module_path: &[String],
 		generic_usages: &mut Vec<GenericUsage>,
 		function_shape_index: usize,
 		type_arguments: Ref<TypeArguments>,
@@ -63,9 +63,8 @@ impl<'a> FunctionStore<'a> {
 		let generic_arguments_iter = type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
 			for &contraint in type_parameter.constraints.iter() {
-				match type_store.check_type_implements_trait(messages, self, module_path, type_argument, contraint) {
-					ImplementationStatus::Implemented => {}
-					ImplementationStatus::NotImplemented => constraint_failure = true,
+				if !type_store.check_type_implements_trait(messages, self, module_path, type_argument, contraint) {
+					constraint_failure = true;
 				}
 			}
 		}
@@ -153,10 +152,97 @@ impl<'a> FunctionStore<'a> {
 		function_id: FunctionId,
 		caller_shape_index: usize,
 		caller_type_arguments: &TypeArguments,
+		base_type_id: Option<TypeId>,
 	) -> FunctionId {
 		let lock = self.shapes.read()[function_id.function_shape_index].as_ref().unwrap().clone();
 		let shape = lock.read();
+		if base_type_id.is_none() {
+			assert!(shape.trait_method_marker.is_none(), "{:?}", shape.trait_method_marker);
+		}
 		let specialization = &shape.specializations[function_id.specialization_index];
+
+		if let Some(base_type_id) = base_type_id {
+			if let Some(trait_method_marker) = shape.trait_method_marker {
+				assert!(specialization.type_arguments.is_empty());
+				drop(shape);
+
+				let type_entry = type_store.type_entries.get(base_type_id);
+				let methods_index = match type_entry.kind {
+					TypeEntryKind::BuiltinType { methods_index, .. }
+					| TypeEntryKind::UserType { methods_index, .. }
+					| TypeEntryKind::UserTypeGeneric { methods_index, .. }
+					| TypeEntryKind::FunctionGeneric { methods_index, .. } => methods_index,
+
+					TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::Pointer { .. } | TypeEntryKind::Slice(_) => {
+						// If we know that this function is a method (we passed a base type id) then it stands to reason that the
+						// base type must have the ability to have methods, otherwise we've done something wrong somewhere
+						unreachable!("{:#?}", type_entry.kind);
+					}
+				};
+
+				let implementations = type_store.implementations.read();
+				let statuses = implementations[methods_index].read();
+
+				// If we know that this method is a trait method, and that it exists on the base type id, then we must
+				// have checked it for conformance at some point and so we know that this item exists
+				let status = match statuses.get(&trait_method_marker.trait_id) {
+					Some(status) => status,
+					None => {
+						for statuses in implementations.as_slice() {
+							dbg!(&*statuses.read());
+						}
+						dbg!(&*statuses, trait_method_marker.trait_id);
+						drop(statuses);
+						drop(implementations);
+
+						let type_name = type_store.debugging_type_name(base_type_id);
+						let trait_name = type_store.traits.read()[trait_method_marker.trait_id.index()].name.item;
+						unreachable!("type: {type_name}, trait: {trait_name}")
+					}
+				};
+
+				// Furthermore we know that it must be implemented if we've reached the point that we're assuming that
+				// we can specialize the trait method in the context of a concrete base type id
+				let actual_method_indicies = match status {
+					ImplementationStatus::Implemented { actual_method_indicies } => actual_method_indicies,
+					ImplementationStatus::NotImplemented => unreachable!(),
+				};
+
+				let actual_method_index = actual_method_indicies[trait_method_marker.trait_method_index];
+				drop(statuses);
+				drop(implementations);
+
+				let method_collections = type_store.method_collections.read();
+				let method_collection = method_collections[methods_index].read();
+				let function_shape_index = method_collection.methods[actual_method_index].function_shape_index;
+				drop(method_collection);
+				drop(method_collections);
+
+				let lock = self.shapes.read()[function_shape_index].as_ref().unwrap().clone();
+				let shape = lock.read();
+				assert!(shape.trait_method_marker.is_none());
+				let specialization = &shape.specializations[function_id.specialization_index];
+
+				let mut generic_usages = Vec::new();
+				let mut type_arguments = TypeArguments::clone(&specialization.type_arguments);
+				type_arguments.specialize_with_function_generics(
+					messages,
+					type_store,
+					self,
+					shape.module_path,
+					&mut generic_usages,
+					caller_shape_index,
+					caller_type_arguments,
+				);
+				assert!(generic_usages.is_empty());
+
+				let &specialization_index = shape.specializations_by_type_arguments.get(&type_arguments).unwrap();
+				drop(shape);
+
+				return FunctionId { function_shape_index, specialization_index };
+			}
+		}
+
 		if specialization.type_arguments.is_empty() {
 			return function_id;
 		}

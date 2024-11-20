@@ -2045,12 +2045,20 @@ fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: 
 
 	let mut methods = BumpVec::new_in(bump);
 	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-		tokens.expect_word(messages, "method")?;
+		let method_token = tokens.expect_word(messages, "method")?;
 
 		let kind = match tokens.peek() {
-			Ok(Token { text: "mut", kind: TokenKind::Word, .. }) => MethodKind::MutableSelf,
-			Ok(Token { text: "static", kind: TokenKind::Word, .. }) => MethodKind::Static,
-			_ => MethodKind::ImmutableSelf,
+			Ok(Token { text: "mut", kind: TokenKind::Word, .. }) => {
+				let token = tokens.next(messages)?;
+				Node::from_token(MethodKind::MutableSelf, token)
+			}
+
+			Ok(Token { text: "static", kind: TokenKind::Word, .. }) => {
+				let token = tokens.next(messages)?;
+				Node::from_token(MethodKind::Static, token)
+			}
+
+			_ => Node::new(MethodKind::ImmutableSelf, method_token.span),
 		};
 
 		tokens.expect(messages, TokenKind::Newline)?;
@@ -2060,7 +2068,7 @@ fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: 
 		check_not_reserved(messages, name_token, "trait method name")?;
 		let name = Node::from_token(name_token.text, name_token);
 
-		let parameters = parse_parameters(bump, messages, tokens, false)?.item;
+		let parameters = parse_parameters(bump, messages, tokens, false)?;
 
 		let parsed_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
 			tokens.next(messages)?;

@@ -2050,14 +2050,23 @@ fn fill_block_trait<'a>(
 	trait_id: TraitId,
 ) {
 	let mut methods = Vec::new();
-	for method in statement.methods {
-		if let Some(varargs_span) = method.parameters.c_varargs {
+	for (trait_method_index, method) in statement.methods.iter().enumerate() {
+		if let Some(varargs_span) = method.parameters.item.c_varargs {
 			let message = error!("Trait method may not accept C varargs");
 			messages.message(message.span(varargs_span));
 		}
 
-		let mut parameters = Vec::new();
-		for parameter in method.parameters.parameters {
+		let mut shape_parameters = Vec::new();
+		shape_parameters.push(ParameterShape {
+			span: Span::unusable(),
+			label: None,
+			type_id: type_store.any_collapse_type_id(), // TODO: Hack
+			readable_index: usize::MAX,
+			is_mutable: false,
+		});
+
+		let mut trait_parameters = Vec::new();
+		for parameter in method.parameters.item.parameters {
 			let type_id = type_store.lookup_type(
 				messages,
 				&function_store,
@@ -2075,7 +2084,14 @@ fn fill_block_trait<'a>(
 				None => type_store.any_collapse_type_id(),
 			};
 
-			parameters.push(TraitParameter { type_id });
+			trait_parameters.push(TraitParameter { type_id });
+			shape_parameters.push(ParameterShape {
+				span: parameter.span,
+				label: parameter.item.label,
+				type_id,
+				readable_index: usize::MAX, // TODO: Hack?
+				is_mutable: false,
+			});
 		}
 
 		let return_type = if let Some(parsed_type) = &method.parsed_type {
@@ -2101,16 +2117,44 @@ fn fill_block_trait<'a>(
 				messages.message(warning.span(parsed_type.span));
 			}
 
-			return_type
+			Node::new(return_type, parsed_type.span)
 		} else {
-			type_store.void_type_id()
+			Node::new(type_store.void_type_id(), method.name.span)
 		};
+
+		let shape = FunctionShape {
+			name: method.name,
+			module_path,
+			is_main: false,
+			trait_method_marker: Some(TraitMethodMarker { trait_id, trait_method_index }),
+			generic_parameters: GenericParameters::new_from_explicit(Vec::new()),
+			extern_attribute: None,
+			export_attribute: None,
+			intrinsic_attribute: None,
+			lang_attribute: None,
+			method_base_index: None,
+			parameters: Node::new(shape_parameters, method.parameters.span),
+			c_varargs: None,
+			return_type,
+			block: None,
+			generic_usages: SliceRef::new_empty(),
+			specializations_by_type_arguments: FxHashMap::default(),
+			specializations: Vec::new(),
+		};
+		let mut shapes = function_store.shapes.write();
+		let fake_function_shape_index = shapes.len();
+		shapes.push(Some(Ref::new(RwLock::new(shape))));
+
+		let mut function_store_generics = function_store.generics.write();
+		assert_eq!(function_store_generics.len(), fake_function_shape_index);
+		function_store_generics.push(GenericParameters::new_from_explicit(Vec::new()));
 
 		methods.push(TraitMethod {
 			kind: method.kind,
 			name: method.name,
-			parameters,
-			return_type,
+			parameters: trait_parameters,
+			return_type: return_type.item,
+			fake_function_shape_index,
 		});
 	}
 
@@ -2769,7 +2813,6 @@ fn create_block_functions<'a>(
 			let mut explicit_generics = Vec::with_capacity(capacity);
 
 			for (generic_index, generic) in statement.generics.iter().enumerate() {
-				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
 				let constraints = type_store.lookup_constraints(
 					messages,
 					root_layers,
@@ -2778,6 +2821,7 @@ fn create_block_functions<'a>(
 					function_initial_symbols_length,
 					generic.constraints,
 				);
+				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, &constraints);
 				explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
 
 				let kind = SymbolKind::FunctionGeneric { function_shape_index, generic_index };
@@ -2796,7 +2840,8 @@ fn create_block_functions<'a>(
 			if statement.method_attribute.is_none() {
 				for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + index;
-					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
+					let constraints = &parent_parameter.constraints;
+					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, constraints);
 					let constraints = parent_parameter.constraints.clone();
 					let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 					generic_parameters.push_implicit(parameter);
@@ -2821,7 +2866,8 @@ fn create_block_functions<'a>(
 
 				for (index, base_type_parameter) in base_shape_generics.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + implicit_generics_len + index;
-					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index);
+					let constraints = &base_type_parameter.constraints;
+					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, &constraints);
 					let constraints = base_type_parameter.constraints.clone();
 					let parameter = GenericParameter { name: base_type_parameter.name, constraints, generic_type_id };
 					generic_parameters.push_method_base(parameter);
@@ -2988,6 +3034,7 @@ fn create_block_functions<'a>(
 				name,
 				module_path,
 				is_main,
+				trait_method_marker: None,
 				generic_parameters,
 				extern_attribute: statement.extern_attribute,
 				export_attribute: statement.export_attribute,
@@ -3012,10 +3059,12 @@ fn create_block_functions<'a>(
 					let info = MethodInfo { function_shape_index, kind };
 
 					let collections = type_store.method_collections.read();
-					let collection = collections[methods_index].clone();
+					let mut collection = collections[methods_index].write();
 
 					// TODO: Detect duplicate methods
-					assert!(collection.write().methods.insert(statement.name.item, info).is_none());
+					let index = collection.methods.len();
+					collection.methods.push(info);
+					assert!(collection.methods_by_name.insert(statement.name.item, index).is_none());
 				}
 			} else {
 				if let Some(lang_attribute) = &statement.lang_attribute {
@@ -5039,7 +5088,8 @@ fn lookup_name_on_base<'a>(
 		if let Some(methods_index) = entry.kind.methods_index() {
 			let collections = context.type_store.method_collections.read();
 			let collection = collections[methods_index].read();
-			if let Some(info) = collection.methods.get(name.item).copied() {
+			if let Some(method_index) = collection.methods_by_name.get(name.item).copied() {
+				let info = collection.methods[method_index];
 				return Some(NameOnBase::Method(info));
 			}
 		}
@@ -5160,8 +5210,8 @@ fn lookup_name_on_base<'a>(
 			false,
 		);
 	} else if !base.type_id.is_any_collapse(context.type_store) {
-		let on = base.kind.name_with_article();
-		let error = error!("Cannot dot-access on {on}, expected a value with fields or methods");
+		let on = base.kind.name();
+		let error = error!("No such thing named `{}` on this {on}", name.item);
 		context.message(error.span(base.span + name.span));
 	}
 
@@ -5341,8 +5391,8 @@ fn validate_symbol_call<'a>(
 
 #[derive(Debug, Clone, Copy)]
 pub struct MethodBaseUserType {
-	shape_index: usize,
-	specialization_index: usize,
+	pub shape_index: usize,
+	pub specialization_index: usize,
 }
 
 fn get_method_function_specialization<'a>(
@@ -5547,15 +5597,13 @@ fn validate_method_call<'a>(
 
 		TypeEntryKind::Pointer { type_id, mutable } => {
 			let entry = context.type_store.type_entries.get(type_id);
-			let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind else {
-				let found = context.type_name(base.type_id);
-				let error = error!("Cannot call method on type {found}");
-				context.message(error.span(span));
-				return Expression::any_collapse(context.type_store, span);
+			let method_base_user_type = if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
+				Some(MethodBaseUserType { shape_index, specialization_index })
+			} else {
+				None
 			};
 
-			let method_base_user_type = MethodBaseUserType { shape_index, specialization_index };
-			(Some(method_base_user_type), mutable && base.is_pointer_access_mutable)
+			(method_base_user_type, mutable && base.is_pointer_access_mutable)
 		}
 
 		_ => {

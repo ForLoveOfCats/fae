@@ -1,0 +1,31 @@
+fn main() {
+	let s = Struct { field: 42 }
+	test_generic_function<Struct>(s.&)
+
+	let n: u64 = 20
+	test_generic_function<u64>(n.&)
+}
+
+generic T: Trait
+fn test_generic_function(arg=: *T) {
+	println(f"hash: {arg.calculate_hash()}")
+}
+
+trait Trait {
+	method
+	fn calculate_hash(): u64
+}
+
+struct Struct {
+	field: i32
+}
+
+method Struct
+fn calculate_hash(): u64 {
+	return self.field.(u64)
+}
+
+method u64
+fn calculate_hash(): u64 {
+	return self.*
+}

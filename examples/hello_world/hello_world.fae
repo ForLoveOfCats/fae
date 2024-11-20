@@ -1,29 +1,8 @@
 fn main() {
-	let i: i32 = 50
-	test_generic_function<i32>(i.&)
-
-	let s = Struct { field: 42 }
-	test_generic_function<Struct>(s.&)
+	println("Hello world")
+	println(f"Welcome to {language()}!")
 }
 
-generic T: Hashable
-fn test_generic_function(_arg=: *T) {}
-
-trait Hashable {
-	method
-	fn calculate_hash(): u64
-}
-
-struct Struct {
-	field: i32
-}
-
-method mut Struct
-fn calculate_hash(addend: u64): u64 {
-	return self.field.(u64) + addend
-}
-
-method i32
-fn calculate_hash(): i32 {
-	return self.*
+fn language(): str {
+	return "Fae"
 }

@@ -209,9 +209,9 @@ pub struct Trait<'a> {
 
 #[derive(Debug)]
 pub struct TraitMethod<'a> {
-	pub kind: MethodKind,
+	pub kind: Node<MethodKind>,
 	pub name: Node<&'a str>,
-	pub parameters: Parameters<'a>,
+	pub parameters: Node<Parameters<'a>>,
 	pub parsed_type: Option<Node<Type<'a>>>,
 }
 

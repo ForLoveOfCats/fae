@@ -116,6 +116,10 @@ pub fn generate_function<'a, G: Generator>(
 	shape: ReadGuard<FunctionShape<'a>>,
 	function_id: FunctionId,
 ) {
+	if shape.trait_method_marker.is_some() {
+		return;
+	}
+
 	let specialization = &shape.specializations[function_id.specialization_index];
 
 	for &type_argument in &specialization.type_arguments.ids {
@@ -665,6 +669,7 @@ fn generate_call<'a, 'b, G: Generator>(
 		call.function_id,
 		context.function_id.function_shape_index,
 		context.function_type_arguments,
+		None,
 	);
 
 	let is_intrinsic = context.function_store.shapes.read()[function_id.function_shape_index]
@@ -694,12 +699,15 @@ fn generate_method_call<'a, 'b, G: Generator>(
 	method_call: &'b MethodCall<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
-	let base_pointer_type_id = if method_call.base.type_id.is_pointer(context.type_store) {
-		method_call.base.type_id
+	let as_pointed = method_call.base.type_id.as_pointed(context.type_store);
+	let (base_pointer_type_id, target_type_id) = if let Some(as_pointed) = as_pointed {
+		let pointed = context.specialize_type_id(as_pointed.type_id);
+		(context.type_store.pointer_to(pointed, as_pointed.mutable), pointed)
 	} else {
-		context
-			.type_store
-			.pointer_to(method_call.base.type_id, method_call.base.is_itself_mutable)
+		let target = context.specialize_type_id(method_call.base.type_id);
+		let mutable = method_call.base.is_itself_mutable;
+		let pointer = context.type_store.pointer_to(target, mutable);
+		(pointer, target)
 	};
 
 	let base = generate_expression(context, generator, &method_call.base)
@@ -711,6 +719,7 @@ fn generate_method_call<'a, 'b, G: Generator>(
 		method_call.function_id,
 		context.function_id.function_shape_index,
 		context.function_type_arguments,
+		Some(target_type_id),
 	);
 
 	// TODO: Avoid this creating this vec every time
