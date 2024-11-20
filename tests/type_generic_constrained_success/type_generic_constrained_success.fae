@@ -1,0 +1,27 @@
+fn main() {
+	mut s = Struct<i32> { field: 40 }
+	s.struct_method()
+	s.struct_method()
+	s.struct_method()
+}
+
+trait Trait {
+	method mut
+	fn trait_method(): i32
+}
+
+generic T: Trait
+struct Struct {
+	field: T
+}
+
+method mut Struct
+fn struct_method() {
+	println(f"{self.field.trait_method()}")
+}
+
+method mut i32
+fn trait_method(): i32 {
+	defer self.* += 1
+	return self.*
+}

@@ -1554,10 +1554,11 @@ impl<'a> TypeStore<'a> {
 		SliceRef::from(trait_ids)
 	}
 
-	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize) -> TypeId {
+	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize, constraints: &[TraitId]) -> TypeId {
 		let mut method_collections = self.method_collections.write();
 		let methods_index = method_collections.len();
-		method_collections.push(Ref::new(RwLock::new(MethodCollection::blank())));
+		let collection = MethodCollection::for_generic_satisfying_constraints(self, constraints);
+		method_collections.push(Ref::new(RwLock::new(collection)));
 		drop(method_collections);
 
 		let mut implementations = self.implementations.write();

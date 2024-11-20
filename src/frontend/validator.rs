@@ -1670,7 +1670,6 @@ fn create_block_struct<'a>(
 
 	let shape_index = user_types.len();
 	for (generic_index, generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
 		let constraints = type_store.lookup_constraints(
 			messages,
 			root_layers,
@@ -1679,6 +1678,7 @@ fn create_block_struct<'a>(
 			function_initial_symbols_length,
 			generic.constraints,
 		);
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index, &constraints);
 		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
 	}
 
@@ -1686,8 +1686,8 @@ fn create_block_struct<'a>(
 	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
-		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index);
 		let constraints = parent_parameter.constraints.clone();
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index, &constraints);
 		let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
@@ -1750,7 +1750,6 @@ fn create_block_enum<'a>(
 
 	let enum_shape_index = user_types.len() + statement.variants.len();
 	for (generic_index, generic) in statement.generics.iter().enumerate() {
-		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		let constraints = type_store.lookup_constraints(
 			messages,
 			root_layers,
@@ -1759,6 +1758,7 @@ fn create_block_enum<'a>(
 			function_initial_symbols_length,
 			generic.constraints,
 		);
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index, &constraints);
 		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
 	}
 
@@ -1766,8 +1766,8 @@ fn create_block_enum<'a>(
 	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
 	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 		let generic_index = explicit_generics_len + index;
-		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index);
 		let constraints = parent_parameter.constraints.clone();
+		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index, &constraints);
 		let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 		generic_parameters.push_implicit(parameter);
 	}
@@ -1785,8 +1785,8 @@ fn create_block_enum<'a>(
 
 		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
 		for (generic_index, enum_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
-			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
 			let constraints = enum_explicit_generic.constraints.clone();
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index, &constraints);
 			variant_explicit_generics.push(GenericParameter {
 				name: enum_explicit_generic.name,
 				constraints,
@@ -1798,8 +1798,8 @@ fn create_block_enum<'a>(
 		let mut variant_generic_parameters = GenericParameters::new_from_explicit(variant_explicit_generics);
 		for (index, enum_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
 			let generic_index = explicit_generics_len + index;
-			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index);
 			let constraints = enum_parameter.constraints.clone();
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index, &constraints);
 			let parameter = GenericParameter { name: enum_parameter.name, constraints, generic_type_id };
 			variant_generic_parameters.push_implicit(parameter);
 		}
@@ -2840,9 +2840,8 @@ fn create_block_functions<'a>(
 			if statement.method_attribute.is_none() {
 				for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + index;
-					let constraints = &parent_parameter.constraints;
-					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, constraints);
 					let constraints = parent_parameter.constraints.clone();
+					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, &constraints);
 					let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
 					generic_parameters.push_implicit(parameter);
 
@@ -2866,9 +2865,8 @@ fn create_block_functions<'a>(
 
 				for (index, base_type_parameter) in base_shape_generics.parameters().iter().enumerate() {
 					let generic_index = explicit_generics_len + implicit_generics_len + index;
-					let constraints = &base_type_parameter.constraints;
-					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, &constraints);
 					let constraints = base_type_parameter.constraints.clone();
+					let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, &constraints);
 					let parameter = GenericParameter { name: base_type_parameter.name, constraints, generic_type_id };
 					generic_parameters.push_method_base(parameter);
 					base_type_arguments
@@ -5588,7 +5586,9 @@ fn validate_method_call<'a>(
 			return Expression::any_collapse(context.type_store, span);
 		}
 
-		TypeEntryKind::BuiltinType { .. } => (None, base.is_itself_mutable),
+		TypeEntryKind::BuiltinType { .. } | TypeEntryKind::FunctionGeneric { .. } | TypeEntryKind::UserTypeGeneric { .. } => {
+			(None, base.is_itself_mutable)
+		}
 
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 			let method_base_user_type = MethodBaseUserType { shape_index, specialization_index };
@@ -5606,7 +5606,7 @@ fn validate_method_call<'a>(
 			(method_base_user_type, mutable && base.is_pointer_access_mutable)
 		}
 
-		_ => {
+		TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::Slice(_) => {
 			let found = context.type_name(base.type_id);
 			let error = error!("Cannot call method on type {found}");
 			context.message(error.span(span));
