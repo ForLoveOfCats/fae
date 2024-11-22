@@ -13,7 +13,7 @@ use crate::frontend::tree::{self, BinaryOperator, FieldAttribute, MethodKind, No
 use crate::frontend::type_store::*;
 use crate::frontend::when::WhenContext;
 use crate::frontend::yield_targets::YieldTargets;
-use crate::lock::RwLock;
+use crate::lock::{ReadGuard, RwLock};
 use crate::reference::{Ref, SliceRef};
 
 #[derive(Debug)]
@@ -4901,6 +4901,7 @@ fn validate_struct_literal<'a>(
 
 	let specialization = &shape.specializations[specialization_index];
 	if shape.parent_enum_shape_index.is_some() && specialization.fields.is_empty() {
+		drop(user_type);
 		let variant_name = context.type_name(type_id);
 		let message = error!("Cannot construct enum variant {variant_name} with field initializers");
 		context.message(message.span(span));
@@ -4908,6 +4909,7 @@ fn validate_struct_literal<'a>(
 	}
 
 	if shape.is_transparent_variant {
+		drop(user_type);
 		let variant_name = context.type_name(type_id);
 		let message = error!("Cannot construct transparent enum variant {variant_name} like a struck-like enum variant");
 		context.message(message.span(span));
@@ -5102,17 +5104,18 @@ fn lookup_name_on_base<'a>(
 			let user_type = user_type.read();
 
 			let fields = match &user_type.kind {
-				UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.as_ref(),
+				UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.clone(),
 
 				UserTypeKind::Enum { shape } => {
 					if let ExpressionKind::Type { .. } = base.kind {
-						let variant = lookup_variant(context, shape, specialization_index, name, false);
+						let variant = lookup_variant(context, user_type, specialization_index, name, false);
 						return variant.map(|variant| NameOnBase::Variant(variant));
 					}
 
-					shape.specializations[specialization_index].shared_fields.as_ref()
+					shape.specializations[specialization_index].shared_fields.clone()
 				}
 			};
+			drop(user_type);
 
 			return lookup_field_in_fields(
 				context,
@@ -5120,7 +5123,7 @@ fn lookup_name_on_base<'a>(
 				base_type_id,
 				is_itself_mutable,
 				is_pointer_access_mutable,
-				fields,
+				&fields,
 				external_access,
 			);
 		}
@@ -6030,8 +6033,8 @@ fn infer_variant<'a>(context: &mut Context<'a, '_, '_>, name: Node<&'a str>, spa
 		let lock = context.type_store.user_types.read()[shape_index].clone();
 		let user_type = lock.read();
 
-		if let UserTypeKind::Enum { shape } = &user_type.kind {
-			return lookup_variant(context, shape, specialization_index, name, true);
+		if let UserTypeKind::Enum { .. } = &user_type.kind {
+			return lookup_variant(context, user_type, specialization_index, name, true);
 		}
 	}
 
@@ -6042,17 +6045,20 @@ fn infer_variant<'a>(context: &mut Context<'a, '_, '_>, name: Node<&'a str>, spa
 
 fn lookup_variant<'a>(
 	context: &mut Context<'a, '_, '_>,
-	shape: &EnumShape<'a>,
+	user_type: ReadGuard<'_, UserType<'a>>,
 	specialization_index: usize,
 	name: Node<&'a str>,
 	is_inferred: bool,
 ) -> Option<EnumVariant> {
+	let UserTypeKind::Enum { shape } = &user_type.kind else {
+		return None;
+	};
+
 	let specialization = &shape.specializations[specialization_index];
 	let specialization_type_id = specialization.type_id;
-	let variants = specialization.variants.clone();
-	let variants_by_name = specialization.variants_by_name.clone();
 
-	let Some(&variant_index) = variants_by_name.get(name.item) else {
+	let Some(&variant_index) = specialization.variants_by_name.get(name.item) else {
+		drop(user_type);
 		let enum_name = context.type_name(specialization_type_id);
 		let error = if is_inferred {
 			error!("Expected enum {enum_name} has no variant named `{}`", name.item)
@@ -6063,7 +6069,7 @@ fn lookup_variant<'a>(
 		return None;
 	};
 
-	return Some(variants[variant_index]);
+	return Some(specialization.variants[variant_index]);
 }
 
 fn validate_dot_infer<'a>(context: &mut Context<'a, '_, '_>, dot_infer: &'a tree::DotInfer<'a>, span: Span) -> Expression<'a> {

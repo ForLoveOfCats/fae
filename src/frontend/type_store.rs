@@ -1803,7 +1803,9 @@ impl<'a> TypeStore<'a> {
 					implemented = false;
 				}
 			}
+
 			drop(shape);
+			drop(function_shapes);
 
 			let mut generic_usages = Vec::new();
 			function_store
@@ -1823,6 +1825,8 @@ impl<'a> TypeStore<'a> {
 				actual_method_indicies.push(actual_method_index);
 			}
 		}
+
+		drop(traits);
 
 		let status = match implemented {
 			true => ImplementationStatus::Implemented { actual_method_indicies },
@@ -2065,6 +2069,7 @@ impl<'a> TypeStore<'a> {
 					let variant = specialization.variants[variant_index];
 					return Some(variant.type_id);
 				} else {
+					drop(user_type);
 					let name = self.type_name(function_store, module_path, type_id);
 					let message = error!("Enum {name} has no variant named `{}`", first_access.item);
 					messages.message(message.span(first_access.span));

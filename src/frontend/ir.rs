@@ -507,8 +507,11 @@ impl<'a> Expression<'a> {
 		assert!(specialization.been_filled);
 
 		if !specialization.fields.is_empty() {
+			let is_transparent_variant = shape.is_transparent_variant;
+			drop(user_type);
+
 			let name = context.type_name(type_id);
-			let message = if shape.is_transparent_variant {
+			let message = if is_transparent_variant {
 				error!("Cannot construct transparent enum variant {name} without an initializer")
 			} else {
 				error!("Cannot construct struct-like enum variant {name} without an initializer")
