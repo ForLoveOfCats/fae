@@ -196,7 +196,7 @@ impl<'a> FunctionStore<'a> {
 						drop(implementations);
 
 						let type_name = type_store.debugging_type_name(base_type_id);
-						let trait_name = type_store.traits.read()[trait_method_marker.trait_id.index()].name.item;
+						let trait_name = type_store.traits.read()[trait_method_marker.trait_id.index()].name;
 						unreachable!("type: {type_name}, trait: {trait_name}")
 					}
 				};

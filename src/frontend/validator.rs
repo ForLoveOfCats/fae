@@ -2022,7 +2022,11 @@ fn create_block_trait<'a>(
 	function_initial_symbols_length: usize,
 	statement: &tree::Trait<'a>,
 ) -> TraitId {
-	let trait_id = type_store.register_trait(Trait { filled: false, name: statement.name, methods: Vec::new() });
+	let trait_id = type_store.register_trait(Trait {
+		filled: false,
+		name: statement.name.item,
+		methods: Vec::new(),
+	});
 
 	let symbol = Symbol {
 		name: statement.name.item,

@@ -233,7 +233,7 @@ pub enum ImplementationStatus {
 #[derive(Debug)]
 pub struct Trait<'a> {
 	pub filled: bool,
-	pub name: Node<&'a str>, // TODO: Does this need to be a node?
+	pub name: &'a str,
 	pub methods: Vec<TraitMethod<'a>>,
 }
 
@@ -1514,7 +1514,7 @@ impl<'a> TypeStore<'a> {
 		RegisterTypeResult { shape_index, methods_index }
 	}
 
-	pub fn trait_name(&self, trait_id: TraitId) -> Node<&'a str> {
+	pub fn trait_name(&self, trait_id: TraitId) -> &'a str {
 		let traits = self.traits.read();
 		traits[trait_id.entry as usize].name
 	}
@@ -1709,7 +1709,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::Pointer { .. } | TypeEntryKind::Slice(_) => {
 				let type_name = self.type_name(function_store, module_path, type_id.item);
-				let trait_name = self.trait_name(trait_id).item;
+				let trait_name = self.trait_name(trait_id);
 				let message = error!("Type {type_name} is unable to conform to trait `{trait_name}` as it cannot have methods");
 				messages.message(message.span(type_id.span));
 				return false;
@@ -1838,7 +1838,7 @@ impl<'a> TypeStore<'a> {
 			return true;
 		}
 
-		let trait_name = self.trait_name(trait_id).item;
+		let trait_name = self.trait_name(trait_id);
 		let mut message = error!("Type is expected to conform to trait `{trait_name}` but does not");
 
 		for note in notes {
