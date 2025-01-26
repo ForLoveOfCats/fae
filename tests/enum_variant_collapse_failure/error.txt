@@ -1,3 +1,7 @@
 Validation error: ./tests/enum_variant_collapse_failure/enum_variant_collapse_failure.fae, line 3: Expected `Enum<i64>` but got expression with type `Enum::Variant<i32>`
   3|     let b: Enum<i64> = a
                             ^
+
+Validation warning: ./tests/enum_variant_collapse_failure/enum_variant_collapse_failure.fae, line 3: Unused symbol `b`
+  3|     let b: Enum<i64> = a
+             ^

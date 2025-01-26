@@ -82,9 +82,15 @@ pub enum GenericUsage {
 		type_arguments: Ref<TypeArguments>,
 		shape_index: usize,
 	},
+
 	Function {
 		type_arguments: Ref<TypeArguments>,
 		function_shape_index: usize,
+	},
+
+	Trait {
+		type_arguments: Ref<TypeArguments>,
+		trait_shape_index: usize,
 	},
 }
 
@@ -94,35 +100,36 @@ impl GenericUsage {
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &[String],
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
+		enclosing_generic_parameters: &GenericParameters<'a>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
 		invoke_span: Option<Span>,
 	) {
 		match self {
 			GenericUsage::UserType { type_arguments, shape_index } => {
-				let mut specialized_type_arguments = TypeArguments::clone(type_arguments);
-				for type_argument in &mut specialized_type_arguments.ids {
-					type_argument.item = type_store.specialize_with_function_generics(
-						messages,
-						function_store,
-						module_path,
-						generic_usages,
-						function_shape_index,
-						function_type_arguments,
-						type_argument.item,
-					);
-				}
+				let mut type_arguments = TypeArguments::clone(&type_arguments);
+				type_arguments.specialize_with_function_generics(
+					messages,
+					type_store,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					function_shape_index,
+					function_type_arguments,
+				);
 
 				type_store.get_or_add_shape_specialization(
 					messages,
 					function_store,
 					module_path,
 					generic_usages,
+					enclosing_generic_parameters,
 					*shape_index,
-					None,
-					Ref::new(specialized_type_arguments),
+					invoke_span,
+					Ref::new(type_arguments),
 				);
 			}
 
@@ -137,6 +144,7 @@ impl GenericUsage {
 					function_store,
 					module_path,
 					generic_usages,
+					enclosing_generic_parameters,
 					function_shape_index,
 					function_type_arguments,
 				);
@@ -146,9 +154,35 @@ impl GenericUsage {
 					type_store,
 					module_path,
 					generic_usages,
+					enclosing_generic_parameters,
 					*usage_function_shape_index,
-					Ref::new(type_arguments),
 					invoke_span,
+					Ref::new(type_arguments),
+				);
+			}
+
+			GenericUsage::Trait { type_arguments, trait_shape_index } => {
+				let mut type_arguments = TypeArguments::clone(&type_arguments);
+				type_arguments.specialize_with_function_generics(
+					messages,
+					type_store,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					function_shape_index,
+					function_type_arguments,
+				);
+
+				type_store.get_or_add_trait_shape_specialization(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					*trait_shape_index,
+					invoke_span,
+					Ref::new(type_arguments),
 				);
 			}
 		}
@@ -182,7 +216,7 @@ pub struct FunctionShape<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TraitMethodMarker {
-	pub trait_id: TraitId,
+	pub trait_shape_index: usize,
 	pub trait_method_index: usize,
 }
 
@@ -206,7 +240,7 @@ pub struct TypeArguments {
 	pub explicit_len: usize,
 	pub implicit_len: usize,
 	pub method_base_len: usize,
-	pub ids: Vec<Node<TypeId>>,
+	pub ids: Vec<Node<TypeId>>, // TODO: Should this be a SliceRef?
 }
 
 impl std::cmp::Eq for TypeArguments {}
@@ -270,20 +304,22 @@ impl TypeArguments {
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
 		function_store: &FunctionStore<'a>,
-		module_path: &[String],
+		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
+		enclosing_generic_parameters: &GenericParameters<'a>,
 		function_shape_index: usize,
 		function_type_arguments: &TypeArguments,
 	) {
 		for original_id in &mut self.ids {
-			original_id.item = type_store.specialize_with_function_generics(
+			original_id.item = type_store.specialize_type_id_with_generics(
 				messages,
 				function_store,
 				module_path,
 				generic_usages,
-				function_shape_index,
-				function_type_arguments,
+				enclosing_generic_parameters,
 				original_id.item,
+				function_type_arguments,
+				TypeIdSpecializationSituation::Function { function_shape_index },
 			);
 		}
 	}

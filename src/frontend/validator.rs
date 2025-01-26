@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 
 use crate::cli::CliArguments;
 use crate::frontend::error::*;
-use crate::frontend::function_store::FunctionStore;
+use crate::frontend::function_store::{FunctionStore, MethodBaseType};
 use crate::frontend::ir::*;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::root_layers::{RootLayer, RootLayers};
@@ -33,7 +33,7 @@ pub struct Context<'a, 'b, 'c> {
 	pub messages: &'b mut Messages<'a>,
 
 	pub type_shape_indicies: &'b mut Vec<usize>,
-	pub trait_ids: &'b mut Vec<TraitId>,
+	pub trait_shape_indicies: &'b mut Vec<usize>,
 
 	pub type_store: &'b mut TypeStore<'a>,
 	pub function_store: &'b FunctionStore<'a>,
@@ -104,7 +104,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			messages: self.messages,
 
 			type_shape_indicies: self.type_shape_indicies,
-			trait_ids: self.trait_ids,
+			trait_shape_indicies: self.trait_shape_indicies,
 
 			type_store: self.type_store,
 			function_store: self.function_store,
@@ -177,7 +177,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 			messages: self.messages,
 
 			type_shape_indicies: self.type_shape_indicies,
-			trait_ids: self.trait_ids,
+			trait_shape_indicies: self.trait_shape_indicies,
 
 			type_store: self.type_store,
 			function_store: self.function_store,
@@ -335,9 +335,9 @@ pub fn validate<'a>(
 	statics: &RwLock<Statics<'a>>,
 	parsed_files: &'a [tree::File<'a>],
 ) {
-	let mut trait_ids = Vec::with_capacity(parsed_files.len());
+	let mut trait_shape_indicies = Vec::with_capacity(parsed_files.len());
 	for _ in 0..parsed_files.len() {
-		trait_ids.push(RwLock::new(Vec::new()));
+		trait_shape_indicies.push(RwLock::new(Vec::new()));
 	}
 
 	let mut type_shape_indicies = Vec::with_capacity(parsed_files.len());
@@ -376,7 +376,17 @@ pub fn validate<'a>(
 				let herd_member = herd.get();
 				let mut function_generic_usages = Vec::new();
 
-				create_root_traits(when_context, &root_messages, &mut type_store, root_layers, &parsed_files_iter, &trait_ids);
+				create_root_traits(
+					when_context,
+					&root_messages,
+					root_layers,
+					&mut type_store,
+					&function_store,
+					&mut function_generic_usages,
+					&parsed_files_iter,
+					&trait_shape_indicies,
+				);
+				function_generic_usages.clear();
 
 				wait_on_barriers_and_replenish_iter();
 
@@ -394,10 +404,10 @@ pub fn validate<'a>(
 				create_root_types(
 					when_context,
 					&root_messages,
+					root_layers,
 					lang_items,
 					&mut type_store,
 					function_store,
-					root_layers,
 					&parsed_files_iter,
 					&type_shape_indicies,
 				);
@@ -418,12 +428,12 @@ pub fn validate<'a>(
 				fill_root_traits(
 					when_context,
 					&root_messages,
+					root_layers,
 					lang_items,
 					&mut type_store,
 					function_store,
-					root_layers,
 					&parsed_files_iter,
-					&trait_ids,
+					&trait_shape_indicies,
 				);
 
 				wait_on_barriers_and_replenish_iter();
@@ -431,10 +441,10 @@ pub fn validate<'a>(
 				fill_root_types(
 					when_context,
 					&root_messages,
+					root_layers,
 					lang_items,
 					&mut type_store,
 					function_store,
-					root_layers,
 					&parsed_files_iter,
 					&type_shape_indicies,
 				);
@@ -478,7 +488,7 @@ pub fn validate<'a>(
 					parsed_files,
 					&parsed_files_iter,
 					&type_shape_indicies,
-					&trait_ids,
+					&trait_shape_indicies,
 				);
 
 				wait_on_barriers_and_replenish_iter();
@@ -501,7 +511,7 @@ pub fn validate<'a>(
 					parsed_files,
 					&parsed_files_iter,
 					&type_shape_indicies,
-					&trait_ids,
+					&trait_shape_indicies,
 				);
 				assert_eq!(function_generic_usages.len(), 0);
 
@@ -525,7 +535,7 @@ pub fn validate<'a>(
 					parsed_files,
 					&parsed_files_iter,
 					&type_shape_indicies,
-					&trait_ids,
+					&trait_shape_indicies,
 					&local_function_shape_indicies,
 				);
 
@@ -559,7 +569,7 @@ fn deep_pass<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
-	trait_ids: &[RwLock<Vec<TraitId>>],
+	trait_shape_indicies: &[RwLock<Vec<usize>>],
 	local_function_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
@@ -571,7 +581,7 @@ fn deep_pass<'a>(
 
 		let file_index = parsed_file.source_file.index as usize;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
-		let mut trait_ids = trait_ids[file_index].write();
+		let mut trait_shape_indicies = trait_shape_indicies[file_index].write();
 		let mut local_function_shape_indicies = local_function_shape_indicies[file_index].write();
 
 		let module_path = parsed_file.module_path;
@@ -599,7 +609,7 @@ fn deep_pass<'a>(
 			scope_index: 0,
 			messages: &mut messages,
 			type_shape_indicies: &mut type_shape_indicies,
-			trait_ids: &mut trait_ids,
+			trait_shape_indicies: &mut trait_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -643,10 +653,12 @@ fn deep_pass<'a>(
 fn create_root_traits<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
-	type_store: &mut TypeStore<'a>,
 	root_layers: &RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
-	trait_ids: &[RwLock<Vec<TraitId>>],
+	trait_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
 		let mut guard = parsed_files.write();
@@ -656,7 +668,7 @@ fn create_root_traits<'a>(
 		drop(guard);
 
 		let file_index = parsed_file.source_file.index;
-		let mut trait_ids = trait_ids[file_index as usize].write();
+		let mut trait_shape_indicies = trait_shape_indicies[file_index as usize].write();
 		let layer = root_layers.create_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
 
@@ -668,12 +680,17 @@ fn create_root_traits<'a>(
 		create_block_traits(
 			when_context,
 			&mut messages,
+			root_layers,
 			type_store,
+			function_store,
+			&parsed_file.module_path,
+			generic_usages,
 			&mut symbols,
 			0,
+			&GenericParameters::new_from_explicit(Vec::new()),
 			&parsed_file.block,
 			true,
-			&mut trait_ids,
+			&mut trait_shape_indicies,
 		);
 
 		let importable_traits_end = symbols.symbols.len();
@@ -691,10 +708,10 @@ fn create_root_traits<'a>(
 fn create_root_types<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
+	root_layers: &RootLayers<'a>,
 	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	root_layers: &RootLayers<'a>,
 	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
@@ -724,7 +741,9 @@ fn create_root_types<'a>(
 			root_layers,
 			type_store,
 			function_store,
+			parsed_file.module_path,
 			&mut symbols,
+			&mut Vec::new(),
 			0,
 			&blank_generic_parameters,
 			block,
@@ -831,12 +850,12 @@ fn resolve_root_type_imports<'a>(
 fn fill_root_traits<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
+	root_layers: &RootLayers<'a>,
 	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	root_layers: &RootLayers<'a>,
 	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
-	trait_ids: &[RwLock<Vec<TraitId>>],
+	trait_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
 		let mut guard = parsed_files.write();
@@ -850,7 +869,7 @@ fn fill_root_traits<'a>(
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
-		let mut trait_ids = trait_ids[parsed_file.source_file.index as usize].write();
+		let mut trait_shape_indicies = trait_shape_indicies[parsed_file.source_file.index as usize].write();
 
 		// TODO: This is definitely wrong
 		let mut generic_usages = Vec::new();
@@ -870,9 +889,9 @@ fn fill_root_traits<'a>(
 			&GenericParameters::new_from_explicit(Vec::new()),
 			&parsed_file.block,
 			scope_id,
-			&mut trait_ids.iter(),
+			&mut trait_shape_indicies.iter(),
 		);
-		trait_ids.clear();
+		trait_shape_indicies.clear();
 
 		layer.write().symbols = symbols;
 
@@ -885,10 +904,10 @@ fn fill_root_traits<'a>(
 fn fill_root_types<'a>(
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
+	root_layers: &RootLayers<'a>,
 	lang_items: &RwLock<LangItems>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	root_layers: &RootLayers<'a>,
 	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
@@ -1016,7 +1035,7 @@ fn validate_root_consts<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
-	trait_ids: &[RwLock<Vec<TraitId>>],
+	trait_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
 		let mut guard = parsed_files_iter.write();
@@ -1028,7 +1047,7 @@ fn validate_root_consts<'a>(
 		let file_index = parsed_file.source_file.index as usize;
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
-		let mut trait_ids = trait_ids[file_index].write();
+		let mut trait_shape_indicies = trait_shape_indicies[file_index].write();
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
@@ -1055,7 +1074,7 @@ fn validate_root_consts<'a>(
 			scope_index: 0,
 			messages: &mut messages,
 			type_shape_indicies: &mut type_shape_indicies,
-			trait_ids: &mut trait_ids,
+			trait_shape_indicies: &mut trait_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -1123,7 +1142,7 @@ fn validate_root_statics<'a>(
 	parsed_files: &'a [tree::File<'a>],
 	parsed_files_iter: &RwLock<std::slice::Iter<'a, tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
-	trait_ids: &[RwLock<Vec<TraitId>>],
+	trait_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
 		let mut guard = parsed_files_iter.write();
@@ -1135,7 +1154,7 @@ fn validate_root_statics<'a>(
 		let file_index = parsed_file.source_file.index as usize;
 		let module_path = parsed_file.module_path;
 		let mut type_shape_indicies = type_shape_indicies[file_index].write();
-		let mut trait_ids = trait_ids[file_index].write();
+		let mut trait_shape_indicies = trait_shape_indicies[file_index].write();
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
@@ -1162,7 +1181,7 @@ fn validate_root_statics<'a>(
 			scope_index: 0,
 			messages: &mut messages,
 			type_shape_indicies: &mut type_shape_indicies,
-			trait_ids: &mut trait_ids,
+			trait_shape_indicies: &mut trait_shape_indicies,
 			type_store,
 			function_store,
 			function_generic_usages,
@@ -1525,12 +1544,17 @@ fn resolve_import_for_block_non_range<'a>(
 fn create_block_traits<'a>(
 	when_context: &WhenContext,
 	messages: &mut Messages<'a>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
+	generic_usages: &mut Vec<GenericUsage>,
 	symbols: &mut Symbols<'a>,
 	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
 	is_root: bool,
-	trait_ids: &mut Vec<TraitId>,
+	trait_shape_indicies: &mut Vec<usize>,
 ) {
 	for statement in block.statements {
 		if is_root {
@@ -1564,19 +1588,35 @@ fn create_block_traits<'a>(
 		}
 
 		if let tree::Statement::Trait(statement) = statement {
-			let trait_id = create_block_trait(messages, type_store, symbols, function_initial_symbols_length, statement);
-			trait_ids.push(trait_id);
+			let trait_shape_index = create_block_trait(
+				messages,
+				root_layers,
+				type_store,
+				function_store,
+				module_path,
+				generic_usages,
+				symbols,
+				function_initial_symbols_length,
+				enclosing_generic_parameters,
+				statement,
+			);
+			trait_shape_indicies.push(trait_shape_index);
 		} else if let tree::Statement::WhenElseChain(statement) = statement {
 			if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
 				create_block_traits(
 					when_context,
 					messages,
+					root_layers,
 					type_store,
+					function_store,
+					module_path,
+					generic_usages,
 					symbols,
 					function_initial_symbols_length,
+					enclosing_generic_parameters,
 					&body.item,
 					is_root,
-					trait_ids,
+					trait_shape_indicies,
 				);
 			};
 		}
@@ -1590,7 +1630,9 @@ fn create_block_types<'a>(
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
 	symbols: &mut Symbols<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
@@ -1605,7 +1647,9 @@ fn create_block_types<'a>(
 				root_layers,
 				type_store,
 				function_store,
+				module_path,
 				symbols,
+				generic_usages,
 				function_initial_symbols_length,
 				enclosing_generic_parameters,
 				scope_id,
@@ -1619,7 +1663,9 @@ fn create_block_types<'a>(
 				root_layers,
 				type_store,
 				function_store,
+				module_path,
 				symbols,
+				generic_usages,
 				function_initial_symbols_length,
 				enclosing_generic_parameters,
 				scope_id,
@@ -1635,7 +1681,9 @@ fn create_block_types<'a>(
 					root_layers,
 					type_store,
 					function_store,
+					module_path,
 					symbols,
+					generic_usages,
 					function_initial_symbols_length,
 					enclosing_generic_parameters,
 					&body.item,
@@ -1653,7 +1701,9 @@ fn create_block_struct<'a>(
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
 	symbols: &mut Symbols<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
@@ -1673,10 +1723,13 @@ fn create_block_struct<'a>(
 		let constraints = type_store.lookup_constraints(
 			messages,
 			root_layers,
-			type_store,
+			function_store,
+			module_path,
 			symbols,
+			generic_usages,
 			function_initial_symbols_length,
 			generic.constraints,
+			enclosing_generic_parameters,
 		);
 		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index, &constraints);
 		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
@@ -1715,6 +1768,7 @@ fn create_block_struct<'a>(
 				function_store,
 				&[],
 				&mut Vec::new(),
+				&GenericParameters::new_from_explicit(Vec::new()),
 				shape_index,
 				None,
 				Ref::new(TypeArguments::new_from_explicit(Vec::new())),
@@ -1736,7 +1790,9 @@ fn create_block_enum<'a>(
 	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
 	symbols: &mut Symbols<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
 	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	scope_id: ScopeId,
@@ -1753,10 +1809,13 @@ fn create_block_enum<'a>(
 		let constraints = type_store.lookup_constraints(
 			messages,
 			root_layers,
-			type_store,
+			function_store,
+			module_path,
 			symbols,
+			generic_usages,
 			function_initial_symbols_length,
 			generic.constraints,
+			enclosing_generic_parameters,
 		);
 		let generic_type_id = type_store.register_user_type_generic(enum_shape_index, generic_index, &constraints);
 		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
@@ -1866,6 +1925,7 @@ fn create_block_enum<'a>(
 				function_store,
 				&[],
 				&mut Vec::new(),
+				&GenericParameters::new_from_explicit(Vec::new()),
 				shape_index,
 				None,
 				Ref::new(TypeArguments::new_from_explicit(Vec::new())),
@@ -1895,7 +1955,7 @@ fn fill_block_traits<'a>(
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	block: &tree::Block<'a>,
 	scope_id: ScopeId,
-	trait_ids_iter: &mut std::slice::Iter<TraitId>,
+	trait_index_iter: &mut std::slice::Iter<usize>,
 ) {
 	for statement in block.statements {
 		match statement {
@@ -1911,7 +1971,7 @@ fn fill_block_traits<'a>(
 					function_initial_symbols_length,
 					enclosing_generic_parameters,
 					statement,
-					*trait_ids_iter.next().unwrap(),
+					*trait_index_iter.next().unwrap(),
 				);
 			}
 
@@ -1931,7 +1991,7 @@ fn fill_block_traits<'a>(
 						enclosing_generic_parameters,
 						&body.item,
 						scope_id,
-						trait_ids_iter,
+						trait_index_iter,
 					);
 				}
 			}
@@ -1965,6 +2025,7 @@ fn fill_block_types<'a>(
 					type_store,
 					function_store,
 					generic_usages,
+					enclosing_generic_parameters,
 					root_layers,
 					symbols,
 					module_path,
@@ -1980,6 +2041,7 @@ fn fill_block_types<'a>(
 					type_store,
 					function_store,
 					generic_usages,
+					enclosing_generic_parameters,
 					root_layers,
 					symbols,
 					module_path,
@@ -2017,27 +2079,57 @@ fn fill_block_types<'a>(
 
 fn create_block_trait<'a>(
 	messages: &mut Messages<'a>,
+	_root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
+	_function_store: &FunctionStore<'a>,
+	_module_path: &'a [String],
+	_generic_usages: &mut Vec<GenericUsage>,
 	symbols: &mut Symbols<'a>,
 	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	statement: &tree::Trait<'a>,
-) -> TraitId {
-	let trait_id = type_store.register_trait(Trait {
-		filled: false,
-		name: statement.name.item,
-		methods: Vec::new(),
-	});
+) -> usize {
+	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
+	let mut explicit_generics = Vec::with_capacity(capacity);
+
+	let traits = type_store.traits.clone();
+	let mut traits = traits.write(); // This write lock is quite unfortunate
+
+	let shape_index = traits.len();
+	for (generic_index, generic) in statement.generics.iter().enumerate() {
+		if let Some(first) = generic.constraints.first() {
+			let error = error!("TODO: constraints are not allowed on trait body generic");
+			messages.message(error.span(first.span));
+		}
+
+		let constraints = SliceRef::new_empty();
+		let generic_type_id = type_store.register_trait_generic(shape_index, generic_index, &constraints);
+		explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
+	}
+
+	let explicit_generics_len = explicit_generics.len();
+	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
+	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+		let generic_index = explicit_generics_len + index;
+		let constraints = parent_parameter.constraints.clone();
+		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index, &constraints);
+		let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
+		generic_parameters.push_implicit(parameter);
+	}
+
+	let trait_shape = TraitShape::new(statement.name.item, generic_parameters);
+	let trait_shape_index = TypeStore::register_trait_shape(&mut traits, trait_shape);
 
 	let symbol = Symbol {
 		name: statement.name.item,
-		kind: SymbolKind::Trait { trait_id },
+		kind: SymbolKind::Trait { trait_shape_index },
 		span: Some(statement.name.span),
 		used: false,
 		imported: false,
 	};
 	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 
-	trait_id
+	shape_index
 }
 
 fn fill_block_trait<'a>(
@@ -2051,14 +2143,91 @@ fn fill_block_trait<'a>(
 	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
 	statement: &tree::Trait<'a>,
-	trait_id: TraitId,
+	trait_shape_index: usize,
 ) {
+	let mut symbols = symbols.child_scope();
+
+	let lock = type_store.traits.read()[trait_shape_index].clone();
+	let trait_shape = lock.read(); // TODO: We acquire this twice in the same function, yuck
+
+	let trait_shape_generic_parameters = trait_shape.generic_parameters.clone();
+	for (generic_index, generic) in trait_shape_generic_parameters.parameters().iter().enumerate() {
+		let kind = SymbolKind::TraitGeneric { trait_shape_index, generic_index };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+			imported: false,
+		};
+		symbols.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+	}
+
+	let capacity = enclosing_generic_parameters.parameters().len() + trait_shape.generic_parameters.parameters().len();
+	drop(trait_shape);
+
 	let mut methods = Vec::new();
 	for (trait_method_index, method) in statement.methods.iter().enumerate() {
+		let symbols = symbols.child_scope();
 		if let Some(varargs_span) = method.parameters.item.c_varargs {
 			let message = error!("Trait method may not accept C varargs");
 			messages.message(message.span(varargs_span));
 		}
+
+		let mut shapes = function_store.shapes.write();
+		let fake_function_shape_index = shapes.len();
+		shapes.push(None);
+		drop(shapes);
+
+		let explicit_generics_len = 0;
+		let explicit_generics = Vec::with_capacity(capacity);
+		let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
+
+		for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+			let generic_index = explicit_generics_len + index;
+			let constraints = parent_parameter.constraints.clone();
+			let generic_type_id = type_store.register_function_generic(fake_function_shape_index, generic_index, &constraints);
+			let parameter = GenericParameter { name: parent_parameter.name, constraints, generic_type_id };
+			generic_parameters.push_implicit(parameter);
+
+			let symbol = Symbol {
+				name: parent_parameter.name.item,
+				kind: SymbolKind::FunctionGeneric {
+					function_shape_index: fake_function_shape_index,
+					generic_index,
+				},
+				span: Some(parent_parameter.name.span),
+				used: true,
+				imported: false,
+			};
+			symbols.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+		}
+
+		let implicit_generics_len = generic_parameters.implicit_len();
+		for (index, base_type_parameter) in trait_shape_generic_parameters.parameters().iter().enumerate() {
+			let generic_index = explicit_generics_len + implicit_generics_len + index;
+			let constraints = base_type_parameter.constraints.clone();
+			let generic_type_id = type_store.register_function_generic(fake_function_shape_index, generic_index, &constraints);
+			let parameter = GenericParameter { name: base_type_parameter.name, constraints, generic_type_id };
+			generic_parameters.push_method_base(parameter);
+
+			let symbol = Symbol {
+				name: base_type_parameter.name.item,
+				kind: SymbolKind::FunctionGeneric {
+					function_shape_index: fake_function_shape_index,
+					generic_index,
+				},
+				span: Some(base_type_parameter.name.span),
+				used: true,
+				imported: false,
+			};
+			symbols.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+		}
+
+		let mut function_store_generics = function_store.generics.write();
+		assert_eq!(function_store_generics.len(), fake_function_shape_index);
+		function_store_generics.push(generic_parameters.clone());
+		drop(function_store_generics);
 
 		let mut shape_parameters = Vec::new();
 		shape_parameters.push(ParameterShape {
@@ -2077,7 +2246,7 @@ fn fill_block_trait<'a>(
 				module_path,
 				generic_usages,
 				root_layers,
-				symbols,
+				symbols.symbols,
 				function_initial_symbols_length,
 				&enclosing_generic_parameters,
 				&parameter.item.parsed_type,
@@ -2105,7 +2274,7 @@ fn fill_block_trait<'a>(
 				module_path,
 				generic_usages,
 				root_layers,
-				symbols,
+				symbols.symbols,
 				function_initial_symbols_length,
 				enclosing_generic_parameters,
 				parsed_type,
@@ -2130,8 +2299,8 @@ fn fill_block_trait<'a>(
 			name: method.name,
 			module_path,
 			is_main: false,
-			trait_method_marker: Some(TraitMethodMarker { trait_id, trait_method_index }),
-			generic_parameters: GenericParameters::new_from_explicit(Vec::new()),
+			trait_method_marker: Some(TraitMethodMarker { trait_shape_index, trait_method_index }),
+			generic_parameters,
 			extern_attribute: None,
 			export_attribute: None,
 			intrinsic_attribute: None,
@@ -2145,13 +2314,10 @@ fn fill_block_trait<'a>(
 			specializations_by_type_arguments: FxHashMap::default(),
 			specializations: Vec::new(),
 		};
-		let mut shapes = function_store.shapes.write();
-		let fake_function_shape_index = shapes.len();
-		shapes.push(Some(Ref::new(RwLock::new(shape))));
 
-		let mut function_store_generics = function_store.generics.write();
-		assert_eq!(function_store_generics.len(), fake_function_shape_index);
-		function_store_generics.push(GenericParameters::new_from_explicit(Vec::new()));
+		let mut shapes = function_store.shapes.write();
+		shapes[fake_function_shape_index] = Some(Ref::new(RwLock::new(shape)));
+		drop(shapes);
 
 		methods.push(TraitMethod {
 			kind: method.kind,
@@ -2162,14 +2328,74 @@ fn fill_block_trait<'a>(
 		});
 	}
 
-	let mut traits = type_store.traits.write();
-	let trait_instance = &mut traits[trait_id.index()];
+	let mut trait_shape = lock.write();
 
-	assert!(!trait_instance.filled);
-	assert!(trait_instance.methods.is_empty());
+	let filling_lock = trait_shape.filling_lock.clone();
+	let _filling_guard = filling_lock.lock();
 
-	trait_instance.methods = methods;
-	trait_instance.filled = true;
+	assert!(!trait_shape.been_filled);
+	assert!(trait_shape.methods.is_empty());
+
+	trait_shape.methods = methods;
+	trait_shape.been_filled = true;
+
+	let has_specialization = !trait_shape.specializations.is_empty();
+	drop(trait_shape);
+
+	if has_specialization {
+		fill_pre_existing_trait_specializations(
+			messages,
+			type_store,
+			function_store,
+			generic_usages,
+			enclosing_generic_parameters,
+			module_path,
+			trait_shape_index,
+		);
+	}
+}
+
+fn fill_pre_existing_trait_specializations<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	module_path: &'a [String],
+	trait_shape_index: usize,
+) {
+	// TODO: This is dumb, in order to pass in the type store the caller must close their locks on this state
+	// just for us to lock them again. This is needlessly complex and expensive, fix it
+	let lock = type_store.traits.read()[trait_shape_index].clone();
+	let trait_shape = lock.read();
+
+	let mut specializations = trait_shape.specializations.clone(); // Belch
+	let methods = trait_shape.methods.clone();
+	drop(trait_shape);
+
+	for specialization in &mut specializations {
+		let mut methods = methods.clone();
+		for method in &mut methods {
+			method.specialize_with_trait_generics(
+				messages,
+				type_store,
+				function_store,
+				module_path,
+				generic_usages,
+				enclosing_generic_parameters,
+				trait_shape_index,
+				&specialization.type_arguments,
+			);
+		}
+
+		assert!(specialization.methods.is_empty());
+		specialization.methods = SliceRef::from(methods);
+		assert!(!specialization.been_filled);
+		specialization.been_filled = true;
+	}
+
+	let mut trait_shape = lock.write();
+	trait_shape.specializations = specializations;
 }
 
 fn fill_block_struct<'a>(
@@ -2177,6 +2403,7 @@ fn fill_block_struct<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -2261,6 +2488,7 @@ fn fill_block_struct<'a>(
 					type_store,
 					function_store,
 					generic_usages,
+					enclosing_generic_parameters,
 					module_path,
 					shape_index,
 				);
@@ -2276,6 +2504,7 @@ fn fill_block_enum<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -2361,6 +2590,7 @@ fn fill_block_enum<'a>(
 			type_store,
 			function_store,
 			generic_usages,
+			enclosing_generic_parameters,
 			root_layers,
 			scope.symbols,
 			module_path,
@@ -2390,6 +2620,7 @@ fn fill_block_enum<'a>(
 					type_store,
 					function_store,
 					generic_usages,
+					enclosing_generic_parameters,
 					module_path,
 					enum_shape_index,
 				);
@@ -2403,6 +2634,7 @@ fn fill_struct_like_enum_variant<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
 	module_path: &'a [String],
@@ -2541,6 +2773,7 @@ fn fill_struct_like_enum_variant<'a>(
 					type_store,
 					function_store,
 					generic_usages,
+					enclosing_generic_parameters,
 					module_path,
 					variant_shape.struct_shape_index,
 				);
@@ -2556,6 +2789,7 @@ fn fill_pre_existing_struct_specializations<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	module_path: &'a [String],
 	shape_index: usize,
 ) {
@@ -2584,14 +2818,15 @@ fn fill_pre_existing_struct_specializations<'a>(
 	for specialization in &mut specializations {
 		let mut fields = fields.clone();
 		for field in &mut fields {
-			field.type_id = type_store.specialize_with_user_type_generics(
+			field.type_id = type_store.specialize_type_id_with_generics(
 				messages,
 				function_store,
 				module_path,
 				generic_usages,
-				shape_index,
-				specialization.type_arguments.clone(),
+				enclosing_generic_parameters,
 				field.type_id,
+				&specialization.type_arguments,
+				TypeIdSpecializationSituation::UserType { user_type_shape_index: shape_index },
 			);
 		}
 
@@ -2644,6 +2879,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
 	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
 	module_path: &'a [String],
 	shape_index: usize,
 ) {
@@ -2669,14 +2905,15 @@ fn fill_pre_existing_enum_specializations<'a>(
 		for field_shape_node in &mut shared_fields_shapes.iter() {
 			let field_shape = &field_shape_node.item;
 
-			let type_id = type_store.specialize_with_user_type_generics(
+			let type_id = type_store.specialize_type_id_with_generics(
 				messages,
 				function_store,
 				module_path,
 				generic_usages,
-				shape_index,
-				specialization.type_arguments.clone(),
+				enclosing_generic_parameters,
 				field_shape.field_type,
+				&specialization.type_arguments,
+				TypeIdSpecializationSituation::UserType { user_type_shape_index: shape_index },
 			);
 
 			let field = Field {
@@ -2806,7 +3043,6 @@ fn create_block_functions<'a>(
 			let scope = symbols.child_scope();
 
 			let mut function_store_shapes = function_store.shapes.write();
-			let mut function_store_generics = function_store.generics.write();
 			let function_shape_index = function_store_shapes.len();
 			function_store_shapes.push(None);
 			drop(function_store_shapes);
@@ -2820,10 +3056,13 @@ fn create_block_functions<'a>(
 				let constraints = type_store.lookup_constraints(
 					messages,
 					root_layers,
-					type_store,
+					function_store,
+					module_path,
 					scope.symbols,
+					generic_usages,
 					function_initial_symbols_length,
 					generic.constraints,
+					enclosing_generic_parameters,
 				);
 				let generic_type_id = type_store.register_function_generic(function_shape_index, generic_index, &constraints);
 				explicit_generics.push(GenericParameter { name: generic.name, constraints, generic_type_id });
@@ -2896,6 +3135,8 @@ fn create_block_functions<'a>(
 				base_type_arguments = TypeArguments::new_from_explicit(Vec::new());
 			}
 
+			let mut function_store_generics = function_store.generics.write();
+			assert_eq!(function_store_generics.len(), function_shape_index);
 			function_store_generics.push(generic_parameters.clone());
 			drop(function_store_generics);
 
@@ -2945,6 +3186,7 @@ fn create_block_functions<'a>(
 							&function_store,
 							module_path,
 							generic_usages,
+							enclosing_generic_parameters,
 							method_base_shape_index,
 							Some(method_attribute.span),
 							Ref::new(base_type_arguments),
@@ -3257,12 +3499,17 @@ fn validate_block_in_context<'a>(
 		create_block_traits(
 			context.when_context,
 			context.messages,
+			context.root_layers,
 			context.type_store,
+			context.function_store,
+			context.module_path,
+			context.function_generic_usages,
 			context.symbols_scope.symbols,
 			context.function_initial_symbols_length,
+			context.generic_parameters,
 			block,
 			is_root,
-			context.trait_ids,
+			context.trait_shape_indicies,
 		);
 
 		resolve_block_trait_imports(
@@ -3284,7 +3531,9 @@ fn validate_block_in_context<'a>(
 			context.root_layers,
 			context.type_store,
 			context.function_store,
+			context.module_path,
 			context.symbols_scope.symbols,
+			context.function_generic_usages,
 			context.function_initial_symbols_length,
 			context.generic_parameters,
 			block,
@@ -3318,7 +3567,7 @@ fn validate_block_in_context<'a>(
 			context.generic_parameters,
 			block,
 			scope_id,
-			&mut context.trait_ids.iter(),
+			&mut context.trait_shape_indicies.iter(),
 		);
 
 		fill_block_types(
@@ -3701,6 +3950,8 @@ fn validate_function<'a>(
 		return;
 	}
 
+	let enclosing_generic_parameters = context.generic_parameters;
+
 	let function_shape_index = context.local_function_shape_index(index_in_block);
 	let lock = context.function_store.shapes.read()[function_shape_index]
 		.as_ref()
@@ -3817,6 +4068,7 @@ fn validate_function<'a>(
 					context.function_store,
 					context.module_path,
 					&mut generic_usages,
+					enclosing_generic_parameters,
 					function_shape_index,
 					&specialization.type_arguments,
 					None,
@@ -3882,9 +4134,10 @@ fn validate_function<'a>(
 			context.type_store,
 			context.module_path,
 			context.function_generic_usages,
+			enclosing_generic_parameters,
 			function_shape_index,
-			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
+			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 		);
 
 		if let Some(result) = result {
@@ -3927,9 +4180,10 @@ fn validate_function<'a>(
 			context.type_store,
 			context.module_path,
 			context.function_generic_usages,
+			enclosing_generic_parameters,
 			function_shape_index,
-			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
+			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 		);
 	} else if shape.lang_attribute.is_some() {
 		drop(shape);
@@ -3943,9 +4197,10 @@ fn validate_function<'a>(
 			context.type_store,
 			context.module_path,
 			context.function_generic_usages,
+			enclosing_generic_parameters,
 			function_shape_index,
-			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 			None,
+			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 		);
 	}
 }
@@ -4040,12 +4295,12 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 			if !context.collapse_to(explicit_type, &mut expression).ok()? {
 				let expected = context.type_name(explicit_type);
 				let got = context.type_name(expression.type_id);
-				let err = error!("Expected {expected} but got expression with type {got}");
-				context.message(err.span(statement.item.expression.span));
-				return None;
+				let error = error!("Expected {expected} but got expression with type {got}");
+				context.message(error.span(statement.item.expression.span));
+				context.type_store.any_collapse_type_id()
+			} else {
+				explicit_type
 			}
-
-			explicit_type
 		}
 
 		_ => expression.type_id,
@@ -5361,9 +5616,10 @@ fn validate_symbol_call<'a>(
 		context.type_store,
 		context.module_path,
 		context.function_generic_usages,
+		context.generic_parameters,
 		function_shape_index,
-		Ref::new(type_arguments),
 		Some(span),
+		Ref::new(type_arguments),
 	);
 
 	let specialization_index = result.as_ref().map(|result| result.specialization_index);
@@ -5394,17 +5650,11 @@ fn validate_symbol_call<'a>(
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct MethodBaseUserType {
-	pub shape_index: usize,
-	pub specialization_index: usize,
-}
-
 fn get_method_function_specialization<'a>(
 	context: &mut Context<'a, '_, '_>,
 	call_type_arguments: &[Node<tree::Type<'a>>],
 	function_shape_index: usize,
-	base_user_type: Option<MethodBaseUserType>,
+	method_base_type: MethodBaseType,
 	span: Span,
 ) -> Option<FunctionSpecializationResult> {
 	let mut type_argument_lookup_errored = false;
@@ -5421,42 +5671,15 @@ fn get_method_function_specialization<'a>(
 		return None;
 	}
 
-	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
-	let lock = context.function_store.shapes.read()[function_shape_index]
-		.as_ref()
-		.unwrap()
-		.clone();
-	let shape = lock.read();
-	if shape.generic_parameters.implicit_len() != 0 {
-		// The only functions with implicit generic parameters are inner functions, and if we have it
-		// in scope then that means it must be somewhere within ourselves or our function parent chain
-		let count = shape.generic_parameters.implicit_len();
-		for parameter in &context.generic_parameters.parameters()[0..count] {
-			type_arguments.push_implicit(Node::new(parameter.generic_type_id, parameter.name.span));
-		}
-	}
-	drop(shape);
-
-	if let Some(MethodBaseUserType { shape_index, specialization_index }) = base_user_type {
-		let user_type = context.type_store.user_types.read()[shape_index].clone();
-		let user_type = user_type.read();
-		let method_base_arguments = match &user_type.kind {
-			UserTypeKind::Struct { shape } => shape.specializations[specialization_index].type_arguments.ids.as_slice(),
-			UserTypeKind::Enum { shape } => shape.specializations[specialization_index].type_arguments.ids.as_slice(),
-		};
-
-		for &base_argument in method_base_arguments {
-			type_arguments.push_method_base(base_argument);
-		}
-	}
-
-	context.function_store.get_or_add_specialization(
+	context.function_store.get_method_function_specialization(
 		context.messages,
 		context.type_store,
 		context.module_path,
 		context.function_generic_usages,
+		context.generic_parameters,
+		explicit_arguments,
 		function_shape_index,
-		Ref::new(type_arguments),
+		method_base_type,
 		Some(span),
 	)
 }
@@ -5579,6 +5802,38 @@ fn validate_function_arguments<'a>(
 	MethodArgumentsResult { yields, returns, arguments }
 }
 
+pub fn get_method_base_type_for_generic<'a>(
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	kind: &TypeEntryKind,
+) -> MethodBaseType {
+	let trait_ids = match kind {
+		TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
+			let user_types = type_store.user_types.read();
+			let user_type = user_types[*shape_index].read();
+			let parameter = &user_type.generic_parameters.parameters()[*generic_index];
+			parameter.constraints.clone()
+		}
+
+		TypeEntryKind::FunctionGeneric { function_shape_index, generic_index, .. } => {
+			let generics = function_store.generics.read();
+			let parameters = generics[*function_shape_index].parameters();
+			parameters[*generic_index].constraints.clone()
+		}
+
+		TypeEntryKind::TraitGeneric { trait_shape_index, generic_index, .. } => {
+			let traits = type_store.traits.read();
+			let trait_shape = traits[*trait_shape_index].read();
+			let parameter = &trait_shape.generic_parameters.parameters()[*generic_index];
+			parameter.constraints.clone()
+		}
+
+		_ => unreachable!("{kind:?}"),
+	};
+
+	MethodBaseType::Trait { trait_ids }
+}
+
 fn validate_method_call<'a>(
 	context: &mut Context<'a, '_, '_>,
 	method_info: MethodInfo,
@@ -5588,29 +5843,40 @@ fn validate_method_call<'a>(
 ) -> Expression<'a> {
 	context.expected_type = None;
 	let entry = context.type_store.type_entries.get(base.type_id);
-	let (method_base_user_type, base_mutable) = match entry.kind {
+	let (method_base_type, base_mutable) = match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
 		}
 
-		TypeEntryKind::BuiltinType { .. } | TypeEntryKind::FunctionGeneric { .. } | TypeEntryKind::UserTypeGeneric { .. } => {
-			(None, base.is_itself_mutable)
+		TypeEntryKind::BuiltinType { .. } => (MethodBaseType::Other, base.is_itself_mutable),
+
+		TypeEntryKind::FunctionGeneric { .. } | TypeEntryKind::UserTypeGeneric { .. } | TypeEntryKind::TraitGeneric { .. } => {
+			let method_base_type = get_method_base_type_for_generic(context.type_store, context.function_store, &entry.kind);
+			(method_base_type, base.is_itself_mutable)
 		}
 
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
-			let method_base_user_type = MethodBaseUserType { shape_index, specialization_index };
-			(Some(method_base_user_type), base.is_itself_mutable)
+			let method_base_type = MethodBaseType::UserType { shape_index, specialization_index };
+			(method_base_type, base.is_itself_mutable)
 		}
 
 		TypeEntryKind::Pointer { type_id, mutable } => {
 			let entry = context.type_store.type_entries.get(type_id);
-			let method_base_user_type = if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
-				Some(MethodBaseUserType { shape_index, specialization_index })
-			} else {
-				None
+			let method_base_type = match entry.kind {
+				TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
+					MethodBaseType::UserType { shape_index, specialization_index }
+				}
+
+				TypeEntryKind::FunctionGeneric { .. }
+				| TypeEntryKind::UserTypeGeneric { .. }
+				| TypeEntryKind::TraitGeneric { .. } => {
+					get_method_base_type_for_generic(context.type_store, context.function_store, &entry.kind)
+				}
+
+				_ => MethodBaseType::Other,
 			};
 
-			(method_base_user_type, mutable && base.is_pointer_access_mutable)
+			(method_base_type, mutable && base.is_pointer_access_mutable)
 		}
 
 		TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::Slice(_) => {
@@ -5639,8 +5905,7 @@ fn validate_method_call<'a>(
 		context.message(error.span(span));
 	}
 
-	let result =
-		get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_user_type, span);
+	let result = get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_type, span);
 
 	let specialization_index = result.as_ref().map(|result| result.specialization_index);
 	let MethodArgumentsResult { mut yields, mut returns, arguments } =
@@ -5682,17 +5947,18 @@ fn validate_static_method_call<'a>(
 ) -> Expression<'a> {
 	context.expected_type = None;
 	let entry = context.type_store.type_entries.get(base_type_id);
-	let method_base_user_type = match entry.kind {
+	let method_base_type = match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
 		}
 
-		TypeEntryKind::BuiltinType { .. } => None,
+		TypeEntryKind::BuiltinType { .. } => MethodBaseType::Other,
 
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
-			Some(MethodBaseUserType { shape_index, specialization_index })
+			MethodBaseType::UserType { shape_index, specialization_index }
 		}
 
+		// TODO: Allow static methods on traits
 		_ => {
 			let found = context.type_name(base_type_id);
 			let error = error!("Cannot call static method on type {found}");
@@ -5717,8 +5983,7 @@ fn validate_static_method_call<'a>(
 	};
 	let function_shape_index = method_info.function_shape_index;
 
-	let result =
-		get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_user_type, span);
+	let result = get_method_function_specialization(context, &call.type_arguments, function_shape_index, method_base_type, span);
 
 	let specialization_index = result.as_ref().map(|result| result.specialization_index);
 	let MethodArgumentsResult { mut yields, mut returns, arguments } =

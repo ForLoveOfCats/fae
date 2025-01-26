@@ -270,6 +270,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 		TypeEntryKind::Module
 		| TypeEntryKind::Type
 		| TypeEntryKind::UserTypeGeneric { .. }
-		| TypeEntryKind::FunctionGeneric { .. } => unreachable!(),
+		| TypeEntryKind::FunctionGeneric { .. }
+		| TypeEntryKind::TraitGeneric { .. } => unreachable!(),
 	}
 }

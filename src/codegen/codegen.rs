@@ -6,15 +6,15 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
 	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, Function,
-	FunctionId, FunctionShape, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable, Statement,
-	StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation, UnaryOperator,
-	While,
+	FunctionId, FunctionShape, GenericParameters, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable,
+	Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation,
+	UnaryOperator, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::{self, BinaryOperator};
-use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeIdSpecializationSituation, TypeStore, UserTypeKind};
 use crate::lock::ReadGuard;
 
 pub fn generate<'a, G: Generator>(
@@ -93,14 +93,15 @@ pub struct Context<'a, 'b> {
 impl<'a, 'b> Context<'a, 'b> {
 	pub fn specialize_type_id(&mut self, type_id: TypeId) -> TypeId {
 		let mut generic_usages = Vec::new();
-		let type_id = self.type_store.specialize_with_function_generics(
+		let type_id = self.type_store.specialize_type_id_with_generics(
 			self.messages,
 			self.function_store,
 			self.module_path,
 			&mut generic_usages,
-			self.function_id.function_shape_index,
-			self.function_type_arguments,
+			&GenericParameters::new_from_explicit(Vec::new()),
 			type_id,
+			self.function_type_arguments,
+			TypeIdSpecializationSituation::Function { function_shape_index: self.function_id.function_shape_index },
 		);
 		assert_eq!(generic_usages.len(), 0);
 		type_id

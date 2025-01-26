@@ -1,0 +1,26 @@
+generic T
+trait Trait {
+	method
+	fn get_value(): T
+}
+
+generic B
+struct Struct {
+	field: B
+}
+
+method Struct
+fn get_value(): B {
+	return self.field
+}
+
+generic T: Trait<f32>
+fn function(value=: T) {
+	let value: f32 = value.get_value()
+	println(f"value: {value}")
+}
+
+fn main() {
+	let instance = Struct<f32> { field: 42 }
+	function<Struct<f32>>(instance)
+}

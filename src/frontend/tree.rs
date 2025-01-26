@@ -34,7 +34,13 @@ pub struct GenericAttribute<'a> {
 #[derive(Debug)]
 pub struct GenericName<'a> {
 	pub name: Node<&'a str>,
-	pub constraints: &'a [Node<PathSegments<'a>>],
+	pub constraints: &'a [Node<GenericConstraint<'a>>],
+}
+
+#[derive(Debug)]
+pub struct GenericConstraint<'a> {
+	pub path: PathSegments<'a>,
+	pub type_arguments: &'a [Node<Type<'a>>],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -203,6 +209,7 @@ pub struct Field<'a> {
 
 #[derive(Debug)]
 pub struct Trait<'a> {
+	pub generics: &'a [GenericName<'a>],
 	pub name: Node<&'a str>,
 	pub methods: &'a [TraitMethod<'a>],
 }

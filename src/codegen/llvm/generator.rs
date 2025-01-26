@@ -190,7 +190,8 @@ impl LLVMTypes {
 			TypeEntryKind::Module
 			| TypeEntryKind::Type
 			| TypeEntryKind::UserTypeGeneric { .. }
-			| TypeEntryKind::FunctionGeneric { .. } => unreachable!("{:?}", entry.kind),
+			| TypeEntryKind::FunctionGeneric { .. }
+			| TypeEntryKind::TraitGeneric { .. } => unreachable!("{:?}", entry.kind),
 		}
 	}
 }

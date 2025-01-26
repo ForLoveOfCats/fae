@@ -215,7 +215,7 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::Word, text: "trait", .. } => {
 			const ALLOWED: AllowedAttributes = AllowedAttributes {
-				generic_attribute: false,
+				generic_attribute: true,
 				extern_attribute: false,
 				export_attribute: false,
 				method_attribute: false,
@@ -224,7 +224,7 @@ fn parse_statement<'a>(
 			};
 			disallow_attributes(messages, &attributes, ALLOWED, "A trait definition");
 
-			if let Ok(statement) = parse_trait_declaration(bump, messages, tokens) {
+			if let Ok(statement) = parse_trait_declaration(bump, messages, tokens, attributes) {
 				return Some(Statement::Trait(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -1357,9 +1357,20 @@ fn parse_generic_attribute<'a>(
 			span += tokens.next(messages)?.span;
 
 			loop {
-				let constraint = parse_path_segments(bump, messages, tokens)?;
-				span += constraint.span;
-				constraints.push(constraint);
+				let path = parse_path_segments(bump, messages, tokens)?;
+				span += path.span;
+				let mut constraint_span = path.span;
+
+				let type_arguments = if let Some(args) = parse_type_arguments(bump, messages, tokens)? {
+					span += args.span;
+					constraint_span += args.span;
+					args.item
+				} else {
+					&[]
+				};
+
+				let constraint = GenericConstraint { path: path.item, type_arguments };
+				constraints.push(Node::new(constraint, constraint_span));
 
 				if tokens.peek_kind() != Ok(TokenKind::Add) {
 					break;
@@ -2033,7 +2044,17 @@ fn parse_field<'a>(
 	Ok(Field { name, parsed_type, attribute, read_only })
 }
 
-fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Trait<'a>> {
+fn parse_trait_declaration<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	attributes: Attributes<'a>,
+) -> ParseResult<Trait<'a>> {
+	let generics = match attributes.generic_attribute {
+		Some(attribute) => attribute.item.names,
+		None => &[],
+	};
+
 	tokens.expect_word(messages, "trait")?;
 
 	let trait_name_token = tokens.expect(messages, TokenKind::Word)?;
@@ -2094,7 +2115,7 @@ fn parse_trait_declaration<'a>(bump: &'a Bump, messages: &mut Messages, tokens: 
 	tokens.expect(messages, TokenKind::CloseBrace)?;
 	tokens.expect(messages, TokenKind::Newline)?;
 
-	Ok(Trait { name, methods: methods.into_bump_slice() })
+	Ok(Trait { generics, name, methods: methods.into_bump_slice() })
 }
 
 fn parse_const_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Const<'a>>> {

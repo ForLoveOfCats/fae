@@ -6,7 +6,7 @@ use crate::frontend::error::Messages;
 use crate::frontend::root_layers::{layer_for_module_path_under_root, RootLayer, RootLayers};
 use crate::frontend::span::Span;
 use crate::frontend::tree::{ExternAttribute, Node, PathSegments};
-use crate::frontend::type_store::{TraitId, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{TypeId, TypeStore, UserTypeKind};
 use crate::lock::RwLock;
 use crate::reference::Ref;
 
@@ -25,8 +25,9 @@ pub enum SymbolKind<'a> {
 	Type { shape_index: usize, methods_index: usize },
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
+	TraitGeneric { trait_shape_index: usize, generic_index: usize },
 	Function { function_shape_index: usize },
-	Trait { trait_id: TraitId },
+	Trait { trait_shape_index: usize },
 	Const { constant_index: usize },
 	Static { static_index: usize },
 	Let { readable_index: usize },
@@ -41,6 +42,7 @@ impl<'a> std::fmt::Display for SymbolKind<'a> {
 			SymbolKind::Type { .. } => "a type",
 			SymbolKind::UserTypeGeneric { .. } => "a type generic parameter",
 			SymbolKind::FunctionGeneric { .. } => "a function generic parameter",
+			SymbolKind::TraitGeneric { .. } => "a trait body generic parameter",
 			SymbolKind::Trait { .. } => "a trait",
 			SymbolKind::Function { .. } => "a function",
 			SymbolKind::Const { .. } => "a constant",
@@ -151,6 +153,7 @@ impl<'a> Symbols<'a> {
 
 					SymbolKind::UserTypeGeneric { .. }
 					| SymbolKind::FunctionGeneric { .. }
+					| SymbolKind::TraitGeneric { .. }
 					| SymbolKind::Let { .. }
 					| SymbolKind::Mut { .. } => break,
 				}
