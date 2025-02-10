@@ -49,7 +49,7 @@ impl<'a> FunctionStore<'a> {
 		let _zone = zone!("function specialization");
 
 		let lock = self.shapes.read()[function_shape_index].as_ref().unwrap().clone();
-		let mut shape = lock.write();
+		let shape = lock.read();
 
 		if shape.generic_parameters.explicit_len() != type_arguments.explicit_len {
 			let expected = shape.generic_parameters.explicit_len();
@@ -68,10 +68,24 @@ impl<'a> FunctionStore<'a> {
 		}
 
 		let mut constraint_failure = false;
-		let generic_parameters_iter = shape.generic_parameters.explicit_parameters().iter();
+		let generic_parameters = shape.generic_parameters.clone();
+		let generic_parameters_iter = generic_parameters.explicit_parameters().iter();
+		drop(shape);
 		let generic_arguments_iter = type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
-			for &contraint in type_parameter.constraints.iter() {
+			for contraint in type_parameter.generic_constraints.iter() {
+				let mut trait_type_arguments = TypeArguments::clone(&contraint.type_arguments);
+				trait_type_arguments.specialize_with_generics(
+					messages,
+					type_store,
+					self,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					TypeIdSpecializationSituation::Function { function_shape_index },
+					&type_arguments,
+				);
+
 				if !type_store.check_type_implements_trait(
 					messages,
 					self,
@@ -80,6 +94,8 @@ impl<'a> FunctionStore<'a> {
 					enclosing_generic_parameters,
 					type_argument,
 					contraint,
+					Ref::new(trait_type_arguments),
+					invoke_span,
 				) {
 					constraint_failure = true;
 				}
@@ -95,6 +111,7 @@ impl<'a> FunctionStore<'a> {
 			.iter()
 			.any(|id| type_store.type_entries.get(id.item).generic_poisoned);
 
+		let mut shape = lock.write();
 		let unspecialized_return_type = shape.return_type;
 		let parameters = shape.parameters.clone();
 
@@ -312,14 +329,14 @@ impl<'a> FunctionStore<'a> {
 				// TODO: Something is wrong here ⬇️
 				let mut generic_usages = Vec::new();
 				let mut type_arguments = TypeArguments::clone(&specialization.type_arguments);
-				type_arguments.specialize_with_function_generics(
+				type_arguments.specialize_with_generics(
 					messages,
 					type_store,
 					self,
 					shape.module_path,
 					&mut generic_usages,
 					&GenericParameters::new_from_explicit(Vec::new()),
-					caller_shape_index,
+					TypeIdSpecializationSituation::Function { function_shape_index: caller_shape_index },
 					caller_type_arguments,
 				);
 				assert!(generic_usages.is_empty());
@@ -347,14 +364,14 @@ impl<'a> FunctionStore<'a> {
 		// TODO: Something is wrong here ⬇️
 		let mut generic_usages = Vec::new();
 		let mut type_arguments = TypeArguments::clone(&specialization.type_arguments);
-		type_arguments.specialize_with_function_generics(
+		type_arguments.specialize_with_generics(
 			messages,
 			type_store,
 			self,
 			shape.module_path,
 			&mut generic_usages,
 			&GenericParameters::new_from_explicit(Vec::new()),
-			caller_shape_index,
+			TypeIdSpecializationSituation::Function { function_shape_index: caller_shape_index },
 			caller_type_arguments,
 		);
 		assert!(generic_usages.is_empty());

@@ -7,13 +7,13 @@ use rustc_hash::FxHashMap;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::{FunctionStore, MethodBaseType};
 use crate::frontend::ir::{
-	EnumVariantToEnum, Expression, ExpressionKind, GenericParameters, GenericUsage, ScopeId, SliceMutableToImmutable,
-	StringToFormatString, TypeArguments,
+	EnumVariantToEnum, Expression, ExpressionKind, GenericConstraint, GenericParameters, GenericUsage, ScopeId,
+	SliceMutableToImmutable, StringToFormatString, TypeArguments,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::{Symbol, SymbolKind, Symbols};
-use crate::frontend::tree::{self, FieldAttribute, GenericConstraint, MethodKind, Node};
+use crate::frontend::tree::{self, FieldAttribute, MethodKind, Node};
 use crate::frontend::validator;
 use crate::lock::{ReentrantMutex, RwLock};
 use crate::reference::{Ref, SliceRef};
@@ -1652,10 +1652,12 @@ impl<'a> TypeStore<'a> {
 		symbols: &mut Symbols<'a>,
 		generic_usages: &mut Vec<GenericUsage>,
 		function_initial_symbols_length: usize,
-		constraints: &[Node<GenericConstraint<'a>>],
+		constraints: &[Node<tree::GenericConstraint<'a>>],
 		enclosing_generic_parameters: &GenericParameters<'a>,
-	) -> SliceRef<TraitId> {
-		let mut trait_ids = Vec::new();
+	) -> (SliceRef<TraitId>, SliceRef<GenericConstraint>) {
+		let mut trait_ids = Vec::with_capacity(constraints.len());
+		let mut generic_constraints = Vec::with_capacity(constraints.len());
+
 		for constraint in constraints {
 			let Some(symbol) =
 				symbols.lookup_path_symbol(messages, root_layers, self, function_initial_symbols_length, &constraint.item.path)
@@ -1712,6 +1714,7 @@ impl<'a> TypeStore<'a> {
 			drop(trait_shape);
 			drop(traits);
 
+			let type_arguments = Ref::new(type_arguments);
 			let Some(trait_id) = self.get_or_add_trait_shape_specialization(
 				messages,
 				function_store,
@@ -1720,15 +1723,16 @@ impl<'a> TypeStore<'a> {
 				enclosing_generic_parameters,
 				trait_shape_index,
 				Some(constraint.span),
-				Ref::new(type_arguments),
+				type_arguments.clone(),
 			) else {
 				continue;
 			};
 
 			trait_ids.push(trait_id);
+			generic_constraints.push(GenericConstraint { trait_shape_index, type_arguments })
 		}
 
-		SliceRef::from(trait_ids)
+		(SliceRef::from(trait_ids), SliceRef::from(generic_constraints))
 	}
 
 	fn set_up_generic_method_collection(&mut self, constraints: &[TraitId]) -> usize {
@@ -1896,8 +1900,23 @@ impl<'a> TypeStore<'a> {
 		generic_usages: &mut Vec<GenericUsage>,
 		enclosing_generic_parameters: &GenericParameters<'a>,
 		type_id: Node<TypeId>,
-		trait_id: TraitId,
+		generic_constraint: &GenericConstraint,
+		trait_type_arguments: Ref<TypeArguments>,
+		invoke_span: Option<Span>,
 	) -> bool {
+		let Some(trait_id) = self.get_or_add_trait_shape_specialization(
+			messages,
+			function_store,
+			module_path,
+			generic_usages, // TODO: Is this a bug waiting to happen?
+			enclosing_generic_parameters,
+			generic_constraint.trait_shape_index,
+			invoke_span,
+			trait_type_arguments,
+		) else {
+			return false;
+		};
+
 		let entry = self.type_entries.get(type_id.item);
 		let (methods_index, method_base_type) = match entry.kind {
 			TypeEntryKind::BuiltinType { methods_index, .. } => (methods_index, MethodBaseType::Other),
@@ -1905,7 +1924,15 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::UserTypeGeneric { methods_index, .. }
 			| TypeEntryKind::FunctionGeneric { methods_index, .. }
 			| TypeEntryKind::TraitGeneric { methods_index, .. } => {
-				let method_base_type = validator::get_method_base_type_for_generic(self, function_store, &entry.kind);
+				let method_base_type = validator::get_method_base_type_for_generic(
+					messages,
+					self,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					&entry.kind,
+				);
 				(methods_index, method_base_type)
 			}
 
@@ -2010,11 +2037,13 @@ impl<'a> TypeStore<'a> {
 				break;
 			}
 
+			// TODO: This may be obscuring a bug
+			let mut generic_usages = Vec::new();
 			let Some(actual_specialization_result) = function_store.get_method_function_specialization(
 				messages,
 				self,
 				module_path,
-				generic_usages,
+				&mut generic_usages,
 				enclosing_generic_parameters,
 				Vec::new(), // TODO: This will not work once trait methods can be generic
 				actual_method_info.function_shape_index,
@@ -2028,12 +2057,13 @@ impl<'a> TypeStore<'a> {
 				implemented = false;
 				break;
 			};
+			generic_usages.clear();
 
 			let Some(expected_specialization_result) = function_store.get_method_function_specialization(
 				messages,
 				self,
 				module_path,
-				generic_usages,
+				&mut generic_usages,
 				enclosing_generic_parameters,
 				Vec::new(), // TODO: This will not work once trait methods can be generic
 				trait_method.fake_function_shape_index,
@@ -2057,17 +2087,6 @@ impl<'a> TypeStore<'a> {
 			let actual_specialization = &actual_shape.specializations[actual_specialization_result.specialization_index];
 			let mut expected_shape = expected_shape_lock.read();
 			let expected_specialization = &expected_shape.specializations[expected_specialization_result.specialization_index];
-
-			// let expected_return_type = self.specialize_type_id_with_generics(
-			// 	messages,
-			// 	function_store,
-			// 	module_path,
-			// 	generic_usages,
-			// 	enclosing_generic_parameters,
-			// 	trait_method.return_type,
-			// 	&TypeArguments::new_from_explicit(Vec::new()),
-			// 	TypeIdSpecializationSituation::Trait { trait_shape_index: trait_id.shape_index as usize },
-			// );
 
 			if !self.direct_match(actual_specialization.return_type, expected_specialization.return_type) {
 				let span = actual_shape.return_type.span;
@@ -2094,7 +2113,7 @@ impl<'a> TypeStore<'a> {
 				.iter()
 				.enumerate()
 				.skip(1)
-				.zip(expected_specialization.parameters.iter())
+				.zip(expected_specialization.parameters.iter().skip(1))
 			{
 				// TODO: Release function store locks when calling `type_name`
 				if !self.direct_match(actual.type_id, expected.type_id) {
@@ -2544,7 +2563,19 @@ impl<'a> TypeStore<'a> {
 		let generic_parameters_iter = user_type.generic_parameters.explicit_parameters().iter();
 		let generic_arguments_iter = type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
-			for &contraint in type_parameter.constraints.iter() {
+			for constraint in type_parameter.generic_constraints.iter() {
+				let mut trait_type_arguments = TypeArguments::clone(&constraint.type_arguments);
+				trait_type_arguments.specialize_with_generics(
+					messages,
+					self,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					TypeIdSpecializationSituation::UserType { user_type_shape_index: shape_index },
+					&type_arguments,
+				);
+
 				if !self.check_type_implements_trait(
 					messages,
 					function_store,
@@ -2552,7 +2583,9 @@ impl<'a> TypeStore<'a> {
 					generic_usages,
 					enclosing_generic_parameters,
 					type_argument,
-					contraint,
+					constraint,
+					Ref::new(trait_type_arguments),
+					invoke_span,
 				) {
 					constraint_failure = true;
 				}
@@ -2686,7 +2719,19 @@ impl<'a> TypeStore<'a> {
 		let generic_parameters_iter = user_type.generic_parameters.explicit_parameters().iter();
 		let generic_arguments_iter = type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
-			for &contraint in type_parameter.constraints.iter() {
+			for constraint in type_parameter.generic_constraints.iter() {
+				let mut trait_type_arguments = TypeArguments::clone(&constraint.type_arguments);
+				trait_type_arguments.specialize_with_generics(
+					messages,
+					self,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					TypeIdSpecializationSituation::UserType { user_type_shape_index: enum_shape_index },
+					&type_arguments,
+				);
+
 				if !self.check_type_implements_trait(
 					messages,
 					function_store,
@@ -2694,7 +2739,9 @@ impl<'a> TypeStore<'a> {
 					generic_usages,
 					enclosing_generic_parameters,
 					type_argument,
-					contraint,
+					constraint,
+					Ref::new(trait_type_arguments),
+					invoke_span,
 				) {
 					constraint_failure = true;
 				}
@@ -2900,7 +2947,19 @@ impl<'a> TypeStore<'a> {
 		let generic_parameters_iter = shape.generic_parameters.explicit_parameters().iter();
 		let generic_arguments_iter = trait_type_arguments.explicit_ids().iter();
 		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
-			for &contraint in type_parameter.constraints.iter() {
+			for constraint in type_parameter.generic_constraints.iter() {
+				let mut constraint_trait_type_arguments = TypeArguments::clone(&constraint.type_arguments);
+				constraint_trait_type_arguments.specialize_with_generics(
+					messages,
+					self,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					TypeIdSpecializationSituation::Trait { trait_shape_index },
+					&trait_type_arguments,
+				);
+
 				if !self.check_type_implements_trait(
 					messages,
 					function_store,
@@ -2908,7 +2967,9 @@ impl<'a> TypeStore<'a> {
 					generic_usages,
 					enclosing_generic_parameters,
 					type_argument,
-					contraint,
+					constraint,
+					Ref::new(constraint_trait_type_arguments),
+					invoke_span,
 				) {
 					constraint_failure = true;
 				}
@@ -3094,6 +3155,14 @@ impl<'a> TypeStore<'a> {
 
 			&TypeEntryKind::FunctionGeneric { function_shape_index: shape_index, generic_index, .. } => {
 				if let TypeIdSpecializationSituation::Function { function_shape_index } = situation {
+					if function_shape_index != shape_index {
+						let shapes = function_store.shapes.read();
+						dbg!(
+							shapes[function_shape_index].as_ref().map(|s| s.read().name.item),
+							shapes[shape_index].as_ref().map(|s| s.read().name.item)
+						);
+						dbg!(self.debugging_type_name(type_id));
+					}
 					assert_eq!(function_shape_index, shape_index);
 					type_arguments.ids[generic_index].item
 				} else {

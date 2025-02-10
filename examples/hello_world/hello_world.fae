@@ -1,8 +1,36 @@
-fn main() {
-	println("Hello world")
-	println(f"Welcome to {language()}!")
+generic C
+trait Entity {
+	method
+	fn tick(context: C)
 }
 
-fn language(): str {
-	return "Fae"
+struct Context {}
+
+generic C
+struct Player {}
+
+method Player
+fn tick(_context=: C) {
+	println("Player.tick called")
+}
+
+// generic C, T: Entity<C>
+// struct EntityList {
+// 	entity: T
+// }
+
+generic C, T: Entity<C>
+fn takes_entity() {
+	// entity.tick(context)
+}
+
+generic C, T: Entity<C>
+fn just_generic_function() {}
+
+
+fn main() {
+	// let context = Context {}
+	// let player = Player<Context> {}
+	// takes_entity<Context, Player<Context>>(entity: player.&, context)
+	just_generic_function<Context, Player<Context>>()
 }

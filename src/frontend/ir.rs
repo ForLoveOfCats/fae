@@ -15,15 +15,22 @@ use crate::lock::RwLock;
 use crate::reference::{Ref, SliceRef};
 
 #[derive(Debug, Clone)]
+pub struct GenericConstraint {
+	pub trait_shape_index: usize,
+	pub type_arguments: Ref<TypeArguments>,
+}
+
+#[derive(Debug, Clone)]
 pub struct GenericParameter<'a> {
 	pub name: Node<&'a str>,
-	pub constraints: SliceRef<TraitId>,
+	pub constraint_trait_ids: SliceRef<TraitId>,
+	pub generic_constraints: SliceRef<GenericConstraint>,
 	pub generic_type_id: TypeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct GenericParameters<'a> {
-	parameters: Vec<GenericParameter<'a>>,
+	parameters: Vec<GenericParameter<'a>>, // TODO: This should be a SliceRef
 	explicit_len: usize,
 	implicit_len: usize,
 	method_base_len: usize,
@@ -110,14 +117,14 @@ impl GenericUsage {
 		match self {
 			GenericUsage::UserType { type_arguments, shape_index } => {
 				let mut type_arguments = TypeArguments::clone(&type_arguments);
-				type_arguments.specialize_with_function_generics(
+				type_arguments.specialize_with_generics(
 					messages,
 					type_store,
 					function_store,
 					module_path,
 					generic_usages,
 					enclosing_generic_parameters,
-					function_shape_index,
+					TypeIdSpecializationSituation::Function { function_shape_index },
 					function_type_arguments,
 				);
 
@@ -138,14 +145,14 @@ impl GenericUsage {
 				function_shape_index: usage_function_shape_index,
 			} => {
 				let mut type_arguments = TypeArguments::clone(&type_arguments);
-				type_arguments.specialize_with_function_generics(
+				type_arguments.specialize_with_generics(
 					messages,
 					type_store,
 					function_store,
 					module_path,
 					generic_usages,
 					enclosing_generic_parameters,
-					function_shape_index,
+					TypeIdSpecializationSituation::Function { function_shape_index },
 					function_type_arguments,
 				);
 
@@ -163,14 +170,14 @@ impl GenericUsage {
 
 			GenericUsage::Trait { type_arguments, trait_shape_index } => {
 				let mut type_arguments = TypeArguments::clone(&type_arguments);
-				type_arguments.specialize_with_function_generics(
+				type_arguments.specialize_with_generics(
 					messages,
 					type_store,
 					function_store,
 					module_path,
 					generic_usages,
 					enclosing_generic_parameters,
-					function_shape_index,
+					TypeIdSpecializationSituation::Function { function_shape_index },
 					function_type_arguments,
 				);
 
@@ -299,7 +306,7 @@ impl TypeArguments {
 		&self.ids[0..self.explicit_len]
 	}
 
-	pub fn specialize_with_function_generics<'a>(
+	pub fn specialize_with_generics<'a>(
 		&mut self,
 		messages: &mut Messages<'a>,
 		type_store: &mut TypeStore<'a>,
@@ -307,8 +314,8 @@ impl TypeArguments {
 		module_path: &'a [String],
 		generic_usages: &mut Vec<GenericUsage>,
 		enclosing_generic_parameters: &GenericParameters<'a>,
-		function_shape_index: usize,
-		function_type_arguments: &TypeArguments,
+		situation: TypeIdSpecializationSituation,
+		type_arguments: &TypeArguments,
 	) {
 		for original_id in &mut self.ids {
 			original_id.item = type_store.specialize_type_id_with_generics(
@@ -318,8 +325,8 @@ impl TypeArguments {
 				generic_usages,
 				enclosing_generic_parameters,
 				original_id.item,
-				function_type_arguments,
-				TypeIdSpecializationSituation::Function { function_shape_index },
+				type_arguments,
+				situation,
 			);
 		}
 	}
