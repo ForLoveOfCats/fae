@@ -1,0 +1,7 @@
+Validation error: ./tests/trait_basic_self_type_failure/trait_basic_self_type_failure.fae, line 30: Expected argument of type `Context<E>`, got `Context<CE>`
+  30|     entity.tick(context)
+                      ^^^^^^^
+
+Validation error: ./tests/trait_basic_self_type_failure/trait_basic_self_type_failure.fae, line 35: Expected argument of type `*mut Enemy`, got `*mut Player`
+  35|     takes_entity_a<Enemy>(player.&mut, Context<Enemy> {})
+                                ^^^^^^^^^^^

@@ -11,7 +11,7 @@ use crate::reference::{Ref, SliceRef};
 #[derive(Debug, Clone)]
 pub enum MethodBaseType {
 	UserType { shape_index: usize, specialization_index: usize },
-	Trait { trait_ids: SliceRef<TraitId> },
+	Trait { trait_ids: SliceRef<TraitId>, self_type_id: TypeId },
 	Other,
 }
 
@@ -221,7 +221,7 @@ impl<'a> FunctionStore<'a> {
 				}
 			}
 
-			MethodBaseType::Trait { trait_ids } => {
+			MethodBaseType::Trait { trait_ids, self_type_id } => {
 				let traits = type_store.traits.read();
 				for &trait_id in trait_ids.iter() {
 					let shape = traits[trait_id.shape_index as usize].read();
@@ -240,6 +240,8 @@ impl<'a> FunctionStore<'a> {
 
 					break;
 				}
+
+				type_arguments.push_method_base(Node::new(self_type_id, Span::unusable())); // TODO: HACK
 			}
 
 			MethodBaseType::Other => {}
@@ -311,20 +313,20 @@ impl<'a> FunctionStore<'a> {
 					}
 				};
 
-				let actual_method_index = actual_method_indices.actual_method_indices[trait_method_marker.trait_method_index];
+				let actual_method_info = actual_method_indices.actual_method_indices[trait_method_marker.trait_method_index];
 				drop(infos);
 				drop(implementations);
 
 				let method_collections = type_store.method_collections.read();
 				let method_collection = method_collections[methods_index].read();
-				let function_shape_index = method_collection.methods[actual_method_index].function_shape_index;
+				let function_shape_index = method_collection.methods[actual_method_info.method_index].function_shape_index;
 				drop(method_collection);
 				drop(method_collections);
 
 				let lock = self.shapes.read()[function_shape_index].as_ref().unwrap().clone();
 				let shape = lock.read();
 				assert!(shape.trait_method_marker.is_none());
-				let specialization = &shape.specializations[function_id.specialization_index];
+				let specialization = &shape.specializations[actual_method_info.specialization_index];
 
 				// TODO: Something is wrong here ⬇️
 				let mut generic_usages = Vec::new();

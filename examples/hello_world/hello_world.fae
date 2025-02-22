@@ -1,16 +1,15 @@
-generic C
 trait Entity {
-	method
-	fn tick(context: C)
+	method mut
+	fn tick(context: Context<Self>)
 }
 
+generic E
 struct Context {}
 
-generic C
 struct Player {}
 
-method Player
-fn tick(_context=: C) {
+method mut Player
+fn tick(_context=: Context<Player>) {
 	println("Player.tick called")
 }
 
@@ -19,18 +18,13 @@ fn tick(_context=: C) {
 // 	entity: T
 // }
 
-generic C, T: Entity<C>
-fn takes_entity() {
-	// entity.tick(context)
+generic E: Entity
+fn takes_entity(entity: *mut E, context: Context<E>) {
+	entity.tick(context)
 }
 
-generic C, T: Entity<C>
-fn just_generic_function() {}
-
-
 fn main() {
-	// let context = Context {}
-	// let player = Player<Context> {}
-	// takes_entity<Context, Player<Context>>(entity: player.&, context)
-	just_generic_function<Context, Player<Context>>()
+	let context = Context<Player> {}
+	mut player = Player {}
+	takes_entity<Player>(entity: player.&mut, context)
 }

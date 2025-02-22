@@ -34,6 +34,7 @@ pub struct GenericParameters<'a> {
 	explicit_len: usize,
 	implicit_len: usize,
 	method_base_len: usize,
+	has_trait_self: bool,
 }
 
 impl<'a> GenericParameters<'a> {
@@ -44,18 +45,27 @@ impl<'a> GenericParameters<'a> {
 			explicit_len,
 			implicit_len: 0,
 			method_base_len: 0,
+			has_trait_self: false,
 		}
 	}
 
 	pub fn push_implicit(&mut self, implict: GenericParameter<'a>) {
 		assert_eq!(self.method_base_len, 0);
+		assert_eq!(self.has_trait_self, false);
 		self.parameters.push(implict);
 		self.implicit_len += 1;
 	}
 
 	pub fn push_method_base(&mut self, parameter: GenericParameter<'a>) {
+		assert_eq!(self.has_trait_self, false);
 		self.parameters.push(parameter);
 		self.method_base_len += 1;
+	}
+
+	pub fn push_trait_self(&mut self, parameter: GenericParameter<'a>) {
+		assert_eq!(self.has_trait_self, false);
+		self.parameters.push(parameter);
+		self.has_trait_self = true;
 	}
 
 	pub fn parameters(&self) -> &[GenericParameter<'a>] {

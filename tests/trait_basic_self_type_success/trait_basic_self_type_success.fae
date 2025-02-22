@@ -1,0 +1,34 @@
+trait Entity {
+	method mut
+	fn tick(context: Context<Self>)
+}
+
+generic E
+struct Context {}
+
+struct Player {}
+
+method mut Player
+fn tick(_context=: Context<Player>) {
+	println("Player.tick called")
+}
+
+struct Enemy {}
+
+method mut Enemy
+fn tick(_context=: Context<Enemy>) {
+	println("Enemy.tick called")
+}
+
+generic E: Entity
+fn takes_entity(entity=: *mut E, context=: Context<E>) {
+	entity.tick(context)
+}
+
+fn main() {
+	mut player = Player {}
+	takes_entity<Player>(player.&mut, Context<Player> {})
+
+	mut enemy = Enemy {}
+	takes_entity<Enemy>(enemy.&mut, Context<Enemy> {})
+}

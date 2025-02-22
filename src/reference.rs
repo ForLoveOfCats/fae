@@ -1,4 +1,5 @@
 use std::boxed::Box;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::ptr::NonNull;
@@ -10,7 +11,6 @@ use std::mem::{align_of, size_of};
 #[cfg(feature = "measure-lock-contention")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[derive(Debug)]
 pub struct Ref<T> {
 	pointer: NonNull<RefAllocated<T>>,
 }
@@ -75,6 +75,12 @@ impl<T> std::borrow::Borrow<T> for Ref<T> {
 	}
 }
 
+impl<T: Debug> Debug for Ref<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		self.as_ref().fmt(f)
+	}
+}
+
 impl<T> Ref<T> {
 	#[inline]
 	pub fn new(data: T) -> Self {
@@ -109,7 +115,6 @@ impl<T> Drop for Ref<T> {
 	}
 }
 
-#[derive(Debug)]
 pub struct SliceRef<T> {
 	#[cfg(feature = "measure-lock-contention")]
 	reference_count_pointer: NonNull<AtomicUsize>,
@@ -171,6 +176,12 @@ impl<T> AsRef<[T]> for SliceRef<T> {
 impl<T> std::borrow::Borrow<[T]> for SliceRef<T> {
 	fn borrow(&self) -> &[T] {
 		&**self
+	}
+}
+
+impl<T: Debug> Debug for SliceRef<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		self.as_ref().fmt(f)
 	}
 }
 

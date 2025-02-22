@@ -2147,7 +2147,7 @@ fn create_block_trait<'a>(
 		let generic_index = explicit_generics_len + index;
 		let constraint_trait_ids = parent_parameter.constraint_trait_ids.clone();
 		let generic_constraints = parent_parameter.generic_constraints.clone();
-		let generic_type_id = type_store.register_user_type_generic(shape_index, generic_index, &constraint_trait_ids);
+		let generic_type_id = type_store.register_trait_generic(shape_index, generic_index, &constraint_trait_ids);
 		generic_parameters.push_implicit(GenericParameter {
 			name: parent_parameter.name,
 			constraint_trait_ids,
@@ -2155,6 +2155,15 @@ fn create_block_trait<'a>(
 			generic_type_id,
 		});
 	}
+
+	let self_generic_index = generic_parameters.parameters().len();
+	let self_generic_type_id = type_store.register_trait_generic(shape_index, self_generic_index, &SliceRef::new_empty());
+	generic_parameters.push_trait_self(GenericParameter {
+		name: Node::new("Self", Span::unusable()), // TODO: Massive terrible hack
+		constraint_trait_ids: SliceRef::new_empty(),
+		generic_constraints: SliceRef::new_empty(),
+		generic_type_id: self_generic_type_id,
+	});
 
 	let trait_shape = TraitShape::new(statement.name.item, generic_parameters);
 	let trait_shape_index = TypeStore::register_trait_shape(&mut traits, trait_shape);
@@ -5892,6 +5901,7 @@ pub fn get_method_base_type_for_generic<'a>(
 	generic_usages: &mut Vec<GenericUsage>,
 	generic_parameters: &GenericParameters<'a>,
 	kind: &TypeEntryKind,
+	generic_type_id: TypeId,
 ) -> MethodBaseType {
 	let constraints = match kind {
 		TypeEntryKind::UserTypeGeneric { shape_index, generic_index, .. } => {
@@ -5917,6 +5927,7 @@ pub fn get_method_base_type_for_generic<'a>(
 		_ => unreachable!("{kind:?}"),
 	};
 
+	// TODO: It is unfortunate to build this every time, can we cache it?
 	let mut trait_ids = Vec::with_capacity(constraints.len());
 	for constraint in constraints.iter() {
 		if let Some(specialized) = type_store.get_or_add_trait_shape_specialization(
@@ -5933,7 +5944,10 @@ pub fn get_method_base_type_for_generic<'a>(
 		}
 	}
 
-	MethodBaseType::Trait { trait_ids: SliceRef::from(trait_ids) }
+	MethodBaseType::Trait {
+		trait_ids: SliceRef::from(trait_ids),
+		self_type_id: generic_type_id,
+	}
 }
 
 fn validate_method_call<'a>(
@@ -5961,6 +5975,7 @@ fn validate_method_call<'a>(
 				context.function_generic_usages,
 				context.generic_parameters,
 				&entry.kind,
+				base.type_id,
 			);
 			(method_base_type, base.is_itself_mutable)
 		}
@@ -5987,6 +6002,7 @@ fn validate_method_call<'a>(
 					context.function_generic_usages,
 					context.generic_parameters,
 					&entry.kind,
+					type_id,
 				),
 
 				_ => MethodBaseType::Other,

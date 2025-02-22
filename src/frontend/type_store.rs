@@ -227,9 +227,15 @@ pub enum ImplementationStatus {
 	Implemented,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActualMethodInfo {
+	pub method_index: usize,
+	pub specialization_index: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActualMethodIndices {
-	pub actual_method_indices: Vec<usize>,
+	pub actual_method_indices: Vec<ActualMethodInfo>,
 }
 
 #[derive(Debug, Default)]
@@ -1932,6 +1938,7 @@ impl<'a> TypeStore<'a> {
 					generic_usages,
 					enclosing_generic_parameters,
 					&entry.kind,
+					type_id.item,
 				);
 				(methods_index, method_base_type)
 			}
@@ -2067,7 +2074,10 @@ impl<'a> TypeStore<'a> {
 				enclosing_generic_parameters,
 				Vec::new(), // TODO: This will not work once trait methods can be generic
 				trait_method.fake_function_shape_index,
-				MethodBaseType::Trait { trait_ids: SliceRef::from(vec![trait_id]) }, // This is an unfortunate allocation
+				MethodBaseType::Trait {
+					trait_ids: SliceRef::from(vec![trait_id]), // This is an unfortunate allocation
+					self_type_id: type_id.item,
+				},
 				None,
 			) else {
 				notes.push(note!(
@@ -2115,6 +2125,10 @@ impl<'a> TypeStore<'a> {
 				.skip(1)
 				.zip(expected_specialization.parameters.iter().skip(1))
 			{
+				if expected.type_id.is_any_collapse(self) {
+					continue;
+				}
+
 				// TODO: Release function store locks when calling `type_name`
 				if !self.direct_match(actual.type_id, expected.type_id) {
 					let span = actual_shape.parameters.item[actual_index].span;
@@ -2126,7 +2140,10 @@ impl<'a> TypeStore<'a> {
 			}
 
 			if implemented {
-				actual_method_indices.push(actual_method_index);
+				actual_method_indices.push(ActualMethodInfo {
+					method_index: actual_method_index,
+					specialization_index: actual_specialization_result.specialization_index,
+				});
 			}
 		}
 

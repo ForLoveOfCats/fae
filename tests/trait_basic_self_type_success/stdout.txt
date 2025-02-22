@@ -1,0 +1,2 @@
+Player.tick called
+Enemy.tick called
