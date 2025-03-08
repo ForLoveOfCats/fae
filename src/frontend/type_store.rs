@@ -481,7 +481,7 @@ impl<'a> MethodCollection<'a> {
 
 		let traits = type_store.traits.read();
 		for constraint in constraints {
-			let trait_shape = &traits[constraint.shape_index as usize].read();
+			let trait_shape = traits[constraint.shape_index as usize].as_ref().unwrap().read();
 			let trait_instance = &trait_shape.specializations[constraint.specialization_index as usize];
 			for trait_method in trait_instance.methods.iter() {
 				let function_shape_index = trait_method.fake_function_shape_index;
@@ -713,12 +713,15 @@ pub enum TypeEntryKind {
 		function_shape_index: usize,
 		generic_index: usize,
 		methods_index: usize,
+		is_trait_self: bool,
+		originator_trait_shape_index: usize,
 	},
 
 	TraitGeneric {
 		trait_shape_index: usize,
 		generic_index: usize,
 		methods_index: usize,
+		is_self: bool,
 	},
 }
 
@@ -855,7 +858,7 @@ pub struct TypeStore<'a> {
 	pub type_entries: TypeEntries,
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
 	pub method_collections: Ref<RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>>,
-	pub traits: Ref<RwLock<Vec<Ref<RwLock<TraitShape<'a>>>>>>,
+	pub traits: Ref<RwLock<Vec<Option<Ref<RwLock<TraitShape<'a>>>>>>>,
 	pub implementations: Ref<RwLock<Vec<RwLock<ImplementationInfo>>>>, // Methods index -> Implementation info
 
 	module_type_id: TypeId,
@@ -1618,7 +1621,7 @@ impl<'a> TypeStore<'a> {
 		trait_id: TraitId,
 	) -> String {
 		let traits = self.traits.read();
-		let shape = traits[trait_id.shape_index as usize].read();
+		let shape = traits[trait_id.shape_index as usize].as_ref().unwrap().read();
 		let specialization = &shape.specializations[trait_id.specialization_index as usize];
 
 		let mut name = String::from(shape.name);
@@ -1643,10 +1646,20 @@ impl<'a> TypeStore<'a> {
 		name
 	}
 
-	pub fn register_trait_shape(traits: &mut Vec<Ref<RwLock<TraitShape<'a>>>>, trait_shape: TraitShape<'a>) -> usize {
+	pub fn pre_create_empty_trait_shape(traits: &mut Vec<Option<Ref<RwLock<TraitShape<'a>>>>>) -> usize {
 		let shape_index = traits.len();
-		traits.push(Ref::new(RwLock::new(trait_shape)));
+		traits.push(None);
 		shape_index
+	}
+
+	pub fn register_trait_shape(
+		traits: &mut Vec<Option<Ref<RwLock<TraitShape<'a>>>>>,
+		trait_shape: TraitShape<'a>,
+		index: usize,
+	) {
+		let destination = &mut traits[index];
+		assert!(destination.is_none());
+		*destination = Some(Ref::new(RwLock::new(trait_shape)));
 	}
 
 	pub fn lookup_constraints(
@@ -1705,7 +1718,7 @@ impl<'a> TypeStore<'a> {
 			let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
 
 			let traits = self.traits.read();
-			let trait_shape = traits[trait_shape_index].read();
+			let trait_shape = traits[trait_shape_index].as_ref().unwrap().read();
 			assert_eq!(trait_shape.generic_parameters.method_base_len(), 0);
 			if trait_shape.generic_parameters.implicit_len() > 0 {
 				assert_eq!(
@@ -1744,30 +1757,19 @@ impl<'a> TypeStore<'a> {
 	fn set_up_generic_method_collection(&mut self, constraints: &[TraitId]) -> usize {
 		let mut method_collections = self.method_collections.write();
 		let methods_index = method_collections.len();
+
+		let mut implementations = self.implementations.write();
+		assert_eq!(implementations.len(), methods_index);
+		let mut info = ImplementationInfo::default();
+		for &constraint in constraints {
+			info.statuses.insert(constraint, ImplementationStatus::Implemented);
+		}
+		implementations.push(RwLock::new(info));
+		drop(implementations);
+
 		let collection = MethodCollection::for_generic_satisfying_constraints(self, constraints);
 		method_collections.push(Ref::new(RwLock::new(collection)));
 		drop(method_collections);
-
-		let mut implementations = self.implementations.write();
-		assert_eq!(implementations.len(), methods_index);
-		implementations.push(RwLock::new(ImplementationInfo::default()));
-		drop(implementations);
-
-		methods_index
-	}
-
-	// TODO: This is in service of a great big hack to test something, rip this out ASAP
-	fn set_up_generic_method_collection_blank(&mut self, _constraints: &[TraitId]) -> usize {
-		let mut method_collections = self.method_collections.write();
-		let methods_index = method_collections.len();
-		let collection = MethodCollection::blank();
-		method_collections.push(Ref::new(RwLock::new(collection)));
-		drop(method_collections);
-
-		let mut implementations = self.implementations.write();
-		assert_eq!(implementations.len(), methods_index);
-		implementations.push(RwLock::new(ImplementationInfo::default()));
-		drop(implementations);
 
 		methods_index
 	}
@@ -1783,17 +1785,32 @@ impl<'a> TypeStore<'a> {
 		&mut self,
 		function_shape_index: usize,
 		generic_index: usize,
+		is_trait_self: bool,
+		originator_trait_shape_index: usize,
 		constraints: &[TraitId],
 	) -> TypeId {
 		let methods_index = self.set_up_generic_method_collection(constraints);
-		let kind = TypeEntryKind::FunctionGeneric { function_shape_index, generic_index, methods_index };
+		let kind = TypeEntryKind::FunctionGeneric {
+			function_shape_index,
+			generic_index,
+			methods_index,
+			is_trait_self,
+			originator_trait_shape_index,
+		};
 		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
-		self.type_entries.push_entry(type_entry)
+		let type_id = self.type_entries.push_entry(type_entry);
+		type_id
 	}
 
-	pub fn register_trait_generic(&mut self, trait_shape_index: usize, generic_index: usize, constraints: &[TraitId]) -> TypeId {
-		let methods_index = self.set_up_generic_method_collection_blank(constraints);
-		let kind = TypeEntryKind::TraitGeneric { trait_shape_index, generic_index, methods_index };
+	pub fn register_trait_generic(
+		&mut self,
+		trait_shape_index: usize,
+		generic_index: usize,
+		is_self: bool,
+		constraints: &[TraitId],
+	) -> TypeId {
+		let methods_index = self.set_up_generic_method_collection(constraints);
+		let kind = TypeEntryKind::TraitGeneric { trait_shape_index, generic_index, methods_index, is_self };
 		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
 		self.type_entries.push_entry(type_entry)
 	}
@@ -1927,6 +1944,14 @@ impl<'a> TypeStore<'a> {
 		let (methods_index, method_base_type) = match entry.kind {
 			TypeEntryKind::BuiltinType { methods_index, .. } => (methods_index, MethodBaseType::Other),
 
+			TypeEntryKind::TraitGeneric { trait_shape_index, is_self: true, .. } => {
+				return trait_shape_index == generic_constraint.trait_shape_index
+			}
+
+			TypeEntryKind::FunctionGeneric { originator_trait_shape_index, is_trait_self: true, .. } => {
+				return originator_trait_shape_index == generic_constraint.trait_shape_index
+			}
+
 			TypeEntryKind::UserTypeGeneric { methods_index, .. }
 			| TypeEntryKind::FunctionGeneric { methods_index, .. }
 			| TypeEntryKind::TraitGeneric { methods_index, .. } => {
@@ -1964,7 +1989,7 @@ impl<'a> TypeStore<'a> {
 
 		let status_entry = info.statuses.entry(trait_id);
 		let status_vacancy = match status_entry {
-			hash_map::Entry::Occupied(status) => return matches!(status.get(), ImplementationStatus::Implemented { .. }),
+			hash_map::Entry::Occupied(status) => return matches!(status.get(), ImplementationStatus::Implemented),
 			hash_map::Entry::Vacant(vacancy) => vacancy,
 		};
 
@@ -1975,7 +2000,7 @@ impl<'a> TypeStore<'a> {
 
 		let traits = self.traits.clone();
 		let traits = traits.read();
-		let trait_shape = traits[trait_id.shape_index as usize].read();
+		let trait_shape = traits[trait_id.shape_index as usize].as_ref().unwrap().read();
 		assert!(trait_shape.been_filled);
 		let trait_instance = &trait_shape.specializations[trait_id.specialization_index as usize];
 		assert!(trait_instance.been_filled);
@@ -2361,7 +2386,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				let traits = self.traits.read();
-				let trait_shape = traits[trait_shape_index].read();
+				let trait_shape = traits[trait_shape_index].as_ref().unwrap().read();
 				let generic = &trait_shape.generic_parameters.parameters()[generic_index];
 				return Some(generic.generic_type_id);
 			}
@@ -2933,7 +2958,7 @@ impl<'a> TypeStore<'a> {
 		let _zone = zone!("trait specialization");
 
 		let lock = self.traits.read()[trait_shape_index].clone();
-		let mut shape = lock.read();
+		let mut shape = lock.as_ref().unwrap().read();
 
 		if !shape.been_filled {
 			let filling_lock = shape.filling_lock.clone();
@@ -2941,7 +2966,7 @@ impl<'a> TypeStore<'a> {
 			drop(shape);
 			filling_lock.lock();
 
-			shape = lock.read();
+			shape = lock.as_ref().unwrap().read();
 		}
 
 		if trait_type_arguments.explicit_len != shape.generic_parameters.explicit_len() {
@@ -3018,7 +3043,7 @@ impl<'a> TypeStore<'a> {
 			);
 		}
 
-		let mut shape = lock.write();
+		let mut shape = lock.as_ref().unwrap().write();
 
 		let been_filled = shape.been_filled;
 		let specialization_index = shape.specializations.len();
@@ -3194,7 +3219,13 @@ impl<'a> TypeStore<'a> {
 					type_arguments.ids[generic_index].item
 				} else {
 					// TODO: This could have unintended consequences
-					self.traits.read()[shape_index].read().generic_parameters.parameters()[generic_index].generic_type_id
+					self.traits.read()[shape_index]
+						.as_ref()
+						.unwrap()
+						.read()
+						.generic_parameters
+						.parameters()[generic_index]
+						.generic_type_id
 				}
 			}
 
@@ -3358,7 +3389,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::TraitGeneric { trait_shape_index, generic_index, .. } => {
 				let traits = self.traits.read();
-				let shape = traits[trait_shape_index].read();
+				let shape = traits[trait_shape_index].as_ref().unwrap().read();
 				let generic = &shape.generic_parameters.parameters()[generic_index];
 
 				if debug_generics {

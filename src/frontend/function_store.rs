@@ -224,7 +224,7 @@ impl<'a> FunctionStore<'a> {
 			MethodBaseType::Trait { trait_ids, self_type_id } => {
 				let traits = type_store.traits.read();
 				for &trait_id in trait_ids.iter() {
-					let shape = traits[trait_id.shape_index as usize].read();
+					let shape = traits[trait_id.shape_index as usize].as_ref().unwrap().read();
 					let has_function = shape
 						.methods
 						.iter()

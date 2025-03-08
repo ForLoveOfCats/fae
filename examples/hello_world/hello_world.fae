@@ -1,30 +1,49 @@
+import fae.collections.list.List
+
 trait Entity {
 	method mut
-	fn tick(context: Context<Self>)
+	fn tick()
 }
-
-generic E
-struct Context {}
 
 struct Player {}
 
 method mut Player
-fn tick(_context=: Context<Player>) {
+fn tick() {
 	println("Player.tick called")
 }
 
-// generic C, T: Entity<C>
-// struct EntityList {
-// 	entity: T
-// }
+generic E: Entity
+struct EntityList {
+	items: List<E>
+}
 
 generic E: Entity
-fn takes_entity(entity: *mut E, context: Context<E>) {
-	entity.tick(context)
+struct EntityIterator {
+	list: *mut EntityList<E>
+	index: isize
+}
+
+method static EntityIterator
+fn new(list: *mut EntityList<E>): EntityIterator<E> {
+	return EntityIterator<E> { list, index: 0 }
+}
+
+method mut EntityIterator
+fn next(): Option<*mut E> {
+	if self.index >= self.list.items.items.length => return .None
+	let ptr = self.list.items.get_mut(self.index)
+	self.index += 1
+	ptr.tick()
+	return .Some(ptr)
 }
 
 fn main() {
-	let context = Context<Player> {}
-	mut player = Player {}
-	takes_entity<Player>(entity: player.&mut, context)
+	mut list = {
+		mut items = List<Player>.new()
+		items.push(Player {})
+		yield EntityList<Player> { items }
+	}
+
+	mut iterator = EntityIterator<Player>.new(list: list.&mut)
+	while iterator.next() is _: Some {}
 }

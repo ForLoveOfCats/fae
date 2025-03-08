@@ -438,19 +438,6 @@ pub fn validate<'a>(
 
 				wait_on_barriers_and_replenish_iter();
 
-				fill_root_types(
-					when_context,
-					&root_messages,
-					root_layers,
-					lang_items,
-					&mut type_store,
-					function_store,
-					&parsed_files_iter,
-					&type_shape_indicies,
-				);
-
-				wait_on_barriers_and_replenish_iter();
-
 				let mut readables = Readables::new();
 				create_root_functions(
 					when_context,
@@ -466,6 +453,19 @@ pub fn validate<'a>(
 					&local_function_shape_indicies,
 				);
 				function_generic_usages.clear();
+
+				wait_on_barriers_and_replenish_iter();
+
+				fill_root_types(
+					when_context,
+					&root_messages,
+					root_layers,
+					lang_items,
+					&mut type_store,
+					function_store,
+					&parsed_files_iter,
+					&type_shape_indicies,
+				);
 
 				wait_on_barriers_and_replenish_iter();
 
@@ -2121,10 +2121,11 @@ fn create_block_trait<'a>(
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
 	let mut explicit_generics = Vec::with_capacity(capacity);
 
-	let traits = type_store.traits.clone();
-	let mut traits = traits.write(); // This write lock is quite unfortunate
+	let traits_lock = type_store.traits.clone();
+	let mut traits = traits_lock.write();
+	let trait_shape_index = TypeStore::pre_create_empty_trait_shape(&mut traits);
+	drop(traits);
 
-	let shape_index = traits.len();
 	for (generic_index, generic) in statement.generics.iter().enumerate() {
 		if let Some(first) = generic.constraints.first() {
 			let error = error!("TODO: constraints are not allowed on trait body generic");
@@ -2132,7 +2133,7 @@ fn create_block_trait<'a>(
 		}
 
 		let constraint_trait_ids = SliceRef::new_empty();
-		let generic_type_id = type_store.register_trait_generic(shape_index, generic_index, &constraint_trait_ids);
+		let generic_type_id = type_store.register_trait_generic(trait_shape_index, generic_index, false, &constraint_trait_ids);
 		explicit_generics.push(GenericParameter {
 			name: generic.name,
 			constraint_trait_ids,
@@ -2147,7 +2148,7 @@ fn create_block_trait<'a>(
 		let generic_index = explicit_generics_len + index;
 		let constraint_trait_ids = parent_parameter.constraint_trait_ids.clone();
 		let generic_constraints = parent_parameter.generic_constraints.clone();
-		let generic_type_id = type_store.register_trait_generic(shape_index, generic_index, &constraint_trait_ids);
+		let generic_type_id = type_store.register_trait_generic(trait_shape_index, generic_index, false, &constraint_trait_ids);
 		generic_parameters.push_implicit(GenericParameter {
 			name: parent_parameter.name,
 			constraint_trait_ids,
@@ -2157,7 +2158,8 @@ fn create_block_trait<'a>(
 	}
 
 	let self_generic_index = generic_parameters.parameters().len();
-	let self_generic_type_id = type_store.register_trait_generic(shape_index, self_generic_index, &SliceRef::new_empty());
+	let self_generic_type_id =
+		type_store.register_trait_generic(trait_shape_index, self_generic_index, true, &SliceRef::new_empty());
 	generic_parameters.push_trait_self(GenericParameter {
 		name: Node::new("Self", Span::unusable()), // TODO: Massive terrible hack
 		constraint_trait_ids: SliceRef::new_empty(),
@@ -2166,7 +2168,9 @@ fn create_block_trait<'a>(
 	});
 
 	let trait_shape = TraitShape::new(statement.name.item, generic_parameters);
-	let trait_shape_index = TypeStore::register_trait_shape(&mut traits, trait_shape);
+	let mut traits = traits_lock.write();
+	TypeStore::register_trait_shape(&mut traits, trait_shape, trait_shape_index);
+	drop(traits);
 
 	let symbol = Symbol {
 		name: statement.name.item,
@@ -2177,7 +2181,7 @@ fn create_block_trait<'a>(
 	};
 	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 
-	shape_index
+	trait_shape_index
 }
 
 fn fill_block_trait<'a>(
@@ -2196,7 +2200,7 @@ fn fill_block_trait<'a>(
 	let mut symbols = symbols.child_scope();
 
 	let lock = type_store.traits.read()[trait_shape_index].clone();
-	let trait_shape = lock.read(); // TODO: We acquire this twice in the same function, yuck
+	let trait_shape = lock.as_ref().unwrap().read(); // TODO: We acquire this twice in the same function, yuck
 
 	let trait_shape_generic_parameters = trait_shape.generic_parameters.clone();
 	for (generic_index, generic) in trait_shape_generic_parameters.parameters().iter().enumerate() {
@@ -2236,7 +2240,7 @@ fn fill_block_trait<'a>(
 			let constraint_trait_ids = parent_parameter.constraint_trait_ids.clone();
 			let generic_constraints = parent_parameter.generic_constraints.clone();
 			let generic_type_id =
-				type_store.register_function_generic(fake_function_shape_index, generic_index, &constraint_trait_ids);
+				type_store.register_function_generic(fake_function_shape_index, generic_index, false, 0, &constraint_trait_ids);
 			generic_parameters.push_implicit(GenericParameter {
 				name: parent_parameter.name,
 				constraint_trait_ids,
@@ -2262,8 +2266,13 @@ fn fill_block_trait<'a>(
 			let generic_index = explicit_generics_len + implicit_generics_len + index;
 			let constraint_trait_ids = base_type_parameter.constraint_trait_ids.clone();
 			let generic_constraints = base_type_parameter.generic_constraints.clone();
-			let generic_type_id =
-				type_store.register_function_generic(fake_function_shape_index, generic_index, &constraint_trait_ids);
+			let generic_type_id = type_store.register_function_generic(
+				fake_function_shape_index,
+				generic_index,
+				index == 0,
+				trait_method_index,
+				&constraint_trait_ids,
+			);
 			generic_parameters.push_method_base(GenericParameter {
 				name: base_type_parameter.name,
 				constraint_trait_ids,
@@ -2388,7 +2397,7 @@ fn fill_block_trait<'a>(
 		});
 	}
 
-	let mut trait_shape = lock.write();
+	let mut trait_shape = lock.as_ref().unwrap().write();
 
 	let filling_lock = trait_shape.filling_lock.clone();
 	let _filling_guard = filling_lock.lock();
@@ -2427,7 +2436,7 @@ fn fill_pre_existing_trait_specializations<'a>(
 	// TODO: This is dumb, in order to pass in the type store the caller must close their locks on this state
 	// just for us to lock them again. This is needlessly complex and expensive, fix it
 	let lock = type_store.traits.read()[trait_shape_index].clone();
-	let trait_shape = lock.read();
+	let trait_shape = lock.as_ref().unwrap().read();
 
 	let mut specializations = trait_shape.specializations.clone(); // Belch
 	let methods = trait_shape.methods.clone();
@@ -2454,7 +2463,7 @@ fn fill_pre_existing_trait_specializations<'a>(
 		specialization.been_filled = true;
 	}
 
-	let mut trait_shape = lock.write();
+	let mut trait_shape = lock.as_ref().unwrap().write();
 	trait_shape.specializations = specializations;
 }
 
@@ -3125,7 +3134,7 @@ fn create_block_functions<'a>(
 					enclosing_generic_parameters,
 				);
 				let generic_type_id =
-					type_store.register_function_generic(function_shape_index, generic_index, &constraint_trait_ids);
+					type_store.register_function_generic(function_shape_index, generic_index, false, 0, &constraint_trait_ids);
 				explicit_generics.push(GenericParameter {
 					name: generic.name,
 					constraint_trait_ids,
@@ -3161,8 +3170,13 @@ fn create_block_functions<'a>(
 					let generic_index = explicit_generics_len + index;
 					let constraint_trait_ids = parent_parameter.constraint_trait_ids.clone();
 					let generic_constraints = parent_parameter.generic_constraints.clone();
-					let generic_type_id =
-						type_store.register_function_generic(function_shape_index, generic_index, &constraint_trait_ids);
+					let generic_type_id = type_store.register_function_generic(
+						function_shape_index,
+						generic_index,
+						false,
+						0,
+						&constraint_trait_ids,
+					);
 					generic_parameters.push_implicit(GenericParameter {
 						name: parent_parameter.name,
 						constraint_trait_ids,
@@ -3192,8 +3206,13 @@ fn create_block_functions<'a>(
 					let generic_index = explicit_generics_len + implicit_generics_len + index;
 					let constraint_trait_ids = base_type_parameter.constraint_trait_ids.clone();
 					let generic_constraints = base_type_parameter.generic_constraints.clone();
-					let generic_type_id =
-						type_store.register_function_generic(function_shape_index, generic_index, &constraint_trait_ids);
+					let generic_type_id = type_store.register_function_generic(
+						function_shape_index,
+						generic_index,
+						false,
+						0,
+						&constraint_trait_ids,
+					);
 					generic_parameters.push_method_base(GenericParameter {
 						name: base_type_parameter.name,
 						constraint_trait_ids,
@@ -5919,7 +5938,7 @@ pub fn get_method_base_type_for_generic<'a>(
 
 		TypeEntryKind::TraitGeneric { trait_shape_index, generic_index, .. } => {
 			let traits = type_store.traits.read();
-			let trait_shape = traits[*trait_shape_index].read();
+			let trait_shape = traits[*trait_shape_index].as_ref().unwrap().read();
 			let parameter = &trait_shape.generic_parameters.parameters()[*generic_index];
 			parameter.generic_constraints.clone()
 		}
