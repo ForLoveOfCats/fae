@@ -1,49 +1,8 @@
-import fae.collections.list.List
-
-trait Entity {
-	method mut
-	fn tick()
-}
-
-struct Player {}
-
-method mut Player
-fn tick() {
-	println("Player.tick called")
-}
-
-generic E: Entity
-struct EntityList {
-	items: List<E>
-}
-
-generic E: Entity
-struct EntityIterator {
-	list: *mut EntityList<E>
-	index: isize
-}
-
-method static EntityIterator
-fn new(list: *mut EntityList<E>): EntityIterator<E> {
-	return EntityIterator<E> { list, index: 0 }
-}
-
-method mut EntityIterator
-fn next(): Option<*mut E> {
-	if self.index >= self.list.items.items.length => return .None
-	let ptr = self.list.items.get_mut(self.index)
-	self.index += 1
-	ptr.tick()
-	return .Some(ptr)
-}
-
 fn main() {
-	mut list = {
-		mut items = List<Player>.new()
-		items.push(Player {})
-		yield EntityList<Player> { items }
-	}
+	println("Hello world")
+	println(f"Welcome to {language()}!")
+}
 
-	mut iterator = EntityIterator<Player>.new(list: list.&mut)
-	while iterator.next() is _: Some {}
+fn language(): str {
+	return "Fae"
 }
