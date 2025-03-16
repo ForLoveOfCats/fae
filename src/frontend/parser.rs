@@ -1482,7 +1482,11 @@ fn parse_import_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &
 
 		let peeked_kind = tokens.peek_kind();
 		if peeked_kind != Ok(TokenKind::Period) {
-			symbol_names.push(word);
+			if segments.is_empty() {
+				segments.push(word);
+			} else {
+				symbol_names.push(word);
+			}
 			break;
 		}
 

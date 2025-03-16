@@ -1,3 +1,7 @@
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 21: Cannot path sub-access `T` as it is a function generic parameter
+  21| fn function(): T.abc {
+                     ^^^^^
+
 Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 10: Cannot path sub-access `T` as it is a type generic parameter
   10|     field: T.abc
                  ^^^^^
@@ -5,10 +9,6 @@ Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.
 Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 11: Type generic parameters do not accept type arguments
   11|     other_field: T<f32>
                        ^^^^^^
-
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 21: Cannot path sub-access `T` as it is a function generic parameter
-  21| fn function(): T.abc {
-                     ^^^^^
 
 Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 2: Builtin types do not accept type arguments
   2|     let _: i32<bool> = void
