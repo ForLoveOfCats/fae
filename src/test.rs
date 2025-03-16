@@ -90,9 +90,13 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 	let panics = std::fs::metadata(entry.path().join("panics")).is_ok();
 	let mut error_output = String::new();
 
-	let test_config = ProjectConfig {
+	let mut test_failed = false;
+
+	let test_config_path = entry.path().join("fae.toml");
+	let default_test_config = ProjectConfig {
 		project_name: test_name.to_string(),
 		source_directory: PathBuf::from(""),
+		provide_main: true,
 		linux_linker: None,
 		linux_additional_linker_flags: None,
 		linux_additional_linker_objects: None,
@@ -100,10 +104,27 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 		darwin_additional_linker_flags: None,
 		darwin_additional_linker_objects: None,
 	};
+
+	let test_config = if let Ok(config_file) = std::fs::read_to_string(&test_config_path) {
+		match toml::from_str::<ProjectConfig>(&config_file) {
+			Ok(mut test_config) => {
+				test_config.project_name = default_test_config.project_name.clone();
+				test_config
+			}
+
+			Err(err) => {
+				eprintln!("Project config parse error {test_config_path:?}\n{err}");
+				test_failed |= true;
+				default_test_config
+			}
+		}
+	} else {
+		default_test_config
+	};
+	let expect_executable = test_config.provide_main;
+
 	let built_project = build_project(cli_arguments, &mut error_output, &entry.path(), Some(test_config));
 	let test_name = format!("{optimized} {test_name}");
-
-	let mut test_failed = false;
 
 	if built_project.any_messages {
 		if let Some(expected_error) = &expected_error {
@@ -125,45 +146,53 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 		test_failed = true;
 	}
 
-	let Some(binary_path) = built_project.binary_path else {
-		eprintln!("{RED}Compiler test harness: Failed to build test, did not produce a binary to run{RESET}\n");
-		failures.push(test_name);
-		return;
-	};
+	let mut actual_stdout = Vec::new();
+	let mut actual_stderr = Vec::new();
 
-	let output = std::process::Command::new(&binary_path)
-		.output()
-		.expect("Failed to launch test binary, this is probably an internal bug");
+	if expect_executable {
+		let Some(binary_path) = built_project.binary_path else {
+			eprintln!("{RED}Compiler test harness: Failed to build test, did not produce a binary to run{RESET}\n");
+			failures.push(test_name);
+			return;
+		};
 
-	if panics && output.status.success() {
-		eprintln!("{RED}Test was expected to end with failure exit code but didn't{RESET}");
-		test_failed = true;
-	} else if !panics && !output.status.success() {
-		eprintln!("{RED}Test ended with failure exit code{RESET}");
-		test_failed = true;
+		let output = std::process::Command::new(&binary_path)
+			.output()
+			.expect("Failed to launch test binary, this is probably an internal bug");
+
+		if panics && output.status.success() {
+			eprintln!("{RED}Test was expected to end with failure exit code but didn't{RESET}");
+			test_failed = true;
+		} else if !panics && !output.status.success() {
+			eprintln!("{RED}Test ended with failure exit code{RESET}");
+			test_failed = true;
+		}
+
+		actual_stdout = output.stdout;
+		actual_stderr = output.stderr;
 	}
 
 	if let Some(expected_stdout) = expected_stdout {
-		if output.stdout != expected_stdout.as_bytes() {
-			stderr().lock().write_all(&output.stdout).unwrap();
+		if actual_stdout != expected_stdout.as_bytes() {
+			stderr().lock().write_all(&actual_stdout).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got different stdout than expected{RESET}\n");
 			test_failed = true;
 		}
-	} else if !output.stdout.is_empty() {
-		stderr().lock().write_all(&output.stdout).unwrap();
+	} else if !actual_stdout.is_empty() {
+		stderr().lock().write_all(&actual_stdout).unwrap();
 		eprintln!("\n{RED}Compiler test harness: Got stdout but didn't expect any{RESET}\n");
 		test_failed = true;
 	}
 
 	if let Some(expected_stderr) = expected_stderr {
-		if output.stderr != expected_stderr.as_bytes() {
-			stderr().lock().write_all(&output.stderr).unwrap();
+		if actual_stderr != expected_stderr.as_bytes() {
+			stderr().lock().write_all(&actual_stderr).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got different stderr than expected{RESET}\n");
 			failures.push(test_name);
 			return;
 		}
-	} else if !output.stderr.is_empty() {
-		stderr().lock().write_all(&output.stderr).unwrap();
+	} else if !actual_stderr.is_empty() {
+		stderr().lock().write_all(&actual_stderr).unwrap();
 		eprintln!("\n{RED}Compiler test harness: Got stderr but didn't expect any{RESET}\n");
 		test_failed = true;
 	}

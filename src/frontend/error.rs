@@ -3,6 +3,7 @@ use std::io::Write;
 use unicode_width::UnicodeWidthChar;
 
 use crate::frontend::file::SourceFile;
+use crate::frontend::project::ProjectConfig;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Externs;
 
@@ -142,7 +143,7 @@ impl<'a> Messages<'a> {
 #[derive(Debug)]
 pub struct RootMessages<'a> {
 	file_messages: Vec<Messages<'a>>,
-	missing_main: bool,
+	main_function_span: Option<Span>,
 	any_errors: bool,
 	sources: &'a [SourceFile],
 }
@@ -151,18 +152,30 @@ impl<'a> RootMessages<'a> {
 	pub fn new(sources: &'a [SourceFile]) -> Self {
 		RootMessages {
 			file_messages: Vec::new(),
-			missing_main: false,
+			main_function_span: None,
 			any_errors: false,
 			sources,
 		}
 	}
 
-	pub fn mark_main_missing(&mut self) {
-		self.missing_main = true;
-		self.any_errors = true;
+	pub fn mark_main_found(&mut self, span: Span) {
+		self.main_function_span = Some(span);
 	}
 
-	pub fn print_messages(&mut self, output: &mut impl WriteFmt, stage: &str, externs: &Externs, in_compiler_test: bool) -> bool {
+	pub fn determine_main_function_error_state(&mut self, project_config: &ProjectConfig) {
+		let has_main = self.main_function_span.is_some();
+		self.any_errors |= (!project_config.provide_main && has_main) || (project_config.provide_main && !has_main);
+	}
+
+	pub fn print_messages(
+		&mut self,
+		project_config: &ProjectConfig,
+		output: &mut impl WriteFmt,
+		stage: &str,
+		externs: &Externs,
+		in_compiler_test: bool,
+		check_main: bool,
+	) -> bool {
 		// Very important that this be a stable sort as different passes in the validator
 		// can emit separate message packages for the same file and we need to maintain
 		// their relative order
@@ -200,12 +213,23 @@ impl<'a> RootMessages<'a> {
 			print_newline_above = true;
 		}
 
-		if self.missing_main {
-			if print_newline_above {
-				writeln!(output);
+		if check_main {
+			if project_config.provide_main && self.main_function_span.is_none() {
+				if print_newline_above {
+					writeln!(output);
+				}
+				let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
+				error.print(output, self.sources, stage);
+			} else if let Some(main_span) = self.main_function_span {
+				if !project_config.provide_main {
+					if print_newline_above {
+						writeln!(output);
+					}
+					let mut error = error!("Project has a main function, but was declared to omit main in `fae.toml`");
+					error = error.span(main_span);
+					error.print(output, self.sources, stage);
+				}
 			}
-			let error = error!("Project has no main function, is it missing or in the wrong file for project name?");
-			error.print(output, self.sources, stage);
 		}
 
 		!has_duplicates.is_empty()
@@ -213,7 +237,7 @@ impl<'a> RootMessages<'a> {
 
 	pub fn reset(&mut self) {
 		self.file_messages.clear();
-		self.missing_main = false;
+		self.main_function_span = None;
 		self.any_errors = false;
 	}
 
@@ -222,7 +246,7 @@ impl<'a> RootMessages<'a> {
 	}
 
 	pub fn any_messages(&self) -> bool {
-		!self.file_messages.is_empty() || self.missing_main
+		!self.file_messages.is_empty() || self.any_errors
 	}
 
 	pub fn add_messages_if_any(&mut self, messages: Messages<'a>) {

@@ -1,0 +1,3 @@
+project_name = "omit_main_success"
+source_directory = "."
+provide_main = false

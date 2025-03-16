@@ -1,0 +1,3 @@
+// Erroneously has a main function
+
+fn main() {}

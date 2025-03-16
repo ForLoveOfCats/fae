@@ -6,6 +6,7 @@ use crate::frontend::tree::{Block, Node, WhenElseChain};
 pub struct WhenContext {
 	pub target_platform: TargetPlatform,
 	pub release_mode: bool,
+	pub provide_main: bool,
 	pub in_compiler_test: bool,
 }
 
@@ -33,6 +34,8 @@ impl WhenContext {
 			"DebugBuild" => !self.release_mode,
 
 			"ReleaseBuild" => self.release_mode,
+
+			"ProvideMain" => self.provide_main,
 
 			"InCompilerTest" => self.in_compiler_test,
 

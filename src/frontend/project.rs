@@ -23,11 +23,18 @@ pub struct BuiltProject {
 	pub any_messages: bool,
 }
 
+fn provide_main_default() -> bool {
+	return true;
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
 	pub project_name: String,
 	pub source_directory: PathBuf,
+
+	#[serde(default = "provide_main_default")]
+	pub provide_main: bool,
 
 	#[allow(dead_code)]
 	pub linux_linker: Option<String>,
@@ -146,7 +153,7 @@ pub fn build_project(
 
 	any_errors |= root_messages.any_errors();
 	any_messages |= root_messages.any_messages();
-	root_messages.print_messages(message_output, "Parse", &externs.read(), in_compiler_test);
+	root_messages.print_messages(&project_config, message_output, "Parse", &externs.read(), in_compiler_test, false);
 	root_messages.reset();
 
 	if !any_errors && cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
@@ -172,6 +179,7 @@ pub fn build_project(
 	let when_context = WhenContext {
 		target_platform,
 		release_mode: cli_arguments.optimize_artifacts,
+		provide_main: project_config.provide_main,
 		in_compiler_test,
 	};
 
@@ -196,9 +204,11 @@ pub fn build_project(
 		&parsed_files,
 	);
 
+	root_messages.determine_main_function_error_state(&project_config);
 	any_errors |= root_messages.any_errors();
 	any_messages |= root_messages.any_messages();
-	let had_duplicate_externs = root_messages.print_messages(message_output, "Validation", &externs.read(), in_compiler_test);
+	let had_duplicate_externs =
+		root_messages.print_messages(&project_config, message_output, "Validation", &externs.read(), in_compiler_test, true);
 	any_errors |= had_duplicate_externs;
 	any_messages |= had_duplicate_externs;
 	root_messages.reset();
@@ -228,6 +238,10 @@ pub fn build_project(
 			std::mem::forget(tokens_vec);
 			std::mem::forget(bump);
 		}
+		return BuiltProject { binary_path: None, any_messages };
+	}
+
+	if in_compiler_test && !project_config.provide_main {
 		return BuiltProject { binary_path: None, any_messages };
 	}
 

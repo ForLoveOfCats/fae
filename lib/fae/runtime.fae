@@ -1,13 +1,18 @@
 static ArgC: i32
 static ArgV: **u8
 
-export "main"
-fn fae_main(argc: i32, argv: **u8): i32 {
+when ProvideMain {
+	export "main"
+	fn fae_runtime_main(argc: i32, argv: **u8): i32 {
+		perform_setup(argc, argv)
+		fae.intrinsics.user_main_function()
+		return 0
+	}
+}
+
+fn perform_setup(argc: i32, argv: **u8) {
 	ArgC = argc
 	ArgV = argv
-
-	fae.intrinsics.user_main_function()
-	return 0
 }
 
 #lang "slice_index_out_of_bounds"

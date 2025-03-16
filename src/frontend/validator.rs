@@ -546,8 +546,10 @@ pub fn validate<'a>(
 		}
 	});
 
-	if function_store.main.read().is_none() {
-		root_messages.write().mark_main_missing();
+	if let Some(main) = *function_store.main.read() {
+		let shapes = function_store.shapes.read();
+		let shape = shapes[main.function_shape_index].as_ref().unwrap().read();
+		root_messages.write().mark_main_found(shape.name.span);
 	}
 }
 
