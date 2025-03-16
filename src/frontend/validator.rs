@@ -5725,7 +5725,8 @@ fn validate_symbol_call<'a>(
 		if symbol.name == "size_of" {
 			if let Some(first) = explicit_arguments.first() {
 				if first.item.is_opaque(context.type_store) {
-					let error = error!("Opaque struct `{}` may not have its size calculated", symbol.name);
+					let name = context.type_name(first.item);
+					let error = error!("Opaque struct {name} may not have its size calculated");
 					context.message(error.span(span));
 				}
 			}
@@ -5734,7 +5735,8 @@ fn validate_symbol_call<'a>(
 		if symbol.name == "alignment_of" {
 			if let Some(first) = explicit_arguments.first() {
 				if first.item.is_opaque(context.type_store) {
-					let error = error!("Opaque struct `{}` may not have its alignment calculated", symbol.name);
+					let name = context.type_name(first.item);
+					let error = error!("Opaque struct {name} may not have its alignment calculated");
 					context.message(error.span(span));
 				}
 			}

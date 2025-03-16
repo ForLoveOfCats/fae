@@ -2,10 +2,10 @@ Validation error: ./tests/opaque_struct_misuse/opaque_struct_misuse.fae, line 4:
   4|     OpaqueStruct {}
          ^^^^^^^^^^^^
 
-Validation error: ./tests/opaque_struct_misuse/opaque_struct_misuse.fae, line 5: Opaque struct `size_of` may not have its size calculated
+Validation error: ./tests/opaque_struct_misuse/opaque_struct_misuse.fae, line 5: Opaque struct `OpaqueStruct` may not have its size calculated
   5|     size_of<OpaqueStruct>()
          ^^^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/opaque_struct_misuse/opaque_struct_misuse.fae, line 6: Opaque struct `alignment_of` may not have its alignment calculated
+Validation error: ./tests/opaque_struct_misuse/opaque_struct_misuse.fae, line 6: Opaque struct `OpaqueStruct` may not have its alignment calculated
   6|     alignment_of<OpaqueStruct>()
          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
