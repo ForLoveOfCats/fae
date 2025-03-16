@@ -211,16 +211,16 @@ pub fn generate_code<'a>(
 			.arg("elf_x86_64")
 			.arg("/usr/lib/crt1.o")
 			.arg("/usr/lib/crti.o")
+			.args(additional_objects)
 			.arg(object_path)
+			.arg("/usr/lib/crtn.o")
 			.arg("/usr/lib/libc.so")
 			.arg("/usr/lib/libm.so")
-			.arg("/usr/lib/crtn.o")
 			.arg("-dynamic-linker")
 			.arg("/lib64/ld-linux-x86-64.so.2")
 			.args(additional_flags)
 			.arg("-o")
 			.arg(&executable_path)
-			.args(additional_objects)
 			.spawn()
 			.unwrap();
 
