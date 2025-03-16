@@ -1861,36 +1861,61 @@ fn parse_struct_declaration<'a>(
 
 	tokens.expect_word(messages, "struct")?;
 
+	let opaque = if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
+		tokens.next(messages)?;
+		tokens.expect_word(messages, "opaque")?;
+		tokens.expect(messages, TokenKind::CloseParen)?;
+		true
+	} else {
+		false
+	};
+
+	if opaque {
+		if let Some(lang_attribute) = attributes.lang_attribute {
+			let error = error!("Opaque struct may not have lang attribute");
+			messages.message(error.span(lang_attribute.span));
+		}
+
+		if let Some(generic_attribute) = attributes.generic_attribute {
+			let error = error!("Opaque struct may not have generics");
+			messages.message(error.span(generic_attribute.span));
+		}
+	}
+
 	let struct_name_token = tokens.expect(messages, TokenKind::Word)?;
 	check_not_reserved(messages, struct_name_token, "struct name")?;
 	let name = Node::from_token(struct_name_token.text, struct_name_token);
 
-	tokens.expect(messages, TokenKind::OpenBrace)?;
-	tokens.consume_newlines();
-
 	let mut fields = BumpVec::new_in(bump);
-	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
-		let field_name_token = tokens.expect(messages, TokenKind::Word)?;
-		let field = parse_field(bump, messages, tokens, field_name_token, "struct field")?;
-		fields.push(field);
+	if !opaque {
+		tokens.expect(messages, TokenKind::OpenBrace)?;
+		tokens.consume_newlines();
 
-		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
-			break;
-		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
-			tokens.next(messages)?;
-			tokens.consume_newlines();
-		} else {
-			tokens.expect(messages, TokenKind::Newline)?;
-			tokens.consume_newlines();
+		while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+			let field_name_token = tokens.expect(messages, TokenKind::Word)?;
+			let field = parse_field(bump, messages, tokens, field_name_token, "struct field")?;
+			fields.push(field);
+
+			if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+				break;
+			} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+				tokens.next(messages)?;
+				tokens.consume_newlines();
+			} else {
+				tokens.expect(messages, TokenKind::Newline)?;
+				tokens.consume_newlines();
+			}
 		}
+
+		tokens.expect(messages, TokenKind::CloseBrace)?;
 	}
 
-	tokens.expect(messages, TokenKind::CloseBrace)?;
 	tokens.expect(messages, TokenKind::Newline)?;
 
 	Ok(Struct {
 		lang_attribute,
 		generics,
+		opaque,
 		name,
 		fields: fields.into_bump_slice(),
 	})

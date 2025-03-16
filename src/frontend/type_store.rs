@@ -72,6 +72,19 @@ impl TypeId {
 		type_store.direct_match(self, type_store.format_string_type_id)
 	}
 
+	pub fn is_opaque(self, type_store: &mut TypeStore) -> bool {
+		let type_entry = type_store.type_entries.get(self);
+		if let TypeEntryKind::UserType { shape_index, .. } = type_entry.kind {
+			let user_types = type_store.user_types.read();
+			let shape = user_types[shape_index].as_ref().read();
+			if let UserTypeKind::Struct { shape } = &shape.kind {
+				return shape.opaque;
+			}
+		}
+
+		false
+	}
+
 	pub fn is_formattable(self, type_store: &TypeStore, expression: &Expression) -> bool {
 		let range = type_store.i8_type_id.entry..=type_store.format_string_type_id.entry;
 		range.contains(&self.entry)
@@ -346,6 +359,7 @@ pub struct StructShape<'a> {
 	pub filling_lock: Ref<ReentrantMutex<()>>,
 	pub been_filled: bool,
 
+	pub opaque: bool,
 	pub fields: Vec<Node<FieldShape<'a>>>,
 
 	pub parent_enum_shape_index: Option<usize>,
@@ -357,10 +371,16 @@ pub struct StructShape<'a> {
 }
 
 impl<'a> StructShape<'a> {
-	pub fn new(parent_enum_shape_index: Option<usize>, variant_index: Option<usize>, is_transparent_variant: bool) -> Self {
+	pub fn new(
+		opaque: bool,
+		parent_enum_shape_index: Option<usize>,
+		variant_index: Option<usize>,
+		is_transparent_variant: bool,
+	) -> Self {
 		StructShape {
 			filling_lock: Ref::new(ReentrantMutex::new(())),
 			been_filled: false,
+			opaque,
 			fields: Vec::new(),
 			parent_enum_shape_index,
 			variant_index,

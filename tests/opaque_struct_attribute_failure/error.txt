@@ -1,0 +1,7 @@
+Parse error: ./tests/opaque_struct_attribute_failure/opaque_struct_attribute_failure.fae, line 1: Opaque struct may not have generics
+  1| generic T
+     ^^^^^^^^^
+
+Parse error: ./tests/opaque_struct_attribute_failure/opaque_struct_attribute_failure.fae, line 4: Opaque struct may not have lang attribute
+  4| #lang "abc"
+     ^^^^^^^^^^^

@@ -81,7 +81,7 @@ pub struct IntrinsicAttribute;
 
 #[derive(Debug, Clone, Copy)]
 pub struct LangAttribute<'a> {
-	pub name: &'a str,
+	pub name: &'a str, // TODO: Turn this into an enum after parsing?
 }
 
 pub struct AllowedAttributes {
@@ -163,6 +163,7 @@ pub struct Struct<'a> {
 	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 	pub generics: &'a [GenericName<'a>],
 	pub name: Node<&'a str>,
+	pub opaque: bool,
 	pub fields: &'a [Field<'a>],
 }
 

@@ -1,0 +1,7 @@
+struct(opaque) OpaqueStruct
+
+fn main() {
+	OpaqueStruct {}
+	size_of<OpaqueStruct>()
+	alignment_of<OpaqueStruct>()
+}

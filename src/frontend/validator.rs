@@ -1759,7 +1759,7 @@ fn create_block_struct<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = StructShape::new(None, None, false);
+	let shape = StructShape::new(statement.opaque, None, None, false);
 	let kind = UserTypeKind::Struct { shape };
 	let span = statement.name.span;
 	let RegisterTypeResult { shape_index, methods_index } = TypeStore::register_type(
@@ -1902,7 +1902,7 @@ fn create_block_enum<'a>(
 		let span = name.span;
 		let name = name.item;
 
-		let shape = StructShape::new(Some(enum_shape_index), Some(variant_index), is_transparent);
+		let shape = StructShape::new(false, Some(enum_shape_index), Some(variant_index), is_transparent);
 		let kind = UserTypeKind::Struct { shape };
 		let RegisterTypeResult { methods_index, .. } = TypeStore::register_type(
 			&mut user_types,
@@ -5270,6 +5270,14 @@ fn validate_struct_literal<'a>(
 		}
 	};
 
+	if shape.opaque {
+		let name = context.type_name(type_id);
+		let message = error!("Cannot construct type {name} as it is an opaque struct");
+		context.messages.message(message.span(base.span));
+		// TODO: Unfortunate that we cannot also emit errors for the expressions contained in the initalizer
+		return Expression::any_collapse(context.type_store, span);
+	}
+
 	let specialization = &shape.specializations[specialization_index];
 	if shape.parent_enum_shape_index.is_some() && specialization.fields.is_empty() {
 		drop(user_type);
@@ -5688,8 +5696,8 @@ fn validate_symbol_call<'a>(
 	span: Span,
 ) -> Expression<'a> {
 	let SymbolKind::Function { function_shape_index } = symbol.kind else {
-		let message = error!("Cannot call `{}`, it is {}", symbol.name, symbol.kind);
-		context.message(message.span(span));
+		let error = error!("Cannot call `{}`, it is {}", symbol.name, symbol.kind);
+		context.message(error.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	};
 
@@ -5707,12 +5715,33 @@ fn validate_symbol_call<'a>(
 		return Expression::any_collapse(context.type_store, span);
 	}
 
-	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
 	let lock = context.function_store.shapes.read()[function_shape_index]
 		.as_ref()
 		.unwrap()
 		.clone();
 	let shape = lock.read();
+
+	if shape.intrinsic_attribute.is_some() {
+		if symbol.name == "size_of" {
+			if let Some(first) = explicit_arguments.first() {
+				if first.item.is_opaque(context.type_store) {
+					let error = error!("Opaque struct `{}` may not have its size calculated", symbol.name);
+					context.message(error.span(span));
+				}
+			}
+		}
+
+		if symbol.name == "alignment_of" {
+			if let Some(first) = explicit_arguments.first() {
+				if first.item.is_opaque(context.type_store) {
+					let error = error!("Opaque struct `{}` may not have its alignment calculated", symbol.name);
+					context.message(error.span(span));
+				}
+			}
+		}
+	}
+
+	let mut type_arguments = TypeArguments::new_from_explicit(explicit_arguments);
 	if shape.generic_parameters.implicit_len() != 0 {
 		// The only functions with implicit generic parameters are inner functions, and if we have it
 		// in scope then that means it must be somewhere within ourselves or our function parent chain

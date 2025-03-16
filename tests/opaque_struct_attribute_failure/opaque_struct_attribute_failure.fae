@@ -1,0 +1,7 @@
+generic T
+struct(opaque) GenericOpaque
+
+#lang "abc"
+struct(opaque) LangOpaque
+
+fn main() {}
