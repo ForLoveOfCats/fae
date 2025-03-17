@@ -97,6 +97,7 @@ The Fae language contains four keywords different categories, each allowed in di
 - `fn`
 - `struct`
 - `enum`
+- `trait`
 - `while`
 - `for`
 - `if`
@@ -107,6 +108,9 @@ The Fae language contains four keywords different categories, each allowed in di
 - `break`
 - `continue`
 - `yield`
+
+**Type modifier keywords** modify the declaration of some aggregate type.
+- `opaque`
 
 **For loop iteration keywords** are placed between a `for` loop's bindings and expression to indicate which type of iteration is to be used.
  - `in`
