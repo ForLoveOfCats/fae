@@ -34,11 +34,11 @@
 				},
 				{
 					"name": "keyword.structure.fae",
-					"match": "\\b(struct|enum)\\b"
+					"match": "\\b(struct|enum|trait)\\b"
 				},
 				{
 					"name": "keyword.tag.fae",
-					"match": "\\b(generic|extern|export|method|static)\\b"
+					"match": "\\b(generic|extern|export|method|static|opaque)\\b"
 				},
 				{
 					"name": "keyword.constant.bool.fae",
