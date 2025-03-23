@@ -22,7 +22,7 @@ pub struct Symbol<'a> {
 #[derive(Debug, Clone)]
 pub enum SymbolKind<'a> {
 	BuiltinType { type_id: TypeId, methods_index: usize },
-	Type { shape_index: usize, methods_index: usize },
+	UserType { shape_index: usize, methods_index: usize },
 	UserTypeGeneric { shape_index: usize, generic_index: usize },
 	FunctionGeneric { function_shape_index: usize, generic_index: usize },
 	TraitGeneric { trait_shape_index: usize, generic_index: usize },
@@ -39,7 +39,7 @@ impl<'a> std::fmt::Display for SymbolKind<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let name = match self {
 			SymbolKind::BuiltinType { .. } => "a built in type",
-			SymbolKind::Type { .. } => "a type",
+			SymbolKind::UserType { .. } => "a type",
 			SymbolKind::UserTypeGeneric { .. } => "a type generic parameter",
 			SymbolKind::FunctionGeneric { .. } => "a function generic parameter",
 			SymbolKind::TraitGeneric { .. } => "a trait body generic parameter",
@@ -144,7 +144,7 @@ impl<'a> Symbols<'a> {
 			if symbol_index < function_initial_symbols_length {
 				match symbol.kind {
 					SymbolKind::Function { .. }
-					| SymbolKind::Type { .. }
+					| SymbolKind::UserType { .. }
 					| SymbolKind::Trait { .. }
 					| SymbolKind::Const { .. }
 					| SymbolKind::Static { .. }
@@ -237,7 +237,7 @@ impl<'a> Symbols<'a> {
 
 				let mut lock = layer.write();
 				return lock.lookup_root_symbol(messages, &[*segments.last().unwrap()]);
-			} else if let SymbolKind::Type { shape_index, .. } = found.kind {
+			} else if let SymbolKind::UserType { shape_index, .. } = found.kind {
 				let lock = type_store.user_types.read()[shape_index].clone();
 				let guard = lock.read();
 				let shape = match &guard.kind {
@@ -264,7 +264,7 @@ impl<'a> Symbols<'a> {
 					return None;
 				}
 
-				let kind = SymbolKind::Type {
+				let kind = SymbolKind::UserType {
 					shape_index: variant_shape.struct_shape_index,
 					methods_index: variant_shape.methods_index,
 				};

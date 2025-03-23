@@ -38,14 +38,6 @@ Validation error: ./tests/import_non_export/import_non_export.fae, line 12: Cann
   12|     let e: module.MyEnum = .B
                                  ^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 13: No symbol `e` in the current scope
-  13|     if e is A => println("It is A")
-             ^
-
-Validation error: ./tests/import_non_export/import_non_export.fae, line 14: No symbol `e` in the current scope
-  14|     else if e is B => println("It is B")
-                  ^
-
 Validation error: ./tests/import_non_export/import_non_export.fae, line 16: No symbol `my_function` in root of module `module`
   16|     println(f"{module.my_function(true)}")
                             ^^^^^^^^^^^

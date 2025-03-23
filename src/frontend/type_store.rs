@@ -2475,7 +2475,7 @@ impl<'a> TypeStore<'a> {
 			}
 
 			tree::Type::Path { path_segments, type_arguments, dot_access_chain } => {
-				(path_segments, type_arguments, dot_access_chain)
+				(path_segments, *type_arguments, *dot_access_chain)
 			}
 		};
 
@@ -2497,7 +2497,7 @@ impl<'a> TypeStore<'a> {
 				return Some(type_id);
 			}
 
-			SymbolKind::Type { shape_index, .. } => shape_index,
+			SymbolKind::UserType { shape_index, .. } => shape_index,
 
 			SymbolKind::UserTypeGeneric { shape_index, generic_index } => {
 				if !type_arguments.is_empty() {
@@ -2557,6 +2557,19 @@ impl<'a> TypeStore<'a> {
 				return None;
 			}
 		};
+
+		if !type_arguments.is_empty() {
+			let user_types = self.user_types.read();
+			let shape = user_types[shape_index].as_ref().read();
+			if let UserTypeKind::Struct { shape } = &shape.kind {
+				if shape.parent_kind != StructParentKind::None {
+					// Note: This error can also be emitted in `validate_dot_access` during malformed variant construction
+					let error = error!("Type arguments not permitted on a variant");
+					messages.message(error.span(parsed_type.span));
+					return None;
+				}
+			}
+		}
 
 		let invoke_span = Some(parsed_type.span);
 		let type_id = self.get_or_add_shape_specialization_in_scope(

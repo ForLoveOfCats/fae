@@ -1,0 +1,3 @@
+Validation error: ./tests/enum_variant_in_type_position_with_type_arguments/enum_variant_in_type_position_with_type_arguments.fae, line 7: Type arguments not permitted on a variant
+  7|     mut a: Enum.Variant<bool> = Enum<bool>.Variant {}
+                ^^^^^^^^^^^^^^^^^^

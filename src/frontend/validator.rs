@@ -1800,7 +1800,7 @@ fn create_block_struct<'a>(
 		lang_items.write().register_lang_type(messages, type_id, lang_name, span);
 	}
 
-	let kind = SymbolKind::Type { shape_index, methods_index };
+	let kind = SymbolKind::UserType { shape_index, methods_index };
 	let symbol = Symbol { name, kind, span: Some(span), used: true, imported: false };
 	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	shape_index
@@ -1975,7 +1975,7 @@ fn create_block_enum<'a>(
 		lang_items.write().register_lang_type(messages, type_id, lang_name, span);
 	}
 
-	let kind = SymbolKind::Type { shape_index, methods_index };
+	let kind = SymbolKind::UserType { shape_index, methods_index };
 	let symbol = Symbol { name, kind, span: Some(span), used: true, imported: false };
 	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
 	shape_index
@@ -3523,7 +3523,7 @@ fn determine_method_info<'a>(
 			method_base_shape_index: None,
 		},
 
-		SymbolKind::Type { shape_index, methods_index } => {
+		SymbolKind::UserType { shape_index, methods_index } => {
 			if method_attribute.item.kind.item == MethodKind::Static {
 				let lock = type_store.user_types.read()[*shape_index].clone();
 				let user_type = lock.read();
@@ -4417,7 +4417,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	let mut type_id = match &statement.item.parsed_type {
 		Some(_) => {
 			// Make sure we still take this path even if the parsed type lookup failed
-			let explicit_type = explicit_type?;
+			let explicit_type = explicit_type.unwrap_or(context.type_store.any_collapse_type_id());
 
 			if !context.collapse_to(explicit_type, &mut expression).ok()? {
 				let expected = context.type_name(explicit_type);
@@ -6429,7 +6429,7 @@ fn validate_symbol_read<'a>(
 			}
 		}
 
-		SymbolKind::Type { shape_index, .. } => {
+		SymbolKind::UserType { shape_index, .. } => {
 			let Some(type_id) = context.type_store.get_or_add_shape_specialization_in_scope(
 				context.messages,
 				context.function_store,

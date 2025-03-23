@@ -1,0 +1,9 @@
+generic T
+enum Enum {
+	Variant {}
+}
+
+fn main() {
+	mut a: Enum.Variant<bool> = Enum<bool>.Variant {}
+	a = Enum<bool>.Variant {} // Make sure the binding still exists
+}
