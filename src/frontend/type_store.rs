@@ -1200,6 +1200,7 @@ impl<'a> TypeStore<'a> {
 		// if either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is an enum, collapse the other to it
+		// if either type is a transparent variant, collaps it to the other
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
 			return Ok(self.any_collapse_type_id);
@@ -1285,15 +1286,17 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		let is_enum = |type_store: &mut Self, entry: TypeEntry| match entry.kind {
-			TypeEntryKind::UserType { shape_index, .. } => match type_store.user_types.read()[shape_index].read().kind {
+		let user_types = self.user_types.read();
+		let is_enum = |entry: TypeEntry| match entry.kind {
+			TypeEntryKind::UserType { shape_index, .. } => match user_types[shape_index].read().kind {
 				UserTypeKind::Enum { .. } => return true,
 				_ => return false,
 			},
 			_ => return false,
 		};
 
-		if is_enum(self, a_entry) {
+		if is_enum(a_entry) {
+			drop(user_types);
 			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
 			return match collapsed {
 				true => Ok(a.type_id),
@@ -1301,10 +1304,37 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		if is_enum(self, b_entry) {
+		if is_enum(b_entry) {
+			drop(user_types);
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
 			return match collapsed {
 				true => Ok(b.type_id),
+				false => Err(()),
+			};
+		}
+
+		let is_transparent_variant = |entry: TypeEntry| match entry.kind {
+			TypeEntryKind::UserType { shape_index, .. } => match &user_types[shape_index].read().kind {
+				UserTypeKind::Struct { shape } => return shape.is_transparent_variant,
+				_ => return false,
+			},
+			_ => return false,
+		};
+
+		if is_transparent_variant(a_entry) {
+			drop(user_types);
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			return match collapsed {
+				true => Ok(b.type_id),
+				false => Err(()),
+			};
+		}
+
+		if is_transparent_variant(b_entry) {
+			drop(user_types);
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			return match collapsed {
+				true => Ok(a.type_id),
 				false => Err(()),
 			};
 		}
@@ -1331,6 +1361,7 @@ impl<'a> TypeStore<'a> {
 		// mutable slice -> immutable slice
 		// str -> fstr
 		// enum/union variant -> enum/union
+		// transparent variant -> its wrapped type
 
 		let any_collapse_entry = self.any_collapse_type_id.entry;
 		if from.type_id.entry == any_collapse_entry || to.entry == any_collapse_entry {
@@ -1511,8 +1542,7 @@ impl<'a> TypeStore<'a> {
 			return Ok(true);
 		}
 
-		// enum/union variant -> enum/union
-		if let TypeEntryKind::UserType { shape_index, .. } = from_entry.kind {
+		if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = from_entry.kind {
 			let user_types = self.user_types.read();
 
 			let user_type = user_types[shape_index].clone();
@@ -1520,19 +1550,24 @@ impl<'a> TypeStore<'a> {
 
 			if let UserTypeKind::Struct { shape } = &user_type.kind {
 				if shape.parent_kind != StructParentKind::None {
-					let variant_index = shape.variant_index.unwrap();
-
-					if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = to_entry.kind {
-						if shape_index == shape.parent_shape_index {
-							let parent_shape = user_types[shape_index].read();
+					// enum/union variant -> enum/union
+					if let TypeEntryKind::UserType {
+						shape_index: to_shape_index,
+						specialization_index: to_specialization_index,
+						..
+					} = to_entry.kind
+					{
+						let variant_index = shape.variant_index.unwrap();
+						if to_shape_index == shape.parent_shape_index {
+							let parent_shape = user_types[to_shape_index].read();
 							let expected_variant_type_id = match &parent_shape.kind {
 								UserTypeKind::Enum { shape: parent_shape } => {
-									let parent_specialization = &parent_shape.specializations[specialization_index];
+									let parent_specialization = &parent_shape.specializations[to_specialization_index];
 									parent_specialization.variants[variant_index].type_id
 								}
 
 								UserTypeKind::Union { shape: parent_shape } => {
-									let parent_specialization = &parent_shape.specializations[specialization_index];
+									let parent_specialization = &parent_shape.specializations[to_specialization_index];
 									parent_specialization.variants[variant_index].type_id
 								}
 
@@ -1561,9 +1596,20 @@ impl<'a> TypeStore<'a> {
 							}
 						}
 					}
+
+					// transparent variant -> its wrapped type
+					if shape.is_transparent_variant {
+						let specialization = &shape.specializations[specialization_index];
+						let wrapped_type_id = specialization.fields.first().unwrap().type_id;
+						if wrapped_type_id.entry == to.entry {
+							return Ok(true);
+						}
+					}
 				}
 			}
 		}
+
+		// transparent variant -> its wrapped type
 
 		Ok(false)
 	}

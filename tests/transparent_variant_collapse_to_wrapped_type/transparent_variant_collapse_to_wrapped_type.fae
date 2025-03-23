@@ -1,0 +1,4 @@
+fn main() {
+	let a: i32 = Option<i32>.Some(42)
+	println(f"Value: {a}")
+}
