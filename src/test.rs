@@ -7,8 +7,9 @@ use crate::color::*;
 use crate::frontend::project::{build_project, ProjectConfig};
 
 pub fn run_tests(mut cli_arguments: CliArguments) -> ! {
-	let mut successes: u64 = 0;
-	let mut failures = Vec::new();
+	let mut test_count: u64 = 0;
+	let mut run_successes: u64 = 0;
+	let mut run_failures = Vec::new();
 
 	let mut entries: Vec<_> = read_dir("./tests").unwrap().map(|e| e.unwrap()).collect();
 	entries.sort_by_cached_key(|e| e.file_name());
@@ -31,48 +32,60 @@ pub fn run_tests(mut cli_arguments: CliArguments) -> ! {
 		if !specified_names.is_empty() && !specified_names.iter().any(|n| test_name.contains(n)) {
 			continue;
 		}
+		test_count += 1;
 
 		if cli_arguments.optimize_artifacts {
-			run_test(&cli_arguments, &test_name, &entry, &mut successes, &mut failures);
+			run_test(&cli_arguments, &test_name, &entry, &mut run_successes, &mut run_failures);
 		} else {
-			run_test(&cli_arguments, &test_name, &entry, &mut successes, &mut failures);
+			let test_success = run_test(&cli_arguments, &test_name, &entry, &mut run_successes, &mut run_failures);
 
-			if specified_names.is_empty() {
+			if test_success {
 				cli_arguments.optimize_artifacts = true;
-				run_test(&cli_arguments, &test_name, &entry, &mut successes, &mut failures);
+				run_test(&cli_arguments, &test_name, &entry, &mut run_successes, &mut run_failures);
 				cli_arguments.optimize_artifacts = false;
 			}
 		}
 	}
 
-	let failed = !failures.is_empty();
+	let tests = if test_count > 1 { "tests" } else { "test" };
+	let overall = format!("  Ran {test_count} {tests} overall");
 
-	let cases = if successes > 1 { "cases" } else { "case" };
-	let success = format!("  Ran {successes} test {cases} successfully");
-	let cases = if failures.len() > 1 { "cases" } else { "case" };
-	let failure = format!("  However {} test {cases} failed:", failures.len());
-	let line = "─".repeat(success.len().max(failure.len()));
+	let invocations = if run_successes > 1 { "invocations" } else { "invocation" };
+	let success = format!("  {run_successes} {invocations} completed successfully");
+
+	let invocations = if run_failures.len() > 1 { "invocations" } else { "invocation" };
+	let failure = format!("  However {} test {invocations} failed:", run_failures.len());
+
+	let line = "─".repeat(overall.len().max(success.len().max(failure.len())));
 	eprintln!("\n┌{line}┐");
+	eprintln!("{BOLD_CYAN}{overall}{RESET}");
 	eprintln!("{GREEN}{success}{RESET}");
 
-	if !failures.is_empty() {
+	if !run_failures.is_empty() {
 		eprintln!("{RED}{failure}{RESET}");
 
-		for failure in failures {
+		for failure in &run_failures {
 			eprintln!("    ▪ {failure}");
 		}
 	}
 
 	eprintln!("└{line}┘");
 
-	if failed {
+	if !run_failures.is_empty() {
 		std::process::exit(-1);
 	} else {
 		std::process::exit(0);
 	}
 }
 
-fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, successes: &mut u64, failures: &mut Vec<String>) {
+// Returns if success or not
+fn run_test(
+	cli_arguments: &CliArguments,
+	test_name: &str,
+	entry: &DirEntry,
+	successes: &mut u64,
+	failures: &mut Vec<String>,
+) -> bool {
 	let optimized = match cli_arguments.optimize_artifacts {
 		false => "unoptimized",
 		true => "optimized",
@@ -134,7 +147,7 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 				test_failed = true;
 			} else if built_project.binary_path.is_none() {
 				*successes += 1;
-				return;
+				return true;
 			}
 		} else {
 			eprintln!("{RED}Compiler test harness: Got error/warning messages but did not expect any{RESET}\n");
@@ -153,7 +166,7 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 		let Some(binary_path) = built_project.binary_path else {
 			eprintln!("{RED}Compiler test harness: Failed to build test, did not produce a binary to run{RESET}\n");
 			failures.push(test_name);
-			return;
+			return false;
 		};
 
 		let output = std::process::Command::new(&binary_path)
@@ -189,7 +202,7 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 			stderr().lock().write_all(&actual_stderr).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got different stderr than expected{RESET}\n");
 			failures.push(test_name);
-			return;
+			return false;
 		}
 	} else if !actual_stderr.is_empty() {
 		stderr().lock().write_all(&actual_stderr).unwrap();
@@ -199,7 +212,9 @@ fn run_test(cli_arguments: &CliArguments, test_name: &str, entry: &DirEntry, suc
 
 	if test_failed {
 		failures.push(test_name);
+		false
 	} else {
 		*successes += 1;
+		true
 	}
 }
