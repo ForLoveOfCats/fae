@@ -1,0 +1,3 @@
+Validation error: ./tests/enum_variant_in_instantiation_with_type_arguments/enum_variant_in_instantiation_with_type_arguments.fae, line 8: Type arguments not permitted on a variant
+  8|     Enum<bool>.Variant<bool> {} // Invalid
+         ^^^^^^^^^^^^^^^^^^^^^^^^

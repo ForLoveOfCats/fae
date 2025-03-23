@@ -1,0 +1,9 @@
+generic T
+enum Enum {
+	Variant {}
+}
+
+fn main() {
+	Enum<bool>.Variant {} // Valid
+	Enum<bool>.Variant<bool> {} // Invalid
+}
