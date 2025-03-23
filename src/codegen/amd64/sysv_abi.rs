@@ -111,6 +111,10 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 						return &mut buffer[..1];
 					}
 				}
+
+				UserTypeKind::Union { .. } => {
+					todo!();
+				}
 			};
 			let specialization = &shape.specializations[specialization_index];
 

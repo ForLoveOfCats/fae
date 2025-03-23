@@ -552,8 +552,8 @@ impl<'a> Expression<'a> {
 			return false;
 		};
 
-		if shape.parent_enum_shape_index.is_none() {
-			return false; // Not an enum variant
+		if shape.parent_kind == StructParentKind::None {
+			return false; // Not a variant
 		}
 
 		let specialization = &shape.specializations[specialization_index];

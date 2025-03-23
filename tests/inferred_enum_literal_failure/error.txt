@@ -2,7 +2,7 @@ Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_fa
   2|     let _: Enum = .Something
                         ^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 3: Cannot infer enum type for variant, there is no specific expected type in this context
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 3: Cannot infer base type for variant, there is no specific expected type in this context
   3|     let _ = .WhoKnows
                  ^^^^^^^^^
 
@@ -34,10 +34,10 @@ Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_fa
   19|     value.first = .Abc
                          ^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 21: Cannot infer enum type for variant, there is no specific expected type in this context
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 21: Cannot infer base type for variant, there is no specific expected type in this context
   21|     let _ = if true => yield .A
                                    ^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 22: Cannot infer enum type for variant, the expected type is not an enum
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 22: Cannot infer base type for variant, the expected type is not an enum or union
   22|     else => yield .B
                         ^^

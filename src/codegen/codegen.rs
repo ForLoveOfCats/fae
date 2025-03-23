@@ -773,6 +773,10 @@ fn generate_field_read<'a, 'b, G: Generator>(
 					return None;
 				}
 			}
+
+			UserTypeKind::Union { .. } => {
+				todo!();
+			}
 		}
 	}
 

@@ -34,7 +34,7 @@ Validation error: ./tests/import_non_export/import_non_export.fae, line 12: No s
   12|     let e: module.MyEnum = .B
                         ^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 12: Cannot infer enum type for variant, there is no specific expected type in this context
+Validation error: ./tests/import_non_export/import_non_export.fae, line 12: Cannot infer base type for variant, there is no specific expected type in this context
   12|     let e: module.MyEnum = .B
                                  ^^
 

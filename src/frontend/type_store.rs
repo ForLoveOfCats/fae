@@ -345,6 +345,13 @@ pub struct TraitParameter {
 	pub type_id: TypeId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructParentKind {
+	None,
+	Enum,
+	Union,
+}
+
 #[derive(Debug)]
 pub struct StructShape<'a> {
 	/* A race condition can occur if one thread attempts to create a new specialization while
@@ -362,7 +369,8 @@ pub struct StructShape<'a> {
 	pub opaque: bool,
 	pub fields: Vec<Node<FieldShape<'a>>>,
 
-	pub parent_enum_shape_index: Option<usize>,
+	pub parent_kind: StructParentKind,
+	pub parent_shape_index: usize,
 	pub variant_index: Option<usize>,
 	pub is_transparent_variant: bool,
 
@@ -373,7 +381,8 @@ pub struct StructShape<'a> {
 impl<'a> StructShape<'a> {
 	pub fn new(
 		opaque: bool,
-		parent_enum_shape_index: Option<usize>,
+		parent_kind: StructParentKind,
+		parent_shape_index: usize,
 		variant_index: Option<usize>,
 		is_transparent_variant: bool,
 	) -> Self {
@@ -382,7 +391,8 @@ impl<'a> StructShape<'a> {
 			been_filled: false,
 			opaque,
 			fields: Vec::new(),
-			parent_enum_shape_index,
+			parent_kind,
+			parent_shape_index,
 			variant_index,
 			is_transparent_variant,
 			specializations_by_type_arguments: FxHashMap::default(),
@@ -462,15 +472,65 @@ pub struct Enum<'a> {
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
 	pub shared_fields: SliceRef<Field<'a>>,
-	pub variants: SliceRef<EnumVariant>,
+	pub variants: SliceRef<Variant>,
 	pub variants_by_name: Ref<FxHashMap<&'a str, usize>>, // Index into variants vec
 	pub layout: Option<Layout>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct EnumVariant {
+pub struct Variant {
 	pub span: Span,
 	pub type_id: TypeId,
+	pub is_transparent: bool,
+}
+
+#[allow(unused)] // TODO: Finish implementing unions
+#[derive(Debug)]
+pub struct UnionShape<'a> {
+	// See comment on `filling_lock` field of `StructShape` for details
+	pub filling_lock: Ref<ReentrantMutex<()>>,
+	pub been_filled: bool,
+
+	pub variant_shapes: SliceRef<UnionVariantShape<'a>>,
+
+	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
+	pub specializations: Vec<Union<'a>>,
+}
+
+#[allow(unused)] // TODO: Finish implementing unions
+impl<'a> UnionShape<'a> {
+	pub fn new(variant_shapes: Vec<UnionVariantShape<'a>>) -> Self {
+		UnionShape {
+			filling_lock: Ref::new(ReentrantMutex::new(())),
+			been_filled: false,
+			variant_shapes: SliceRef::from(variant_shapes),
+			specializations_by_type_arguments: FxHashMap::default(),
+			specializations: Vec::new(),
+		}
+	}
+}
+
+#[allow(unused)] // TODO: Finish implementing unions
+#[derive(Debug, Clone)]
+pub struct Union<'a> {
+	pub type_id: TypeId,
+	pub generic_poisoned: bool,
+	pub type_arguments: Ref<TypeArguments>,
+	pub been_filled: bool,
+	pub fields: SliceRef<Field<'a>>,
+	pub variants: SliceRef<Variant>,
+	pub variants_by_name: Ref<FxHashMap<&'a str, usize>>, // Index into variants vec
+	pub layout: Option<Layout>,
+}
+
+#[allow(unused)] // TODO: Finish implementing unions
+#[derive(Debug, Clone, Copy)]
+pub struct UnionVariantShape<'a> {
+	pub name: &'a str,
+	pub span: Span,
+	pub variant_index: usize,
+	pub struct_shape_index: usize,
+	pub methods_index: usize,
 	pub is_transparent: bool,
 }
 
@@ -525,10 +585,12 @@ pub struct MethodInfo {
 	pub kind: Node<MethodKind>,
 }
 
+#[allow(unused)] // TODO: Finish implementing unions
 #[derive(Debug)]
 pub enum UserTypeKind<'a> {
 	Struct { shape: StructShape<'a> },
 	Enum { shape: EnumShape<'a> },
+	Union { shape: UnionShape<'a> },
 }
 
 #[derive(Debug)]
@@ -674,6 +736,15 @@ impl TypeEntry {
 					}
 
 					UserTypeKind::Enum { shape } => {
+						let specialization = &shape.specializations[specialization_index];
+						specialization
+							.type_arguments
+							.ids
+							.iter()
+							.any(|t| type_store.type_entries.get(t.item).generic_poisoned)
+					}
+
+					UserTypeKind::Union { shape } => {
 						let specialization = &shape.specializations[specialization_index];
 						specialization
 							.type_arguments
@@ -1259,7 +1330,7 @@ impl<'a> TypeStore<'a> {
 		// mutable reference -> immutable reference
 		// mutable slice -> immutable slice
 		// str -> fstr
-		// enum variant -> enum
+		// enum/union variant -> enum/union
 
 		let any_collapse_entry = self.any_collapse_type_id.entry;
 		if from.type_id.entry == any_collapse_entry || to.entry == any_collapse_entry {
@@ -1440,7 +1511,7 @@ impl<'a> TypeStore<'a> {
 			return Ok(true);
 		}
 
-		// enum variant -> enum
+		// enum/union variant -> enum/union
 		if let TypeEntryKind::UserType { shape_index, .. } = from_entry.kind {
 			let user_types = self.user_types.read();
 
@@ -1448,18 +1519,25 @@ impl<'a> TypeStore<'a> {
 			let user_type = user_type.read();
 
 			if let UserTypeKind::Struct { shape } = &user_type.kind {
-				if let Some(parent_enum_shape_index) = shape.parent_enum_shape_index {
+				if shape.parent_kind != StructParentKind::None {
 					let variant_index = shape.variant_index.unwrap();
 
 					if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = to_entry.kind {
-						if shape_index == parent_enum_shape_index {
+						if shape_index == shape.parent_shape_index {
 							let parent_shape = user_types[shape_index].read();
-							let UserTypeKind::Enum { shape: parent_shape } = &parent_shape.kind else {
-								unreachable!();
-							};
+							let expected_variant_type_id = match &parent_shape.kind {
+								UserTypeKind::Enum { shape: parent_shape } => {
+									let parent_specialization = &parent_shape.specializations[specialization_index];
+									parent_specialization.variants[variant_index].type_id
+								}
 
-							let parent_specialization = &parent_shape.specializations[specialization_index];
-							let expected_variant_type_id = parent_specialization.variants[variant_index].type_id;
+								UserTypeKind::Union { shape: parent_shape } => {
+									let parent_specialization = &parent_shape.specializations[specialization_index];
+									parent_specialization.variants[variant_index].type_id
+								}
+
+								_ => unreachable!(),
+							};
 
 							if expected_variant_type_id.entry == from.type_id.entry {
 								// TODO: This replace is a dumb solution
@@ -1919,6 +1997,40 @@ impl<'a> TypeStore<'a> {
 							kind => unreachable!("{kind:?}"),
 						}
 					}
+
+					UserTypeKind::Union { shape } => {
+						let specialization = &shape.specializations[specialization_index];
+						if let Some(layout) = specialization.layout {
+							return layout;
+						}
+						assert!(specialization.been_filled);
+
+						let variants: Vec<_> = specialization.variants.iter().map(|v| v.type_id).collect();
+						drop(user_type);
+
+						let mut size = 0;
+						let mut alignment = 1;
+
+						for variant in variants {
+							let variant_layout = self.type_layout(variant);
+
+							size = size.max(variant_layout.size);
+							alignment = alignment.max(variant_layout.alignment);
+						}
+
+						let layout = Layout { size, alignment };
+
+						let mut user_type = lock.write();
+						match &mut user_type.kind {
+							UserTypeKind::Union { shape } => {
+								let specialization = &mut shape.specializations[specialization_index];
+								specialization.layout = Some(layout);
+								layout
+							}
+
+							kind => unreachable!("{kind:?}"),
+						}
+					}
 				}
 			}
 
@@ -2283,6 +2395,35 @@ impl<'a> TypeStore<'a> {
 					}
 				}
 			}
+
+			UserTypeKind::Union { shape } => {
+				let specialization = &shape.specializations[specialization_index];
+
+				for (name, &variant_index) in specialization.variants_by_name.iter() {
+					let variant = &specialization.variants[variant_index];
+					if variant.type_id.entry == to.entry {
+						let link = UserTypeChainLink {
+							user_type: specialization.type_id,
+							field_name: name,
+							field_span: variant.span,
+						};
+						return Some(vec![link]);
+					}
+
+					let chain = self.find_user_type_dependency_chain(variant.type_id, to);
+					if let Some(mut chain) = chain {
+						chain.insert(
+							0,
+							UserTypeChainLink {
+								user_type: specialization.type_id,
+								field_name: name,
+								field_span: variant.span,
+							},
+						);
+						return Some(chain);
+					}
+				}
+			}
 		}
 
 		None
@@ -2568,6 +2709,10 @@ impl<'a> TypeStore<'a> {
 					invoke_span,
 					type_arguments,
 				)
+			}
+
+			UserTypeKind::Union { .. } => {
+				todo!();
 			}
 		}
 	}
@@ -2897,7 +3042,7 @@ impl<'a> TypeStore<'a> {
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
 			let is_transparent = variant_shape.is_transparent;
-			variants.push(EnumVariant { span, type_id, is_transparent });
+			variants.push(Variant { span, type_id, is_transparent });
 			variants_by_name.insert(variant_shape.name, variant_index);
 		}
 
@@ -3174,6 +3319,10 @@ impl<'a> TypeStore<'a> {
 						)
 						.unwrap()
 					}
+
+					UserTypeKind::Union { shape: _ } => {
+						todo!();
+					}
 				}
 			}
 
@@ -3296,7 +3445,8 @@ impl<'a> TypeStore<'a> {
 
 				match &user_type.kind {
 					UserTypeKind::Struct { shape } => {
-						let parent_enum_shape_index = shape.parent_enum_shape_index;
+						let parent_kind = shape.parent_kind;
+						let parent_shape_index = shape.parent_shape_index;
 						let specialization = &shape.specializations[specialization_index];
 						let type_arguments = specialization.type_arguments.ids[0..explicit_generic_parameters_len].to_vec();
 						drop(user_type);
@@ -3315,12 +3465,12 @@ impl<'a> TypeStore<'a> {
 							.collect::<Vec<_>>()
 							.join(", ");
 
-						if let Some(parent_enum_shape_index) = parent_enum_shape_index {
-							let enum_name = self.user_types.read()[parent_enum_shape_index].read().name;
+						if parent_kind != StructParentKind::None {
+							let parent_name = self.user_types.read()[parent_shape_index].read().name;
 							if explicit_generic_parameters_len == 0 {
-								format!("{enum_name}.{}", user_type_name)
+								format!("{parent_name}.{}", user_type_name)
 							} else {
-								format!("{enum_name}::{}<{}>", user_type_name, type_arguments)
+								format!("{parent_name}::{}<{}>", user_type_name, type_arguments)
 							}
 						} else {
 							if explicit_generic_parameters_len == 0 {
@@ -3332,6 +3482,31 @@ impl<'a> TypeStore<'a> {
 					}
 
 					UserTypeKind::Enum { shape } => {
+						if explicit_generic_parameters_len == 0 {
+							return user_type_name.to_owned();
+						}
+
+						let specialization = &shape.specializations[specialization_index];
+						let type_arguments = specialization.type_arguments.ids[0..explicit_generic_parameters_len].to_vec();
+						drop(user_type);
+						let type_arguments = type_arguments
+							.iter()
+							.map(|argument| {
+								self.internal_type_name(
+									function_store,
+									_module_path,
+									argument.item,
+									debug_generics,
+									debug_type_ids,
+								)
+							})
+							.collect::<Vec<_>>()
+							.join(", ");
+
+						format!("{}<{}>", user_type_name, type_arguments)
+					}
+
+					UserTypeKind::Union { shape } => {
 						if explicit_generic_parameters_len == 0 {
 							return user_type_name.to_owned();
 						}

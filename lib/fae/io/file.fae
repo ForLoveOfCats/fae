@@ -30,7 +30,7 @@ fn open(path=: []u8, write=: WriteMode, create=: CreateMode): Option<File> {
 
 	mut flags: i32 = 0
 	match write {
-		ReadOnly =>flags |= O_RDONLY
+		ReadOnly => flags |= O_RDONLY
 		Append => flags |= O_RDWR | O_APPEND 
 		Overwrite => flags |= O_RDWR | O_TRUNC 
 	}

@@ -214,6 +214,7 @@ impl<'a> FunctionStore<'a> {
 				let method_base_arguments = match &user_type.kind {
 					UserTypeKind::Struct { shape } => shape.specializations[specialization_index].type_arguments.ids.as_slice(),
 					UserTypeKind::Enum { shape } => shape.specializations[specialization_index].type_arguments.ids.as_slice(),
+					UserTypeKind::Union { shape } => shape.specializations[specialization_index].type_arguments.ids.as_slice(),
 				};
 
 				for &base_argument in method_base_arguments {

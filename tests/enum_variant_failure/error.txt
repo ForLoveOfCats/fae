@@ -1,8 +1,4 @@
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 3: Cannot construct enum variant `Enum.A` with field initializers
-  3|     let _: Enum = .A {}
-                       ^^^^^
-
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 4: Cannot construct struct-like enum variant `Enum.A` like a transparent enum variant
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 4: Cannot construct struct-like variant `Enum.A` like a transparent variant
   4|     let _: Enum = .A(1)
                        ^^^^^
 
@@ -38,6 +34,6 @@ Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 16
   16|     let _: Enum = .C { field: 1, extra: 2 }
                                        ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 17: Cannot construct struct-like enum variant `Enum.C` like a transparent enum variant
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 17: Cannot construct struct-like variant `Enum.C` like a transparent variant
   17|     let _: Enum = .C(1)
                         ^^^^^

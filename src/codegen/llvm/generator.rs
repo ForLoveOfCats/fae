@@ -594,6 +594,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let specialization_count = match &user_type.kind {
 				UserTypeKind::Struct { shape } => shape.specializations.len(),
 				UserTypeKind::Enum { shape } => shape.specializations.len(),
+				UserTypeKind::Union { shape } => shape.specializations.len(),
 			};
 
 			let specializations = Vec::from_iter((0..specialization_count).map(|_| {
@@ -704,6 +705,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 							user_type_struct.as_enum_shared_fields = Some(named);
 						};
 					}
+				}
+
+				UserTypeKind::Union { .. } => {
+					todo!();
 				}
 			}
 		}
@@ -1731,6 +1736,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 						let enum_type = &shape.specializations[specialization_index];
 						enum_type.shared_fields[field_index].type_id
+					}
+
+					UserTypeKind::Union { .. } => {
+						todo!();
 					}
 				}
 			}

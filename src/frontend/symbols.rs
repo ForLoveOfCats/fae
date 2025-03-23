@@ -243,6 +243,8 @@ impl<'a> Symbols<'a> {
 				let shape = match &guard.kind {
 					UserTypeKind::Enum { shape } => shape,
 
+					UserTypeKind::Union { .. } => todo!(),
+
 					UserTypeKind::Struct { .. } => {
 						let error = error!("Cannot path sub-access `{}` as it is a struct", first.item);
 						messages.message(error.span(first.span + second.span));
