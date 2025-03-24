@@ -1591,6 +1591,7 @@ fn create_block_traits<'a>(
 				| tree::Statement::WhenElseChain(..)
 				| tree::Statement::Struct(..)
 				| tree::Statement::Enum(..)
+				| tree::Statement::Union(..)
 				| tree::Statement::Trait(..)
 				| tree::Statement::Function(..)
 				| tree::Statement::Const(..)
@@ -1651,42 +1652,9 @@ fn create_block_types<'a>(
 	type_shape_indicies: &mut Vec<usize>,
 ) {
 	for statement in block.statements {
-		if let tree::Statement::Struct(statement) = statement {
-			let shape_index = create_block_struct(
-				messages,
-				lang_items,
-				root_layers,
-				type_store,
-				function_store,
-				module_path,
-				symbols,
-				generic_usages,
-				function_initial_symbols_length,
-				enclosing_generic_parameters,
-				scope_id,
-				statement,
-			);
-			type_shape_indicies.push(shape_index);
-		} else if let tree::Statement::Enum(statement) = statement {
-			let shape_index = create_block_enum(
-				messages,
-				lang_items,
-				root_layers,
-				type_store,
-				function_store,
-				module_path,
-				symbols,
-				generic_usages,
-				function_initial_symbols_length,
-				enclosing_generic_parameters,
-				scope_id,
-				statement,
-			);
-			type_shape_indicies.push(shape_index);
-		} else if let tree::Statement::WhenElseChain(statement) = statement {
-			if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
-				create_block_types(
-					when_context,
+		match statement {
+			tree::Statement::Struct(statement) => {
+				let shape_index = create_block_struct(
 					messages,
 					lang_items,
 					root_layers,
@@ -1697,11 +1665,69 @@ fn create_block_types<'a>(
 					generic_usages,
 					function_initial_symbols_length,
 					enclosing_generic_parameters,
-					&body.item,
 					scope_id,
-					type_shape_indicies,
+					statement,
 				);
-			};
+				type_shape_indicies.push(shape_index);
+			}
+
+			tree::Statement::Enum(statement) => {
+				let shape_index = create_block_enum(
+					messages,
+					lang_items,
+					root_layers,
+					type_store,
+					function_store,
+					module_path,
+					symbols,
+					generic_usages,
+					function_initial_symbols_length,
+					enclosing_generic_parameters,
+					scope_id,
+					statement,
+				);
+				type_shape_indicies.push(shape_index);
+			}
+
+			tree::Statement::Union(statement) => {
+				let shape_index = create_block_union(
+					messages,
+					root_layers,
+					type_store,
+					function_store,
+					module_path,
+					symbols,
+					generic_usages,
+					function_initial_symbols_length,
+					enclosing_generic_parameters,
+					scope_id,
+					statement,
+				);
+				type_shape_indicies.push(shape_index);
+			}
+
+			tree::Statement::WhenElseChain(statement) => {
+				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
+					create_block_types(
+						when_context,
+						messages,
+						lang_items,
+						root_layers,
+						type_store,
+						function_store,
+						module_path,
+						symbols,
+						generic_usages,
+						function_initial_symbols_length,
+						enclosing_generic_parameters,
+						&body.item,
+						scope_id,
+						type_shape_indicies,
+					);
+				};
+			}
+
+			_ => (),
 		}
 	}
 }
@@ -1904,8 +1930,8 @@ fn create_block_enum<'a>(
 		}
 
 		let (name, is_transparent) = match variant {
-			tree::EnumVariant::StructLike(struct_like) => (struct_like.name, false),
-			tree::EnumVariant::Transparent(transparent) => (transparent.name, true),
+			tree::Variant::StructLike(struct_like) => (struct_like.name, false),
+			tree::Variant::Transparent(transparent) => (transparent.name, true),
 		};
 
 		let span = name.span;
@@ -1974,6 +2000,158 @@ fn create_block_enum<'a>(
 		let lang_name = lang_attribute.item.name;
 		lang_items.write().register_lang_type(messages, type_id, lang_name, span);
 	}
+
+	let kind = SymbolKind::UserType { shape_index, methods_index };
+	let symbol = Symbol { name, kind, span: Some(span), used: true, imported: false };
+	symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+	shape_index
+}
+
+fn create_block_union<'a>(
+	messages: &mut Messages<'a>,
+	root_layers: &RootLayers<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
+	symbols: &mut Symbols<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	function_initial_symbols_length: usize,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	scope_id: ScopeId,
+	statement: &tree::Union<'a>,
+) -> usize {
+	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
+	let mut explicit_generics = Vec::with_capacity(capacity);
+
+	let user_types = type_store.user_types.clone();
+	let mut user_types = user_types.write(); // This write lock is quite unfortunate
+
+	// TODO: Abstract and reuse this?
+	let union_shape_index = user_types.len() + statement.variants.len();
+	for (generic_index, generic) in statement.generics.iter().enumerate() {
+		let (constraint_trait_ids, generic_constraints) = type_store.lookup_constraints(
+			messages,
+			root_layers,
+			function_store,
+			module_path,
+			symbols,
+			generic_usages,
+			function_initial_symbols_length,
+			generic.constraints,
+			enclosing_generic_parameters,
+		);
+		let generic_type_id = type_store.register_user_type_generic(union_shape_index, generic_index, &constraint_trait_ids);
+		explicit_generics.push(GenericParameter {
+			name: generic.name,
+			constraint_trait_ids,
+			generic_constraints,
+			generic_type_id,
+		});
+	}
+
+	let explicit_generics_len = explicit_generics.len();
+	let mut generic_parameters = GenericParameters::new_from_explicit(explicit_generics);
+	for (index, parent_parameter) in enclosing_generic_parameters.parameters().iter().enumerate() {
+		let generic_index = explicit_generics_len + index;
+		let constraint_trait_ids = parent_parameter.constraint_trait_ids.clone();
+		let generic_constraints = parent_parameter.generic_constraints.clone();
+		let generic_type_id = type_store.register_user_type_generic(union_shape_index, generic_index, &constraint_trait_ids);
+		generic_parameters.push_implicit(GenericParameter {
+			name: parent_parameter.name,
+			constraint_trait_ids,
+			generic_constraints,
+			generic_type_id,
+		});
+	}
+
+	let mut variants: Vec<UnionVariantShape> = Vec::new();
+
+	for (variant_index, variant) in statement.variants.iter().enumerate() {
+		let struct_shape_index = user_types.len();
+
+		let mut variant_explicit_generics = Vec::with_capacity(generic_parameters.explicit_len());
+		for (generic_index, union_explicit_generic) in generic_parameters.explicit_parameters().iter().enumerate() {
+			let constraint_trait_ids = union_explicit_generic.constraint_trait_ids.clone();
+			let generic_constraints = union_explicit_generic.generic_constraints.clone();
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index, &constraint_trait_ids);
+			variant_explicit_generics.push(GenericParameter {
+				name: union_explicit_generic.name,
+				constraint_trait_ids,
+				generic_constraints,
+				generic_type_id,
+			});
+		}
+
+		let explicit_generics_len = variant_explicit_generics.len();
+		let mut variant_generic_parameters = GenericParameters::new_from_explicit(variant_explicit_generics);
+		for (index, union_parameter) in generic_parameters.implicit_parameters().iter().enumerate() {
+			let generic_index = explicit_generics_len + index;
+			let constraint_trait_ids = union_parameter.constraint_trait_ids.clone();
+			let generic_constraints = union_parameter.generic_constraints.clone();
+			let generic_type_id = type_store.register_user_type_generic(struct_shape_index, generic_index, &constraint_trait_ids);
+			let parameter = GenericParameter {
+				name: union_parameter.name,
+				constraint_trait_ids,
+				generic_constraints,
+				generic_type_id,
+			};
+			variant_generic_parameters.push_implicit(parameter);
+		}
+
+		let (name, is_transparent) = match variant {
+			tree::Variant::StructLike(struct_like) => (struct_like.name, false),
+			tree::Variant::Transparent(transparent) => (transparent.name, true),
+		};
+
+		let span = name.span;
+		let name = name.item;
+
+		let shape = StructShape::new(false, StructParentKind::Union, union_shape_index, Some(variant_index), is_transparent);
+		let kind = UserTypeKind::Struct { shape };
+		let RegisterTypeResult { methods_index, .. } = TypeStore::register_type(
+			&mut user_types,
+			&type_store.method_collections,
+			&type_store.implementations,
+			name,
+			variant_generic_parameters,
+			kind,
+			scope_id,
+			span,
+		);
+
+		if let Some(existing) = variants.iter().find(|v| v.name == name) {
+			let error = error!("Duplicate variant `{}` on union `{}`", name, statement.name.item);
+			let note = note!(existing.span, "Original variant here");
+			messages.message(error.span(span).note(note))
+		}
+
+		let variant_shape = UnionVariantShape {
+			name,
+			span,
+			variant_index,
+			struct_shape_index,
+			methods_index,
+			is_transparent,
+		};
+		variants.push(variant_shape);
+	}
+
+	let name = statement.name.item;
+	let shape = UnionShape::new(variants);
+	let kind = UserTypeKind::Union { shape };
+	let span = statement.name.span;
+	assert_eq!(user_types.len(), union_shape_index);
+	let RegisterTypeResult { shape_index, methods_index } = TypeStore::register_type(
+		&mut user_types,
+		&type_store.method_collections,
+		&type_store.implementations,
+		name,
+		generic_parameters,
+		kind,
+		scope_id,
+		span,
+	);
+	drop(user_types);
 
 	let kind = SymbolKind::UserType { shape_index, methods_index };
 	let symbol = Symbol { name, kind, span: Some(span), used: true, imported: false };
@@ -2077,6 +2255,22 @@ fn fill_block_types<'a>(
 
 			tree::Statement::Enum(statement) => {
 				fill_block_enum(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					enclosing_generic_parameters,
+					root_layers,
+					symbols,
+					module_path,
+					function_initial_symbols_length,
+					statement,
+					*shape_index_iter.next().unwrap(),
+				);
+			}
+
+			tree::Statement::Union(statement) => {
+				fill_block_union(
 					messages,
 					type_store,
 					function_store,
@@ -2777,7 +2971,7 @@ fn fill_struct_like_enum_variant<'a>(
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	match tree_variant {
-		tree::EnumVariant::StructLike(struct_like) => {
+		tree::Variant::StructLike(struct_like) => {
 			let variant_name = struct_like.name.item;
 
 			for field in struct_like.fields {
@@ -2814,7 +3008,213 @@ fn fill_struct_like_enum_variant<'a>(
 			}
 		}
 
-		tree::EnumVariant::Transparent(transparent) => {
+		tree::Variant::Transparent(transparent) => {
+			let field_type = match type_store.lookup_type(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				root_layers,
+				scope.symbols,
+				function_initial_symbols_length,
+				&blank_generic_parameters,
+				&transparent.parsed_type,
+			) {
+				Some(type_id) => type_id,
+				None => type_store.any_collapse_type_id(),
+			};
+
+			let field_shape = FieldShape {
+				name: transparent.name.item,
+				field_type,
+				attribute: None,
+				read_only: false,
+			};
+			let span = transparent.parsed_type.span;
+			let node = Node::new(field_shape, span);
+			fields.push(node);
+		}
+	}
+
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
+		UserTypeKind::Struct { shape } => {
+			shape.fields = fields;
+			assert!(!shape.been_filled);
+			shape.been_filled = true;
+
+			let has_specializations = !shape.specializations.is_empty();
+			drop(user_type);
+
+			if has_specializations {
+				fill_pre_existing_struct_specializations(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					enclosing_generic_parameters,
+					module_path,
+					variant_shape.struct_shape_index,
+				);
+			}
+		}
+
+		UserTypeKind::Enum { .. } => unreachable!("enum"),
+		UserTypeKind::Union { .. } => unreachable!("union"),
+	}
+}
+
+fn fill_block_union<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_length: usize,
+	statement: &tree::Union<'a>,
+	union_shape_index: usize,
+) {
+	let lock = type_store.user_types.read()[union_shape_index].clone();
+	let user_type = lock.read();
+
+	let filling_lock = match &user_type.kind {
+		UserTypeKind::Union { shape } => shape.filling_lock.clone(),
+		UserTypeKind::Struct { .. } => unreachable!("struct"),
+		UserTypeKind::Enum { .. } => unreachable!("enum"),
+	};
+	let _filling_guard = filling_lock.lock();
+
+	let scope = symbols.child_scope();
+
+	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
+		let kind = SymbolKind::UserTypeGeneric { shape_index: union_shape_index, generic_index };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+			imported: false,
+		};
+		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+	}
+	drop(user_type);
+
+	let user_type = lock.read();
+	let shape = match &user_type.kind {
+		UserTypeKind::Union { shape } => shape,
+		UserTypeKind::Struct { .. } => unreachable!("struct"),
+		UserTypeKind::Enum { .. } => unreachable!("enum"),
+	};
+
+	// Yuck
+	let mut variant_shapes = shape.variant_shapes.to_vec();
+	drop(user_type);
+
+	for variant_shape in &mut variant_shapes {
+		fill_union_variant(
+			messages,
+			type_store,
+			function_store,
+			generic_usages,
+			enclosing_generic_parameters,
+			root_layers,
+			scope.symbols,
+			module_path,
+			function_initial_symbols_length,
+			&variant_shape,
+			statement,
+		);
+	}
+
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
+		UserTypeKind::Union { shape } => {
+			shape.variant_shapes = SliceRef::from(variant_shapes);
+			assert!(!shape.been_filled);
+			shape.been_filled = true;
+		}
+
+		UserTypeKind::Struct { .. } => unreachable!("struct"),
+		UserTypeKind::Enum { .. } => unreachable!("enum"),
+	}
+}
+
+fn fill_union_variant<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	root_layers: &RootLayers<'a>,
+	symbols: &mut Symbols<'a>,
+	module_path: &'a [String],
+	function_initial_symbols_length: usize,
+	variant_shape: &UnionVariantShape<'a>,
+	statement: &tree::Union<'a>,
+) {
+	let scope = symbols.child_scope();
+	let tree_variant = &statement.variants[variant_shape.variant_index];
+
+	let lock = type_store.user_types.read()[variant_shape.struct_shape_index].clone();
+	let struct_shape = lock.read();
+	for (generic_index, generic) in struct_shape.generic_parameters.parameters().iter().enumerate() {
+		let kind = SymbolKind::UserTypeGeneric { shape_index: variant_shape.struct_shape_index, generic_index };
+		let symbol = Symbol {
+			name: generic.name.item,
+			kind,
+			span: Some(generic.name.span),
+			used: true,
+			imported: false,
+		};
+		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+	}
+	drop(struct_shape);
+
+	let mut fields: Vec<Node<FieldShape<'_>>> = Vec::new();
+
+	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	match tree_variant {
+		tree::Variant::StructLike(struct_like) => {
+			let variant_name = struct_like.name.item;
+
+			for field in struct_like.fields {
+				let field_type = match type_store.lookup_type(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					root_layers,
+					scope.symbols,
+					function_initial_symbols_length,
+					&blank_generic_parameters,
+					&field.parsed_type,
+				) {
+					Some(type_id) => type_id,
+					None => type_store.any_collapse_type_id(),
+				};
+
+				let span = field.name.span + field.parsed_type.span;
+				if let Some(existing) = fields.iter().find(|f| f.item.name == field.name.item) {
+					let error = error!("Duplicate field `{}` on union variant struct `{}`", field.name.item, variant_name);
+					let note = note!(existing.span, "Original field here");
+					messages.message(error.span(span).note(note))
+				}
+
+				let field_shape = FieldShape {
+					name: field.name.item,
+					field_type,
+					attribute: field.attribute,
+					read_only: field.read_only,
+				};
+				let node = Node::new(field_shape, span);
+				fields.push(node);
+			}
+		}
+
+		tree::Variant::Transparent(transparent) => {
 			let field_type = match type_store.lookup_type(
 				messages,
 				function_store,
@@ -3879,6 +4279,8 @@ fn validate_statement<'a>(
 		tree::Statement::Struct(..) => {}
 
 		tree::Statement::Enum(..) => {}
+
+		tree::Statement::Union(..) => {}
 
 		tree::Statement::Trait(..) => {}
 

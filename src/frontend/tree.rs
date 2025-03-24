@@ -173,11 +173,18 @@ pub struct Enum<'a> {
 	pub generics: &'a [GenericName<'a>],
 	pub name: Node<&'a str>,
 	pub shared_fields: &'a [Field<'a>],
-	pub variants: &'a [EnumVariant<'a>],
+	pub variants: &'a [Variant<'a>],
 }
 
 #[derive(Debug)]
-pub enum EnumVariant<'a> {
+pub struct Union<'a> {
+	pub generics: &'a [GenericName<'a>],
+	pub name: Node<&'a str>,
+	pub variants: &'a [Variant<'a>],
+}
+
+#[derive(Debug)]
+pub enum Variant<'a> {
 	StructLike(StructLikeVariant<'a>),
 	Transparent(TransparentVariant<'a>),
 }
@@ -568,6 +575,7 @@ pub enum Statement<'a> {
 
 	Struct(Struct<'a>),
 	Enum(Enum<'a>),
+	Union(Union<'a>),
 	Trait(Trait<'a>),
 	Function(&'a Function<'a>),
 
@@ -599,6 +607,7 @@ impl<'a> Statement<'a> {
 			Import(statement) => statement.span,
 			Struct(statement) => statement.name.span,
 			Enum(statement) => statement.name.span,
+			Union(statement) => statement.name.span,
 			Trait(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
 			Const(statement) => statement.span,
@@ -626,6 +635,7 @@ impl<'a> Statement<'a> {
 			Import(..) => "An import statement",
 			Struct(..) => "A struct definition",
 			Enum(..) => "An enum definition",
+			Union(..) => "A union definition",
 			Trait(..) => "A trait definition",
 			Function(..) => "A function definition",
 			Const(..) => "A const definition",

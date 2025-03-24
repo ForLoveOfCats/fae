@@ -240,10 +240,50 @@ impl<'a> Symbols<'a> {
 			} else if let SymbolKind::UserType { shape_index, .. } = found.kind {
 				let lock = type_store.user_types.read()[shape_index].clone();
 				let guard = lock.read();
-				let shape = match &guard.kind {
-					UserTypeKind::Enum { shape } => shape,
+				match &guard.kind {
+					UserTypeKind::Enum { shape } => {
+						let Some(variant_shape) = shape.variant_shapes.iter().find(|s| s.name == second.item) else {
+							let error = error!("No variant `{}` on enum `{}`", second.item, first.item);
+							messages.message(error.span(second.span));
+							return None;
+						};
 
-					UserTypeKind::Union { .. } => todo!(),
+						if let [_, _, third, ..] = path.segments {
+							let error = error!("Cannot path sub-access `{}` as it is an enum variant", second.item);
+							messages.message(error.span(second.span + third.span));
+							return None;
+						}
+
+						let kind = SymbolKind::UserType {
+							shape_index: variant_shape.struct_shape_index,
+							methods_index: variant_shape.methods_index,
+						};
+						let span = Some(variant_shape.span);
+						let symbol = Symbol { name: second.item, kind, span, used: true, imported: false };
+						return Some(symbol);
+					}
+
+					UserTypeKind::Union { shape } => {
+						let Some(variant_shape) = shape.variant_shapes.iter().find(|s| s.name == second.item) else {
+							let error = error!("No variant `{}` on union `{}`", second.item, first.item);
+							messages.message(error.span(second.span));
+							return None;
+						};
+
+						if let [_, _, third, ..] = path.segments {
+							let error = error!("Cannot path sub-access `{}` as it is a union variant", second.item);
+							messages.message(error.span(second.span + third.span));
+							return None;
+						}
+
+						let kind = SymbolKind::UserType {
+							shape_index: variant_shape.struct_shape_index,
+							methods_index: variant_shape.methods_index,
+						};
+						let span = Some(variant_shape.span);
+						let symbol = Symbol { name: second.item, kind, span, used: true, imported: false };
+						return Some(symbol);
+					}
 
 					UserTypeKind::Struct { .. } => {
 						let error = error!("Cannot path sub-access `{}` as it is a struct", first.item);
@@ -251,26 +291,6 @@ impl<'a> Symbols<'a> {
 						return None;
 					}
 				};
-
-				let Some(variant_shape) = shape.variant_shapes.iter().find(|s| s.name == second.item) else {
-					let error = error!("No variant `{}` on enum `{}`", second.item, first.item);
-					messages.message(error.span(second.span));
-					return None;
-				};
-
-				if let [_, _, third, ..] = path.segments {
-					let error = error!("Cannot path sub-access `{}` as it is an enum variant", second.item);
-					messages.message(error.span(second.span + third.span));
-					return None;
-				}
-
-				let kind = SymbolKind::UserType {
-					shape_index: variant_shape.struct_shape_index,
-					methods_index: variant_shape.methods_index,
-				};
-				let span = Some(variant_shape.span);
-				let symbol = Symbol { name: second.item, kind, span, used: true, imported: false };
-				return Some(symbol);
 			}
 
 			let error = error!("Cannot path sub-access `{}` as it is {}", first.item, found.kind);

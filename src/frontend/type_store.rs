@@ -484,7 +484,6 @@ pub struct Variant {
 	pub is_transparent: bool,
 }
 
-#[allow(unused)] // TODO: Finish implementing unions
 #[derive(Debug)]
 pub struct UnionShape<'a> {
 	// See comment on `filling_lock` field of `StructShape` for details
@@ -497,7 +496,6 @@ pub struct UnionShape<'a> {
 	pub specializations: Vec<Union<'a>>,
 }
 
-#[allow(unused)] // TODO: Finish implementing unions
 impl<'a> UnionShape<'a> {
 	pub fn new(variant_shapes: Vec<UnionVariantShape<'a>>) -> Self {
 		UnionShape {
@@ -510,10 +508,10 @@ impl<'a> UnionShape<'a> {
 	}
 }
 
-#[allow(unused)] // TODO: Finish implementing unions
 #[derive(Debug, Clone)]
 pub struct Union<'a> {
 	pub type_id: TypeId,
+	#[allow(unused)] // TODO: Remove once unions are being codegen-ed
 	pub generic_poisoned: bool,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
@@ -523,7 +521,6 @@ pub struct Union<'a> {
 	pub layout: Option<Layout>,
 }
 
-#[allow(unused)] // TODO: Finish implementing unions
 #[derive(Debug, Clone, Copy)]
 pub struct UnionVariantShape<'a> {
 	pub name: &'a str,
@@ -585,7 +582,6 @@ pub struct MethodInfo {
 	pub kind: Node<MethodKind>,
 }
 
-#[allow(unused)] // TODO: Finish implementing unions
 #[derive(Debug)]
 pub enum UserTypeKind<'a> {
 	Struct { shape: StructShape<'a> },
@@ -1608,8 +1604,6 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 		}
-
-		// transparent variant -> its wrapped type
 
 		Ok(false)
 	}
@@ -2771,7 +2765,17 @@ impl<'a> TypeStore<'a> {
 			}
 
 			UserTypeKind::Union { .. } => {
-				todo!();
+				drop(shape);
+				self.get_or_add_union_shape_specialization(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					shape_index,
+					invoke_span,
+					type_arguments,
+				)
 			}
 		}
 	}
@@ -3056,8 +3060,8 @@ impl<'a> TypeStore<'a> {
 		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
 		drop(user_type);
 
-		let mut variants_by_name = FxHashMap::default();
 		let mut variants = Vec::new();
+		let mut variants_by_name = FxHashMap::default();
 
 		for variant_shape in variant_shapes {
 			let mut new_struct_type_arguments = TypeArguments::clone(&type_arguments);
@@ -3162,6 +3166,245 @@ impl<'a> TypeStore<'a> {
 
 		if type_arguments_generic_poisoned {
 			let usage = GenericUsage::UserType { type_arguments, shape_index: enum_shape_index };
+			generic_usages.push(usage)
+		}
+
+		Some(type_id)
+	}
+
+	fn get_or_add_union_shape_specialization(
+		&mut self,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &'a [String],
+		generic_usages: &mut Vec<GenericUsage>,
+		enclosing_generic_parameters: &GenericParameters<'a>,
+		union_shape_index: usize,
+		invoke_span: Option<Span>,
+		type_arguments: Ref<TypeArguments>,
+	) -> Option<TypeId> {
+		let _zone = zone!("union specialization");
+
+		let lock = self.user_types.read()[union_shape_index].clone();
+		let mut user_type = lock.read();
+		let mut shape = match &user_type.kind {
+			UserTypeKind::Union { shape } => shape,
+			kind => unreachable!("{kind:?}"),
+		};
+
+		if !shape.been_filled {
+			let filling_lock = shape.filling_lock.clone();
+
+			drop(user_type);
+			filling_lock.lock();
+
+			user_type = lock.read();
+			shape = match &user_type.kind {
+				UserTypeKind::Union { shape } => shape,
+				kind => unreachable!("{kind:?}"),
+			};
+		}
+
+		if type_arguments.explicit_len != user_type.generic_parameters.explicit_len() {
+			let error = error!(
+				"Expected {} type arguments for union `{}`, got {}",
+				user_type.generic_parameters.explicit_len(),
+				user_type.name,
+				type_arguments.explicit_len,
+			);
+			messages.message(error.span_if_some(invoke_span));
+			return None;
+		}
+
+		if let Some(&specialization_index) = shape.specializations_by_type_arguments.get(&type_arguments) {
+			let existing = &shape.specializations[specialization_index];
+			return Some(existing.type_id);
+		}
+
+		let mut constraint_failure = false;
+		let generic_parameters_iter = user_type.generic_parameters.explicit_parameters().iter();
+		let generic_arguments_iter = type_arguments.explicit_ids().iter();
+		for (type_parameter, &type_argument) in generic_parameters_iter.zip(generic_arguments_iter) {
+			for constraint in type_parameter.generic_constraints.iter() {
+				let mut trait_type_arguments = TypeArguments::clone(&constraint.type_arguments);
+				trait_type_arguments.specialize_with_generics(
+					messages,
+					self,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					TypeIdSpecializationSituation::UserType { user_type_shape_index: union_shape_index },
+					&type_arguments,
+				);
+
+				if !self.check_type_implements_trait(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					type_argument,
+					constraint,
+					Ref::new(trait_type_arguments),
+					invoke_span,
+				) {
+					constraint_failure = true;
+				}
+			}
+		}
+
+		if constraint_failure {
+			return None;
+		}
+
+		drop(user_type);
+
+		let type_arguments_generic_poisoned = type_arguments
+			.ids
+			.iter()
+			.any(|id| self.type_entries.get(id.item).generic_poisoned);
+
+		let user_type = lock.read();
+		let shape = match &user_type.kind {
+			UserTypeKind::Union { shape } => shape,
+			kind => unreachable!("{kind:?}"),
+		};
+		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
+		drop(user_type);
+
+		let mut fields = Vec::new();
+		let mut variants = Vec::new();
+		let mut variants_by_name = FxHashMap::default();
+
+		for variant_shape in variant_shapes {
+			let mut new_struct_type_arguments = TypeArguments::clone(&type_arguments);
+
+			for struct_type_argument in &mut new_struct_type_arguments.ids {
+				let entry = self.type_entries.get(struct_type_argument.item);
+				match entry.kind {
+					TypeEntryKind::UserType { .. } => {
+						struct_type_argument.item = self.specialize_type_id_with_generics(
+							messages,
+							function_store,
+							module_path,
+							generic_usages,
+							enclosing_generic_parameters,
+							struct_type_argument.item,
+							&type_arguments,
+							TypeIdSpecializationSituation::UserType { user_type_shape_index: union_shape_index },
+						);
+					}
+
+					TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
+
+					_ => {}
+				}
+			}
+
+			let type_id = self
+				.get_or_add_struct_shape_specialization(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					variant_shape.struct_shape_index,
+					None,
+					Ref::new(new_struct_type_arguments),
+				)
+				.unwrap();
+
+			let span = variant_shape.span;
+			let variant_index = variant_shape.variant_index;
+			assert_eq!(variant_index, variants.len());
+			let is_transparent = variant_shape.is_transparent;
+			variants.push(Variant { span, type_id, is_transparent });
+			variants_by_name.insert(variant_shape.name, variant_index);
+
+			if is_transparent {
+				let entry = self.type_entries.get(type_id);
+				let (shape_index, specialization_index) = match entry.kind {
+					TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
+					kind => unreachable!("{kind:?}"),
+				};
+				assert_eq!(shape_index, variant_shape.struct_shape_index);
+
+				let user_types = self.user_types.read();
+				let shape_guard = user_types[shape_index].read();
+				let shape = match &shape_guard.kind {
+					UserTypeKind::Struct { shape } => shape,
+					kind => unreachable!("{kind:?}"),
+				};
+
+				let specialization = &shape.specializations[specialization_index];
+				assert_eq!(specialization.fields.len(), 1);
+				let wrapped_type_id = specialization.fields.first().unwrap().type_id;
+
+				fields.push(Field {
+					span: Some(variant_shape.span),
+					name: variant_shape.name,
+					type_id: wrapped_type_id,
+					attribute: None,
+					read_only: false,
+				});
+			} else {
+				fields.push(Field {
+					span: Some(variant_shape.span),
+					name: variant_shape.name,
+					type_id,
+					attribute: None,
+					read_only: false,
+				});
+			}
+		}
+
+		let mut user_type = lock.write();
+		let shape = match &mut user_type.kind {
+			UserTypeKind::Union { shape } => shape,
+			kind => unreachable!("{kind:?}"),
+		};
+
+		let been_filled = shape.been_filled;
+		let specialization = Union {
+			type_id: TypeId::unusable(),
+			generic_poisoned: type_arguments_generic_poisoned,
+			type_arguments: type_arguments.clone(),
+			been_filled,
+			fields: SliceRef::from(fields),
+			variants: SliceRef::from(variants),
+			variants_by_name: Ref::new(variants_by_name),
+			layout: None,
+		};
+		let specialization_index = shape.specializations.len();
+		shape.specializations.push(specialization);
+		shape
+			.specializations_by_type_arguments
+			.insert(type_arguments.clone(), specialization_index);
+
+		let methods_index = user_type.methods_index;
+		let kind = TypeEntryKind::UserType {
+			shape_index: union_shape_index,
+			specialization_index,
+			methods_index,
+		};
+		let entry = TypeEntry {
+			kind,
+			reference_entries: None,
+			generic_poisoned: type_arguments_generic_poisoned,
+		};
+		let type_id = self.type_entries.push_entry(entry);
+
+		let shape = match &mut user_type.kind {
+			UserTypeKind::Union { shape } => shape,
+			kind => unreachable!("{kind:?}"),
+		};
+		shape.specializations[specialization_index].type_id = type_id;
+
+		drop(user_type);
+
+		if type_arguments_generic_poisoned {
+			let usage = GenericUsage::UserType { type_arguments, shape_index: union_shape_index };
 			generic_usages.push(usage)
 		}
 
@@ -3379,8 +3622,35 @@ impl<'a> TypeStore<'a> {
 						.unwrap()
 					}
 
-					UserTypeKind::Union { shape: _ } => {
-						todo!();
+					UserTypeKind::Union { shape } => {
+						let specialization = &shape.specializations[*specialization_index];
+						let mut new_union_type_arguments = TypeArguments::clone(&specialization.type_arguments);
+						drop(user_type);
+
+						for union_type_argument in &mut new_union_type_arguments.ids {
+							union_type_argument.item = self.specialize_type_id_with_generics(
+								messages,
+								function_store,
+								module_path,
+								generic_usages,
+								enclosing_generic_parameters,
+								union_type_argument.item,
+								type_arguments,
+								situation,
+							);
+						}
+
+						self.get_or_add_union_shape_specialization(
+							messages,
+							function_store,
+							module_path,
+							generic_usages,
+							enclosing_generic_parameters,
+							*shape_index,
+							None,
+							Ref::new(new_union_type_arguments),
+						)
+						.unwrap()
 					}
 				}
 			}

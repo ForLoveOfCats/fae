@@ -34,7 +34,7 @@
 				},
 				{
 					"name": "keyword.structure.fae",
-					"match": "\\b(struct|enum|trait)\\b"
+					"match": "\\b(struct|enum|union|trait)\\b"
 				},
 				{
 					"name": "keyword.tag.fae",

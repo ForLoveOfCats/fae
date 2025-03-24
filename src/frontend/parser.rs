@@ -213,6 +213,24 @@ fn parse_statement<'a>(
 			}
 		}
 
+		Token { kind: TokenKind::Word, text: "union", .. } => {
+			const ALLOWED: AllowedAttributes = AllowedAttributes {
+				generic_attribute: true,
+				extern_attribute: false,
+				export_attribute: false,
+				method_attribute: false,
+				intrinsic_attribute: false,
+				lang_attribute: false,
+			};
+			disallow_attributes(messages, &attributes, ALLOWED, "A union definition");
+
+			if let Ok(statement) = parse_union_declaration(bump, messages, tokens, attributes) {
+				return Some(Statement::Union(statement));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
 		Token { kind: TokenKind::Word, text: "trait", .. } => {
 			const ALLOWED: AllowedAttributes = AllowedAttributes {
 				generic_attribute: true,
@@ -1987,7 +2005,7 @@ fn parse_enum_declaration<'a>(
 
 				let name = Node::from_token(field_name_token.text, field_name_token);
 				let transparent = TransparentVariant { name, parsed_type };
-				let variant = EnumVariant::Transparent(transparent);
+				let variant = Variant::Transparent(transparent);
 				variants.push(variant);
 
 				if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
@@ -2005,7 +2023,7 @@ fn parse_enum_declaration<'a>(
 
 			let name = Node::from_token(field_name_token.text, field_name_token);
 			let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
-			let variant = EnumVariant::StructLike(struct_like);
+			let variant = Variant::StructLike(struct_like);
 			variants.push(variant);
 		}
 
@@ -2030,6 +2048,88 @@ fn parse_enum_declaration<'a>(
 		shared_fields: shared_fields.into_bump_slice(),
 		variants: variants.into_bump_slice(),
 	})
+}
+
+fn parse_union_declaration<'a>(
+	bump: &'a Bump,
+	messages: &mut Messages,
+	tokens: &mut Tokens<'a>,
+	attributes: Attributes<'a>,
+) -> ParseResult<Union<'a>> {
+	let generics = match attributes.generic_attribute {
+		Some(attribute) => attribute.item.names,
+		None => &[],
+	};
+
+	tokens.expect_word(messages, "union")?;
+
+	let union_name_token = tokens.expect(messages, TokenKind::Word)?;
+	check_not_reserved(messages, union_name_token, "union name")?;
+	let name = Node::from_token(union_name_token.text, union_name_token);
+
+	tokens.expect(messages, TokenKind::OpenBrace)?;
+	tokens.consume_newlines();
+
+	let mut variants = BumpVec::new_in(bump);
+
+	while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+		let field_name_token = tokens.expect(messages, TokenKind::Word)?;
+		tokens.expect(messages, TokenKind::Colon)?;
+
+		if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+			check_not_reserved(messages, field_name_token, "union variant")?;
+			let mut variant_fields = BumpVec::new_in(bump);
+
+			if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+				tokens.next(messages)?;
+				tokens.consume_newlines();
+
+				while tokens.peek_kind() != Ok(TokenKind::CloseBrace) {
+					let field_name_token = tokens.expect(messages, TokenKind::Word)?;
+					let field = parse_field(bump, messages, tokens, field_name_token, "union variant field")?;
+					variant_fields.push(field);
+
+					if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+						break;
+					} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+						tokens.next(messages)?;
+						tokens.consume_newlines();
+					} else {
+						tokens.expect(messages, TokenKind::Newline)?;
+						tokens.consume_newlines();
+					}
+				}
+
+				tokens.expect(messages, TokenKind::CloseBrace)?;
+			}
+
+			let name = Node::from_token(field_name_token.text, field_name_token);
+			let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
+			let variant = Variant::StructLike(struct_like);
+			variants.push(variant);
+		} else {
+			let name = Node::from_token(field_name_token.text, field_name_token);
+			let parsed_type = parse_type(bump, messages, tokens)?;
+			let transparent = TransparentVariant { name, parsed_type };
+			let variant = Variant::Transparent(transparent);
+			variants.push(variant);
+		}
+
+		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
+			break;
+		} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+			tokens.next(messages)?;
+			tokens.consume_newlines();
+		} else {
+			tokens.expect(messages, TokenKind::Newline)?;
+			tokens.consume_newlines();
+		}
+	}
+
+	tokens.expect(messages, TokenKind::CloseBrace)?;
+	tokens.expect(messages, TokenKind::Newline)?;
+
+	Ok(Union { generics, name, variants: variants.into_bump_slice() })
 }
 
 fn parse_field<'a>(
@@ -2298,7 +2398,8 @@ pub fn is_word_reserved(word: &str) -> bool {
 			| "fn" | "let"
 			| "mut" | "return"
 			| "struct"
-			| "enum" | "opaque"
+			| "enum" | "union"
+			| "opaque"
 			| "import"
 			| "generic"
 			| "extern"
