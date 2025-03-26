@@ -1,0 +1,24 @@
+// This test must be run on a little-endian system 😅
+// TODO: Write a test which is not dependent on endian-ness
+
+union Integer {
+	whole: u32
+	halves: {
+		a: u16
+		b: u16
+	}
+}
+
+fn main() {
+	mut instance: Integer = .whole(5 | 458752)
+	let uint: u32 = instance.whole
+	let a: u16 = instance.halves.a
+	let b: u16 = instance.halves.b
+	println(f"uint: {uint}, a: {a}, b: {b}")
+
+	instance.halves.a = 7
+	println(f"uint: {instance.whole}, a: {instance.halves.a}, b: {instance.halves.b}")
+
+	instance = .halves { a: 0, b: 8 }
+	println(f"uint: {instance.whole}, a: {instance.halves.a}, b: {instance.halves.b}")
+}

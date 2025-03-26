@@ -5690,6 +5690,7 @@ fn validate_struct_literal<'a>(
 	};
 
 	if shape.opaque {
+		drop(user_type);
 		let name = context.type_name(type_id);
 		let message = error!("Cannot construct type {name} as it is an opaque struct");
 		context.messages.message(message.span(base.span));

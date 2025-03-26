@@ -214,6 +214,15 @@ pub trait Generator {
 		variant_binding: Option<Self::Binding>,
 	) -> Self::Binding;
 
+	fn generate_union_variant_to_union(
+		&mut self,
+		type_store: &mut TypeStore,
+		union_type_id: TypeId,
+		union_shape_index: usize,
+		union_specialization_index: usize,
+		variant_binding: Option<Self::Binding>,
+	) -> Self::Binding;
+
 	fn generate_binding(
 		&mut self,
 		readable_index: usize,

@@ -8,7 +8,7 @@ use crate::frontend::error::Messages;
 use crate::frontend::function_store::{FunctionStore, MethodBaseType};
 use crate::frontend::ir::{
 	EnumVariantToEnum, Expression, ExpressionKind, GenericConstraint, GenericParameters, GenericUsage, ScopeId,
-	SliceMutableToImmutable, StringToFormatString, TypeArguments,
+	SliceMutableToImmutable, StringToFormatString, TypeArguments, UnionVariantToUnion,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
@@ -511,7 +511,6 @@ impl<'a> UnionShape<'a> {
 #[derive(Debug, Clone)]
 pub struct Union<'a> {
 	pub type_id: TypeId,
-	#[allow(unused)] // TODO: Remove once unions are being codegen-ed
 	pub generic_poisoned: bool,
 	pub type_arguments: Ref<TypeArguments>,
 	pub been_filled: bool,
@@ -1196,6 +1195,7 @@ impl<'a> TypeStore<'a> {
 		// if either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is an enum, collapse the other to it
+		// if either type is an union, collapse the other to it
 		// if either type is a transparent variant, collaps it to the other
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
@@ -1283,15 +1283,27 @@ impl<'a> TypeStore<'a> {
 		}
 
 		let user_types = self.user_types.read();
-		let is_enum = |entry: TypeEntry| match entry.kind {
-			TypeEntryKind::UserType { shape_index, .. } => match user_types[shape_index].read().kind {
-				UserTypeKind::Enum { .. } => return true,
-				_ => return false,
-			},
-			_ => return false,
+		let is_things = |entry: TypeEntry, is_enum: &mut bool, is_union: &mut bool, is_transparent_variant: &mut bool| {
+			if let TypeEntryKind::UserType { shape_index, .. } = entry.kind {
+				match &user_types[shape_index].read().kind {
+					UserTypeKind::Struct { shape } => *is_transparent_variant = shape.is_transparent_variant,
+					UserTypeKind::Enum { .. } => *is_enum = true,
+					UserTypeKind::Union { .. } => *is_union = true,
+				}
+			}
 		};
 
-		if is_enum(a_entry) {
+		let mut a_is_enum = false;
+		let mut a_is_union = false;
+		let mut a_is_transparent_variant = false;
+		is_things(a_entry, &mut a_is_enum, &mut a_is_union, &mut a_is_transparent_variant);
+
+		let mut b_is_enum = false;
+		let mut b_is_union = false;
+		let mut b_is_transparent_variant = false;
+		is_things(b_entry, &mut b_is_enum, &mut b_is_union, &mut b_is_transparent_variant);
+
+		if a_is_enum {
 			drop(user_types);
 			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
 			return match collapsed {
@@ -1300,7 +1312,7 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		if is_enum(b_entry) {
+		if b_is_enum {
 			drop(user_types);
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
 			return match collapsed {
@@ -1309,15 +1321,16 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		let is_transparent_variant = |entry: TypeEntry| match entry.kind {
-			TypeEntryKind::UserType { shape_index, .. } => match &user_types[shape_index].read().kind {
-				UserTypeKind::Struct { shape } => return shape.is_transparent_variant,
-				_ => return false,
-			},
-			_ => return false,
-		};
+		if a_is_union {
+			drop(user_types);
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			return match collapsed {
+				true => Ok(a.type_id),
+				false => Err(()),
+			};
+		}
 
-		if is_transparent_variant(a_entry) {
+		if b_is_union {
 			drop(user_types);
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
 			return match collapsed {
@@ -1326,7 +1339,16 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		if is_transparent_variant(b_entry) {
+		if a_is_transparent_variant {
+			drop(user_types);
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			return match collapsed {
+				true => Ok(b.type_id),
+				false => Err(()),
+			};
+		}
+
+		if b_is_transparent_variant {
 			drop(user_types);
 			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
 			return match collapsed {
@@ -1576,8 +1598,21 @@ impl<'a> TypeStore<'a> {
 								let yields = expression.yields;
 								let returns = expression.returns;
 								let is_pointer_access_mutable = expression.is_pointer_access_mutable;
-								let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
-								let kind = ExpressionKind::EnumVariantToEnum(conversion);
+
+								let kind = match shape.parent_kind {
+									StructParentKind::Enum => {
+										let conversion = Box::new(EnumVariantToEnum { type_id: to, expression });
+										ExpressionKind::EnumVariantToEnum(conversion)
+									}
+
+									StructParentKind::Union => {
+										let conversion = Box::new(UnionVariantToUnion { type_id: to, expression });
+										ExpressionKind::UnionVariantToUnion(conversion)
+									}
+
+									StructParentKind::None => unreachable!(),
+								};
+
 								*from = Expression {
 									span: from.span,
 									type_id: to,
@@ -2376,7 +2411,8 @@ impl<'a> TypeStore<'a> {
 			_ => return None,
 		};
 
-		// This should not be able to double-read as we should catch that we've hit a duplicate before we get here
+		// TODO: This original comment appears to be incorrect, fix the double read in `option_of_option` test
+		// Original: This should not be able to double-read as we should catch that we've hit a duplicate before we get here
 		let user_type = self.user_types.read()[shape_index].clone();
 		let user_type = user_type.read();
 		match &user_type.kind {

@@ -8,7 +8,7 @@ use crate::frontend::ir::{
 	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, Function,
 	FunctionId, FunctionShape, GenericParameters, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable,
 	Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation,
-	UnaryOperator, While,
+	UnaryOperator, UnionVariantToUnion, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -384,6 +384,8 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 		}
 
 		ExpressionKind::EnumVariantToEnum(conversion) => generate_enum_variant_to_enum(context, generator, conversion),
+
+		ExpressionKind::UnionVariantToUnion(conversion) => generate_union_variant_to_union(context, generator, conversion),
 
 		ExpressionKind::Void | ExpressionKind::Type { .. } => None,
 
@@ -774,8 +776,13 @@ fn generate_field_read<'a, 'b, G: Generator>(
 				}
 			}
 
-			UserTypeKind::Union { .. } => {
-				todo!();
+			UserTypeKind::Union { shape } => {
+				let specialization = &shape.specializations[specialization_index];
+				let field_type_id = specialization.fields[read.field_index].type_id;
+				let field_layout = context.type_store.type_layout(field_type_id);
+				if field_layout.size <= 0 {
+					return None;
+				}
 			}
 		}
 	}
@@ -1005,6 +1012,29 @@ fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
 		shape_index,
 		specialization_index,
 		variant_index,
+		variant_binding,
+	))
+}
+
+fn generate_union_variant_to_union<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	conversion: &'b UnionVariantToUnion<'a>,
+) -> Option<G::Binding> {
+	let variant_binding = generate_expression(context, generator, &conversion.expression);
+
+	let type_id = context.specialize_type_id(conversion.type_id);
+	let entry = context.type_store.type_entries.get(type_id);
+	let (shape_index, specialization_index) = match entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
+		_ => unreachable!("{:?}", entry.kind),
+	};
+
+	Some(generator.generate_union_variant_to_union(
+		context.type_store,
+		type_id,
+		shape_index,
+		specialization_index,
 		variant_binding,
 	))
 }

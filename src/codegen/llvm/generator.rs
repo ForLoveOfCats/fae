@@ -103,10 +103,11 @@ impl Binding {
 	}
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct UserTypeStruct {
 	actual: LLVMTypeRef,
 	as_enum_shared_fields: Option<LLVMTypeRef>,
+	as_union_variants: Vec<LLVMTypeRef>,
 }
 
 pub struct LLVMTypes {
@@ -600,15 +601,21 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let specializations = Vec::from_iter((0..specialization_count).map(|_| {
 				let name = CString::new(user_type.name).unwrap();
 				let named = unsafe { LLVMStructCreateNamed(self.context, name.as_ptr()) };
-				UserTypeStruct { actual: named, as_enum_shared_fields: None }
+				UserTypeStruct {
+					actual: named,
+					as_enum_shared_fields: None,
+					as_union_variants: Vec::new(),
+				}
 			}));
 			self.llvm_types.user_type_structs.push(specializations);
 		}
 
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
+		let mut union_variant_types_buffer = Vec::new();
 
 		let mut enum_specializations = Vec::new();
+		let mut union_specializations = Vec::new();
 
 		let user_type_len = type_store.user_types.read().len();
 		for shape_index in 0..user_type_len {
@@ -627,7 +634,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 							field_types_buffer.push(llvm_type);
 						}
 
-						let user_type_struct = self.llvm_types.user_type_structs[shape_index][specialization_index];
+						let user_type_struct = &self.llvm_types.user_type_structs[shape_index][specialization_index];
 
 						unsafe {
 							LLVMStructSetBody(
@@ -707,8 +714,48 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					}
 				}
 
-				UserTypeKind::Union { .. } => {
-					todo!();
+				UserTypeKind::Union { shape } => {
+					union_specializations.clear();
+					union_specializations.extend_from_slice(&shape.specializations);
+					drop(user_type);
+
+					for (specialization_index, specialization) in union_specializations.iter().enumerate() {
+						if specialization.generic_poisoned {
+							continue;
+						}
+
+						let layout = type_store.type_layout(specialization.type_id);
+
+						field_types_buffer.clear();
+						if layout.size > 0 {
+							assert_eq!(layout.size % layout.alignment, 0);
+							let count = layout.size / layout.alignment;
+							let item = LLVMTypes::size_to_int_type(self.context, layout.alignment);
+							for _ in 0..count {
+								field_types_buffer.push(item);
+							}
+						}
+
+						let user_type_struct = &self.llvm_types.user_type_structs[shape_index][specialization_index];
+						unsafe {
+							LLVMStructSetBody(
+								user_type_struct.actual,
+								field_types_buffer.as_mut_ptr(),
+								field_types_buffer.len() as u32,
+								false as _,
+							);
+						}
+
+						union_variant_types_buffer.clear();
+						for field in specialization.fields.iter() {
+							let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, field.type_id);
+							union_variant_types_buffer.push(llvm_type);
+						}
+
+						let user_type_struct = &mut self.llvm_types.user_type_structs[shape_index][specialization_index];
+						assert!(user_type_struct.as_union_variants.is_empty());
+						user_type_struct.as_union_variants = union_variant_types_buffer.clone();
+					}
 				}
 			}
 		}
@@ -1738,8 +1785,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 						enum_type.shared_fields[field_index].type_id
 					}
 
-					UserTypeKind::Union { .. } => {
-						todo!();
+					UserTypeKind::Union { shape } => {
+						let user_type_struct = &self.llvm_types.user_type_structs[shape_index];
+						let as_union_variants = &user_type_struct[specialization_index].as_union_variants;
+						field_type = as_union_variants[field_index];
+						field_pointer = pointer;
+						let union_type = &shape.specializations[specialization_index];
+						union_type.fields[field_index].type_id
 					}
 				}
 			}
@@ -2722,6 +2774,40 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: enum_type };
 		Binding { type_id: enum_type_id, kind }
+	}
+
+	fn generate_union_variant_to_union(
+		&mut self,
+		type_store: &mut TypeStore,
+		union_type_id: TypeId,
+		union_shape_index: usize,
+		union_specialization_index: usize,
+		variant_binding: Option<Binding>,
+	) -> Self::Binding {
+		let shape = &self.llvm_types.user_type_structs[union_shape_index];
+		let union_type = shape[union_specialization_index].actual;
+
+		let alloca = self.build_alloca(union_type, c"generate_union_variant_to_union.union_alloca");
+
+		unsafe {
+			if let Some(variant_binding) = variant_binding {
+				match variant_binding.kind {
+					BindingKind::Value(value) => {
+						LLVMBuildStore(self.builder, value, alloca);
+					}
+
+					BindingKind::Pointer { pointer, .. } => {
+						let layout = type_store.type_layout(variant_binding.type_id);
+						let align = layout.alignment as u32;
+						let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
+						LLVMBuildMemCpy(self.builder, alloca, align, pointer, align, size);
+					}
+				}
+			}
+		}
+
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: union_type };
+		Binding { type_id: union_type_id, kind }
 	}
 
 	fn generate_binding(
