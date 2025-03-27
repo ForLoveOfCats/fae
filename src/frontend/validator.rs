@@ -1602,11 +1602,7 @@ fn create_block_traits<'a>(
 		if let tree::Statement::Trait(statement) = statement {
 			let trait_shape_index = create_block_trait(
 				messages,
-				root_layers,
 				type_store,
-				function_store,
-				module_path,
-				generic_usages,
 				symbols,
 				function_initial_symbols_length,
 				enclosing_generic_parameters,
@@ -2313,11 +2309,7 @@ fn fill_block_types<'a>(
 
 fn create_block_trait<'a>(
 	messages: &mut Messages<'a>,
-	_root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
-	_function_store: &FunctionStore<'a>,
-	_module_path: &'a [String],
-	_generic_usages: &mut Vec<GenericUsage>,
 	symbols: &mut Symbols<'a>,
 	function_initial_symbols_length: usize,
 	enclosing_generic_parameters: &GenericParameters<'a>,
