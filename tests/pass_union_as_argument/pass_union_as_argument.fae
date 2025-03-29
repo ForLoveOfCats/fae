@@ -1,0 +1,27 @@
+union Integer {
+	normal: u32
+
+	normal_halves: {
+		a: u16
+		b: u16
+	}
+
+	bigger: {
+		a: u64
+		b: u64
+	}
+}
+
+fn main() {
+	mut integer: Integer = .normal(5 | 458752)
+	integer.bigger.b = 42
+	func(integer)
+}
+
+fn func(arg=: Integer) {
+	let halves = arg.normal_halves
+	println(f"normal: {arg.normal}, a: {halves.a}, b: {halves.b}")
+
+	let bigger = arg.bigger
+	println(f"bigger.a: {bigger.a}, bigger b: {bigger.b}")
+}

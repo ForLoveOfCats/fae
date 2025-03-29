@@ -112,8 +112,21 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 					}
 				}
 
-				UserTypeKind::Union { .. } => {
-					todo!();
+				UserTypeKind::Union { shape, .. } => {
+					let specialization = &shape.specializations[specialization_index];
+
+					let mut output_len = 0;
+					for field in specialization.fields.iter() {
+						let mut field_buffer = classification_buffer();
+						let field_classes = classify_type(type_store, &mut field_buffer, field.type_id);
+						output_len = output_len.max(field_classes.len());
+
+						for (index, field_class) in field_classes.iter().enumerate() {
+							buffer[index] = merge_classes_union(buffer[index], *field_class);
+						}
+					}
+
+					return &mut buffer[..output_len];
 				}
 			};
 			let specialization = &shape.specializations[specialization_index];
@@ -142,46 +155,8 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 				if field_layout.size + combine_size <= 8 {
 					// Combine with prior fields to make an eightbyte
 
-					// (a) If both classes are equal, this is the resulting class.
-					if buffer[buffer_index].kind == field_classes[0].kind {
-						assert_eq!(field_classes.len(), 1, "{}", field_classes.len());
-						if buffer[buffer_index].kind == ClassKind::SSE {
-							// Doesn't get confused by SSEUP as that can never be less than 8 bytes
-							buffer[buffer_index].kind = ClassKind::SSECombine;
-						}
-						buffer[buffer_index].size += field_classes[0].size;
-					}
-					// (b) If one of the classes is NO_CLASS, the resulting class is the other class.
-					else if buffer[buffer_index].kind == ClassKind::NoClass {
-						buffer[buffer_index] = field_classes[0];
-					}
-					// (c) If one of the classes is MEMORY, the result is the MEMORY class.
-					else if buffer[buffer_index].kind == ClassKind::Memory || field_classes[0].kind == ClassKind::Memory {
-						buffer[buffer_index] = Class { kind: ClassKind::Memory, size: 8 };
-					}
-					// (d) If one of the classes is INTEGER, the result is the INTEGER.
-					else if buffer[buffer_index].kind == ClassKind::Integer || field_classes[0].kind == ClassKind::Integer {
-						assert_eq!(field_classes.len(), 1);
-						let size = buffer[buffer_index].size + field_classes[0].size;
-						buffer[buffer_index] = Class { kind: ClassKind::Integer, size };
-					}
-					// (e) If one of the classes is X87, X87UP, COMPLEX_X87 class, MEMORY is used as class.
-					else if buffer[buffer_index].kind == ClassKind::X87
-						|| buffer[buffer_index].kind == ClassKind::X87Up
-						|| buffer[buffer_index].kind == ClassKind::ComplexX87
-						|| field_classes[0].kind == ClassKind::X87
-						|| field_classes[0].kind == ClassKind::X87Up
-						|| field_classes[0].kind == ClassKind::ComplexX87
-					{
-						buffer[buffer_index] = Class { kind: ClassKind::Memory, size: 8 };
-					}
-					// (f) Otherwise class SSE is used.
-					else {
-						// A pointer is already 8 bytes so we should never see one flow through this if-else ladder
-						assert_ne!(buffer[buffer_index].kind, ClassKind::Pointer);
-						assert_ne!(field_classes[0].kind, ClassKind::Pointer);
-						buffer[buffer_index] = Class { kind: ClassKind::SSE, size: field_layout.size as u8 };
-					}
+					assert_eq!(field_classes.len(), 1);
+					buffer[buffer_index] = merge_classes_struct(buffer[buffer_index], field_classes[0]);
 
 					combine_size += field_layout.size;
 					assert!(combine_size <= 8, "{combine_size}");
@@ -276,5 +251,97 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 		| TypeEntryKind::UserTypeGeneric { .. }
 		| TypeEntryKind::FunctionGeneric { .. }
 		| TypeEntryKind::TraitGeneric { .. } => unreachable!(),
+	}
+}
+
+fn merge_classes_struct(mut a: Class, b: Class) -> Class {
+	// (a) If both classes are equal, this is the resulting class.
+	if a.kind == b.kind {
+		if a.kind == ClassKind::SSE {
+			// Doesn't get confused by SSEUP as that can never be less than 8 bytes
+			a.kind = ClassKind::SSECombine;
+		}
+		a.size += b.size;
+		assert!(a.size <= 8, "{:?}", a.size);
+		return a;
+	}
+	// (b) If one of the classes is NO_CLASS, the resulting class is the other class.
+	else if a.kind == ClassKind::NoClass {
+		return b;
+	}
+	// (c) If one of the classes is MEMORY, the result is the MEMORY class.
+	else if a.kind == ClassKind::Memory || b.kind == ClassKind::Memory {
+		return Class { kind: ClassKind::Memory, size: 8 };
+	}
+	// (d) If one of the classes is INTEGER, the result is the INTEGER.
+	else if a.kind == ClassKind::Integer || b.kind == ClassKind::Integer {
+		let size = a.size + b.size;
+		assert!(size <= 8, "{size:?}");
+		return Class { kind: ClassKind::Integer, size };
+	}
+	// (e) If one of the classes is X87, X87UP, COMPLEX_X87 class, MEMORY is used as class.
+	else if a.kind == ClassKind::X87
+		|| a.kind == ClassKind::X87Up
+		|| a.kind == ClassKind::ComplexX87
+		|| b.kind == ClassKind::X87
+		|| b.kind == ClassKind::X87Up
+		|| b.kind == ClassKind::ComplexX87
+	{
+		return Class { kind: ClassKind::Memory, size: 8 };
+	}
+	// (f) Otherwise class SSE is used.
+	else {
+		// A pointer is already 8 bytes so we should never see one flow through this if-else ladder
+		assert_ne!(a.kind, ClassKind::Pointer);
+		assert_ne!(b.kind, ClassKind::Pointer);
+		let size = a.size + b.size;
+		assert!(size <= 8, "{size:?}");
+		return Class { kind: ClassKind::SSE, size };
+	}
+}
+
+fn merge_classes_union(mut a: Class, b: Class) -> Class {
+	// (a) If both classes are equal, this is the resulting class.
+	if a.kind == b.kind {
+		if a.kind == ClassKind::SSE {
+			// Doesn't get confused by SSEUP as that can never be less than 8 bytes
+			a.kind = ClassKind::SSECombine;
+		}
+		a.size = a.size.max(b.size);
+		assert!(a.size <= 8, "{:?}", a.size);
+		return a;
+	}
+	// (b) If one of the classes is NO_CLASS, the resulting class is the other class.
+	else if a.kind == ClassKind::NoClass {
+		return b;
+	}
+	// (c) If one of the classes is MEMORY, the result is the MEMORY class.
+	else if a.kind == ClassKind::Memory || b.kind == ClassKind::Memory {
+		return Class { kind: ClassKind::Memory, size: 8 };
+	}
+	// (d) If one of the classes is INTEGER, the result is the INTEGER.
+	else if a.kind == ClassKind::Integer || b.kind == ClassKind::Integer {
+		let size = a.size.max(b.size);
+		assert!(size <= 8, "{size:?}");
+		return Class { kind: ClassKind::Integer, size };
+	}
+	// (e) If one of the classes is X87, X87UP, COMPLEX_X87 class, MEMORY is used as class.
+	else if a.kind == ClassKind::X87
+		|| a.kind == ClassKind::X87Up
+		|| a.kind == ClassKind::ComplexX87
+		|| b.kind == ClassKind::X87
+		|| b.kind == ClassKind::X87Up
+		|| b.kind == ClassKind::ComplexX87
+	{
+		return Class { kind: ClassKind::Memory, size: 8 };
+	}
+	// (f) Otherwise class SSE is used.
+	else {
+		// A pointer is already 8 bytes so we should never see one flow through this if-else ladder
+		assert_ne!(a.kind, ClassKind::Pointer);
+		assert_ne!(b.kind, ClassKind::Pointer);
+		let size = a.size.max(b.size);
+		assert!(size <= 8, "{size:?}");
+		return Class { kind: ClassKind::SSE, size };
 	}
 }
