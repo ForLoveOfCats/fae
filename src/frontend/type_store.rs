@@ -3306,9 +3306,88 @@ impl<'a> TypeStore<'a> {
 			UserTypeKind::Union { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
-		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
+		let been_filled = shape.been_filled;
+		let variant_shapes = shape.variant_shapes.clone();
 		drop(user_type);
 
+		let (fields, variants, variants_by_name) = if been_filled {
+			self.generate_union_variant_info(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				enclosing_generic_parameters,
+				union_shape_index,
+				&type_arguments,
+				&variant_shapes,
+			)
+		} else {
+			(Vec::new(), Vec::new(), FxHashMap::default())
+		};
+
+		let mut user_type = lock.write();
+		let shape = match &mut user_type.kind {
+			UserTypeKind::Union { shape } => shape,
+			kind => unreachable!("{kind:?}"),
+		};
+
+		let been_filled = shape.been_filled;
+		let specialization = Union {
+			type_id: TypeId::unusable(),
+			generic_poisoned: type_arguments_generic_poisoned,
+			type_arguments: type_arguments.clone(),
+			been_filled,
+			fields: SliceRef::from(fields),
+			variants: SliceRef::from(variants),
+			variants_by_name: Ref::new(variants_by_name),
+			layout: None,
+		};
+		let specialization_index = shape.specializations.len();
+		shape.specializations.push(specialization);
+		shape
+			.specializations_by_type_arguments
+			.insert(type_arguments.clone(), specialization_index);
+
+		let methods_index = user_type.methods_index;
+		let kind = TypeEntryKind::UserType {
+			shape_index: union_shape_index,
+			specialization_index,
+			methods_index,
+		};
+		let entry = TypeEntry {
+			kind,
+			reference_entries: None,
+			generic_poisoned: type_arguments_generic_poisoned,
+		};
+		let type_id = self.type_entries.push_entry(entry);
+
+		let shape = match &mut user_type.kind {
+			UserTypeKind::Union { shape } => shape,
+			kind => unreachable!("{kind:?}"),
+		};
+		shape.specializations[specialization_index].type_id = type_id;
+
+		drop(user_type);
+
+		if type_arguments_generic_poisoned {
+			let usage = GenericUsage::UserType { type_arguments, shape_index: union_shape_index };
+			generic_usages.push(usage)
+		}
+
+		Some(type_id)
+	}
+
+	pub fn generate_union_variant_info(
+		&mut self,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore<'a>,
+		module_path: &'a [String],
+		generic_usages: &mut Vec<GenericUsage>,
+		enclosing_generic_parameters: &GenericParameters<'a>,
+		union_shape_index: usize,
+		type_arguments: &TypeArguments,
+		variant_shapes: &[UnionVariantShape<'a>],
+	) -> (Vec<Field<'a>>, Vec<Variant>, FxHashMap<&'a str, usize>) {
 		let mut fields = Vec::new();
 		let mut variants = Vec::new();
 		let mut variants_by_name = FxHashMap::default();
@@ -3395,56 +3474,7 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
-		let mut user_type = lock.write();
-		let shape = match &mut user_type.kind {
-			UserTypeKind::Union { shape } => shape,
-			kind => unreachable!("{kind:?}"),
-		};
-
-		let been_filled = shape.been_filled;
-		let specialization = Union {
-			type_id: TypeId::unusable(),
-			generic_poisoned: type_arguments_generic_poisoned,
-			type_arguments: type_arguments.clone(),
-			been_filled,
-			fields: SliceRef::from(fields),
-			variants: SliceRef::from(variants),
-			variants_by_name: Ref::new(variants_by_name),
-			layout: None,
-		};
-		let specialization_index = shape.specializations.len();
-		shape.specializations.push(specialization);
-		shape
-			.specializations_by_type_arguments
-			.insert(type_arguments.clone(), specialization_index);
-
-		let methods_index = user_type.methods_index;
-		let kind = TypeEntryKind::UserType {
-			shape_index: union_shape_index,
-			specialization_index,
-			methods_index,
-		};
-		let entry = TypeEntry {
-			kind,
-			reference_entries: None,
-			generic_poisoned: type_arguments_generic_poisoned,
-		};
-		let type_id = self.type_entries.push_entry(entry);
-
-		let shape = match &mut user_type.kind {
-			UserTypeKind::Union { shape } => shape,
-			kind => unreachable!("{kind:?}"),
-		};
-		shape.specializations[specialization_index].type_id = type_id;
-
-		drop(user_type);
-
-		if type_arguments_generic_poisoned {
-			let usage = GenericUsage::UserType { type_arguments, shape_index: union_shape_index };
-			generic_usages.push(usage)
-		}
-
-		Some(type_id)
+		(fields, variants, variants_by_name)
 	}
 
 	pub fn get_or_add_trait_shape_specialization(

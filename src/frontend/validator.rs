@@ -3127,6 +3127,21 @@ fn fill_block_union<'a>(
 			shape.variant_shapes = SliceRef::from(variant_shapes);
 			assert!(!shape.been_filled);
 			shape.been_filled = true;
+
+			let has_specializations = !shape.specializations.is_empty();
+			drop(user_type);
+
+			if has_specializations {
+				fill_pre_existing_union_specializations(
+					messages,
+					type_store,
+					function_store,
+					generic_usages,
+					enclosing_generic_parameters,
+					module_path,
+					union_shape_index,
+				);
+			}
 		}
 
 		UserTypeKind::Struct { .. } => unreachable!("struct"),
@@ -3428,6 +3443,87 @@ fn fill_pre_existing_enum_specializations<'a>(
 	let user_type = lock.read();
 	match &user_type.kind {
 		UserTypeKind::Enum { shape } => {
+			let specializations: Vec<_> = shape.specializations.clone();
+			drop(user_type);
+
+			for specialization in specializations {
+				let type_id = specialization.type_id;
+				let chain = type_store.find_user_type_dependency_chain(type_id, type_id);
+				if let Some(chain) = chain {
+					report_cyclic_user_type(messages, type_store, function_store, module_path, type_id, chain, span);
+				} else if let Some(layout) = specialization.layout {
+					let name = lock.read().name;
+					panic!("{name}: {:?}", layout);
+				}
+			}
+		}
+
+		kind => unreachable!("{kind:?}"),
+	}
+}
+
+fn fill_pre_existing_union_specializations<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	generic_usages: &mut Vec<GenericUsage>,
+	enclosing_generic_parameters: &GenericParameters<'a>,
+	module_path: &'a [String],
+	union_shape_index: usize,
+) {
+	let lock = type_store.user_types.read()[union_shape_index].clone();
+	let user_type = lock.read();
+	let span = user_type.span;
+	let shape = match &user_type.kind {
+		UserTypeKind::Union { shape } => shape,
+		kind => unreachable!("{kind:?}"),
+	};
+
+	let variant_shapes = shape.variant_shapes.clone();
+	let mut specializations = shape.specializations.clone(); // Belch
+	drop(user_type);
+
+	for specialization in &mut specializations {
+		assert!(!specialization.been_filled);
+
+		let (fields, variants, variants_by_name) = type_store.generate_union_variant_info(
+			messages,
+			function_store,
+			module_path,
+			generic_usages,
+			enclosing_generic_parameters,
+			union_shape_index,
+			&specialization.type_arguments,
+			&variant_shapes,
+		);
+
+		specialization.fields = SliceRef::from(fields);
+		specialization.variants = SliceRef::from(variants);
+		specialization.variants_by_name = Ref::new(variants_by_name);
+	}
+
+	let mut user_type = lock.write();
+	match &mut user_type.kind {
+		UserTypeKind::Union { shape } => {
+			for (actual, updated) in shape.specializations.iter_mut().zip(specializations.into_iter()) {
+				assert!(!actual.been_filled);
+				actual.been_filled = true;
+
+				assert!(actual.layout.is_none());
+
+				actual.fields = updated.fields;
+				actual.variants = updated.variants;
+				actual.variants_by_name = updated.variants_by_name;
+			}
+		}
+
+		kind => unreachable!("{kind:?}"),
+	}
+	drop(user_type);
+
+	let user_type = lock.read();
+	match &user_type.kind {
+		UserTypeKind::Union { shape } => {
 			let specializations: Vec<_> = shape.specializations.clone();
 			drop(user_type);
 
