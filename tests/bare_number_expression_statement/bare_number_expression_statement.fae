@@ -1,0 +1,4 @@
+fn main() {
+	5
+	println("Hello")
+}

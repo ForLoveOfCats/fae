@@ -207,7 +207,7 @@ fn generate_statement<'a, 'b, G: Generator>(
 
 	match &statement.kind {
 		StatementKind::Expression(expression) => {
-			generate_expression(context, generator, expression);
+			generate_statement_expression(context, generator, expression);
 		}
 
 		StatementKind::When(block) => {
@@ -314,6 +314,22 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 	generator: &mut G,
 	expression: &'b Expression<'a>,
 ) -> Option<G::Binding> {
+	generate_expression_impl::<_, false>(context, generator, expression)
+}
+
+pub fn generate_statement_expression<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	expression: &'b Expression<'a>,
+) {
+	generate_expression_impl::<_, true>(context, generator, expression);
+}
+
+fn generate_expression_impl<'a, 'b, G: Generator, const IS_STATEMENT: bool>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	expression: &'b Expression<'a>,
+) -> Option<G::Binding> {
 	let debug_location = expression.debug_location;
 
 	match &expression.kind {
@@ -341,15 +357,45 @@ pub fn generate_expression<'a, 'b, G: Generator>(
 			result
 		}
 
-		ExpressionKind::NumberValue(value) => generate_number_value(context, generator, value),
+		ExpressionKind::NumberValue(value) => {
+			if IS_STATEMENT {
+				None
+			} else {
+				generate_number_value(context, generator, value)
+			}
+		}
 
-		&ExpressionKind::BooleanLiteral(literal) => generate_boolean_literal(context, generator, literal),
+		&ExpressionKind::BooleanLiteral(literal) => {
+			if IS_STATEMENT {
+				None
+			} else {
+				generate_boolean_literal(context, generator, literal)
+			}
+		}
 
-		ExpressionKind::CodepointLiteral(literal) => generate_codepoint_literal(context, generator, literal),
+		ExpressionKind::CodepointLiteral(literal) => {
+			if IS_STATEMENT {
+				None
+			} else {
+				generate_codepoint_literal(context, generator, literal)
+			}
+		}
 
-		ExpressionKind::ByteCodepointLiteral(literal) => generate_byte_codepoint_literal(context, generator, literal),
+		ExpressionKind::ByteCodepointLiteral(literal) => {
+			if IS_STATEMENT {
+				None
+			} else {
+				generate_byte_codepoint_literal(context, generator, literal)
+			}
+		}
 
-		ExpressionKind::StringLiteral(literal) => generate_string_literal(context, generator, literal),
+		ExpressionKind::StringLiteral(literal) => {
+			if IS_STATEMENT {
+				None
+			} else {
+				generate_string_literal(context, generator, literal)
+			}
+		}
 
 		ExpressionKind::FormatStringLiteral(literal) => {
 			generate_format_string_literal(context, generator, literal, debug_location)
