@@ -87,6 +87,9 @@ fn fwrite(buffer: *u8, item_size: usize, count: usize, stream: *FileStream): usi
 extern "malloc"
 fn malloc(size: usize): *mut u8
 
+extern "calloc"
+fn calloc(count: usize, size: usize): *mut u8
+
 extern "memcpy"
 fn memcpy(destination: *mut u8, source: *u8, size: usize): *mut u8
 

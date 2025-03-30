@@ -75,7 +75,7 @@ fn reserve_exact(new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
 	if new_capacity <= self.capacity => return
 
-	reallocate_region<T>(self.items.pointer.&mut, new_length: new_capacity)
+	reallocate_region<T>(self.items.pointer.&mut, old_length: self.capacity, new_length: new_capacity)
 	self.capacity = new_capacity
 }
 
@@ -89,7 +89,7 @@ fn reserve_at_least(mut new_capacity=: isize) {
 		new_capacity = self.capacity * GrowthFactor
 	}
 	
-	reallocate_region<T>(self.items.pointer.&mut, new_length: new_capacity)
+	reallocate_region<T>(self.items.pointer.&mut, old_length: self.capacity, new_length: new_capacity)
 	self.capacity = new_capacity
 }
 

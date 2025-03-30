@@ -1,10 +1,9 @@
-extern "calloc"
-fn c_raw_calloc(count: usize, size: usize): *mut u8
+import fae.libc.calloc
 
 generic T
 fn allocate(): *mut T {
 	let size = size_of<T>().(usize)
-	return c_raw_calloc(count: 1, size).(*mut T)
+	return calloc(count: 1, size).(*mut T)
 }
 
 generic T
