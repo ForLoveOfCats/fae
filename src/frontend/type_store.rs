@@ -1392,7 +1392,7 @@ impl<'a> TypeStore<'a> {
 			// From untyped number
 
 			let (value, span, from_value) = match &mut from.kind {
-				ExpressionKind::NumberValue(value) => (value.value(), value.span(), value),
+				ExpressionKind::NumberValue(value) => (value.value(), value.span, value),
 				kind => panic!("Collapsing from_number with a non-NumberValue expression: {kind:#?}"),
 			};
 

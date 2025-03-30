@@ -708,7 +708,7 @@ fn assert_not_collapsed(collapse: Option<TypeId>) {
 #[derive(Debug, Copy, Clone)]
 pub struct NumberValue {
 	value: Decimal,
-	span: Span,
+	pub span: Span,
 	collapse: Option<TypeId>,
 }
 
@@ -727,10 +727,6 @@ impl NumberValue {
 
 	pub fn is_integer(&self) -> bool {
 		self.value.is_integer()
-	}
-
-	pub fn span(&self) -> Span {
-		self.span
 	}
 
 	// Return value indicates success if true
@@ -834,32 +830,69 @@ impl NumberValue {
 		Some(NumberValue { value, span, collapse: None })
 	}
 
-	pub fn bitwise_and(self, other: NumberValue) -> NumberValue {
+	fn check_not_integer_error(&self, messages: &mut Messages, other: NumberValue, op: &str, side: &str) -> bool {
+		if !self.value.is_integer() {
+			let error = error!("Cannot perform constant {op} with {side} side value {}", self.value);
+			messages.message(error.span(self.span + other.span));
+			return true;
+		}
+
+		false
+	}
+
+	pub fn bitwise_and(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
+		if self.check_not_integer_error(messages, other, "bitwise and", "left") {
+			return None;
+		}
+
+		if other.check_not_integer_error(messages, self, "bitwise and", "right") {
+			return None;
+		}
+
 		let result = self.value.to_i128().unwrap() & other.value.to_i128().unwrap();
 		let value = Decimal::from(result);
 		let span = self.span + other.span;
-		NumberValue { value, span, collapse: None }
+		Some(NumberValue { value, span, collapse: None })
 	}
 
-	pub fn bitwise_or(self, other: NumberValue) -> NumberValue {
+	pub fn bitwise_or(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
+		if self.check_not_integer_error(messages, other, "bitwise or", "left") {
+			return None;
+		}
+
+		if other.check_not_integer_error(messages, self, "bitwise or", "right") {
+			return None;
+		}
+
 		let result = self.value.to_i128().unwrap() | other.value.to_i128().unwrap();
 		let value = Decimal::from(result);
 		let span = self.span + other.span;
-		NumberValue { value, span, collapse: None }
+		Some(NumberValue { value, span, collapse: None })
 	}
 
-	pub fn bitwise_xor(self, other: NumberValue) -> NumberValue {
+	pub fn bitwise_xor(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
+		if self.check_not_integer_error(messages, other, "bitwise xor", "left") {
+			return None;
+		}
+
+		if other.check_not_integer_error(messages, self, "bitwise xor", "right") {
+			return None;
+		}
+
 		let result = self.value.to_i128().unwrap() ^ other.value.to_i128().unwrap();
 		let value = Decimal::from(result);
 		let span = self.span + other.span;
-		NumberValue { value, span, collapse: None }
+		Some(NumberValue { value, span, collapse: None })
 	}
 
 	pub fn bitshift_left(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert!(self.is_integer());
-		assert!(other.is_integer());
+		if !self.value.is_integer() {
+			let error = error!("Cannot perform constant bitshift left with left side value {}", self.value);
+			messages.message(error.span(self.span + other.span));
+			return None;
+		}
 
-		if other.value.is_sign_negative() || other.value.is_zero() {
+		if other.value.is_sign_negative() || other.value.is_zero() || !other.value.is_integer() {
 			let error = error!("Cannot perform constant bitshift left with right side value {}", other.value);
 			messages.message(error.span(self.span + other.span));
 			return None;
@@ -886,10 +919,13 @@ impl NumberValue {
 	}
 
 	pub fn bitshift_right(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert!(self.is_integer());
-		assert!(other.is_integer());
+		if !self.value.is_integer() {
+			let error = error!("Cannot perform constant bitshift right with left side value {}", self.value);
+			messages.message(error.span(self.span + other.span));
+			return None;
+		}
 
-		if other.value.is_sign_negative() || other.value.is_zero() {
+		if other.value.is_sign_negative() || other.value.is_zero() || !other.value.is_integer() {
 			let error = error!("Cannot perform constant bitshift right with right side value {}", other.value);
 			messages.message(error.span(self.span + other.span));
 			return None;

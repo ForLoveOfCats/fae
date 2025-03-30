@@ -1,0 +1,27 @@
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 5: Constant number 2.5 is a decimal and so cannot be represented as `i32`
+  5|     println(f"{A.(i32)}, {B.(i32)}")
+                    ^
+
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 5: Constant number 3.5 is a decimal and so cannot be represented as `i32`
+  5|     println(f"{A.(i32)}, {B.(i32)}")
+                               ^
+
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 7: Cannot perform constant bitshift right with left side value 0.5
+  7|     let _ = 0.5 >> 1
+                 ^^^^^^^^
+
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 8: Cannot perform constant bitshift left with right side value 0.5
+  8|     let _ = 1 << 0.5
+                 ^^^^^^^^
+
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 9: Cannot perform constant bitwise and with right side value 0.5
+  9|     let _ = 1 & 0.5
+                 ^^^^^^^
+
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 10: Cannot perform constant bitwise or with left side value 0.5
+  10|     let _ = 0.5 | 1
+                  ^^^^^^^
+
+Validation error: ./tests/mixed_decimalness_const_binary_operation_failure/mixed_decimalness_const_binary_operation_failure.fae, line 11: Cannot perform constant bitwise xor with right side value 0.5
+  11|     let _ = 1 ^ 0.5
+                  ^^^^^^^

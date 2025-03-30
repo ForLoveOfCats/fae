@@ -1,0 +1,6 @@
+const A = 0.5 + 2
+const B = 3 + 0.5
+
+fn main() {
+	println(f"{A.(f32)}, {B.(f32)}")
+}

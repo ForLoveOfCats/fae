@@ -6850,8 +6850,9 @@ fn validate_symbol_read<'a>(
 
 			let constant = &context.constants.read()[constant_index];
 			let (kind, type_id) = match constant {
-				ConstantValue::NumberValue(value) => {
-					let kind = ExpressionKind::NumberValue(*value);
+				&ConstantValue::NumberValue(mut value) => {
+					value.span = span;
+					let kind = ExpressionKind::NumberValue(value);
 					(kind, value.collapsed().unwrap_or(context.type_store.number_type_id()))
 				}
 
@@ -7668,6 +7669,13 @@ fn validate_binary_operation<'a>(
 					context.message(error.span(span));
 					return Expression::any_collapse(context.type_store, span);
 				}
+
+				if !right.type_id.is_integer(context.type_store, &right) {
+					let found = context.type_name(right.type_id);
+					let error = error!("Cannot perform bitshift with right side non-integer type {found}");
+					context.message(error.span(span));
+					return Expression::any_collapse(context.type_store, span);
+				}
 			}
 
 			BinaryOperator::Equals | BinaryOperator::NotEquals => {
@@ -7813,24 +7821,27 @@ fn perform_constant_binary_operation<'a>(
 			_ => return None,
 		};
 
-		if left.is_integer() {
-			assert!(right.is_integer(), "{right:?}");
-
+		if left.is_integer() || right.is_integer() {
 			let value = match op {
-				BinaryOperator::Add => left.add(context.messages, right)?,
-				BinaryOperator::Sub => left.sub(context.messages, right)?,
-				BinaryOperator::Mul => left.mul(context.messages, right)?,
-				BinaryOperator::Div => left.div(context.messages, right)?,
-				BinaryOperator::Modulo => left.modulo(context.messages, right)?,
-				BinaryOperator::BitwiseAnd => left.bitwise_and(right),
-				BinaryOperator::BitwiseOr => left.bitwise_or(right),
-				BinaryOperator::BitwiseXor => left.bitwise_xor(right),
-				BinaryOperator::BitshiftLeft => left.bitshift_left(context.messages, right)?,
-				BinaryOperator::BitshiftRight => left.bitshift_right(context.messages, right)?,
+				BinaryOperator::Add => left.add(context.messages, right),
+				BinaryOperator::Sub => left.sub(context.messages, right),
+				BinaryOperator::Mul => left.mul(context.messages, right),
+				BinaryOperator::Div => left.div(context.messages, right),
+				BinaryOperator::Modulo => left.modulo(context.messages, right),
+				BinaryOperator::BitwiseAnd => left.bitwise_and(context.messages, right),
+				BinaryOperator::BitwiseOr => left.bitwise_or(context.messages, right),
+				BinaryOperator::BitwiseXor => left.bitwise_xor(context.messages, right),
+				BinaryOperator::BitshiftLeft => left.bitshift_left(context.messages, right),
+				BinaryOperator::BitshiftRight => left.bitshift_right(context.messages, right),
 				_ => return None,
 			};
 
-			let span = value.span();
+			let Some(value) = value else {
+				let span = left.span + right.span;
+				return Some(Expression::any_collapse(context.type_store, span));
+			};
+
+			let span = value.span;
 			let kind = ExpressionKind::NumberValue(value);
 			let type_id = context.type_store.number_type_id();
 			return Some(Expression {
@@ -7844,8 +7855,6 @@ fn perform_constant_binary_operation<'a>(
 				debug_location: span.debug_location(context.parsed_files),
 			});
 		} else {
-			assert!(!right.is_integer(), "{right:?}");
-
 			let value = match op {
 				BinaryOperator::Add => left.add(context.messages, right)?,
 				BinaryOperator::Sub => left.sub(context.messages, right)?,
@@ -7854,7 +7863,7 @@ fn perform_constant_binary_operation<'a>(
 				_ => return None,
 			};
 
-			let span = value.span();
+			let span = value.span;
 			let kind = ExpressionKind::NumberValue(value);
 			let type_id = context.type_store.number_type_id();
 			return Some(Expression {
