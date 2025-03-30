@@ -10,7 +10,7 @@ union Integer {
 }
 
 fn main() {
-	mut instance: Integer = .whole(5 | 458752)
+	mut instance: Integer = .whole(5 | 7 << 16)
 	let uint: u32 = instance.whole
 	let a: u16 = instance.halves.a
 	let b: u16 = instance.halves.b

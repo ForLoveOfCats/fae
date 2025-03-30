@@ -1,3 +1,6 @@
+// This test must be run on a little-endian system 😅
+// TODO: Write a test which is not dependent on endian-ness
+
 union Integer {
 	normal: u32
 
@@ -13,7 +16,7 @@ union Integer {
 }
 
 fn main() {
-	mut integer: Integer = .normal(5 | 458752)
+	mut integer: Integer = .normal(5 | 7 << 16)
 	integer.bigger.b = 42
 	func(integer)
 }

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -852,6 +853,66 @@ impl NumberValue {
 		let value = Decimal::from(result);
 		let span = self.span + other.span;
 		NumberValue { value, span, collapse: None }
+	}
+
+	pub fn bitshift_left(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
+		assert!(self.is_integer());
+		assert!(other.is_integer());
+
+		if other.value.is_sign_negative() || other.value.is_zero() {
+			let error = error!("Cannot perform constant bitshift left with right side value {}", other.value);
+			messages.message(error.span(self.span + other.span));
+			return None;
+		}
+
+		// TODO: This is rather silly but rust_decimal does not seem to have "proper" shift methods
+
+		let span = self.span + other.span;
+		let mut count = other.value;
+		let mut value = self.value;
+		while count.cmp(&Decimal::ZERO) == Ordering::Greater {
+			count = count.saturating_sub(Decimal::ONE);
+
+			let Some(new_value) = value.checked_mul(Decimal::TWO) else {
+				let error = error!("Overflow or underflow in constant bitshift left");
+				messages.message(error.span(span));
+				return None;
+			};
+
+			value = new_value;
+		}
+
+		Some(NumberValue { value, span, collapse: None })
+	}
+
+	pub fn bitshift_right(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
+		assert!(self.is_integer());
+		assert!(other.is_integer());
+
+		if other.value.is_sign_negative() || other.value.is_zero() {
+			let error = error!("Cannot perform constant bitshift right with right side value {}", other.value);
+			messages.message(error.span(self.span + other.span));
+			return None;
+		}
+
+		// TODO: This is rather silly but rust_decimal does not seem to have "proper" shift methods
+
+		let span = self.span + other.span;
+		let mut count = other.value;
+		let mut value = self.value;
+		while count.cmp(&Decimal::ZERO) == Ordering::Greater {
+			count = count.saturating_sub(Decimal::ONE);
+
+			let Some(new_value) = value.checked_div(Decimal::TWO) else {
+				let error = error!("Underflow or underflow in constant bitshift right");
+				messages.message(error.span(span));
+				return None;
+			};
+
+			value = new_value.trunc();
+		}
+
+		Some(NumberValue { value, span, collapse: None })
 	}
 }
 

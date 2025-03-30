@@ -4849,7 +4849,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 
 		kind => {
 			let name = kind.name();
-			context.message(error!("Cannot have a runtime {name} as a const expression").span(expression.span));
+			context.message(error!("Cannot have a runtime \"{name}\" as a const expression").span(expression.span));
 			return None;
 		}
 	};
@@ -7825,6 +7825,8 @@ fn perform_constant_binary_operation<'a>(
 				BinaryOperator::BitwiseAnd => left.bitwise_and(right),
 				BinaryOperator::BitwiseOr => left.bitwise_or(right),
 				BinaryOperator::BitwiseXor => left.bitwise_xor(right),
+				BinaryOperator::BitshiftLeft => left.bitshift_left(context.messages, right)?,
+				BinaryOperator::BitshiftRight => left.bitshift_right(context.messages, right)?,
 				_ => return None,
 			};
 
