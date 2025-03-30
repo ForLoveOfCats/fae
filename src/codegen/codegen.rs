@@ -433,7 +433,7 @@ fn generate_expression_impl<'a, 'b, G: Generator, const IS_STATEMENT: bool>(
 
 		ExpressionKind::UnionVariantToUnion(conversion) => generate_union_variant_to_union(context, generator, conversion),
 
-		ExpressionKind::Void | ExpressionKind::Type { .. } => None,
+		ExpressionKind::Void | ExpressionKind::Type { .. } | ExpressionKind::FieldlessVariantLiteral => None,
 
 		ExpressionKind::AnyCollapse | ExpressionKind::ModuleLayer(_) => {
 			unreachable!("{:?}", &expression.kind)

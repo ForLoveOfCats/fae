@@ -1,4 +1,4 @@
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 2: Cannot construct struct-like enum variant `Enum.B` without an initializer
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 2: Cannot construct struct-like variant `Enum.B` without an initializer
   2|     mut v: Enum = .B.immutable_method()
                        ^^
 
@@ -6,7 +6,7 @@ Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_fa
   2|     mut v: Enum = .B.immutable_method()
                        ^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 5: Cannot construct struct-like enum variant `Enum.B` without an initializer
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 5: Cannot construct struct-like variant `Enum.B` without an initializer
   5|     v = .B.mutable_method()
              ^^
 

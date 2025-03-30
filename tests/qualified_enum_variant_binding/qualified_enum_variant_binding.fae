@@ -1,0 +1,14 @@
+enum Abc {
+	A
+	B
+	C
+}
+
+fn func(arg=: Abc) {
+	println(f"tag: {arg.tag}")
+}
+
+fn main() {
+	let a = Abc.C
+	func(a)
+}

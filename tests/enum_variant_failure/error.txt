@@ -2,11 +2,11 @@ Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 4:
   4|     let _: Enum = .A(1)
                        ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 6: Cannot construct transparent enum variant `Enum.B` without an initializer
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 6: Cannot construct transparent variant `Enum.B` without an initializer
   6|     let _: Enum = .B
                        ^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 7: Cannot construct transparent enum variant `Enum.B` like a struck-like enum variant
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 7: Cannot construct transparent variant `Enum.B` like a struct-like variant
   7|     let _: Enum = .B {}
                        ^^^^^
 
@@ -14,7 +14,7 @@ Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 9:
   9|     let _: Enum = .B(0.1)
                           ^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 11: Cannot construct struct-like enum variant `Enum.C` without an initializer
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 11: Cannot construct struct-like variant `Enum.C` without an initializer
   11|     let _: Enum = .C
                         ^^
 

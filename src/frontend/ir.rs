@@ -566,20 +566,21 @@ impl<'a> Expression<'a> {
 
 			let name = context.type_name(type_id);
 			let message = if is_transparent_variant {
-				error!("Cannot construct transparent enum variant {name} without an initializer")
+				error!("Cannot construct transparent variant {name} without an initializer")
 			} else {
-				error!("Cannot construct struct-like enum variant {name} without an initializer")
+				error!("Cannot construct struct-like variant {name} without an initializer")
 			};
 			context.message(message.span(self.span));
 
 			self.type_id = context.type_store.any_collapse_type_id();
 
-			// We know we are an enum variant, have fields, and we are implicitly
+			// We know we are a variant, have fields, and we are implicitly
 			// being constructed without a struct or transparent initializer
 			return false;
 		}
 
-		// We are a field-less enum variant so it is valid to treat us like an instance
+		// We are a field-less variant so it is valid to treat us like an instance
+		self.kind = ExpressionKind::FieldlessVariantLiteral;
 		self.type_id = type_id;
 		true
 	}
@@ -607,6 +608,7 @@ pub enum ExpressionKind<'a> {
 
 	ArrayLiteral(ArrayLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),
+	FieldlessVariantLiteral,
 
 	Call(Call<'a>),
 	MethodCall(Box<MethodCall<'a>>),
@@ -642,6 +644,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::FormatStringLiteral(_) => "format string literal",
 			ExpressionKind::ArrayLiteral(_) => "array literal",
 			ExpressionKind::StructLiteral(_) => "struct literal",
+			ExpressionKind::FieldlessVariantLiteral => "fieldless variant literal",
 			ExpressionKind::Call(_) => "function call",
 			ExpressionKind::MethodCall(_) => "method call",
 			ExpressionKind::Read(_) => "binding read",
@@ -674,6 +677,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::FormatStringLiteral(_) => "a format string literal",
 			ExpressionKind::ArrayLiteral(_) => "an array literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
+			ExpressionKind::FieldlessVariantLiteral => "a fieldless variant literal",
 			ExpressionKind::Call(_) => "a function call",
 			ExpressionKind::MethodCall(_) => "a method call",
 			ExpressionKind::Read(_) => "a binding read",

@@ -5790,7 +5790,7 @@ fn validate_struct_literal<'a>(
 	if shape.parent_kind == StructParentKind::Union && specialization.fields.is_empty() {
 		drop(user_type);
 		let variant_name = context.type_name(type_id);
-		let message = error!("Cannot construct enum variant {variant_name} with field initializers");
+		let message = error!("Cannot construct variant {variant_name} with field initializers");
 		context.message(message.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	}
@@ -5798,7 +5798,7 @@ fn validate_struct_literal<'a>(
 	if shape.is_transparent_variant {
 		drop(user_type);
 		let variant_name = context.type_name(type_id);
-		let message = error!("Cannot construct transparent enum variant {variant_name} like a struck-like enum variant");
+		let message = error!("Cannot construct transparent variant {variant_name} like a struct-like variant");
 		context.message(message.span(span));
 		return Expression::any_collapse(context.type_store, span);
 	}
