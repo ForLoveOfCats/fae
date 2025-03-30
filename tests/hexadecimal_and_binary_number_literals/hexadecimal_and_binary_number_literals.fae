@@ -1,0 +1,5 @@
+fn main() {
+	let a: i32 = 0b00001101001
+	let b: u16 = 0xaf11
+	println(f"a: {a}, b: {b}")
+}

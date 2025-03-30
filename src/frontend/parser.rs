@@ -1269,6 +1269,55 @@ fn parse_number<'a>(messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseRe
 	let number_token = tokens.expect(messages, TokenKind::Number)?;
 	let span = number_token.span;
 
+	let text_bytes = number_token.text.as_bytes();
+	if number_token.text.len() >= 3 && text_bytes[0] == b'0' {
+		let literal_text = &number_token.text[2..];
+
+		if text_bytes[1] == b'x' {
+			// Parse hex literal
+			let Ok(value) = Decimal::from_str_radix(literal_text, 16) else {
+				messages.message(error!("Invalid hexadecimal number literal").span(span));
+				return Err(());
+			};
+
+			let literal = NumberLiteral { value: Node::new(value, span) };
+			let expression = Expression::NumberLiteral(literal);
+			return Ok(Node::new(expression, span));
+		} else if text_bytes[1] == b'b' {
+			// Parse binary literal
+			let mut value = Decimal::ZERO;
+
+			for byte in literal_text.bytes() {
+				let bit = if byte == b'0' {
+					Decimal::ZERO
+				} else if byte == b'1' {
+					Decimal::ONE
+				} else {
+					messages.message(error!("Invalid binary number literal").span(span));
+					return Err(());
+				};
+
+				// Shift left
+				let Some(shifted) = value.checked_mul(Decimal::TWO) else {
+					messages.message(error!("Overflow or underflow while parsing binary number literal").span(span));
+					return Err(());
+				};
+				value = shifted;
+
+				let Some(added) = value.checked_add(bit) else {
+					messages.message(error!("Overflow or underflow while parsing binary number literal").span(span));
+					return Err(());
+				};
+				value = added;
+			}
+
+			let literal = NumberLiteral { value: Node::new(value, span) };
+			let expression = Expression::NumberLiteral(literal);
+			return Ok(Node::new(expression, span));
+		}
+	}
+
+	// Parse integer/decimal literal
 	let Ok(value) = Decimal::from_str_exact(number_token.text) else {
 		messages.message(error!("Invalid number literal").span(span));
 		return Err(());
