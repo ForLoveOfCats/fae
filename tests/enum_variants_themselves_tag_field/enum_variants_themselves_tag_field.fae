@@ -1,0 +1,13 @@
+enum Abc {
+	A
+	B { field: i32 }
+	C(i32)
+}
+
+
+fn main() {
+	let a = Abc.A
+	let b = Abc.B { field: 42 }
+	let c = Abc.C(55)
+	println(f"a: {a.tag}, b: {b.tag}, c: {c.tag}")
+}

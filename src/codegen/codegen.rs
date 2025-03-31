@@ -14,7 +14,9 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::{self, BinaryOperator};
-use crate::frontend::type_store::{TypeEntryKind, TypeId, TypeIdSpecializationSituation, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{
+	StructParentKind, TypeEntryKind, TypeId, TypeIdSpecializationSituation, TypeStore, UserTypeKind,
+};
 use crate::lock::ReadGuard;
 
 pub fn generate<'a, G: Generator>(
@@ -796,17 +798,48 @@ fn generate_field_read<'a, 'b, G: Generator>(
 	read: &'b FieldRead<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
-	let base = generate_expression(context, generator, &read.base)?;
+	let maybe_base = generate_expression(context, generator, &read.base);
 
-	let type_id = context.specialize_type_id(read.base.type_id);
-	let entry = &context.type_store.type_entries.get(type_id);
+	// Fae field access can automatically dereference a *single* pointer level
+	// and while the generator handles emitting correct code for this situation,
+	// we need to do some important type-related checks and adjustments here so
+	// let's pretend that our base type is actually the pointed-to type if the
+	// base expression type is a pointer
+	let mut type_id = context.specialize_type_id(read.base.type_id);
+	let mut entry = context.type_store.type_entries.get(type_id);
+	if let TypeEntryKind::Pointer { type_id: pointed_type_id, .. } = entry.kind {
+		type_id = pointed_type_id;
+		entry = context.type_store.type_entries.get(type_id);
+	}
+
+	if let TypeEntryKind::UserType { shape_index, .. } = entry.kind {
+		let user_types = context.type_store.user_types.read();
+		let user_type = user_types[shape_index].read();
+
+		if let UserTypeKind::Struct { shape } = &user_type.kind {
+			// Is specifically an *enum* variant and the field being accessed is the tag
+			if shape.parent_kind == StructParentKind::Enum && read.field_index == 0 {
+				let tag = Decimal::from(shape.variant_index.unwrap());
+				return Some(generator.generate_number_value(context.type_store, read.field_type_id, tag));
+			}
+		}
+	}
+
+	let base = maybe_base?;
+	let mut field_index = read.field_index;
+
 	if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
 		let user_type = context.type_store.user_types.read()[shape_index].clone();
 		let user_type = user_type.read();
 		match &user_type.kind {
 			UserTypeKind::Struct { shape } => {
+				if shape.parent_kind == StructParentKind::Enum {
+					// *Enum* variant structs have a fake "tag" field which we need to acocunt for
+					field_index -= 1;
+				}
+
 				let specialization = &shape.specializations[specialization_index];
-				let field_type_id = specialization.fields[read.field_index].type_id;
+				let field_type_id = specialization.fields[field_index].type_id;
 				let field_layout = context.type_store.type_layout(field_type_id);
 				if field_layout.size <= 0 {
 					return None;
@@ -815,7 +848,7 @@ fn generate_field_read<'a, 'b, G: Generator>(
 
 			UserTypeKind::Enum { shape } => {
 				let specialization = &shape.specializations[specialization_index];
-				let field_type_id = specialization.shared_fields[read.field_index].type_id;
+				let field_type_id = specialization.shared_fields[field_index].type_id;
 				let field_layout = context.type_store.type_layout(field_type_id);
 				if field_layout.size <= 0 {
 					return None;
@@ -824,7 +857,7 @@ fn generate_field_read<'a, 'b, G: Generator>(
 
 			UserTypeKind::Union { shape } => {
 				let specialization = &shape.specializations[specialization_index];
-				let field_type_id = specialization.fields[read.field_index].type_id;
+				let field_type_id = specialization.fields[field_index].type_id;
 				let field_layout = context.type_store.type_layout(field_type_id);
 				if field_layout.size <= 0 {
 					return None;
@@ -833,7 +866,7 @@ fn generate_field_read<'a, 'b, G: Generator>(
 		}
 	}
 
-	generator.generate_field_read(context.lang_items, context.type_store, base, read.field_index, debug_location)
+	generator.generate_field_read(context.lang_items, context.type_store, base, field_index, debug_location)
 }
 
 fn generate_unary_operation<'a, 'b, G: Generator>(

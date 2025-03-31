@@ -4,11 +4,7 @@ enum Abc {
 	C
 }
 
-fn func(arg=: Abc) {
-	println(f"tag: {arg.tag}")
-}
-
 fn main() {
 	let a = Abc.C
-	func(a)
+	println(f"tag: {a.tag}")
 }

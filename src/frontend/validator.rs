@@ -5990,8 +5990,11 @@ fn lookup_name_on_base<'a>(
 			let user_type = context.type_store.user_types.read()[shape_index].clone();
 			let user_type = user_type.read();
 
-			let fields = match &user_type.kind {
-				UserTypeKind::Struct { shape } => shape.specializations[specialization_index].fields.clone(),
+			let (fields, is_enum_variant) = match &user_type.kind {
+				UserTypeKind::Struct { shape } => (
+					shape.specializations[specialization_index].fields.clone(),
+					shape.parent_kind == StructParentKind::Enum,
+				),
 
 				UserTypeKind::Enum { shape } => {
 					if let ExpressionKind::Type { .. } = base.kind {
@@ -5999,7 +6002,7 @@ fn lookup_name_on_base<'a>(
 						return variant.map(|variant| NameOnBase::Variant(variant));
 					}
 
-					shape.specializations[specialization_index].shared_fields.clone()
+					(shape.specializations[specialization_index].shared_fields.clone(), false)
 				}
 
 				UserTypeKind::Union { shape } => {
@@ -6008,10 +6011,23 @@ fn lookup_name_on_base<'a>(
 						return variant.map(|variant| NameOnBase::Variant(variant));
 					}
 
-					shape.specializations[specialization_index].fields.clone()
+					(shape.specializations[specialization_index].fields.clone(), false)
 				}
 			};
 			drop(user_type);
+
+			let enum_variant_fields = [Field {
+				span: None,
+				name: "tag",
+				type_id: context.type_store.u8_type_id(),
+				attribute: None,
+				read_only: true,
+			}];
+
+			let mut maybe_enum_variant_fields: &[Field] = &[];
+			if is_enum_variant {
+				maybe_enum_variant_fields = &enum_variant_fields;
+			}
 
 			return lookup_field_in_fields(
 				context,
@@ -6019,7 +6035,7 @@ fn lookup_name_on_base<'a>(
 				base_type_id,
 				is_itself_mutable,
 				is_pointer_access_mutable,
-				&fields,
+				&[maybe_enum_variant_fields, &fields],
 				external_access,
 			);
 		}
@@ -6051,7 +6067,7 @@ fn lookup_name_on_base<'a>(
 			base.type_id,
 			is_itself_mutable,
 			is_pointer_access_mutable,
-			slice_fields,
+			&[slice_fields],
 			false,
 		);
 	} else if type_id.is_string(context.type_store) {
@@ -6085,7 +6101,7 @@ fn lookup_name_on_base<'a>(
 			base.type_id,
 			is_itself_mutable,
 			is_pointer_access_mutable,
-			str_fields,
+			&[str_fields],
 			false,
 		);
 	} else if type_id.is_format_string(context.type_store) {
@@ -6103,7 +6119,7 @@ fn lookup_name_on_base<'a>(
 			base.type_id,
 			is_itself_mutable,
 			is_pointer_access_mutable,
-			fstr_fields,
+			&[fstr_fields],
 			false,
 		);
 	} else if !base.type_id.is_any_collapse(context.type_store) {
@@ -6121,11 +6137,11 @@ fn lookup_field_in_fields<'a>(
 	base_type_id: TypeId,
 	is_itself_mutable: bool,
 	is_pointer_access_mutable: bool,
-	fields: &[Field<'a>],
+	fields: &[&[Field<'a>]],
 	external_access: bool,
 ) -> Option<NameOnBase<'a>> {
 	// TODO: Hashmapify this linear lookup
-	let mut fields = fields.iter().enumerate();
+	let mut fields = fields.iter().copied().flatten().enumerate();
 	let Some((field_index, field)) = fields.find(|f| f.1.name == name.item) else {
 		let type_name = context.type_name(base_type_id);
 		let error = error!("No field `{}` on {}", name.item, type_name);
@@ -6790,6 +6806,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 				base,
 				name: dot_access.name.item,
 				field_index,
+				field_type_id: field.type_id,
 				immutable_reason,
 			}));
 

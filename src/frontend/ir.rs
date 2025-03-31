@@ -1037,6 +1037,7 @@ pub struct FieldRead<'a> {
 	pub base: Expression<'a>,
 	pub name: &'a str,
 	pub field_index: usize,
+	pub field_type_id: TypeId,
 	pub immutable_reason: Option<FieldReadImmutableReason>,
 }
 
