@@ -600,6 +600,12 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 	let pointee_type_id = context.lang_items.format_string_item_type.unwrap();
 	let type_id = context.type_store.format_string_type_id();
 
+	if literal.items.is_empty() {
+		let isize_type_id = context.type_store.isize_type_id();
+		let length = generator.generate_number_value(context.type_store, isize_type_id, Decimal::ZERO);
+		return Some(generator.generate_non_null_invalid_slice(type_id, length, debug_location));
+	}
+
 	let enum_entry = context.type_store.type_entries.get(pointee_type_id);
 	let (enum_shape_index, enum_specialization_index) = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),

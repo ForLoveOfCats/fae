@@ -1,0 +1,7 @@
+Validation warning: ./tests/empty_unnecessary_format_string/empty_unnecessary_format_string.fae, line 2: Format string contains no sub-expressions and can be rewritten as a normal string literal
+  2|     println(f"")
+                 ^^^
+
+Validation warning: ./tests/empty_unnecessary_format_string/empty_unnecessary_format_string.fae, line 3: Format string contains no sub-expressions and can be rewritten as a normal string literal
+  3|     println(f"Hello world")
+                 ^^^^^^^^^^^^^^

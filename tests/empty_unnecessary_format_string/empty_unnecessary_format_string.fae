@@ -1,0 +1,4 @@
+fn main() {
+	println(f"")
+	println(f"Hello world")
+}

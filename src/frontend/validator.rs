@@ -5631,11 +5631,14 @@ fn validate_format_string_literal<'a>(
 ) -> Expression<'a> {
 	let mut items = Vec::with_capacity(literal.items.len());
 
+	let mut has_expressions = false;
 	for item in literal.items {
 		let item = match item {
 			tree::FormatStringItem::Text(text) => FormatStringItem::Text(text.clone()),
 
 			tree::FormatStringItem::Expression(expression) => {
+				has_expressions = true;
+
 				let mut expression = validate_expression(context, expression);
 				expression.into_value(context);
 				if !expression.type_id.is_formattable(context.type_store, &expression) {
@@ -5651,6 +5654,11 @@ fn validate_format_string_literal<'a>(
 		};
 
 		items.push(item);
+	}
+
+	if !has_expressions {
+		let warning = warning!("Format string contains no sub-expressions and can be rewritten as a normal string literal");
+		context.message(warning.span(span));
 	}
 
 	let kind = ExpressionKind::FormatStringLiteral(FormatStringLiteral { items });
