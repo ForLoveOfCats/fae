@@ -1,0 +1,6 @@
+// `_a` has label `a` and `_` has no label
+fn func(_a: i32, _: bool) {}
+
+fn main() {
+	func(42, true)
+}

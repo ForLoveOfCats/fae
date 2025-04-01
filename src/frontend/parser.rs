@@ -1878,12 +1878,18 @@ fn parse_parameters<'a>(
 			if tokens.peek_kind() == Ok(TokenKind::Word) {
 				let label_token = tokens.next(messages)?;
 				check_not_reserved(messages, label_token, "parameter label")?;
-				Some(label_token.text)
+				Some(label_token.text) // Overridden parameter label to be something specific
 			} else {
-				None
+				None // Overridden parameter label to be nothing
+			}
+		} else if name.item.starts_with('_') {
+			if name.item.len() > 1 {
+				Some(&name.item[1..]) // Non-overridden parameter label, strip underscore from name
+			} else {
+				None // Non-overridden parameter label, name is only underscore, avoid
 			}
 		} else {
-			Some(name.item)
+			Some(name.item) // Non-overridden parameter label, use name
 		};
 
 		tokens.expect(messages, TokenKind::Colon)?;
