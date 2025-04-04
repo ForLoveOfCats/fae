@@ -288,7 +288,11 @@ impl<'a> FunctionStore<'a> {
 					| TypeEntryKind::FunctionGeneric { methods_index, .. }
 					| TypeEntryKind::TraitGeneric { methods_index, .. } => methods_index,
 
-					TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::Pointer { .. } | TypeEntryKind::Slice(_) => {
+					TypeEntryKind::Module
+					| TypeEntryKind::Type
+					| TypeEntryKind::Pointer { .. }
+					| TypeEntryKind::Array(_)
+					| TypeEntryKind::Slice(_) => {
 						// If we know that this function is a method (we passed a base type id) then it stands to reason that the
 						// base type must have the ability to have methods, otherwise we've done something wrong somewhere
 						unreachable!("{:#?}", type_entry.kind);

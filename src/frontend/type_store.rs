@@ -1,4 +1,5 @@
 use std::collections::hash_map;
+use std::num::NonZeroU32;
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -156,7 +157,9 @@ impl TypeId {
 				true
 			}
 
+			// TODO: Should Array/Slice be "primatives"?
 			TypeEntryKind::UserType { .. }
+			| TypeEntryKind::Array(_)
 			| TypeEntryKind::Slice(_)
 			| TypeEntryKind::UserTypeGeneric { .. }
 			| TypeEntryKind::FunctionGeneric { .. }
@@ -540,6 +543,12 @@ pub struct UserType<'a> {
 	pub kind: UserTypeKind<'a>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ArrayType {
+	pub array_type_id: TypeId,
+	pub item_type_id: TypeId,
+}
+
 #[derive(Debug)]
 pub struct MethodCollection<'a> {
 	pub methods_by_name: FxHashMap<&'a str, usize>, // Indicies into methods vec below
@@ -708,7 +717,8 @@ impl PrimativeKind {
 #[derive(Debug, Clone, Copy)]
 pub struct TypeEntry {
 	pub kind: TypeEntryKind,
-	pub reference_entries: Option<u32>,
+	pub reference_entries: Option<u32>, // TODO: Use niche
+	pub arrays_index: Option<NonZeroU32>,
 	pub generic_poisoned: bool,
 }
 
@@ -750,7 +760,9 @@ impl TypeEntry {
 				}
 			}
 
-			TypeEntryKind::Pointer { type_id, .. } | TypeEntryKind::Slice(Slice { type_id, .. }) => {
+			TypeEntryKind::Pointer { type_id, .. }
+			| TypeEntryKind::Array(Array { type_id, .. })
+			| TypeEntryKind::Slice(Slice { type_id, .. }) => {
 				let entry = type_store.type_entries.get(type_id);
 				entry.generic_poisoned
 			}
@@ -762,7 +774,12 @@ impl TypeEntry {
 			TypeEntryKind::Module | TypeEntryKind::Type => unreachable!(),
 		};
 
-		TypeEntry { kind, reference_entries: None, generic_poisoned }
+		TypeEntry {
+			kind,
+			reference_entries: None,
+			arrays_index: None,
+			generic_poisoned,
+		}
 	}
 }
 
@@ -787,6 +804,7 @@ pub enum TypeEntryKind {
 		mutable: bool,
 	},
 
+	Array(Array),
 	Slice(Slice),
 
 	UserTypeGeneric {
@@ -818,6 +836,7 @@ impl TypeEntryKind {
 			TypeEntryKind::Module => "module",
 			TypeEntryKind::Type | TypeEntryKind::BuiltinType { .. } | TypeEntryKind::UserType { .. } => "type",
 			TypeEntryKind::Pointer { .. } => "pointer",
+			TypeEntryKind::Array(_) => "array",
 			TypeEntryKind::Slice(_) => "slice",
 			TypeEntryKind::UserTypeGeneric { .. } => "type generic",
 			TypeEntryKind::FunctionGeneric { .. } => "function generic",
@@ -837,6 +856,13 @@ impl TypeEntryKind {
 			_ => None,
 		}
 	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Array {
+	pub type_id: TypeId,
+	pub length: u64,
+	pub array_type_index: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -942,6 +968,10 @@ pub struct TypeStore<'a> {
 	pub primative_type_symbols: SliceRef<Symbol<'a>>,
 
 	pub type_entries: TypeEntries,
+
+	// I am in a hell of my own creation 🙃
+	// TODO: Completely rethink the core parallelization assumptions to get this shit out
+	pub array_types: Ref<RwLock<Vec<Ref<RwLock<FxHashMap<u64, ArrayType>>>>>>,
 	pub user_types: Ref<RwLock<Vec<Ref<RwLock<UserType<'a>>>>>>,
 	pub method_collections: Ref<RwLock<Vec<Ref<RwLock<MethodCollection<'a>>>>>>,
 	pub traits: Ref<RwLock<Vec<Option<Ref<RwLock<TraitShape<'a>>>>>>>,
@@ -993,16 +1023,20 @@ impl<'a> TypeStore<'a> {
 		let mut implementations = Vec::new();
 
 		let module_type_id = {
-			let kind = TypeEntryKind::Module;
-			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
-			type_entries.push_entry(type_entry)
+			type_entries.push_entry(TypeEntry {
+				kind: TypeEntryKind::Module,
+				reference_entries: None,
+				arrays_index: None,
+				generic_poisoned: false,
+			})
 		};
 
-		let type_type_id = {
-			let kind = TypeEntryKind::Type;
-			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
-			type_entries.push_entry(type_entry)
-		};
+		let type_type_id = type_entries.push_entry(TypeEntry {
+			kind: TypeEntryKind::Type,
+			reference_entries: None,
+			arrays_index: None,
+			generic_poisoned: false,
+		});
 
 		let mut push_primative = |name: Option<&'a str>, kind| {
 			let methods_index = method_collections.len();
@@ -1011,9 +1045,12 @@ impl<'a> TypeStore<'a> {
 			assert_eq!(implementations.len(), methods_index);
 			implementations.push(RwLock::new(ImplementationInfo::default()));
 
-			let kind = TypeEntryKind::BuiltinType { kind, methods_index };
-			let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: false };
-			let type_id = type_entries.push_entry(type_entry);
+			let type_id = type_entries.push_entry(TypeEntry {
+				kind: TypeEntryKind::BuiltinType { kind, methods_index },
+				reference_entries: None,
+				arrays_index: None,
+				generic_poisoned: false,
+			});
 
 			if let Some(name) = name {
 				let kind = SymbolKind::BuiltinType { type_id, methods_index };
@@ -1056,6 +1093,7 @@ impl<'a> TypeStore<'a> {
 			debug_type_ids,
 			primative_type_symbols: SliceRef::from(primative_type_symbols),
 			type_entries,
+			array_types: Ref::new(RwLock::new(vec![Ref::new(RwLock::new(FxHashMap::default()))])),
 			user_types: Ref::new(RwLock::new(Vec::new())),
 			method_collections: Ref::new(RwLock::new(method_collections)),
 			traits: Ref::new(RwLock::new(Vec::new())),
@@ -1718,6 +1756,55 @@ impl<'a> TypeStore<'a> {
 		TypeId { entry }
 	}
 
+	fn get_or_create_arrays<'b>(&mut self, type_id: TypeId) -> u32 {
+		let entry = self.type_entries.get(type_id);
+		if let Some(index) = entry.arrays_index {
+			return index.into();
+		}
+
+		let mut global_chunks = self.type_entries.global_chunks.write();
+		// Check again, another thread may have already created it we were waiting for the lock
+		let entry =
+			&mut global_chunks[type_id.index() / TYPE_ENTRY_CHUNK_MAX_LENGTH][type_id.index() % TYPE_ENTRY_CHUNK_MAX_LENGTH];
+		if let Some(index) = entry.arrays_index {
+			return index.into();
+		}
+
+		let mut array_types = self.array_types.write();
+		let index = array_types.len() as u32;
+		array_types.push(Ref::new(RwLock::new(FxHashMap::default())));
+
+		let arrays_index = index.try_into().unwrap();
+		entry.arrays_index = Some(arrays_index);
+
+		self.type_entries.local_chunks[type_id.index() / TYPE_ENTRY_CHUNK_MAX_LENGTH]
+			.as_mut()
+			.unwrap()[type_id.index() % TYPE_ENTRY_CHUNK_MAX_LENGTH]
+			.arrays_index = Some(arrays_index);
+
+		index
+	}
+
+	pub fn array_of(&mut self, type_id: TypeId, length: u64) -> TypeId {
+		if type_id.is_any_collapse(self) {
+			return type_id;
+		}
+
+		let array_type_index = self.get_or_create_arrays(type_id) as usize;
+		let array_types_lock = self.array_types.clone();
+		let array_types = array_types_lock.read();
+		let mut array_types = array_types[array_type_index].write();
+		array_types
+			.entry(length)
+			.or_insert_with(|| {
+				let kind = TypeEntryKind::Array(Array { type_id, length, array_type_index });
+				let entry = TypeEntry::new(self, kind);
+				let array_type_id = self.type_entries.push_entry(entry);
+				ArrayType { array_type_id, item_type_id: type_id }
+			})
+			.array_type_id
+	}
+
 	pub fn slice_of(&mut self, type_id: TypeId, mutable: bool) -> TypeId {
 		if type_id.is_any_collapse(self) {
 			return type_id;
@@ -1950,8 +2037,12 @@ impl<'a> TypeStore<'a> {
 	pub fn register_user_type_generic(&mut self, shape_index: usize, generic_index: usize, constraints: &[TraitId]) -> TypeId {
 		let methods_index = self.set_up_generic_method_collection(constraints);
 		let kind = TypeEntryKind::UserTypeGeneric { shape_index, generic_index, methods_index };
-		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
-		self.type_entries.push_entry(type_entry)
+		self.type_entries.push_entry(TypeEntry {
+			kind,
+			reference_entries: None,
+			arrays_index: None,
+			generic_poisoned: true,
+		})
 	}
 
 	pub fn register_function_generic(
@@ -1970,8 +2061,12 @@ impl<'a> TypeStore<'a> {
 			is_trait_self,
 			originator_trait_shape_index,
 		};
-		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
-		let type_id = self.type_entries.push_entry(type_entry);
+		let type_id = self.type_entries.push_entry(TypeEntry {
+			kind,
+			reference_entries: None,
+			arrays_index: None,
+			generic_poisoned: true,
+		});
 		type_id
 	}
 
@@ -1984,8 +2079,12 @@ impl<'a> TypeStore<'a> {
 	) -> TypeId {
 		let methods_index = self.set_up_generic_method_collection(constraints);
 		let kind = TypeEntryKind::TraitGeneric { trait_shape_index, generic_index, methods_index, is_self };
-		let type_entry = TypeEntry { kind, reference_entries: None, generic_poisoned: true };
-		self.type_entries.push_entry(type_entry)
+		self.type_entries.push_entry(TypeEntry {
+			kind,
+			reference_entries: None,
+			arrays_index: None,
+			generic_poisoned: true,
+		})
 	}
 
 	pub fn type_layout(&mut self, type_id: TypeId) -> Layout {
@@ -2111,6 +2210,14 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
 
+			TypeEntryKind::Array(Array { type_id, length, .. }) => {
+				let inner_layout = self.type_layout(type_id);
+				Layout {
+					size: inner_layout.size * length as i64,
+					alignment: inner_layout.alignment,
+				}
+			}
+
 			TypeEntryKind::Slice(_) => Layout { size: 16, alignment: 8 },
 
 			// TODO: These are probably wrong, take care to make sure this doesn't break size_of in generic functions
@@ -2179,7 +2286,7 @@ impl<'a> TypeStore<'a> {
 				(methods_index, MethodBaseType::UserType { shape_index, specialization_index })
 			}
 
-			TypeEntryKind::Pointer { .. } | TypeEntryKind::Slice(_) => {
+			TypeEntryKind::Pointer { .. } | TypeEntryKind::Array(_) | TypeEntryKind::Slice(_) => {
 				let type_name = self.type_name(function_store, module_path, type_id.item);
 				let trait_name = self.format_trait_name(function_store, module_path, trait_id);
 				let message = error!("Type {type_name} is unable to conform to trait `{trait_name}` as it cannot have methods");
@@ -2954,12 +3061,12 @@ impl<'a> TypeStore<'a> {
 		shape
 			.specializations_by_type_arguments
 			.insert(type_arguments.clone(), specialization_index);
-		let entry = TypeEntry {
+		let type_id = self.type_entries.push_entry(TypeEntry {
 			kind: TypeEntryKind::UserType { shape_index, specialization_index, methods_index },
 			reference_entries: None,
+			arrays_index: None,
 			generic_poisoned: type_arguments_generic_poisoned,
-		};
-		let type_id = self.type_entries.push_entry(entry);
+		});
 		shape.specializations[specialization_index].type_id = type_id;
 
 		drop(user_type);
@@ -3185,12 +3292,12 @@ impl<'a> TypeStore<'a> {
 			specialization_index,
 			methods_index,
 		};
-		let entry = TypeEntry {
+		let type_id = self.type_entries.push_entry(TypeEntry {
 			kind,
 			reference_entries: None,
+			arrays_index: None,
 			generic_poisoned: type_arguments_generic_poisoned,
-		};
-		let type_id = self.type_entries.push_entry(entry);
+		});
 
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
@@ -3354,12 +3461,12 @@ impl<'a> TypeStore<'a> {
 			specialization_index,
 			methods_index,
 		};
-		let entry = TypeEntry {
+		let type_id = self.type_entries.push_entry(TypeEntry {
 			kind,
 			reference_entries: None,
+			arrays_index: None,
 			generic_poisoned: type_arguments_generic_poisoned,
-		};
-		let type_id = self.type_entries.push_entry(entry);
+		});
 
 		let shape = match &mut user_type.kind {
 			UserTypeKind::Union { shape } => shape,
@@ -3735,6 +3842,20 @@ impl<'a> TypeStore<'a> {
 				self.pointer_to(type_id, *mutable)
 			}
 
+			TypeEntryKind::Array(Array { type_id, length, .. }) => {
+				let type_id = self.specialize_type_id_with_generics(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					enclosing_generic_parameters,
+					*type_id,
+					type_arguments,
+					situation,
+				);
+				self.array_of(type_id, *length)
+			}
+
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
 				let type_id = self.specialize_type_id_with_generics(
 					messages,
@@ -3931,16 +4052,21 @@ impl<'a> TypeStore<'a> {
 			TypeEntryKind::Pointer { type_id, mutable } => {
 				let inner = self.internal_type_name(function_store, _module_path, type_id, debug_generics, debug_type_ids);
 				match mutable {
-					true => format!("*mut {}", inner),
-					false => format!("*{}", inner),
+					true => format!("*mut {inner}"),
+					false => format!("*{inner}"),
 				}
+			}
+
+			TypeEntryKind::Array(Array { type_id, length, .. }) => {
+				let inner = self.internal_type_name(function_store, _module_path, type_id, debug_generics, debug_type_ids);
+				format!("[{length}]{inner}")
 			}
 
 			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
 				let inner = self.internal_type_name(function_store, _module_path, type_id, debug_generics, debug_type_ids);
 				match mutable {
-					true => format!("[]mut {}", inner),
-					false => format!("[]{}", inner),
+					true => format!("[]mut {inner}"),
+					false => format!("[]{inner}"),
 				}
 			}
 

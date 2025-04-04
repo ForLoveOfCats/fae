@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::unix::ffi::OsStrExt;
 
@@ -32,6 +33,7 @@ use llvm_sys::{
 };
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
@@ -43,7 +45,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::{self, BinaryOperator};
-use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{Array, NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
 	pub sret: u32,
@@ -117,6 +119,7 @@ pub struct LLVMTypes {
 	pub range_struct: LLVMTypeRef,
 
 	user_type_structs: Vec<Vec<UserTypeStruct>>,
+	array_types: Vec<FxHashMap<u64, LLVMTypeRef>>,
 }
 
 impl LLVMTypes {
@@ -135,6 +138,7 @@ impl LLVMTypes {
 				slice_struct,
 				range_struct,
 				user_type_structs: Vec::new(),
+				array_types: Vec::new(),
 			}
 		}
 	}
@@ -187,6 +191,10 @@ impl LLVMTypes {
 			TypeEntryKind::Pointer { .. } => self.opaque_pointer,
 
 			TypeEntryKind::Slice(_) => self.slice_struct,
+
+			TypeEntryKind::Array(Array { length, array_type_index, .. }) => {
+				*self.array_types[array_type_index].get(&length).unwrap()
+			}
 
 			TypeEntryKind::Module
 			| TypeEntryKind::Type
@@ -582,12 +590,8 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		let kind = BindingKind::Value(value);
 		Binding { type_id, kind }
 	}
-}
 
-impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
-	type Binding = Binding;
-
-	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
+	fn create_user_type_descriptions(&mut self, type_store: &mut TypeStore) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
 		for user_type in type_store.user_types.read().iter() {
@@ -609,7 +613,25 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}));
 			self.llvm_types.user_type_structs.push(specializations);
 		}
+	}
 
+	fn create_array_type_descriptions(&mut self, type_store: &mut TypeStore) {
+		assert_eq!(self.llvm_types.array_types.len(), 0);
+
+		for array_catagory_lock in type_store.array_types.read().iter() {
+			let array_catagory = array_catagory_lock.read();
+			let mut type_catagory = HashMap::with_capacity_and_hasher(100, FxBuildHasher);
+
+			for &array_length in array_catagory.keys() {
+				let named = unsafe { LLVMStructCreateNamed(self.context, c"ArrayType".as_ptr()) };
+				type_catagory.insert(array_length, named);
+			}
+
+			self.llvm_types.array_types.push(type_catagory);
+		}
+	}
+
+	fn fill_user_type_descriptions(&mut self, type_store: &mut TypeStore) {
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
 		let mut union_variant_types_buffer = Vec::new();
@@ -759,6 +781,49 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 		}
+	}
+
+	fn fill_array_type_descriptions(&mut self, type_store: &mut TypeStore) {
+		let mut field_types_buffer = Vec::new();
+
+		let array_types = type_store.array_types.clone();
+		for (array_index, array_catagory_lock) in array_types.read().iter().enumerate() {
+			let array_catagory = array_catagory_lock.read();
+			let array_types = &self.llvm_types.array_types[array_index];
+
+			let mut item_layout = None;
+
+			for (&array_length, &array_type) in array_catagory.iter() {
+				let item_layout = item_layout.get_or_insert_with(|| type_store.type_layout(array_type.item_type_id));
+
+				field_types_buffer.clear();
+				if item_layout.size > 0 && array_length > 0 {
+					assert_eq!(item_layout.size % item_layout.alignment, 0);
+					let item_integer_count = item_layout.size / item_layout.alignment;
+					let item = LLVMTypes::size_to_int_type(self.context, item_layout.alignment);
+					for _ in 0..item_integer_count as u64 * array_length {
+						field_types_buffer.push(item);
+					}
+				}
+
+				let type_ref = *array_types.get(&array_length).unwrap();
+				unsafe {
+					LLVMStructSetBody(type_ref, field_types_buffer.as_mut_ptr(), field_types_buffer.len() as u32, false as _);
+				}
+			}
+		}
+	}
+}
+
+impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
+	type Binding = Binding;
+
+	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
+		self.create_user_type_descriptions(type_store);
+		self.create_array_type_descriptions(type_store);
+
+		self.fill_user_type_descriptions(type_store);
+		self.fill_array_type_descriptions(type_store);
 	}
 
 	fn register_statics(&mut self, type_store: &mut TypeStore, statics: &Statics) {

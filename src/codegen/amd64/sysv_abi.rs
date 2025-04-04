@@ -1,4 +1,4 @@
-use crate::frontend::type_store::{NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{Array, Layout, NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Class {
@@ -94,8 +94,21 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 			let user_type = type_store.user_types.read()[shape_index].clone();
 			let user_type = user_type.read();
 
-			let shape = match &user_type.kind {
-				UserTypeKind::Struct { shape } => shape,
+			match &user_type.kind {
+				UserTypeKind::Struct { shape } => {
+					let specialization = &shape.specializations[specialization_index];
+
+					// 2. If a C++ object is non-trivial for the purpose of calls, as specified in the C++ ABI, it is passed by
+					// invisible reference (the object is replaced in the parameter list by a pointer that has class INTEGER).
+					// 3. If the size of the aggregate exceeds a single eightbyte, each is classified separately. Each eightbyte gets
+					// initialized to class NO_CLASS.
+					// 4. Each field of an object is classified recursively so that always two fields 18 are considered. The resulting
+					// class is calculated according to the classes of the fields in the eightbyte:
+					classify_merge_fields(type_store, buffer, specialization.fields.iter().map(|f| f.type_id));
+
+					// 5. Then a post merger cleanup is done:
+					return post_merge_cleanup(aggregate_layout, buffer);
+				}
 
 				UserTypeKind::Enum { .. } => {
 					if aggregate_layout.size > 8 {
@@ -126,118 +139,20 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 						}
 					}
 
-					return &mut buffer[..output_len];
-				}
-			};
-			let specialization = &shape.specializations[specialization_index];
-
-			// 2. If the size of the aggregate exceeds a single eightbyte, each is classified separately. Each eightbyte gets
-			// initialized to class NO_CLASS.
-			// 3. Each field of an object is classified recursively so that always two fields 18 are considered. The resulting
-			// class is calculated according to the classes of the fields in the eightbyte:
-
-			let mut combine_size = 0;
-			let mut buffer_index = 0;
-
-			for field in specialization.fields.iter() {
-				let field_layout = type_store.type_layout(field.type_id);
-				if field_layout.size <= 0 {
-					continue;
-				}
-
-				let mut field_buffer = classification_buffer();
-				let field_classes = classify_type(type_store, &mut field_buffer, field.type_id);
-				assert!(field_classes[0].kind != ClassKind::NoClass, "{:?}", field_classes[0]);
-				if field_classes[0].kind == ClassKind::Boolean {
-					field_classes[0].kind = ClassKind::Integer;
-				}
-
-				if field_layout.size + combine_size <= 8 {
-					// Combine with prior fields to make an eightbyte
-
-					assert_eq!(field_classes.len(), 1);
-					buffer[buffer_index] = merge_classes_struct(buffer[buffer_index], field_classes[0]);
-
-					combine_size += field_layout.size;
-					assert!(combine_size <= 8, "{combine_size}");
-					if combine_size == 8 {
-						combine_size = 0;
-						buffer_index += 1;
-					}
-				} else {
-					// To large to combine
-
-					if combine_size > 0 {
-						buffer_index += 1;
-					}
-
-					let result_slice = &mut buffer[buffer_index..buffer_index + field_classes.len()];
-					result_slice.copy_from_slice(field_classes);
-					buffer_index += field_classes.len();
-
-					if field_layout.size > 8 {
-						combine_size = 0;
-					} else {
-						combine_size = field_layout.size;
-						if combine_size > 0 {
-							buffer_index -= 1;
-						}
-					}
+					return post_merge_cleanup(aggregate_layout, buffer);
 				}
 			}
-
-			// 5. Then a post merger cleanup is done:
-
-			let mut contains_sse_up = false;
-			for (index, &class) in buffer.iter().enumerate() {
-				// (a) If one of the classes is MEMORY, the whole argument is passed in memory.
-				if class.kind == ClassKind::Memory {
-					buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-					return &mut buffer[..1];
-				}
-
-				// (b) If X87UP is not preceded by X87, the whole argument is passed in memory.
-				if class.kind == ClassKind::X87Up && index > 0 && buffer[index - 1].kind != ClassKind::X87 {
-					buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-					return &mut buffer[..1];
-				}
-
-				contains_sse_up |= class.kind == ClassKind::SSEUp;
-			}
-
-			// (c) If the size of the aggregate exceeds two eightbytes and the first eightbyte isn’t SSE or any
-			// other eightbyte isn’t SSEUP, the whole argument is passed in memory.
-			let first_eightbyte_sse = buffer[0].kind == ClassKind::SSE;
-			if aggregate_layout.size > 16 && (!first_eightbyte_sse || !contains_sse_up) {
-				buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
-				return &mut buffer[..1];
-			}
-
-			// (d) If SSEUP is not preceded by SSE or SSEUP, it is converted to SSE.
-			for index in 0..buffer.len() {
-				let has_preceeding = index > 0;
-				if buffer[index].kind == ClassKind::SSEUp && has_preceeding {
-					let preceding = buffer[index - 1];
-					if !(preceding.kind == ClassKind::SSE || preceding.kind == ClassKind::SSEUp) {
-						buffer[index] = Class { kind: ClassKind::SSE, size: buffer[index].size };
-					}
-				}
-			}
-
-			let mut contents_len = buffer.len();
-			for (index, &class) in buffer.iter().enumerate() {
-				if class.kind == ClassKind::NoClass {
-					contents_len = index;
-					break;
-				}
-			}
-
-			return &mut buffer[..contents_len];
 		}
 
 		TypeEntryKind::Pointer { .. } => {
 			buffer[0] = Class { kind: ClassKind::Pointer, size: 8 };
 			return &mut buffer[..1];
+		}
+
+		TypeEntryKind::Array(Array { type_id: item_type_id, length, .. }) => {
+			let array_layout = type_store.type_layout(type_id);
+			classify_merge_fields(type_store, buffer, (0..length).map(|_| item_type_id));
+			return post_merge_cleanup(array_layout, buffer);
 		}
 
 		TypeEntryKind::Slice(_) => {
@@ -251,6 +166,58 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 		| TypeEntryKind::UserTypeGeneric { .. }
 		| TypeEntryKind::FunctionGeneric { .. }
 		| TypeEntryKind::TraitGeneric { .. } => unreachable!(),
+	}
+}
+
+fn classify_merge_fields<I: Iterator<Item = TypeId>>(type_store: &mut TypeStore, buffer: &mut [Class; 8], field_type_ids: I) {
+	let mut combine_size = 0;
+	let mut buffer_index = 0;
+
+	for field_type_id in field_type_ids {
+		let field_layout = type_store.type_layout(field_type_id);
+		if field_layout.size <= 0 {
+			continue;
+		}
+
+		let mut field_buffer = classification_buffer();
+		let field_classes = classify_type(type_store, &mut field_buffer, field_type_id);
+		assert!(field_classes[0].kind != ClassKind::NoClass, "{:?}", field_classes[0]);
+		if field_classes[0].kind == ClassKind::Boolean {
+			field_classes[0].kind = ClassKind::Integer;
+		}
+
+		if field_layout.size + combine_size <= 8 {
+			// Combine with prior fields to make an eightbyte
+
+			assert_eq!(field_classes.len(), 1);
+			buffer[buffer_index] = merge_classes_struct(buffer[buffer_index], field_classes[0]);
+
+			combine_size += field_layout.size;
+			assert!(combine_size <= 8, "{combine_size}");
+			if combine_size == 8 {
+				combine_size = 0;
+				buffer_index += 1;
+			}
+		} else {
+			// To large to combine
+
+			if combine_size > 0 {
+				buffer_index += 1;
+			}
+
+			let result_slice = &mut buffer[buffer_index..buffer_index + field_classes.len()];
+			result_slice.copy_from_slice(field_classes);
+			buffer_index += field_classes.len();
+
+			if field_layout.size > 8 {
+				combine_size = 0;
+			} else {
+				combine_size = field_layout.size;
+				if combine_size > 0 {
+					buffer_index -= 1;
+				}
+			}
+		}
 	}
 }
 
@@ -344,4 +311,52 @@ fn merge_classes_union(mut a: Class, b: Class) -> Class {
 		assert!(size <= 8, "{size:?}");
 		return Class { kind: ClassKind::SSE, size };
 	}
+}
+
+fn post_merge_cleanup<'buf>(aggregate_layout: Layout, buffer: &'buf mut [Class; 8]) -> &'buf mut [Class] {
+	let mut contains_sse_up = false;
+	for (index, &class) in buffer.iter().enumerate() {
+		// (a) If one of the classes is MEMORY, the whole argument is passed in memory.
+		if class.kind == ClassKind::Memory {
+			buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
+			return &mut buffer[..1];
+		}
+
+		// (b) If X87UP is not preceded by X87, the whole argument is passed in memory.
+		if class.kind == ClassKind::X87Up && index > 0 && buffer[index - 1].kind != ClassKind::X87 {
+			buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
+			return &mut buffer[..1];
+		}
+
+		contains_sse_up |= class.kind == ClassKind::SSEUp;
+	}
+
+	// (c) If the size of the aggregate exceeds two eightbytes and the first eightbyte isn’t SSE or any
+	// other eightbyte isn’t SSEUP, the whole argument is passed in memory.
+	let first_eightbyte_sse = buffer[0].kind == ClassKind::SSE;
+	if aggregate_layout.size > 16 && (!first_eightbyte_sse || !contains_sse_up) {
+		buffer[0] = Class { kind: ClassKind::Memory, size: 8 };
+		return &mut buffer[..1];
+	}
+
+	// (d) If SSEUP is not preceded by SSE or SSEUP, it is converted to SSE.
+	for index in 0..buffer.len() {
+		let has_preceeding = index > 0;
+		if buffer[index].kind == ClassKind::SSEUp && has_preceeding {
+			let preceding = buffer[index - 1];
+			if !(preceding.kind == ClassKind::SSE || preceding.kind == ClassKind::SSEUp) {
+				buffer[index] = Class { kind: ClassKind::SSE, size: buffer[index].size };
+			}
+		}
+	}
+
+	let mut contents_len = buffer.len();
+	for (index, &class) in buffer.iter().enumerate() {
+		if class.kind == ClassKind::NoClass {
+			contents_len = index;
+			break;
+		}
+	}
+
+	return &mut buffer[..contents_len];
 }

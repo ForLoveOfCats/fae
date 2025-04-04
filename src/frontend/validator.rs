@@ -6604,7 +6604,7 @@ fn validate_method_call<'a>(
 			(method_base_type, mutable && base.is_pointer_access_mutable)
 		}
 
-		TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::Slice(_) => {
+		TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::Array(_) | TypeEntryKind::Slice(_) => {
 			let found = context.type_name(base.type_id);
 			let error = error!("Cannot call method on type {found}");
 			context.message(error.span(span));
