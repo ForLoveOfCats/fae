@@ -27,33 +27,46 @@ pub fn parse_root_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 	Block { statements }
 }
 
+fn parse_braceless_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Block<'a>>> {
+	let fat_arrow = tokens.next(messages)?;
+
+	let statement = parse_statement(bump, messages, tokens, Attributes::blank());
+	if let Some(Statement::Block(_)) = &statement {
+		let warning =
+			warning!("A single statement block is extraneous if it only contains another block, consider removing the `=>`");
+		messages.message(warning.span(fat_arrow.span))
+	}
+
+	let statements = if let Some(statement) = statement {
+		bump_vec![in bump; statement]
+	} else {
+		BumpVec::new_in(bump)
+	};
+
+	let newline = tokens.expect_peek(messages, TokenKind::Newline)?;
+
+	let block = Block { statements: statements.into_bump_slice() };
+	let span = fat_arrow.span + newline.span;
+	return Ok(Node::new(block, span));
+}
+
 pub fn parse_block<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
 	tokens: &mut Tokens<'a>,
 	allow_braceless: bool,
 ) -> ParseResult<Node<Block<'a>>> {
-	if allow_braceless && tokens.peek_kind() == Ok(TokenKind::FatArrow) {
-		let fat_arrow = tokens.next(messages)?;
+	if allow_braceless {
+		match tokens.peek_kind() {
+			Ok(TokenKind::FatArrow) => return parse_braceless_block(bump, messages, tokens),
 
-		let statement = parse_statement(bump, messages, tokens, Attributes::blank());
-		if let Some(Statement::Block(_)) = &statement {
-			let warning =
-				warning!("A single statement block is extraneous if it only contains another block, consider removing the `=>`");
-			messages.message(warning.span(fat_arrow.span))
+			Ok(TokenKind::Newline) => {
+				tokens.next(messages)?;
+				return parse_braceless_block(bump, messages, tokens);
+			}
+
+			_ => {}
 		}
-
-		let statements = if let Some(statement) = statement {
-			bump_vec![in bump; statement]
-		} else {
-			BumpVec::new_in(bump)
-		};
-
-		let newline = tokens.expect_peek(messages, TokenKind::Newline)?;
-
-		let block = Block { statements: statements.into_bump_slice() };
-		let span = fat_arrow.span + newline.span;
-		return Ok(Node::new(block, span));
 	}
 
 	let open = tokens.expect(messages, TokenKind::OpenBrace)?;

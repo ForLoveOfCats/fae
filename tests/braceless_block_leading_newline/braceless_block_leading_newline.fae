@@ -1,0 +1,17 @@
+fn main() {
+	func(4)
+	func(3)
+	func(2)
+	func(1)
+	func(0)
+}
+
+fn func(arg=: i32) {
+	if arg == 1
+		=> println("one")
+	else if arg == 2 => println("two")
+	else if arg == 3
+		=> println("three")
+	else
+		=> println("else")
+}
