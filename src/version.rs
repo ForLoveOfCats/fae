@@ -7,7 +7,7 @@ const BASE_VERSION: &str = "0.0.1";
 const GIT: &str = git_version!(args = ["--always", "--dirty=-modified", "--broken"]);
 
 #[cfg(feature = "bundled")]
-const BUNDLED: &str = "-bunded";
+const BUNDLED: &str = "-bundled";
 #[cfg(not(feature = "bundled"))]
 const BUNDLED: &str = "";
 
