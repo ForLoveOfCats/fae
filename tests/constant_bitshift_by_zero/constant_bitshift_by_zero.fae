@@ -1,0 +1,6 @@
+const A = 11 << 0
+const B = 22 >> 0
+
+fn main() {
+	println(f"{A.(i32)}, {B.(i32)}")
+}

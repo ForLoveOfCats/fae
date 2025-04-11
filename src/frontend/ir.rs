@@ -896,10 +896,14 @@ impl NumberValue {
 			return None;
 		}
 
-		if other.value.is_sign_negative() || other.value.is_zero() || !other.value.is_integer() {
+		if other.value.is_sign_negative() || !other.value.is_integer() {
 			let error = error!("Cannot perform constant bitshift left with right side value {}", other.value);
 			messages.message(error.span(self.span + other.span));
 			return None;
+		}
+
+		if other.value.is_zero() {
+			return Some(self);
 		}
 
 		// TODO: This is rather silly but rust_decimal does not seem to have "proper" shift methods
@@ -929,10 +933,14 @@ impl NumberValue {
 			return None;
 		}
 
-		if other.value.is_sign_negative() || other.value.is_zero() || !other.value.is_integer() {
+		if other.value.is_sign_negative() || !other.value.is_integer() {
 			let error = error!("Cannot perform constant bitshift right with right side value {}", other.value);
 			messages.message(error.span(self.span + other.span));
 			return None;
+		}
+
+		if other.value.is_zero() {
+			return Some(self);
 		}
 
 		// TODO: This is rather silly but rust_decimal does not seem to have "proper" shift methods
