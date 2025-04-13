@@ -6917,7 +6917,7 @@ fn validate_symbol_read<'a>(
 			return Expression {
 				span,
 				type_id,
-				is_itself_mutable: false,
+				is_itself_mutable: true,
 				is_pointer_access_mutable: true,
 				yields: false,
 				returns: false,
