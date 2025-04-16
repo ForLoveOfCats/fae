@@ -399,7 +399,7 @@ pub fn validate<'a>(
 
 				wait_on_barriers_and_replenish_iter();
 
-				resolve_root_trait_imports(
+				resolve_root_modules_and_trait_imports(
 					cli_arguments,
 					&herd_member,
 					when_context,
@@ -774,7 +774,7 @@ fn create_root_types<'a>(
 	}
 }
 
-fn resolve_root_trait_imports<'a>(
+fn resolve_root_modules_and_trait_imports<'a>(
 	cli_arguments: &CliArguments,
 	herd_member: &bumpalo_herd::Member<'a>,
 	when_context: &WhenContext,
@@ -796,7 +796,7 @@ fn resolve_root_trait_imports<'a>(
 		let module_path = parsed_file.module_path;
 		let block = &parsed_file.block;
 
-		resolve_block_trait_imports(
+		resolve_block_module_and_trait_imports(
 			herd_member,
 			when_context,
 			&mut messages,
@@ -1242,7 +1242,7 @@ fn validate_root_statics<'a>(
 	}
 }
 
-fn resolve_block_trait_imports<'a>(
+fn resolve_block_module_and_trait_imports<'a>(
 	herd_member: &bumpalo_herd::Member<'a>,
 	when_context: &WhenContext,
 	messages: &mut Messages,
@@ -1256,7 +1256,15 @@ fn resolve_block_trait_imports<'a>(
 	if should_import_prelude && !matches!(module_path, [a, b] if a == "fae" && b == "prelude") {
 		let segments = herd_member.alloc([Node::new("fae", Span::unusable()), Node::new("prelude", Span::unusable())]);
 		let path = PathSegments { segments };
-		resolve_import_for_block_traits(messages, root_layers, symbols, function_initial_symbols_length, &path, None, true);
+		resolve_import_for_block_modules_and_traits(
+			messages,
+			root_layers,
+			symbols,
+			function_initial_symbols_length,
+			&path,
+			None,
+			true,
+		);
 	}
 
 	for statement in block.statements {
@@ -1265,7 +1273,7 @@ fn resolve_block_trait_imports<'a>(
 
 			tree::Statement::WhenElseChain(statement) => {
 				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
-					resolve_block_trait_imports(
+					resolve_block_module_and_trait_imports(
 						herd_member,
 						when_context,
 						messages,
@@ -1285,7 +1293,15 @@ fn resolve_block_trait_imports<'a>(
 
 		let path = &import_statement.item.path_segments;
 		let names = Some(import_statement.item.symbol_names);
-		resolve_import_for_block_traits(messages, root_layers, symbols, function_initial_symbols_length, path, names, false);
+		resolve_import_for_block_modules_and_traits(
+			messages,
+			root_layers,
+			symbols,
+			function_initial_symbols_length,
+			path,
+			names,
+			false,
+		);
 	}
 }
 
@@ -1336,7 +1352,7 @@ fn resolve_block_type_imports<'a>(
 	}
 }
 
-fn resolve_import_for_block_traits<'a>(
+fn resolve_import_for_block_modules_and_traits<'a>(
 	messages: &mut Messages,
 	root_layers: &RootLayers<'a>,
 	symbols: &mut Symbols<'a>,
@@ -1350,17 +1366,24 @@ fn resolve_import_for_block_traits<'a>(
 	};
 
 	let layer_guard = layer.read();
-	if layer_guard.symbols.symbols.is_empty() {
-		return;
-	}
-	let importable_traits_range = layer_guard.importable_traits_range.clone();
+	let importable_traits_range = if layer_guard.symbols.symbols.is_empty() {
+		0..0
+	} else {
+		layer_guard.importable_traits_range.clone()
+	};
 	let source_symbols = layer_guard.symbols.clone();
-	drop(layer_guard);
 
 	if let Some(names) = names {
 		let importable_traits = &source_symbols.symbols[importable_traits_range];
+
 		for name in names {
-			if let Some(importing) = importable_traits.iter().find(|i| i.name == name.item) {
+			if let Some(layer) = layer_guard.children.get(name.item) {
+				let span = Some(name.span);
+				let name = name.item;
+				let kind = SymbolKind::Module { layer: layer.clone() };
+				let importing = Symbol { name, kind, span, used: false, imported: true };
+				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
+			} else if let Some(importing) = importable_traits.iter().find(|i| i.name == name.item) {
 				symbols.push_imported_symbol(
 					messages,
 					function_initial_symbols_length,
@@ -1371,6 +1394,13 @@ fn resolve_import_for_block_traits<'a>(
 			}
 		}
 	} else {
+		for (&name, layer) in layer_guard.children.iter() {
+			let span = None; // TODO
+			let kind = SymbolKind::Module { layer: layer.clone() };
+			let importing = Symbol { name, kind, span, used: false, imported: true };
+			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
+		}
+
 		for importing in &source_symbols.symbols[importable_traits_range] {
 			symbols.push_imported_symbol(messages, function_initial_symbols_length, importing.clone(), None, is_prelude);
 		}
@@ -1468,12 +1498,7 @@ fn resolve_import_for_block_non_range<'a>(
 		};
 
 		for name in names {
-			if let Some(layer) = layer_guard.children.get(name.item) {
-				let span = Some(name.span);
-				let name = name.item;
-				let kind = SymbolKind::Module { layer: layer.clone() };
-				let importing = Symbol { name, kind, span, used: false, imported: true };
-				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
+			if layer_guard.children.get(name.item).is_some() {
 			} else {
 				let error = error!("No importable module `{}`", name.item);
 				messages.message(error.span(name.span));
@@ -1498,7 +1523,13 @@ fn resolve_import_for_block_non_range<'a>(
 		let importable_statics = &source_symbols.symbols[importable_statics_range];
 
 		for name in names {
-			if let Some(importing) = importable_functions.iter().find(|i| i.name == name.item) {
+			// Unfortunate to have to check these up front but the order they are checked is important
+			// for "import preference order" as in the case of a potential name conflict the language
+			// should have a well defined order for what kinds of symbols have preference
+			if importable_traits.iter().find(|i| i.name == name.item).is_some() {
+			} else if importable_types.iter().find(|i| i.name == name.item).is_some() {
+			} else if layer_guard.children.get(name.item).is_some() {
+			} else if let Some(importing) = importable_functions.iter().find(|i| i.name == name.item) {
 				symbols.push_imported_symbol(
 					messages,
 					function_initial_symbols_length,
@@ -1522,14 +1553,6 @@ fn resolve_import_for_block_non_range<'a>(
 					Some(name.span),
 					is_prelude,
 				);
-			} else if importable_traits.iter().find(|i| i.name == name.item).is_some() {
-			} else if importable_types.iter().find(|i| i.name == name.item).is_some() {
-			} else if let Some(layer) = layer_guard.children.get(name.item) {
-				let span = Some(name.span);
-				let name = name.item;
-				let kind = SymbolKind::Module { layer: layer.clone() };
-				let importing = Symbol { name, kind, span, used: false, imported: true };
-				symbols.push_imported_symbol(messages, function_initial_symbols_length, importing, span, is_prelude);
 			} else {
 				let error = error!("Cannot find symbol `{}` to import", name.item);
 				messages.message(error.span(name.span));
@@ -4127,7 +4150,7 @@ fn validate_block_in_context<'a>(
 			context.trait_shape_indicies,
 		);
 
-		resolve_block_trait_imports(
+		resolve_block_module_and_trait_imports(
 			context.herd_member,
 			context.when_context,
 			context.messages,

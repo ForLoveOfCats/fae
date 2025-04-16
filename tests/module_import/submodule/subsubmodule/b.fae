@@ -1,3 +1,7 @@
 fn function_b(): i32 {
 	return 55
 }
+
+struct BStruct {
+	field: str
+}

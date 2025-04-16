@@ -1,3 +1,7 @@
 fn function_a(): i32 {
 	return 42
 }
+
+struct AStruct {
+	field: i32
+}

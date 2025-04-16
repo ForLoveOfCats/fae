@@ -1,8 +1,13 @@
 import submodule.a
 import submodule.subsubmodule
 
+static A: a.AStruct
+static B: subsubmodule.b.BStruct
+
 fn main() {
 	let one = a.function_a()
 	let two = subsubmodule.b.function_b()
 	println(f"{one}, {two}")
+	let _ = a.AStruct { field: 42 }
+	let _ = subsubmodule.b.BStruct { field: "Hello" }
 }
