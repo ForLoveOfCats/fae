@@ -146,6 +146,11 @@ pub enum Type<'a> {
 		mutable: bool,
 	},
 
+	Array {
+		item: &'a Node<Type<'a>>,
+		length: u64, // TODO: Allow array length to be a proper expression
+	},
+
 	Slice {
 		pointee: &'a Node<Type<'a>>,
 		mutable: bool,
@@ -315,6 +320,13 @@ pub struct FormatStringLiteral<'a> {
 pub struct ArrayLiteral<'a> {
 	pub parsed_type: Option<Node<Type<'a>>>,
 	pub expressions: &'a [Node<Expression<'a>>],
+}
+
+#[derive(Debug)]
+pub struct SliceLiteral<'a> {
+	pub parsed_type: Option<Node<Type<'a>>>,
+	pub expressions: &'a [Node<Expression<'a>>],
+	pub mutable: bool,
 }
 
 #[derive(Debug)]
@@ -737,6 +749,7 @@ pub enum Expression<'a> {
 	FormatStringLiteral(FormatStringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),
+	SliceLiteral(SliceLiteral<'a>),
 	StructLiteral(&'a StructLiteral<'a>),
 
 	Call(&'a Call<'a>),

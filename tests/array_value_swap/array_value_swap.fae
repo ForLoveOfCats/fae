@@ -1,0 +1,12 @@
+fn main() {
+	mut array = [_]{ true, false }
+
+	let a = array[0]
+	let b = array[1]
+
+	array[0] = b
+	array[1] = a
+
+	println(f"{array[0]}")
+	println(f"{array[1]}")
+}

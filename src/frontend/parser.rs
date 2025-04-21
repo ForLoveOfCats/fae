@@ -644,7 +644,26 @@ fn parse_expression_atom<'a>(
 
 		TokenKind::OpenBracket => {
 			let type_start_token = tokens.next(messages)?;
+
+			let is_array = if let Ok(Token { text: "_", .. }) = tokens.peek() {
+				tokens.next(messages)?;
+				true
+			} else {
+				false
+			};
+
 			tokens.expect(messages, TokenKind::CloseBracket)?;
+
+			let mutable = if !is_array {
+				if let Ok(Token { text: "mut", .. }) = tokens.peek() {
+					tokens.next(messages)?;
+					true
+				} else {
+					false
+				}
+			} else {
+				false
+			};
 
 			let parsed_type = if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
 				None
@@ -672,8 +691,16 @@ fn parse_expression_atom<'a>(
 
 			let close_token = tokens.expect(messages, TokenKind::CloseBrace)?;
 
-			let literal = ArrayLiteral { parsed_type, expressions: expressions.into_bump_slice() };
-			let expression = Expression::ArrayLiteral(literal);
+			let expression = match is_array {
+				true => Expression::ArrayLiteral(ArrayLiteral { parsed_type, expressions: expressions.into_bump_slice() }),
+
+				false => Expression::SliceLiteral(SliceLiteral {
+					parsed_type,
+					expressions: expressions.into_bump_slice(),
+					mutable,
+				}),
+			};
+
 			let span = type_start_token.span + close_token.span;
 			Ok(Node::new(expression, span))
 		}
@@ -1748,18 +1775,36 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 
 		Token { kind: TokenKind::OpenBracket, .. } => {
 			let opening = tokens.next(messages)?;
-			tokens.expect(messages, TokenKind::CloseBracket)?;
 
-			let mut mutable = false;
-			if tokens.peek().map(|t| t.text) == Ok("mut") {
-				tokens.next(messages)?;
-				mutable = true;
+			if tokens.peek_kind() == Ok(TokenKind::Number) {
+				let length_token = tokens.next(messages)?;
+				let length = if let Ok(length) = length_token.text.parse::<u64>() {
+					length
+				} else {
+					let error = error!("Invalid array length number literal");
+					messages.message(error.span(length_token.span));
+					return Err(());
+				};
+
+				tokens.expect(messages, TokenKind::CloseBracket)?;
+				let item = bump.alloc(parse_type(bump, messages, tokens)?);
+
+				let span = opening.span + item.span;
+				Node::new(Type::Array { item, length }, span)
+			} else {
+				tokens.expect(messages, TokenKind::CloseBracket)?;
+
+				let mut mutable = false;
+				if tokens.peek().map(|t| t.text) == Ok("mut") {
+					tokens.next(messages)?;
+					mutable = true;
+				}
+
+				let pointee = bump.alloc(parse_type(bump, messages, tokens)?);
+
+				let span = opening.span + pointee.span;
+				Node::new(Type::Slice { pointee, mutable }, span)
 			}
-
-			let pointee = bump.alloc(parse_type(bump, messages, tokens)?);
-
-			let span = opening.span + pointee.span;
-			Node::new(Type::Slice { pointee, mutable }, span)
 		}
 
 		_ => {

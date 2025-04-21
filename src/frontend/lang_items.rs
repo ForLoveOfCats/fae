@@ -8,6 +8,11 @@ pub struct LangItems {
 	pub range_type: Option<TypeId>,
 	pub format_string_item_type: Option<TypeId>,
 
+	pub array_index_out_of_bounds: Option<FunctionId>,
+	pub array_range_inverted: Option<FunctionId>,
+	pub array_range_start_out_of_bounds: Option<FunctionId>,
+	pub array_range_end_out_of_bounds: Option<FunctionId>,
+
 	pub slice_index_out_of_bounds: Option<FunctionId>,
 	pub slice_range_inverted: Option<FunctionId>,
 	pub slice_range_start_out_of_bounds: Option<FunctionId>,
@@ -21,6 +26,11 @@ impl LangItems {
 		LangItems {
 			range_type: None,
 			format_string_item_type: None,
+
+			array_index_out_of_bounds: None,
+			array_range_inverted: None,
+			array_range_start_out_of_bounds: None,
+			array_range_end_out_of_bounds: None,
 
 			slice_index_out_of_bounds: None,
 			slice_range_inverted: None,
@@ -46,6 +56,11 @@ impl LangItems {
 
 	pub fn register_lang_function(&mut self, messages: &mut Messages, function_id: FunctionId, lang_name: &str, span: Span) {
 		match lang_name {
+			"array_index_out_of_bounds" => self.array_index_out_of_bounds = Some(function_id),
+			"array_range_inverted" => self.array_range_inverted = Some(function_id),
+			"array_range_start_out_of_bounds" => self.array_range_start_out_of_bounds = Some(function_id),
+			"array_range_end_out_of_bounds" => self.array_range_end_out_of_bounds = Some(function_id),
+
 			"slice_index_out_of_bounds" => self.slice_index_out_of_bounds = Some(function_id),
 			"slice_range_inverted" => self.slice_range_inverted = Some(function_id),
 			"slice_range_start_out_of_bounds" => self.slice_range_start_out_of_bounds = Some(function_id),

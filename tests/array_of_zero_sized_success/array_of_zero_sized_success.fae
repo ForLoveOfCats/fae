@@ -1,0 +1,11 @@
+fn func(array: [2]void): bool {
+	let a = array[0]
+	let b = array[1]
+	return a == b
+}
+
+fn main() {
+	mut array: [2]void = [_]{ void, void }
+	array[0] = void
+	println(f"{func(array)}")
+}

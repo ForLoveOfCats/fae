@@ -5045,6 +5045,14 @@ pub fn validate_expression<'a>(
 			expression
 		}
 
+		tree::Expression::SliceLiteral(literal) => {
+			context.expected_type = None;
+			context.can_is_bind = false;
+			let expression = validate_slice_literal(context, literal, span);
+			context.can_is_bind = original_can_is_bind;
+			expression
+		}
+
 		tree::Expression::StructLiteral(literal) => {
 			context.can_is_bind = false;
 			let expression = validate_struct_literal(context, literal, span);
@@ -5466,8 +5474,14 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 
 	let mut initializer = validate_expression(&mut scope, &statement.item.initializer);
 	initializer.into_value(&mut scope);
-	let slice = initializer.type_id.as_slice(&mut scope.type_store.type_entries);
-	let kind = if slice.is_some() {
+	let entry = scope.type_store.type_entries.get(initializer.type_id);
+
+	let kind = if let TypeEntryKind::Array(_) = entry.kind {
+		match statement.item.iteration_kind.item {
+			tree::IterationKind::In => ForKind::InArray,
+			tree::IterationKind::Of => ForKind::OfArray,
+		}
+	} else if let TypeEntryKind::Slice(_) = entry.kind {
 		match statement.item.iteration_kind.item {
 			tree::IterationKind::In => ForKind::InSlice,
 			tree::IterationKind::Of => ForKind::OfSlice,
@@ -5492,9 +5506,36 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 	};
 
 	let item = match kind {
+		ForKind::InArray => {
+			let TypeEntryKind::Array(array) = entry.kind else {
+				unreachable!("{:?}", entry.kind);
+			};
+
+			let type_id = array.item_type_id;
+			let readable_index =
+				scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false, initializer.is_itself_mutable);
+
+			ResultBinding { type_id, readable_index }
+		}
+
+		ForKind::OfArray => {
+			let TypeEntryKind::Array(array) = entry.kind else {
+				unreachable!("{:?}", entry.kind);
+			};
+
+			let type_id = scope.type_store.pointer_to(array.item_type_id, initializer.is_itself_mutable);
+			let readable_index =
+				scope.push_readable(statement.item.item, type_id, ReadableKind::Let, false, initializer.is_itself_mutable);
+
+			ResultBinding { type_id, readable_index }
+		}
+
 		ForKind::InSlice => {
-			let slice = slice.unwrap();
-			let type_id = slice.type_id;
+			let TypeEntryKind::Slice(slice) = entry.kind else {
+				unreachable!("{:?}", entry.kind);
+			};
+
+			let type_id = slice.item_type_id;
 			let readable_index = scope.push_readable(
 				statement.item.item,
 				type_id,
@@ -5502,12 +5543,16 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 				false,
 				initializer.is_pointer_access_mutable,
 			);
+
 			ResultBinding { type_id, readable_index }
 		}
 
 		ForKind::OfSlice => {
-			let slice = slice.unwrap();
-			let type_id = scope.type_store.pointer_to(slice.type_id, slice.mutable);
+			let TypeEntryKind::Slice(slice) = entry.kind else {
+				unreachable!("{:?}", entry.kind);
+			};
+
+			let type_id = scope.type_store.pointer_to(slice.item_type_id, slice.mutable);
 			let readable_index = scope.push_readable(
 				statement.item.item,
 				type_id,
@@ -5515,6 +5560,7 @@ fn validate_for_statement<'a>(context: &mut Context<'a, '_, '_>, statement: &'a 
 				false,
 				initializer.is_pointer_access_mutable,
 			);
+
 			ResultBinding { type_id, readable_index }
 		}
 
@@ -5703,12 +5749,12 @@ fn validate_array_literal<'a>(
 	literal: &'a tree::ArrayLiteral<'a>,
 	span: Span,
 ) -> Expression<'a> {
-	let pointee_type_id = literal.parsed_type.as_ref().map(|parsed_type| {
+	let item_type_id = literal.parsed_type.as_ref().map(|parsed_type| {
 		context
 			.lookup_type(parsed_type)
 			.unwrap_or(context.type_store.any_collapse_type_id())
 	});
-	context.expected_type = pointee_type_id;
+	context.expected_type = item_type_id;
 
 	let mut yields = false;
 	let mut returns = false;
@@ -5721,8 +5767,8 @@ fn validate_array_literal<'a>(
 		expressions.push(expression);
 	}
 
-	let pointee_type_id = if let Some(pointee_type_id) = pointee_type_id {
-		pointee_type_id
+	let item_type_id = if let Some(item_type_id) = item_type_id {
+		item_type_id
 	} else if let Some(first) = expressions.first() {
 		if first.type_id.is_untyped_number(context.type_store) {
 			let error = error!("Cannot infer array type from untyped number first item");
@@ -5737,20 +5783,85 @@ fn validate_array_literal<'a>(
 	};
 
 	for expression in &mut expressions {
-		let collapsed = context.collapse_to(pointee_type_id, expression);
-		if !collapsed.unwrap_or(true) && !pointee_type_id.is_any_collapse(context.type_store) {
+		let collapsed = context.collapse_to(item_type_id, expression);
+		if !collapsed.unwrap_or(true) && !item_type_id.is_any_collapse(context.type_store) {
 			let error = error!(
 				"Type mismatch for array entry, expected {} but got {}",
-				context.type_name(pointee_type_id),
+				context.type_name(item_type_id),
 				context.type_name(expression.type_id)
 			);
 			context.message(error.span(expression.span));
 		}
 	}
 
-	let type_id = context.type_store.slice_of(pointee_type_id, true);
-	let literal = ArrayLiteral { type_id, pointee_type_id, expressions };
+	let type_id = context.type_store.array_of(item_type_id, expressions.len() as u64);
+	let literal = ArrayLiteral { type_id, item_type_id, expressions };
 	let kind = ExpressionKind::ArrayLiteral(literal);
+	Expression {
+		span,
+		type_id,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
+		yields,
+		returns,
+		kind,
+		debug_location: span.debug_location(context.parsed_files),
+	}
+}
+
+fn validate_slice_literal<'a>(
+	context: &mut Context<'a, '_, '_>,
+	literal: &'a tree::SliceLiteral<'a>,
+	span: Span,
+) -> Expression<'a> {
+	let item_type_id = literal.parsed_type.as_ref().map(|parsed_type| {
+		context
+			.lookup_type(parsed_type)
+			.unwrap_or(context.type_store.any_collapse_type_id())
+	});
+	context.expected_type = item_type_id;
+
+	let mut yields = false;
+	let mut returns = false;
+	let mut expressions = Vec::with_capacity(literal.expressions.len());
+	for expression in literal.expressions {
+		let mut expression = validate_expression(context, expression);
+		expression.into_value(context);
+		yields |= expression.yields;
+		returns |= expression.returns;
+		expressions.push(expression);
+	}
+
+	let item_type_id = if let Some(item_type_id) = item_type_id {
+		item_type_id
+	} else if let Some(first) = expressions.first() {
+		if first.type_id.is_untyped_number(context.type_store) {
+			let error = error!("Cannot infer slice type from untyped number first item");
+			context.message(error.span(first.span));
+			context.type_store.any_collapse_type_id()
+		} else {
+			first.type_id
+		}
+	} else {
+		context.message(error!("Cannot infer slice type from empty slice").span(span));
+		context.type_store.any_collapse_type_id()
+	};
+
+	for expression in &mut expressions {
+		let collapsed = context.collapse_to(item_type_id, expression);
+		if !collapsed.unwrap_or(true) && !item_type_id.is_any_collapse(context.type_store) {
+			let error = error!(
+				"Type mismatch for slice entry, expected {} but got {}",
+				context.type_name(item_type_id),
+				context.type_name(expression.type_id)
+			);
+			context.message(error.span(expression.span));
+		}
+	}
+
+	let type_id = context.type_store.slice_of(item_type_id, literal.mutable);
+	let literal = SliceLiteral { type_id, item_type_id, expressions };
+	let kind = ExpressionKind::SliceLiteral(literal);
 	Expression {
 		span,
 		type_id,
@@ -6074,12 +6185,47 @@ fn lookup_name_on_base<'a>(
 		_ => {}
 	}
 
-	if let Some(as_slice) = type_id.as_slice(&mut context.type_store.type_entries) {
+	let entry = context.type_store.type_entries.get(type_id);
+	if let TypeEntryKind::Array(as_array) = entry.kind {
 		let slice_fields = &[
 			Field {
 				span: None,
 				name: "pointer",
-				type_id: context.type_store.pointer_to(as_slice.type_id, as_slice.mutable),
+				type_id: context.type_store.pointer_to(as_array.item_type_id, base.is_itself_mutable),
+				attribute: None,
+				read_only: false,
+			},
+			Field {
+				span: None,
+				name: "length",
+				type_id: context.type_store.isize_type_id(),
+				attribute: None,
+				read_only: false,
+			},
+			Field {
+				span: None,
+				name: "slice",
+				type_id: context.type_store.slice_of(as_array.item_type_id, base.is_itself_mutable),
+				attribute: None,
+				read_only: false,
+			},
+		];
+
+		return lookup_field_in_fields(
+			context,
+			name,
+			base.type_id,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			&[slice_fields],
+			false,
+		);
+	} else if let TypeEntryKind::Slice(as_slice) = entry.kind {
+		let slice_fields = &[
+			Field {
+				span: None,
+				name: "pointer",
+				type_id: context.type_store.pointer_to(as_slice.item_type_id, as_slice.mutable),
 				attribute: None,
 				read_only: false,
 			},
@@ -6091,6 +6237,7 @@ fn lookup_name_on_base<'a>(
 				read_only: false,
 			},
 		];
+
 		let is_pointer_access_mutable = is_pointer_access_mutable && as_slice.mutable;
 		return lookup_field_in_fields(
 			context,
@@ -6126,6 +6273,7 @@ fn lookup_name_on_base<'a>(
 				read_only: true,
 			},
 		];
+
 		return lookup_field_in_fields(
 			context,
 			name,
@@ -6144,6 +6292,7 @@ fn lookup_name_on_base<'a>(
 			attribute: None,
 			read_only: true,
 		}];
+
 		return lookup_field_in_fields(
 			context,
 			name,
@@ -6855,7 +7004,7 @@ fn validate_dot_access<'a>(context: &mut Context<'a, '_, '_>, dot_access: &'a tr
 					if is_pointer_access_mutable {
 						field.type_id
 					} else {
-						context.type_store.slice_of(slice.type_id, false)
+						context.type_store.slice_of(slice.item_type_id, false)
 					}
 				}
 
@@ -7511,56 +7660,92 @@ fn validate_bracket_index<'a>(
 ) -> Expression<'a> {
 	let mut index_expression = validate_expression(context, index_expression);
 	index_expression.into_value(context);
+
+	if expression.type_id.is_any_collapse(context.type_store) {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
 	let range_type_id = context.lang_items.read().range_type.unwrap();
 	let is_range = context.type_store.direct_match(index_expression.type_id, range_type_id);
 
-	let sliced_of = context.type_store.sliced_of(expression.type_id);
-	let (type_id, is_mutable) = if let Some((sliced, sliced_mutable)) = sliced_of {
-		let is_pointer_access_mutable = sliced_mutable && expression.is_pointer_access_mutable;
+	let entry = context.type_store.type_entries.get(expression.type_id);
+	let (type_id, is_mutable) = match entry.kind {
+		TypeEntryKind::Array(Array { item_type_id, .. }) => {
+			let is_pointer_access_mutable = expression.is_itself_mutable && expression.is_pointer_access_mutable;
 
-		if is_range {
-			let type_id = context.type_store.slice_of(sliced, sliced_mutable);
-			let yields = expression.yields || index_expression.yields;
-			let returns = expression.returns || index_expression.returns;
-			let op = UnaryOperator::RangeIndex { index_expression };
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
-			return Expression {
-				span,
-				type_id,
-				is_itself_mutable: sliced_mutable,
-				is_pointer_access_mutable,
-				yields,
-				returns,
-				kind,
-				debug_location: span.debug_location(context.parsed_files),
-			};
+			if is_range {
+				let type_id = context.type_store.slice_of(item_type_id, is_pointer_access_mutable);
+				let is_itself_mutable = expression.is_itself_mutable;
+				let yields = expression.yields || index_expression.yields;
+				let returns = expression.returns || index_expression.returns;
+				let op = UnaryOperator::RangeIndex { index_expression };
+				let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+				return Expression {
+					span,
+					type_id,
+					is_itself_mutable,
+					is_pointer_access_mutable,
+					yields,
+					returns,
+					kind,
+					debug_location: span.debug_location(context.parsed_files),
+				};
+			}
+
+			(item_type_id, is_pointer_access_mutable)
 		}
 
-		(sliced, is_pointer_access_mutable)
-	} else if expression.type_id.is_string(context.type_store) {
-		if is_range {
-			let type_id = context.type_store.string_type_id();
-			let yields = expression.yields || index_expression.yields;
-			let returns = expression.returns || index_expression.returns;
-			let op = UnaryOperator::RangeIndex { index_expression };
-			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
-			return Expression {
-				span,
-				type_id,
-				is_itself_mutable: false,
-				is_pointer_access_mutable: false,
-				yields,
-				returns,
-				kind,
-				debug_location: span.debug_location(context.parsed_files),
-			};
+		TypeEntryKind::Slice(Slice { item_type_id: sliced, mutable: sliced_mutable }) => {
+			let is_pointer_access_mutable = sliced_mutable && expression.is_pointer_access_mutable;
+
+			if is_range {
+				let type_id = expression.type_id;
+				let yields = expression.yields || index_expression.yields;
+				let returns = expression.returns || index_expression.returns;
+				let op = UnaryOperator::RangeIndex { index_expression };
+				let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+				return Expression {
+					span,
+					type_id,
+					is_itself_mutable: sliced_mutable,
+					is_pointer_access_mutable,
+					yields,
+					returns,
+					kind,
+					debug_location: span.debug_location(context.parsed_files),
+				};
+			}
+
+			(sliced, is_pointer_access_mutable)
 		}
 
-		(context.type_store.u8_type_id(), false)
-	} else {
-		let error = error!("Cannot index on a value of type {}", context.type_name(expression.type_id));
-		context.message(error.span(span));
-		(context.type_store.any_collapse_type_id(), true)
+		TypeEntryKind::BuiltinType { kind: PrimativeKind::String, .. } => {
+			if is_range {
+				let type_id = context.type_store.string_type_id();
+				let yields = expression.yields || index_expression.yields;
+				let returns = expression.returns || index_expression.returns;
+				let op = UnaryOperator::RangeIndex { index_expression };
+				let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+				return Expression {
+					span,
+					type_id,
+					is_itself_mutable: false,
+					is_pointer_access_mutable: false,
+					yields,
+					returns,
+					kind,
+					debug_location: span.debug_location(context.parsed_files),
+				};
+			}
+
+			(context.type_store.u8_type_id(), false)
+		}
+
+		_ => {
+			let error = error!("Cannot index on a value of type {}", context.type_name(expression.type_id));
+			context.message(error.span(span));
+			(context.type_store.any_collapse_type_id(), true)
+		}
 	};
 
 	let isize_type_id = context.type_store.isize_type_id();
@@ -7801,10 +7986,15 @@ fn validate_binary_operation<'a>(
 				if !left.is_itself_mutable {
 					context.message(error!("Cannot assign to immutable memory location").span(span));
 				}
-			} else if matches!(&left.kind, ExpressionKind::UnaryOperation(op) if matches!(op.as_ref(), UnaryOperation { op: UnaryOperator::Index { .. }, .. }))
-			{
-				if !left.is_itself_mutable {
-					context.message(error!("Cannot assign to index of immutable slice").span(span));
+			} else if let ExpressionKind::UnaryOperation(operation) = &left.kind {
+				if let UnaryOperation { op: UnaryOperator::Index { .. }, expression, .. } = operation.as_ref() {
+					if !left.is_itself_mutable {
+						if expression.type_id.as_array(&mut context.type_store.type_entries).is_some() {
+							context.message(error!("Cannot assign to index of immutable array").span(span));
+						} else {
+							context.message(error!("Cannot assign to index of immutable slice").span(span));
+						}
+					}
 				}
 			} else if !matches!(left.kind, ExpressionKind::AnyCollapse) {
 				context.message(error!("Cannot assign to {}", left.kind.name_with_article()).span(span));

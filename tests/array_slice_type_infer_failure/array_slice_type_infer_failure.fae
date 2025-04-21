@@ -1,6 +1,20 @@
 fn main() {
 	// TODO: These lines should eventually be valid in a future
 	// version of Fae but for now it is disallowed
+	let _: [2]i32 = [_]{ 1, 2 }
+	let _: [2]f32 = [_]{ 1.0, 2 }
+
+	let _ = [_]{ 1, 2 }
+	let _ = [_]{ 1.0, 2 }
+
+	// TODO: This should also eventually be valid
+	let _: [0]u8 = [_]{ }
+
+	let _ = [_]{ }
+
+
+	// TODO: These lines should eventually be valid in a future
+	// version of Fae but for now it is disallowed
 	let _: []i32 = []{ 1, 2 }
 	let _: []f32 = []{ 1.0, 2 }
 

@@ -149,7 +149,7 @@ pub fn classify_type<'buf>(type_store: &mut TypeStore, buffer: &'buf mut [Class;
 			return &mut buffer[..1];
 		}
 
-		TypeEntryKind::Array(Array { type_id: item_type_id, length, .. }) => {
+		TypeEntryKind::Array(Array { item_type_id, length, .. }) => {
 			let array_layout = type_store.type_layout(type_id);
 			classify_merge_fields(type_store, buffer, (0..length).map(|_| item_type_id));
 			return post_merge_cleanup(array_layout, buffer);

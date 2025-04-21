@@ -1248,6 +1248,163 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		self.end_block();
 	}
 
+	fn generate_for_array<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		statement: &'b crate::frontend::ir::For<'a>,
+		initializer: Self::Binding,
+		debug_location: DebugLocation,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	) {
+		let is_array_kind = matches!(statement.kind, ForKind::InArray | ForKind::OfArray);
+		assert!(is_array_kind, "{:?}", statement.kind);
+		let by_pointer = statement.kind == ForKind::OfArray;
+
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		self.start_block();
+
+		let as_array = context
+			.specialize_type_id(statement.initializer.type_id)
+			.as_array(&mut context.type_store.type_entries)
+			.unwrap();
+		let array_entry_type_id = as_array.item_type_id;
+		let array_entry_type = self
+			.llvm_types
+			.type_to_llvm_type(self.context, context.type_store, array_entry_type_id);
+
+		unsafe {
+			let original_block = LLVMGetInsertBlock(self.builder);
+			let function = LLVMGetBasicBlockParent(original_block);
+
+			let condition_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_array.condition_block".as_ptr());
+
+			let iterate_block = LLVMAppendBasicBlockInContext(self.context, function, c"for_array.iterate_block".as_ptr());
+			self.loop_condition_blocks.push(iterate_block);
+
+			let body_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let following_block = LLVMAppendBasicBlockInContext(self.context, function, c"for.following".as_ptr());
+			self.loop_follow_blocks.push(following_block);
+
+			let i64_type = LLVMInt64TypeInContext(self.context);
+			let i1_type = LLVMInt1TypeInContext(self.context);
+
+			let pointer = self.value_pointer(initializer);
+			let len = LLVMConstInt(i64_type, as_array.length, false as _);
+
+			let zero = LLVMConstNull(i64_type);
+			let iteration_alloca = self.build_alloca(i64_type, c"for_array.iteration_alloca");
+			LLVMBuildStore(self.builder, zero, iteration_alloca);
+
+			let item_type_id = context.specialize_type_id(statement.item.type_id);
+			let item_type = self
+				.llvm_types
+				.type_to_llvm_type(self.context, context.type_store, item_type_id);
+
+			let item_alloca = self.build_alloca(item_type, c"for_array.item");
+			let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
+			let binding = Binding { type_id: item_type_id, kind };
+			assert_eq!(self.readables.len(), statement.item.readable_index);
+			self.readables.push(Some(binding));
+
+			let index_alloca = if let Some(index) = statement.index {
+				let index_alloca = self.build_alloca(i64_type, c"for_array.index_alloca");
+				LLVMBuildStore(self.builder, zero, index_alloca);
+
+				let kind = BindingKind::Pointer { pointer: index_alloca, pointed_type: i64_type };
+				let binding = Binding { type_id: index.type_id, kind };
+				assert_eq!(self.readables.len(), index.readable_index);
+				self.readables.push(Some(binding));
+
+				Some(index_alloca)
+			} else {
+				None
+			};
+
+			let is_last_alloca = if let Some(is_last) = statement.is_last {
+				let false_value = LLVMConstInt(i1_type, 0, false as _);
+				let is_last_alloca = self.build_alloca(i64_type, c"for_slice.is_last_alloca");
+				LLVMBuildStore(self.builder, false_value, is_last_alloca);
+
+				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i1_type };
+				let binding = Binding { type_id: is_last.type_id, kind };
+				assert_eq!(self.readables.len(), is_last.readable_index);
+				self.readables.push(Some(binding));
+
+				Some(is_last_alloca)
+			} else {
+				None
+			};
+
+			LLVMBuildBr(self.builder, condition_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, iterate_block);
+
+			let one = LLVMConstInt(i64_type, 1, false as _);
+			let original = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let added = LLVMBuildAdd(self.builder, original, one, c"".as_ptr());
+			LLVMBuildStore(self.builder, added, iteration_alloca);
+
+			if let Some(index_alloca) = index_alloca {
+				let original = LLVMBuildLoad2(self.builder, i64_type, index_alloca, c"".as_ptr());
+				let added = LLVMBuildAdd(self.builder, original, one, c"".as_ptr());
+				LLVMBuildStore(self.builder, added, index_alloca);
+			}
+
+			LLVMBuildBr(self.builder, condition_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, condition_block);
+
+			let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let reached_end = LLVMBuildICmp(self.builder, LLVMIntSGE, iteration, len, c"".as_ptr());
+
+			if let Some(is_last_alloca) = is_last_alloca {
+				// It's fine if this overflows as we won't use the result unless we are still iterating and we can only
+				// possibly overflow if we've reached the end at which point we won't observe this value
+				let next = LLVMBuildAdd(self.builder, iteration, one, c"".as_ptr());
+				let reached_last = LLVMBuildICmp(self.builder, LLVMIntSGE, next, len, c"".as_ptr());
+				LLVMBuildStore(self.builder, reached_last, is_last_alloca);
+			}
+
+			LLVMBuildCondBr(self.builder, reached_end, following_block, body_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, body_block);
+
+			let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+			let indicies = &mut [iteration];
+			let adjusted = LLVMBuildGEP2(
+				self.builder,
+				array_entry_type,
+				pointer,
+				indicies.as_mut_ptr(),
+				indicies.len() as u32,
+				c"".as_ptr(),
+			);
+
+			if by_pointer {
+				LLVMBuildStore(self.builder, adjusted, item_alloca);
+			} else {
+				let value = LLVMBuildLoad2(self.builder, item_type, adjusted, c"".as_ptr());
+				LLVMBuildStore(self.builder, value, item_alloca);
+			}
+
+			body_callback(context, self);
+
+			let current_block = LLVMGetInsertBlock(self.builder);
+			if LLVMGetBasicBlockTerminator(current_block).is_null() {
+				LLVMBuildBr(self.builder, iterate_block);
+			}
+
+			LLVMPositionBuilderAtEnd(self.builder, following_block);
+		}
+
+		self.loop_condition_blocks.pop();
+		self.loop_follow_blocks.pop();
+
+		self.end_block();
+	}
+
 	fn generate_for_slice<'a, 'b>(
 		&mut self,
 		context: &mut codegen::Context<'a, 'b>,
@@ -1268,7 +1425,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			.specialize_type_id(statement.initializer.type_id)
 			.as_slice(&mut context.type_store.type_entries)
 			.unwrap()
-			.type_id;
+			.item_type_id;
 		let sliced_type = self
 			.llvm_types
 			.type_to_llvm_type(self.context, context.type_store, sliced_type_id);
@@ -1616,7 +1773,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		type_store: &mut TypeStore,
 		elements: &[Self::Binding],
 		element_type_id: TypeId,
-		slice_type_id: TypeId,
+		array_type_id: TypeId,
 		debug_location: DebugLocation,
 	) -> Self::Binding {
 		assert!(!elements.is_empty());
@@ -1636,7 +1793,53 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					alloca,
 					[zero, index].as_mut_ptr(),
 					2,
-					c"array_literal.pointer".as_ptr(),
+					c"generate_array_literal.pointer".as_ptr(),
+				);
+				match element.kind {
+					BindingKind::Value(value) => {
+						LLVMBuildStore(self.builder, value, pointer);
+					}
+
+					BindingKind::Pointer { pointer: value_pointer, .. } => {
+						let layout = type_store.type_layout(element_type_id);
+						let align = layout.alignment as u32;
+						let size = LLVMConstInt(LLVMInt64TypeInContext(self.context), layout.size as u64, false as _);
+						LLVMBuildMemCpy(self.builder, pointer, align, value_pointer, align, size);
+					}
+				}
+			}
+		}
+
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: array_type };
+		Binding { type_id: array_type_id, kind }
+	}
+
+	fn generate_slice_literal(
+		&mut self,
+		type_store: &mut TypeStore,
+		elements: &[Self::Binding],
+		element_type_id: TypeId,
+		slice_type_id: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		assert!(!elements.is_empty());
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let element_type = self.llvm_types.type_to_llvm_type(self.context, type_store, element_type_id);
+		let array_type = unsafe { LLVMArrayType2(element_type, elements.len() as u64) };
+		let alloca = self.build_alloca(array_type, c"generate_slice_literal.array_alloca");
+
+		let zero = unsafe { LLVMConstInt(LLVMInt64TypeInContext(self.context), 0, false as _) };
+		for (index, element) in elements.iter().enumerate() {
+			unsafe {
+				let index = LLVMConstInt(LLVMInt64TypeInContext(self.context), index as u64, false as _);
+				let pointer = LLVMBuildGEP2(
+					self.builder,
+					array_type,
+					alloca,
+					[zero, index].as_mut_ptr(),
+					2,
+					c"generate_slice_literal.array_literal_pointer".as_ptr(),
 				);
 				match element.kind {
 					BindingKind::Value(value) => {
@@ -1654,22 +1857,26 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 
 		let slice_type = self.llvm_types.slice_struct;
-		let slice_alloca = self.build_alloca(slice_type, c"generate_array_literal.slice_alloca");
+		let slice_alloca = self.build_alloca(slice_type, c"generate_slice_literal.slice_alloca");
 
 		unsafe {
-			let pointer_pointer =
-				LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 0, c"array_literal.pointer_pointer".as_ptr());
+			let pointer_pointer = LLVMBuildStructGEP2(
+				self.builder,
+				slice_type,
+				slice_alloca,
+				0,
+				c"generate_slice_literal.pointer_pointer".as_ptr(),
+			);
 			LLVMBuildStore(self.builder, alloca, pointer_pointer);
 
 			let len_pointer =
-				LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 1, c"array_literal.len_pointer".as_ptr());
+				LLVMBuildStructGEP2(self.builder, slice_type, slice_alloca, 1, c"generate_slice_literal.len_pointer".as_ptr());
 			let len = LLVMConstInt(LLVMInt64TypeInContext(self.context), elements.len() as u64, false as _);
 			LLVMBuildStore(self.builder, len, len_pointer);
 		}
 
-		let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, slice_type_id);
-
-		let kind = BindingKind::Pointer { pointer: slice_alloca, pointed_type };
+		let slice_type = self.llvm_types.slice_struct;
+		let kind = BindingKind::Pointer { pointer: slice_alloca, pointed_type: slice_type };
 		Binding { type_id: slice_type_id, kind }
 	}
 
@@ -1889,6 +2096,59 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				type_store.slice_of(lang_items.format_string_item_type.unwrap(), false)
 			}
 
+			TypeEntryKind::Array(Array { item_type_id, length, .. }) => {
+				match index {
+					// Pointer
+					0 => {
+						let pointer_type_id = type_store.pointer_to(item_type_id, true);
+						let kind = BindingKind::Value(pointer);
+						return Some(Binding { type_id: pointer_type_id, kind });
+					}
+
+					// Length
+					1 => {
+						let value = unsafe { LLVMConstInt(LLVMInt64TypeInContext(self.context), length, false as _) };
+						let kind = BindingKind::Value(value);
+						return Some(Binding { type_id, kind });
+					}
+
+					// Slice
+					2 => {
+						let slice_type = self.llvm_types.slice_struct;
+						let slice_alloca = self.build_alloca(slice_type, c"generate_field_read.array_to_slice");
+
+						unsafe {
+							let pointer_pointer = LLVMBuildStructGEP2(
+								self.builder,
+								slice_type,
+								slice_alloca,
+								0,
+								c"generate_field_read.array_to_slice.pointer_pointer".as_ptr(),
+							);
+							LLVMBuildStore(self.builder, pointer, pointer_pointer);
+
+							let i64_type = LLVMInt64TypeInContext(self.context);
+							let len = LLVMConstInt(i64_type, length, false as _);
+
+							let len_pointer = LLVMBuildStructGEP2(
+								self.builder,
+								slice_type,
+								slice_alloca,
+								1,
+								c"generate_field_read.array_to_slice.len_pointer".as_ptr(),
+							);
+							LLVMBuildStore(self.builder, len, len_pointer);
+						};
+
+						let slice_type_id = type_store.slice_of(item_type_id, true);
+						let kind = BindingKind::Pointer { pointer: slice_alloca, pointed_type: slice_type };
+						return Some(Binding { type_id: slice_type_id, kind });
+					}
+
+					_ => unreachable!("Array field index {index}"),
+				}
+			}
+
 			TypeEntryKind::Slice(_) => {
 				field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) };
 				field_pointer = unsafe {
@@ -2082,6 +2342,74 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unreachable!("{from_type_kind:?}")
 	}
 
+	fn generate_array_index(
+		&mut self,
+		lang_items: &LangItems,
+		type_store: &mut TypeStore,
+		item_type: TypeId,
+		base: Option<Self::Binding>,
+		base_type_id: TypeId,
+		index: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Option<Self::Binding> {
+		unsafe {
+			let original_block = LLVMGetInsertBlock(self.builder);
+			let function = LLVMGetBasicBlockParent(original_block);
+			let failure_block =
+				LLVMAppendBasicBlockInContext(self.context, function, c"generate_array_index.bounds_check_failure".as_ptr());
+			let success_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let as_array = base_type_id.as_array(&mut type_store.type_entries).unwrap();
+
+			let i64_type = LLVMInt64TypeInContext(self.context);
+			let len = LLVMConstInt(i64_type, as_array.length, false as _);
+
+			let index = index.to_value(self.builder);
+
+			let zero = LLVMConstNull(i64_type);
+			let greater_than_zero = LLVMBuildICmp(self.builder, LLVMIntSGE, index, zero, c"".as_ptr());
+			let less_than_len = LLVMBuildICmp(self.builder, LLVMIntSLT, index, len, c"".as_ptr());
+			let in_bounds = LLVMBuildAnd(self.builder, greater_than_zero, less_than_len, c"".as_ptr());
+
+			LLVMBuildCondBr(self.builder, in_bounds, success_block, failure_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, failure_block);
+			// TODO: Build some abstraction for calling lang item functions
+			let failure_args = {
+				let kind = BindingKind::Value(len);
+				let len = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				let kind = BindingKind::Value(index);
+				let index = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				[len, index]
+			};
+			self.generate_call(type_store, lang_items.array_index_out_of_bounds.unwrap(), &failure_args, debug_location);
+			LLVMBuildUnreachable(self.builder);
+
+			LLVMPositionBuilderAtEnd(self.builder, success_block);
+
+			let item_layout = type_store.type_layout(item_type);
+			if item_layout.size <= 0 {
+				return None;
+			}
+
+			let pointer = self.value_pointer(base.unwrap());
+
+			let indicies = &mut [index];
+			let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, item_type);
+			let adjusted = LLVMBuildGEP2(
+				self.builder,
+				pointed_type,
+				pointer,
+				indicies.as_mut_ptr(),
+				indicies.len() as u32,
+				c"".as_ptr(),
+			);
+
+			let kind = BindingKind::Pointer { pointer: adjusted, pointed_type };
+			Some(Binding { type_id: item_type, kind })
+		}
+	}
+
 	fn generate_slice_index(
 		&mut self,
 		lang_items: &LangItems,
@@ -2094,7 +2422,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		unsafe {
 			let original_block = LLVMGetInsertBlock(self.builder);
 			let function = LLVMGetBasicBlockParent(original_block);
-			let failure_block = LLVMAppendBasicBlockInContext(self.context, function, c"bounds_check_failure".as_ptr());
+			let failure_block =
+				LLVMAppendBasicBlockInContext(self.context, function, c"generate_slice_index.bounds_check_failure".as_ptr());
 			let success_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
 			let value_pointer = self.value_pointer(base);
@@ -2152,11 +2481,157 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		}
 	}
 
+	fn generate_array_slice(
+		&mut self,
+		lang_items: &LangItems,
+		type_store: &mut TypeStore,
+		item_type_id: TypeId,
+		base: Self::Binding,
+		range: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Option<Self::Binding> {
+		let as_array = base.type_id.as_array(&mut type_store.type_entries).unwrap();
+		let resultant_slice_type_id = type_store.slice_of(item_type_id, true);
+
+		unsafe {
+			let original_block = LLVMGetInsertBlock(self.builder);
+			let function = LLVMGetBasicBlockParent(original_block);
+
+			let range_inverted_failure_block = LLVMAppendBasicBlockInContext(
+				self.context,
+				function,
+				c"generate_array_slice.range_inverted_failure_block".as_ptr(),
+			);
+			let range_not_inverted_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let range_start_out_of_bounds_failure_block = LLVMAppendBasicBlockInContext(
+				self.context,
+				function,
+				c"generate_array_slice.range_start_out_of_bounds_failure_block".as_ptr(),
+			);
+			let start_in_bounds_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let range_end_out_of_bounds_failure_block = LLVMAppendBasicBlockInContext(
+				self.context,
+				function,
+				c"generate_array_slice.range_end_out_of_bounds_failure_block".as_ptr(),
+			);
+			let end_in_bounds_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
+
+			let i64_type = LLVMInt64TypeInContext(self.context);
+
+			let range_pointer = self.value_pointer(range);
+			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"generate_array_slice.range_start".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"generate_array_slice.range_end".as_ptr());
+
+			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
+			LLVMBuildCondBr(self.builder, inverted, range_inverted_failure_block, range_not_inverted_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, range_inverted_failure_block);
+			let failure_args = [Some(range)];
+			self.generate_call(type_store, lang_items.array_range_inverted.unwrap(), &failure_args, debug_location);
+			LLVMBuildUnreachable(self.builder);
+
+			LLVMPositionBuilderAtEnd(self.builder, range_not_inverted_block);
+
+			let pointer = self.value_pointer(base);
+			let len = LLVMConstInt(i64_type, as_array.length, false as _);
+
+			let zero = LLVMConstNull(i64_type);
+			let start_greater_than_zero = LLVMBuildICmp(self.builder, LLVMIntSGE, start, zero, c"".as_ptr());
+			let start_less_equal_len = LLVMBuildICmp(self.builder, LLVMIntSLE, start, len, c"".as_ptr());
+			let start_in_bounds = LLVMBuildAnd(self.builder, start_greater_than_zero, start_less_equal_len, c"".as_ptr());
+
+			LLVMBuildCondBr(
+				self.builder,
+				start_in_bounds,
+				start_in_bounds_block,
+				range_start_out_of_bounds_failure_block,
+			);
+
+			LLVMPositionBuilderAtEnd(self.builder, range_start_out_of_bounds_failure_block);
+			let failure_args = {
+				let kind = BindingKind::Value(len);
+				let len = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				let kind = BindingKind::Value(start);
+				let start = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				[len, start]
+			};
+			self.generate_call(
+				type_store,
+				lang_items.array_range_start_out_of_bounds.unwrap(),
+				&failure_args,
+				debug_location,
+			);
+			LLVMBuildUnreachable(self.builder);
+
+			LLVMPositionBuilderAtEnd(self.builder, start_in_bounds_block);
+			let end_greater_than_zero = LLVMBuildICmp(self.builder, LLVMIntSGE, end, zero, c"".as_ptr());
+			let end_less_than_equal_len = LLVMBuildICmp(self.builder, LLVMIntSLE, end, len, c"".as_ptr());
+			let end_in_bounds = LLVMBuildAnd(self.builder, end_greater_than_zero, end_less_than_equal_len, c"".as_ptr());
+
+			LLVMBuildCondBr(self.builder, end_in_bounds, end_in_bounds_block, range_end_out_of_bounds_failure_block);
+
+			LLVMPositionBuilderAtEnd(self.builder, range_end_out_of_bounds_failure_block);
+			let failure_args = {
+				let kind = BindingKind::Value(len);
+				let len = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				let kind = BindingKind::Value(end);
+				let end = Some(Binding { type_id: type_store.isize_type_id(), kind });
+				[len, end]
+			};
+			self.generate_call(
+				type_store,
+				lang_items.array_range_end_out_of_bounds.unwrap(),
+				&failure_args,
+				debug_location,
+			);
+			LLVMBuildUnreachable(self.builder);
+
+			LLVMPositionBuilderAtEnd(self.builder, end_in_bounds_block);
+
+			let item_layout = type_store.type_layout(item_type_id);
+			if item_layout.size <= 0 {
+				return None;
+			}
+
+			let indicies = &mut [start];
+			let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, item_type_id);
+			let adjusted_pointer = LLVMBuildGEP2(
+				self.builder,
+				pointed_type,
+				pointer,
+				indicies.as_mut_ptr(),
+				indicies.len() as u32,
+				c"".as_ptr(),
+			);
+
+			let adjusted_len = LLVMBuildSub(self.builder, end, start, c"".as_ptr());
+
+			let llvm_type = self.llvm_types.slice_struct;
+			let alloca = self.build_alloca(llvm_type, c"generate_slice_slice.result_slice_alloca");
+
+			let pointer_name = c"generate_slice_slice.result_pointer_pointer".as_ptr();
+			let pointer_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, pointer_name);
+
+			let length_name = c"generate_slice_slice.result_length_pointer".as_ptr();
+			let length_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, length_name);
+
+			LLVMBuildStore(self.builder, adjusted_pointer, pointer_pointer);
+			LLVMBuildStore(self.builder, adjusted_len, length_pointer);
+
+			let kind = BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type };
+			Some(Binding { type_id: resultant_slice_type_id, kind })
+		}
+	}
+
 	fn generate_slice_slice(
 		&mut self,
 		lang_items: &LangItems,
 		type_store: &mut TypeStore,
-		item_type: TypeId,
+		item_type_id: TypeId,
 		base: Self::Binding,
 		range: Self::Binding,
 		debug_location: DebugLocation,
@@ -2269,13 +2744,13 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			LLVMPositionBuilderAtEnd(self.builder, end_in_bounds_block);
 
-			let item_layout = type_store.type_layout(item_type);
+			let item_layout = type_store.type_layout(item_type_id);
 			if item_layout.size <= 0 {
 				return None;
 			}
 
 			let indicies = &mut [start];
-			let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, item_type);
+			let pointed_type = self.llvm_types.type_to_llvm_type(self.context, type_store, item_type_id);
 			let adjusted_pointer = LLVMBuildGEP2(
 				self.builder,
 				pointed_type,

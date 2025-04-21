@@ -1,0 +1,12 @@
+fn func(slice=: []i32) {
+	println(f"{slice[0]}")
+	println(f"{slice[1]}")
+}
+
+fn main() {
+	let slice: []mut i32 = []mut i32 { 1, 2 }
+	func(slice)
+	slice[1] = 3
+	slice[0] = 4
+	func(slice)
+}

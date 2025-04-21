@@ -1,0 +1,47 @@
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 4: Cannot infer array type from untyped number first item
+  4|     let _: [2]i32 = [_]{ 1, 2 }
+                              ^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 5: Cannot infer array type from untyped number first item
+  5|     let _: [2]f32 = [_]{ 1.0, 2 }
+                              ^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 7: Cannot infer array type from untyped number first item
+  7|     let _ = [_]{ 1, 2 }
+                      ^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 8: Cannot infer array type from untyped number first item
+  8|     let _ = [_]{ 1.0, 2 }
+                      ^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 11: Cannot infer array type from empty array
+  11|     let _: [0]u8 = [_]{ }
+                         ^^^^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 13: Cannot infer array type from empty array
+  13|     let _ = [_]{ }
+                  ^^^^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 18: Cannot infer slice type from untyped number first item
+  18|     let _: []i32 = []{ 1, 2 }
+                             ^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 19: Cannot infer slice type from untyped number first item
+  19|     let _: []f32 = []{ 1.0, 2 }
+                             ^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 21: Cannot infer slice type from untyped number first item
+  21|     let _ = []{ 1, 2 }
+                      ^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 22: Cannot infer slice type from untyped number first item
+  22|     let _ = []{ 1.0, 2 }
+                      ^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 25: Cannot infer slice type from empty slice
+  25|     let _: []u8 = []{ }
+                        ^^^^^
+
+Validation error: ./tests/array_slice_type_infer_failure/array_slice_type_infer_failure.fae, line 27: Cannot infer slice type from empty slice
+  27|     let _ = []{ }
+                  ^^^^^

@@ -1,0 +1,6 @@
+fn main() {
+	mut array = [_]bool { false }
+	println(f"{array[0]}")
+	array.pointer.* = true
+	println(f"{array[0]}")
+}

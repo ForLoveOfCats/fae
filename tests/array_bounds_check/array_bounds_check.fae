@@ -1,0 +1,7 @@
+fn main() {
+	let array = [_]{ true, false, true != false }
+	println(f"{array[0]}") // true
+	println(f"{array[1]}") // false
+	println(f"{array[2]}") // true
+	println(f"{array[8]}") // panic
+}

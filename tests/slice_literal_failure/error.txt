@@ -1,0 +1,15 @@
+Validation error: ./tests/slice_literal_failure/slice_literal_failure.fae, line 8: Expected argument of type `[]mut i32`, got `[]i32`
+  8|     func(slice)
+              ^^^^^
+
+Validation error: ./tests/slice_literal_failure/slice_literal_failure.fae, line 9: Cannot assign to index of immutable slice
+  9|     slice[1] = 3
+         ^^^^^^^^^^^^
+
+Validation error: ./tests/slice_literal_failure/slice_literal_failure.fae, line 10: Cannot assign to index of immutable slice
+  10|     slice[0] = 4
+          ^^^^^^^^^^^^
+
+Validation error: ./tests/slice_literal_failure/slice_literal_failure.fae, line 11: Expected argument of type `[]mut i32`, got `[]i32`
+  11|     func(slice)
+               ^^^^^

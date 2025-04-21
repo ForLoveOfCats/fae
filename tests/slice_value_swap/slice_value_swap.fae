@@ -1,5 +1,5 @@
 fn main() {
-	let slice = []{ true, false }
+	let slice = []mut { true, false }
 
 	let a = slice[0]
 	let b = slice[1]

@@ -1,0 +1,64 @@
+fn main() {
+	// Arrays
+	let a = [_]i32 { //
+		11 //
+		//
+		12 //
+	}
+
+	let b = [_]i32 { //
+		//
+		15 //
+		16 //
+		//
+	}
+
+	let c = [_]i32 { //
+
+		20
+	
+		21
+	
+		22
+		
+	}
+
+	for number in a => println(f"{number}")
+	println("")
+	for number in b => println(f"{number}")
+	println("")
+	for number in c => println(f"{number}")
+
+	println("")
+	println("")
+
+	// Slices
+	let a = []i32 { //
+		4 //
+		//
+		5 //
+	}
+
+	let b = []i32 { //
+		//
+		2 //
+		6 //
+		//
+	}
+
+	let c = []i32 { //
+
+		9
+	
+		12
+	
+		13
+		
+	}
+
+	for number in a => println(f"{number}")
+	println("")
+	for number in b => println(f"{number}")
+	println("")
+	for number in c => println(f"{number}")
+}

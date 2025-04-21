@@ -5,8 +5,8 @@ fn main() {
 
 	println("")
 
-	let words = []{ "Hello", "World" }
-	for word, index, is_last in words {
+	let words_slice = []{ "Hello", "World" }
+	for word, index, is_last in words_slice {
 		print(f"{index}: {word}")
 		if is_last => println("")
 		else => print(", ")
@@ -14,17 +14,17 @@ fn main() {
 
 	println("")
 
-	let numbers = []i32 { 2, 3, 4, 5, 6 }
-	print_numbers(numbers)
+	mut numbers = [_]i32 { 2, 3, 4, 5, 6 }
+	print_numbers(numbers.slice)
 
 	for number, index of numbers {
 		number.* += 1
 		number.* += numbers[index]
 	}
-	print_numbers(numbers)
+	print_numbers(numbers.slice)
 }
 
-fn print_numbers(numbers: []i32) {
+fn print_numbers(numbers=: []i32) {
 	print("[")
 	for number, _, is_last in numbers {
 		print(f"{number}")

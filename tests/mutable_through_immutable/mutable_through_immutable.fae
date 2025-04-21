@@ -7,7 +7,7 @@ fn main() {
 	mut value: i32 = 11
 	let instance = Struct {
 		ptr: value.&mut
-		slice: []i32 { 22 }
+		slice: []mut i32 { 22 }
 	}
 
 	let instance_ptr = instance.&
@@ -50,7 +50,7 @@ fn main() {
 		let slice: []Struct = []{
 			Struct {
 				ptr: value.&mut
-				slice: []i32 { 33 }
+				slice: []mut i32 { 33 }
 			}
 		}
 

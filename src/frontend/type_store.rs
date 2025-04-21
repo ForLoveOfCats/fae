@@ -192,6 +192,15 @@ impl TypeId {
 		None
 	}
 
+	pub fn as_array(self, type_entries: &mut TypeEntries) -> Option<Array> {
+		let entry = type_entries.get(self);
+		if let TypeEntryKind::Array(array) = entry.kind {
+			return Some(array);
+		}
+
+		None
+	}
+
 	pub fn as_slice(self, type_entries: &mut TypeEntries) -> Option<Slice> {
 		let entry = type_entries.get(self);
 		if let TypeEntryKind::Slice(slice) = entry.kind {
@@ -761,8 +770,8 @@ impl TypeEntry {
 			}
 
 			TypeEntryKind::Pointer { type_id, .. }
-			| TypeEntryKind::Array(Array { type_id, .. })
-			| TypeEntryKind::Slice(Slice { type_id, .. }) => {
+			| TypeEntryKind::Array(Array { item_type_id: type_id, .. })
+			| TypeEntryKind::Slice(Slice { item_type_id: type_id, .. }) => {
 				let entry = type_store.type_entries.get(type_id);
 				entry.generic_poisoned
 			}
@@ -860,14 +869,14 @@ impl TypeEntryKind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Array {
-	pub type_id: TypeId,
+	pub item_type_id: TypeId,
 	pub length: u64,
 	pub array_type_index: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Slice {
-	pub type_id: TypeId,
+	pub item_type_id: TypeId,
 	pub mutable: bool,
 }
 
@@ -1541,8 +1550,8 @@ impl<'a> TypeStore<'a> {
 		}
 
 		// mutable slice -> immutable slice
-		if let TypeEntryKind::Slice(Slice { type_id: to_type_id, mutable: to_mutable }) = to_entry.kind {
-			if let TypeEntryKind::Slice(Slice { type_id: from_type_id, mutable: from_mutable }) = from_entry.kind {
+		if let TypeEntryKind::Slice(Slice { item_type_id: to_type_id, mutable: to_mutable }) = to_entry.kind {
+			if let TypeEntryKind::Slice(Slice { item_type_id: from_type_id, mutable: from_mutable }) = from_entry.kind {
 				if to_type_id.entry == from_type_id.entry && from_mutable && !to_mutable {
 					if let ExpressionKind::ArrayLiteral(literal) = &mut from.kind {
 						// See `get_or_create_reference_entries`, mutable slice directly follows immutable slice of same type
@@ -1695,8 +1704,8 @@ impl<'a> TypeStore<'a> {
 
 		let a_kind = TypeEntryKind::Pointer { type_id, mutable: false };
 		let b_kind = TypeEntryKind::Pointer { type_id, mutable: true };
-		let c_kind = TypeEntryKind::Slice(Slice { type_id, mutable: false });
-		let d_kind = TypeEntryKind::Slice(Slice { type_id, mutable: true });
+		let c_kind = TypeEntryKind::Slice(Slice { item_type_id: type_id, mutable: false });
+		let d_kind = TypeEntryKind::Slice(Slice { item_type_id: type_id, mutable: true });
 
 		let entries = &[
 			TypeEntry::new(self, a_kind),
@@ -1797,7 +1806,7 @@ impl<'a> TypeStore<'a> {
 		array_types
 			.entry(length)
 			.or_insert_with(|| {
-				let kind = TypeEntryKind::Array(Array { type_id, length, array_type_index });
+				let kind = TypeEntryKind::Array(Array { item_type_id: type_id, length, array_type_index });
 				let entry = TypeEntry::new(self, kind);
 				let array_type_id = self.type_entries.push_entry(entry);
 				ArrayType { array_type_id, item_type_id: type_id }
@@ -1833,7 +1842,7 @@ impl<'a> TypeStore<'a> {
 	pub fn sliced_of(&mut self, type_id: TypeId) -> Option<(TypeId, bool)> {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
-			TypeEntryKind::Slice(Slice { type_id, mutable }) => Some((type_id, mutable)),
+			TypeEntryKind::Slice(Slice { item_type_id: type_id, mutable }) => Some((type_id, mutable)),
 			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, true)),
 			_ => None,
 		}
@@ -2210,7 +2219,7 @@ impl<'a> TypeStore<'a> {
 
 			TypeEntryKind::Pointer { .. } => Layout { size: 8, alignment: 8 },
 
-			TypeEntryKind::Array(Array { type_id, length, .. }) => {
+			TypeEntryKind::Array(Array { item_type_id: type_id, length, .. }) => {
 				let inner_layout = self.type_layout(type_id);
 				Layout {
 					size: inner_layout.size * length as i64,
@@ -2640,6 +2649,21 @@ impl<'a> TypeStore<'a> {
 					pointee,
 				)?;
 				return Some(self.pointer_to(id, *mutable));
+			}
+
+			tree::Type::Array { item, length } => {
+				let id = self.lookup_type(
+					messages,
+					function_store,
+					module_path,
+					generic_usages,
+					root_layers,
+					symbols,
+					function_initial_symbols_len,
+					enclosing_generic_parameters,
+					item,
+				)?;
+				return Some(self.array_of(id, *length));
 			}
 
 			tree::Type::Slice { pointee, mutable } => {
@@ -3842,7 +3866,7 @@ impl<'a> TypeStore<'a> {
 				self.pointer_to(type_id, *mutable)
 			}
 
-			TypeEntryKind::Array(Array { type_id, length, .. }) => {
+			TypeEntryKind::Array(Array { item_type_id: type_id, length, .. }) => {
 				let type_id = self.specialize_type_id_with_generics(
 					messages,
 					function_store,
@@ -3856,7 +3880,7 @@ impl<'a> TypeStore<'a> {
 				self.array_of(type_id, *length)
 			}
 
-			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
+			TypeEntryKind::Slice(Slice { item_type_id: type_id, mutable }) => {
 				let type_id = self.specialize_type_id_with_generics(
 					messages,
 					function_store,
@@ -4057,12 +4081,12 @@ impl<'a> TypeStore<'a> {
 				}
 			}
 
-			TypeEntryKind::Array(Array { type_id, length, .. }) => {
+			TypeEntryKind::Array(Array { item_type_id: type_id, length, .. }) => {
 				let inner = self.internal_type_name(function_store, _module_path, type_id, debug_generics, debug_type_ids);
 				format!("[{length}]{inner}")
 			}
 
-			TypeEntryKind::Slice(Slice { type_id, mutable }) => {
+			TypeEntryKind::Slice(Slice { item_type_id: type_id, mutable }) => {
 				let inner = self.internal_type_name(function_store, _module_path, type_id, debug_generics, debug_type_ids);
 				match mutable {
 					true => format!("[]mut {inner}"),

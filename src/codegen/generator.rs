@@ -64,6 +64,15 @@ pub trait Generator {
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	);
 
+	fn generate_for_array<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		statement: &'b For<'a>,
+		initializer: Self::Binding,
+		debug_location: DebugLocation,
+		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
+	);
+
 	fn generate_for_slice<'a, 'b>(
 		&mut self,
 		context: &mut codegen::Context<'a, 'b>,
@@ -89,6 +98,15 @@ pub trait Generator {
 	fn generate_string_literal(&mut self, type_store: &TypeStore, text: &str) -> Self::Binding;
 
 	fn generate_array_literal(
+		&mut self,
+		type_store: &mut TypeStore,
+		elements: &[Self::Binding],
+		element_type_id: TypeId,
+		array_type_id: TypeId,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
+	fn generate_slice_literal(
 		&mut self,
 		type_store: &mut TypeStore,
 		elements: &[Self::Binding],
@@ -163,6 +181,17 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
+	fn generate_array_index(
+		&mut self,
+		lang_items: &LangItems,
+		type_store: &mut TypeStore,
+		item_type: TypeId,
+		base: Option<Self::Binding>,
+		base_type_id: TypeId,
+		index: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Option<Self::Binding>;
+
 	fn generate_slice_index(
 		&mut self,
 		lang_items: &LangItems,
@@ -173,11 +202,21 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
 
+	fn generate_array_slice(
+		&mut self,
+		lang_items: &LangItems,
+		type_store: &mut TypeStore,
+		item_type_id: TypeId,
+		base: Self::Binding,
+		range: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Option<Self::Binding>;
+
 	fn generate_slice_slice(
 		&mut self,
 		lang_items: &LangItems,
 		type_store: &mut TypeStore,
-		item_type: TypeId,
+		item_type_id: TypeId,
 		base: Self::Binding,
 		range: Self::Binding,
 		debug_location: DebugLocation,

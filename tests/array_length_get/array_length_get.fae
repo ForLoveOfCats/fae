@@ -1,0 +1,4 @@
+fn main() {
+	let array = [_]u16 { 10, 11, 12, 13 }
+	println(f"{array.length}")
+}

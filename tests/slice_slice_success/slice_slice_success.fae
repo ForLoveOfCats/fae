@@ -16,23 +16,23 @@ fn print_range(range: Range) {
 
 fn main() {
 	println("Verbatim")
-	let array = []i32 { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }
-	print_integers(array)
+	let slice = []i32 { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }
+	print_integers(slice)
 
 	println("")
 	
 	println("Full")
-	print_integers(array[0..array.length])
+	print_integers(slice[0..slice.length])
 	println("Full 2")
-	print_integers(array[0..10])
+	print_integers(slice[0..10])
 	println("Half")
-	print_integers(array[5..10])
+	print_integers(slice[5..10])
 	println("Nothing")
-	print_integers(array[5..5])
+	print_integers(slice[5..5])
 	println("One")
-	print_integers(array[5..6])
+	print_integers(slice[5..6])
 	println("Two")
-	print_integers(array[5..7])
+	print_integers(slice[5..7])
 
 	println("")
 	println("")

@@ -6,9 +6,9 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
 	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, Function,
-	FunctionId, FunctionShape, GenericParameters, IfElseChain, Match, MethodCall, NumberValue, Read, SliceMutableToImmutable,
-	Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral, TypeArguments, UnaryOperation,
-	UnaryOperator, UnionVariantToUnion, While,
+	FunctionId, FunctionShape, GenericParameters, IfElseChain, Match, MethodCall, NumberValue, Read, SliceLiteral,
+	SliceMutableToImmutable, Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral,
+	TypeArguments, UnaryOperation, UnaryOperator, UnionVariantToUnion, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -405,6 +405,8 @@ fn generate_expression_impl<'a, 'b, G: Generator, const IS_STATEMENT: bool>(
 
 		ExpressionKind::ArrayLiteral(literal) => generate_array_literal(context, generator, literal, debug_location),
 
+		ExpressionKind::SliceLiteral(literal) => generate_slice_literal(context, generator, literal, debug_location),
+
 		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal, debug_location),
 
 		ExpressionKind::Call(call) => generate_call(context, generator, call, debug_location),
@@ -541,6 +543,13 @@ fn generate_for<'a, 'b, G: Generator>(
 	debug_location: DebugLocation,
 ) {
 	match statement.kind {
+		ForKind::InArray | ForKind::OfArray => {
+			let initializer = generate_expression(context, generator, &statement.initializer).unwrap();
+			generator.generate_for_array(context, statement, initializer, debug_location, |context, generator| {
+				generate_block(context, generator, &statement.body);
+			});
+		}
+
 		ForKind::InSlice | ForKind::OfSlice => {
 			let initializer = generate_expression(context, generator, &statement.initializer).unwrap();
 			generator.generate_for_slice(context, statement, initializer, debug_location, |context, generator| {
@@ -597,7 +606,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 	literal: &'b FormatStringLiteral<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
-	let pointee_type_id = context.lang_items.format_string_item_type.unwrap();
+	let item_type_id = context.lang_items.format_string_item_type.unwrap();
 	let type_id = context.type_store.format_string_type_id();
 
 	if literal.items.is_empty() {
@@ -606,7 +615,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 		return Some(generator.generate_non_null_invalid_slice(type_id, length, debug_location));
 	}
 
-	let enum_entry = context.type_store.type_entries.get(pointee_type_id);
+	let enum_entry = context.type_store.type_entries.get(item_type_id);
 	let (enum_shape_index, enum_specialization_index) = match enum_entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 		_ => unreachable!("{:?}", enum_entry.kind),
@@ -623,7 +632,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 
 				let wrapped = generator.generate_enum_variant_to_enum(
 					context.type_store,
-					pointee_type_id,
+					item_type_id,
 					enum_shape_index,
 					enum_specialization_index,
 					variant_index,
@@ -640,7 +649,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 				let variant_binding = generate_expression(context, generator, expression);
 				let wrapped = generator.generate_enum_variant_to_enum(
 					context.type_store,
-					pointee_type_id,
+					item_type_id,
 					enum_shape_index,
 					enum_specialization_index,
 					variant_index,
@@ -652,7 +661,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 		}
 	}
 
-	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
+	Some(generator.generate_slice_literal(context.type_store, &elements, item_type_id, type_id, debug_location))
 }
 
 fn generate_array_literal<'a, 'b, G: Generator>(
@@ -668,18 +677,42 @@ fn generate_array_literal<'a, 'b, G: Generator>(
 		}
 	}
 
-	let pointee_type_id = context.specialize_type_id(literal.pointee_type_id);
+	let item_type_id = context.specialize_type_id(literal.item_type_id);
 	let type_id = context.specialize_type_id(literal.type_id);
 
-	let pointee_layout = context.type_store.type_layout(pointee_type_id);
-	if pointee_layout.size <= 0 || elements.is_empty() {
+	let item_layout = context.type_store.type_layout(item_type_id);
+	if item_layout.size <= 0 || elements.is_empty() {
+		return None;
+	}
+
+	Some(generator.generate_array_literal(context.type_store, &elements, item_type_id, type_id, debug_location))
+}
+
+fn generate_slice_literal<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	literal: &'b SliceLiteral<'a>,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
+	let mut elements = Vec::with_capacity(literal.expressions.len());
+	for expression in &literal.expressions {
+		if let Some(step) = generate_expression(context, generator, expression) {
+			elements.push(step);
+		}
+	}
+
+	let item_type_id = context.specialize_type_id(literal.item_type_id);
+	let type_id = context.specialize_type_id(literal.type_id);
+
+	let item_layout = context.type_store.type_layout(item_type_id);
+	if item_layout.size <= 0 || elements.is_empty() {
 		let isize_type_id = context.type_store.isize_type_id();
 		let length_value = Decimal::from(literal.expressions.len());
 		let length = generator.generate_number_value(context.type_store, isize_type_id, length_value);
 		return Some(generator.generate_non_null_invalid_slice(type_id, length, debug_location));
 	}
 
-	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
+	Some(generator.generate_slice_literal(context.type_store, &elements, item_type_id, type_id, debug_location))
 }
 
 fn generate_struct_literal<'a, 'b, G: Generator>(
@@ -881,45 +914,60 @@ fn generate_unary_operation<'a, 'b, G: Generator>(
 	operation: &'b UnaryOperation<'a>,
 	debug_location: DebugLocation,
 ) -> Option<G::Binding> {
-	let type_id = context.specialize_type_id(operation.type_id);
-	let Some(expression) = generate_expression(context, generator, &operation.expression) else {
-		if matches!(operation.op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
-			return Some(generator.generate_non_null_invalid_pointer(type_id, debug_location));
-		}
-		return None;
-	};
+	let resultant_type_id = context.specialize_type_id(operation.type_id);
+	let expression = generate_expression(context, generator, &operation.expression);
 
-	let layout = context.type_store.type_layout(type_id);
+	let layout = context.type_store.type_layout(resultant_type_id);
 	if layout.size <= 0 {
 		// HACK: We still need to generate the bounds check. Right now the backend is assumed to
 		// understand index of slice of zero sized type.
 		// TODO: Add a separate `generator.generate_bounds_check` to untangle this mess
 		if let UnaryOperator::Index { index_expression } = &operation.op {
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			return generator.generate_slice_index(
-				context.lang_items,
-				context.type_store,
-				type_id,
-				expression,
-				index_expression,
-				debug_location,
-			);
+			let type_id = context.specialize_type_id(operation.expression.type_id);
+			if type_id.as_array(&mut context.type_store.type_entries).is_some() {
+				return generator.generate_array_index(
+					context.lang_items,
+					context.type_store,
+					resultant_type_id,
+					expression,
+					type_id,
+					index_expression,
+					debug_location,
+				);
+			} else {
+				return generator.generate_slice_index(
+					context.lang_items,
+					context.type_store,
+					resultant_type_id,
+					expression.unwrap(),
+					index_expression,
+					debug_location,
+				);
+			}
 		}
 
 		return None;
 	}
 
+	let Some(expression) = expression else {
+		if matches!(operation.op, UnaryOperator::AddressOf | UnaryOperator::AddressOfMut) {
+			return Some(generator.generate_non_null_invalid_pointer(resultant_type_id, debug_location));
+		}
+		return None;
+	};
+
 	match &operation.op {
-		UnaryOperator::Negate => Some(generator.generate_negate(expression, type_id, debug_location)),
+		UnaryOperator::Negate => Some(generator.generate_negate(expression, resultant_type_id, debug_location)),
 
 		UnaryOperator::Invert => Some(generator.generate_invert(expression, debug_location)),
 
 		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => {
-			Some(generator.generate_address_of(expression, type_id, debug_location))
+			Some(generator.generate_address_of(expression, resultant_type_id, debug_location))
 		}
 
 		UnaryOperator::Dereference => {
-			Some(generator.generate_dereference(context.type_store, expression, type_id, debug_location))
+			Some(generator.generate_dereference(context.type_store, expression, resultant_type_id, debug_location))
 		}
 
 		&UnaryOperator::Cast { type_id: to } => {
@@ -929,31 +977,58 @@ fn generate_unary_operation<'a, 'b, G: Generator>(
 
 		UnaryOperator::Index { index_expression } => {
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			generator.generate_slice_index(
-				context.lang_items,
-				context.type_store,
-				type_id,
-				expression,
-				index_expression,
-				debug_location,
-			)
+
+			let type_id = context.specialize_type_id(operation.expression.type_id);
+			if type_id.as_array(&mut context.type_store.type_entries).is_some() {
+				generator.generate_array_index(
+					context.lang_items,
+					context.type_store,
+					resultant_type_id,
+					Some(expression),
+					type_id,
+					index_expression,
+					debug_location,
+				)
+			} else {
+				generator.generate_slice_index(
+					context.lang_items,
+					context.type_store,
+					resultant_type_id,
+					expression,
+					index_expression,
+					debug_location,
+				)
+			}
 		}
 
 		UnaryOperator::RangeIndex { index_expression } => {
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			let item_type = if type_id.is_string(context.type_store) {
+			let item_type = if resultant_type_id.is_string(context.type_store) {
 				context.type_store.u8_type_id()
 			} else {
-				context.type_store.sliced_of(type_id).unwrap().0
+				context.type_store.sliced_of(resultant_type_id).unwrap().0
 			};
-			generator.generate_slice_slice(
-				context.lang_items,
-				context.type_store,
-				item_type,
-				expression,
-				index_expression,
-				debug_location,
-			)
+
+			let type_id = context.specialize_type_id(operation.expression.type_id);
+			if type_id.as_array(&mut context.type_store.type_entries).is_some() {
+				generator.generate_array_slice(
+					context.lang_items,
+					context.type_store,
+					item_type,
+					expression,
+					index_expression,
+					debug_location,
+				)
+			} else {
+				generator.generate_slice_slice(
+					context.lang_items,
+					context.type_store,
+					item_type,
+					expression,
+					index_expression,
+					debug_location,
+				)
+			}
 		}
 	}
 }
@@ -972,7 +1047,7 @@ fn generate_binary_operation<'a, 'b, G: Generator>(
 
 	if !left_has_size {
 		let left = generate_expression(context, generator, &operation.left);
-		assert!(left.is_none());
+		assert!(left.is_none(), "{left:#?}, {:#?}", &operation.left);
 		let right = generate_expression(context, generator, &operation.right);
 		assert!(right.is_none());
 
@@ -1063,7 +1138,7 @@ fn generate_string_to_format_string<'a, 'b, G: Generator>(
 	);
 
 	let elements = vec![wrapped];
-	Some(generator.generate_array_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
+	Some(generator.generate_slice_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
 }
 
 fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(

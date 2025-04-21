@@ -1,0 +1,36 @@
+fn print_integers(integers=: []i32) {
+	println("Integer slice:")
+
+	mut index: isize = 0
+	while index < integers.length {
+		println(f"  {integers[index]}")
+		index += 1
+	}
+
+	println("")
+}	
+
+fn print_range(range: Range) {
+	println(f"Range start: {range.start}, end: {range.end}")
+}
+
+fn main() {
+	println("Verbatim")
+	let array = [_]i32 { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }
+	print_integers(array.slice)
+
+	println("")
+	
+	println("Full")
+	print_integers(array[0..array.length])
+	println("Full 2")
+	print_integers(array[0..10])
+	println("Half")
+	print_integers(array[5..10])
+	println("Nothing")
+	print_integers(array[5..5])
+	println("One")
+	print_integers(array[5..6])
+	println("Two")
+	print_integers(array[5..7])
+}

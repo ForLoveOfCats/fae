@@ -1,4 +1,18 @@
 fn main() {
+	// Arrays
+	let _: [2]bool = [_]{ true, false }
+	let _ = [_]{ true, false }
+
+	let _: [2]void = [_]{ void, void }
+	let _ = [_]{ void, void }
+
+	let _: [1]i32 = [_]{ returns_int() }
+	let _ = [_]{ returns_int() }
+
+	let _: [1]f64 = [_]{ returns_generic<f64>(8) }
+	let _ = [_]{ returns_generic<f64>(8) }
+
+	// Slices
 	let _: []bool = []{ true, false }
 	let _ = []{ true, false }
 

@@ -422,6 +422,8 @@ pub struct While<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForKind {
+	InArray,
+	OfArray,
 	InSlice,
 	OfSlice,
 	Range,
@@ -607,6 +609,7 @@ pub enum ExpressionKind<'a> {
 	FormatStringLiteral(FormatStringLiteral<'a>),
 
 	ArrayLiteral(ArrayLiteral<'a>),
+	SliceLiteral(SliceLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),
 	FieldlessVariantLiteral,
 
@@ -643,6 +646,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::StringLiteral(_) => "string literal",
 			ExpressionKind::FormatStringLiteral(_) => "format string literal",
 			ExpressionKind::ArrayLiteral(_) => "array literal",
+			ExpressionKind::SliceLiteral(_) => "slice literal",
 			ExpressionKind::StructLiteral(_) => "struct literal",
 			ExpressionKind::FieldlessVariantLiteral => "fieldless variant literal",
 			ExpressionKind::Call(_) => "function call",
@@ -676,6 +680,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::StringLiteral(_) => "a string literal",
 			ExpressionKind::FormatStringLiteral(_) => "a format string literal",
 			ExpressionKind::ArrayLiteral(_) => "an array literal",
+			ExpressionKind::SliceLiteral(_) => "a slice literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::FieldlessVariantLiteral => "a fieldless variant literal",
 			ExpressionKind::Call(_) => "a function call",
@@ -993,7 +998,14 @@ pub struct FormatStringLiteral<'a> {
 #[derive(Debug)]
 pub struct ArrayLiteral<'a> {
 	pub type_id: TypeId,
-	pub pointee_type_id: TypeId,
+	pub item_type_id: TypeId,
+	pub expressions: Vec<Expression<'a>>,
+}
+
+#[derive(Debug)]
+pub struct SliceLiteral<'a> {
+	pub type_id: TypeId,
+	pub item_type_id: TypeId,
 	pub expressions: Vec<Expression<'a>>,
 }
 
