@@ -177,6 +177,7 @@ pub struct Enum<'a> {
 	pub lang_attribute: Option<&'a Node<LangAttribute<'a>>>,
 	pub generics: &'a [GenericName<'a>],
 	pub name: Node<&'a str>,
+	pub tag_type: Option<Node<&'a str>>,
 	pub shared_fields: &'a [Field<'a>],
 	pub variants: &'a [Variant<'a>],
 }

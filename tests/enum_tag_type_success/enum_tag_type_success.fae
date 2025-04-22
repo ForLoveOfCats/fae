@@ -1,0 +1,51 @@
+fn main() {
+	println(f"{size_of<One>()}, {size_of<Two>()}, {size_of<Three>()}")
+	println("")
+
+	mut one: One = .C
+	mut two: Two = .A { field: 42 }
+	mut three: Three = .A { field: 5 }
+
+	let tag_value: u16 = one.tag
+	let equals = tag_value == One.C.tag
+	println(f"tag_value = {tag_value}, equals = {equals}")
+
+	println("")
+
+	one.&mut.(*mut u16).* = 65535 
+	let tag_value: u16 = one.tag
+	let equals = tag_value == One.C.tag
+	println(f"tag_value = {tag_value}, equals = {equals}")
+
+	println("")
+
+	two.&mut.(*mut i64).* = 9223372036854775807 
+	let tag_value: i64 = two.tag
+	println(f"tag_value = {tag_value}")
+	two.&mut.(*mut i64).* = 0
+	if two is A => println(f"two.field = {two.field}")
+
+	println("")
+
+	three.&mut.(*mut i8).* = 127 
+	let tag_value: i8 = three.tag
+	println(f"tag_value = {tag_value}")
+	three.&mut.(*mut i8).* = 0
+	if three is A => println(f"three.field = {three.field}")
+}
+
+enum One: u16 {
+	A
+	B { field: bool }
+	C
+}
+
+enum Two: i64 {
+	A { field: i32 }
+	B { field: bool }
+}
+
+enum Three: i8 {
+	A { field: u16 }
+	B { field: i8 }
+}

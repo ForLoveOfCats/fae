@@ -2070,6 +2070,14 @@ fn parse_enum_declaration<'a>(
 	check_not_reserved(messages, enum_name_token, "enum name")?;
 	let name = Node::from_token(enum_name_token.text, enum_name_token);
 
+	let tag_type = if tokens.peek_kind() == Ok(TokenKind::Colon) {
+		tokens.next(messages)?;
+		let tag_name = tokens.expect(messages, TokenKind::Word)?;
+		Some(Node::from_token(tag_name.text, tag_name))
+	} else {
+		None
+	};
+
 	tokens.expect(messages, TokenKind::OpenBrace)?;
 	tokens.consume_newlines();
 
@@ -2158,6 +2166,7 @@ fn parse_enum_declaration<'a>(
 		lang_attribute,
 		generics,
 		name,
+		tag_type,
 		shared_fields: shared_fields.into_bump_slice(),
 		variants: variants.into_bump_slice(),
 	})

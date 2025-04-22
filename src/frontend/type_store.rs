@@ -227,12 +227,15 @@ pub struct Layout {
 }
 
 impl Layout {
-	pub fn tag_memory_size(self) -> i64 {
-		// The one is the single guarenteed byte
-		// TODO: Update this once user can request larger tag
-		// Maybe it should just be a field, we'll see
-		self.alignment.max(1)
+	pub fn tag_memory_size(self, tag_kind: NumericKind) -> i64 {
+		let tag_size = tag_kind.layout().size;
+		align_size_to(tag_size, self.alignment)
 	}
+}
+
+fn align_size_to(size: i64, alignment: i64) -> i64 {
+	debug_assert!(alignment & (alignment - 1) == 0);
+	(size + alignment - 1) & !(alignment - 1)
 }
 
 pub struct RegisterTypeResult {
@@ -440,14 +443,20 @@ pub struct Field<'a> {
 	pub read_only: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct EnumTag {
+	pub kind: NumericKind,
+	pub type_id: TypeId,
+}
+
 #[derive(Debug)]
 pub struct EnumShape<'a> {
 	// See comment on `filling_lock` field of `StructShape` for details
 	pub filling_lock: Ref<ReentrantMutex<()>>,
 	pub been_filled: bool,
 
+	pub tag: EnumTag,
 	pub shared_fields: SliceRef<Node<FieldShape<'a>>>,
-
 	pub variant_shapes: SliceRef<EnumVariantShape<'a>>,
 
 	pub specializations_by_type_arguments: FxHashMap<Ref<TypeArguments>, usize>,
@@ -455,10 +464,11 @@ pub struct EnumShape<'a> {
 }
 
 impl<'a> EnumShape<'a> {
-	pub fn new(variant_shapes: Vec<EnumVariantShape<'a>>) -> Self {
+	pub fn new(tag: EnumTag, variant_shapes: Vec<EnumVariantShape<'a>>) -> Self {
 		EnumShape {
 			filling_lock: Ref::new(ReentrantMutex::new(())),
 			been_filled: false,
+			tag,
 			shared_fields: SliceRef::new_empty(),
 			variant_shapes: SliceRef::from(variant_shapes),
 			specializations_by_type_arguments: FxHashMap::default(),
@@ -2130,11 +2140,9 @@ impl<'a> TypeStore<'a> {
 							alignment = alignment.max(field_layout.alignment);
 						}
 
-						if (size / alignment) * alignment < size {
-							size = (size / alignment) * alignment + alignment;
-						}
-
+						size = align_size_to(size, alignment);
 						let layout = Layout { size, alignment };
+
 						let mut user_type = lock.write();
 						match &mut user_type.kind {
 							UserTypeKind::Struct { shape } => {
@@ -2147,6 +2155,8 @@ impl<'a> TypeStore<'a> {
 					}
 
 					UserTypeKind::Enum { shape } => {
+						let tag_kind = shape.tag.kind;
+
 						let specialization = &shape.specializations[specialization_index];
 						if let Some(layout) = specialization.layout {
 							return layout;
@@ -2157,7 +2167,7 @@ impl<'a> TypeStore<'a> {
 						drop(user_type);
 
 						let mut size = 0;
-						let mut alignment = 1;
+						let mut alignment = tag_kind.layout().alignment;
 
 						for variant in variants {
 							let variant_layout = self.type_layout(variant);
@@ -2167,7 +2177,8 @@ impl<'a> TypeStore<'a> {
 						}
 
 						let mut layout = Layout { size, alignment };
-						layout.size += layout.tag_memory_size();
+						let tag_size = layout.tag_memory_size(tag_kind);
+						layout.size = align_size_to(layout.size + tag_size, alignment);
 
 						let mut user_type = lock.write();
 						match &mut user_type.kind {
@@ -3224,6 +3235,7 @@ impl<'a> TypeStore<'a> {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
+		let tag = shape.tag;
 		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
 		drop(user_type);
 
@@ -3281,7 +3293,7 @@ impl<'a> TypeStore<'a> {
 			Field {
 				span: None,
 				name: "tag",
-				type_id: self.u8_type_id,
+				type_id: tag.type_id,
 				attribute: None,
 				read_only: true,
 			},

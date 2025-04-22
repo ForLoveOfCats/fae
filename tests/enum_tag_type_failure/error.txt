@@ -1,0 +1,15 @@
+Validation error: ./tests/enum_tag_type_failure/enum_tag_type_failure.fae, line 8: Symbol `f32` is not a supported built-in type for enum tag
+  8| enum One: f32 {
+               ^^^
+
+Validation error: ./tests/enum_tag_type_failure/enum_tag_type_failure.fae, line 14: No symbol `abc` in the current scope
+  14| enum Two: abc {
+                ^^^
+
+Validation error: ./tests/enum_tag_type_failure/enum_tag_type_failure.fae, line 19: Symbol `One` is not a supported built-in type for enum tag
+  19| enum Three: One {
+                  ^^^
+
+Validation error: ./tests/enum_tag_type_failure/enum_tag_type_failure.fae, line 5: Expected `i8` but got expression with type `u32`
+  5|     let _: i8 = Four.B.tag
+                     ^^^^^^^^^^

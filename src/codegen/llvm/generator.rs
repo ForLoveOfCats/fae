@@ -161,19 +161,7 @@ impl LLVMTypes {
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind, .. } => match kind {
-				PrimativeKind::Numeric(numeric_kind) => {
-					use NumericKind::*;
-					unsafe {
-						match numeric_kind {
-							I8 | U8 => LLVMInt8TypeInContext(context),
-							I16 | U16 => LLVMInt16TypeInContext(context),
-							I32 | U32 => LLVMInt32TypeInContext(context),
-							I64 | U64 | ISize | USize => LLVMInt64TypeInContext(context),
-							F32 => LLVMFloatTypeInContext(context),
-							F64 => LLVMDoubleTypeInContext(context),
-						}
-					}
-				}
+				PrimativeKind::Numeric(numeric_kind) => numeric_kind_to_llvm_type(context, numeric_kind),
 
 				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
 
@@ -201,6 +189,20 @@ impl LLVMTypes {
 			| TypeEntryKind::UserTypeGeneric { .. }
 			| TypeEntryKind::FunctionGeneric { .. }
 			| TypeEntryKind::TraitGeneric { .. } => unreachable!("{:?}", entry.kind),
+		}
+	}
+}
+
+pub fn numeric_kind_to_llvm_type(context: LLVMContextRef, kind: NumericKind) -> LLVMTypeRef {
+	use NumericKind::*;
+	unsafe {
+		match kind {
+			I8 | U8 => LLVMInt8TypeInContext(context),
+			I16 | U16 => LLVMInt16TypeInContext(context),
+			I32 | U32 => LLVMInt32TypeInContext(context),
+			I64 | U64 | ISize | USize => LLVMInt64TypeInContext(context),
+			F32 => LLVMFloatTypeInContext(context),
+			F64 => LLVMDoubleTypeInContext(context),
 		}
 	}
 }
@@ -672,6 +674,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 				UserTypeKind::Enum { shape } => {
 					enum_specializations.clear();
 					enum_specializations.extend_from_slice(&shape.specializations);
+					let tag_kind = shape.tag.kind;
 					let name = user_type.name;
 					drop(user_type);
 
@@ -684,7 +687,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 						shared_field_types_buffer.clear();
 
 						let layout = type_store.type_layout(specialization.type_id);
-						let tag_memory_size = layout.tag_memory_size();
+						let tag_memory_size = layout.tag_memory_size(tag_kind);
 
 						let tag = LLVMTypes::size_to_int_type(self.context, tag_memory_size);
 						field_types_buffer.push(tag);
@@ -1118,8 +1121,16 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		mut body_callback: impl FnMut(&mut codegen::Context<'a, 'b>, &mut Self, &'b Block<'a>),
 	) {
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
-		let i8_type = unsafe { LLVMInt8TypeInContext(self.context) };
-		let tag = unsafe { LLVMBuildLoad2(self.builder, i8_type, pointer, c"".as_ptr()) };
+
+		let tag_type = {
+			let user_types = context.type_store.user_types.read();
+			let user_type = user_types[enum_shape_index].read();
+			let UserTypeKind::Enum { shape } = &user_type.kind else {
+				unreachable!();
+			};
+			numeric_kind_to_llvm_type(self.context, shape.tag.kind)
+		};
+		let tag = unsafe { LLVMBuildLoad2(self.builder, tag_type, pointer, c"".as_ptr()) };
 
 		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
 		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
@@ -1133,7 +1144,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			for info in &arm.variant_infos {
 				unsafe {
-					let expected = LLVMConstInt(i8_type, info.variant_index as _, false as _);
+					let expected = LLVMConstInt(tag_type, info.variant_index as _, false as _);
 					LLVMAddCase(switch, expected, case_block);
 				}
 			}
@@ -2042,13 +2053,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 							)
 						};
 
-						// HACK: The first field of any enum is the tag which may be represented with various sized
-						// integers depending on the padding required so we need to override the type that we will
-						// read that field as. Currently that is always a `u8`
-						// TODO: Update once enums can set their tag type
-						// TODO: This won't work on big-endian systems
+						// The first field of any enum is the tag which may be represented with various sized integers
+						// depending on the padding required so we need to override the type which we will read that field as
 						if field_index == 0 {
-							field_type = unsafe { LLVMInt8TypeInContext(self.context) };
+							field_type = numeric_kind_to_llvm_type(self.context, shape.tag.kind);
 						} else {
 							field_type = unsafe { LLVMStructGetTypeAtIndex(pointed_type, index) }
 						}
@@ -3235,15 +3243,23 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
 
+		let tag_type = {
+			let user_types = context.type_store.user_types.read();
+			let user_type = user_types[enum_shape_index].read();
+			let UserTypeKind::Enum { shape } = &user_type.kind else {
+				unreachable!();
+			};
+			numeric_kind_to_llvm_type(self.context, shape.tag.kind)
+		};
+
 		let result = unsafe {
 			let i1_type = LLVMInt1TypeInContext(self.context);
-			let i8_type = LLVMInt8TypeInContext(self.context);
-			let tag = LLVMBuildLoad2(self.builder, i8_type, pointer, c"check_is.tag".as_ptr());
+			let tag = LLVMBuildLoad2(self.builder, tag_type, pointer, c"check_is.tag".as_ptr());
 
 			let mut result = LLVMConstInt(i1_type, 0, false as _);
 
 			for info in &check_expression.variant_infos {
-				let expected = LLVMConstInt(i8_type, info.variant_index as _, false as _);
+				let expected = LLVMConstInt(tag_type, info.variant_index as _, false as _);
 				let flag = LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr());
 				result = LLVMBuildOr(self.builder, result, flag, c"".as_ptr());
 			}
@@ -3287,11 +3303,19 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let shape = &self.llvm_types.user_type_structs[enum_shape_index];
 		let enum_type = shape[enum_specialization_index].actual;
 
+		let tag_type = {
+			let user_types = type_store.user_types.read();
+			let user_type = user_types[enum_shape_index].read();
+			let UserTypeKind::Enum { shape } = &user_type.kind else {
+				unreachable!();
+			};
+			numeric_kind_to_llvm_type(self.context, shape.tag.kind)
+		};
+
 		let alloca = self.build_alloca(enum_type, c"generate_enum_variant_to_enum.enum_alloca");
 
 		unsafe {
-			let i8_type = LLVMInt8TypeInContext(self.context);
-			let tag_value = LLVMConstInt(i8_type, variant_index as _, false as _);
+			let tag_value = LLVMConstInt(tag_type, variant_index as _, false as _);
 			let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"variant_to_enum.tag_pointer".as_ptr());
 			LLVMBuildStore(self.builder, tag_value, tag_pointer);
 

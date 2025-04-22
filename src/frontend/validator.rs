@@ -1865,6 +1865,34 @@ fn create_block_enum<'a>(
 	scope_id: ScopeId,
 	statement: &tree::Enum<'a>,
 ) -> usize {
+	let default_tag = EnumTag { kind: NumericKind::U8, type_id: type_store.u8_type_id() };
+	let tag = if let Some(tag_type) = statement.tag_type {
+		let symbol = symbols.lookup_symbol_by_name(messages, root_layers, type_store, function_initial_symbols_length, tag_type);
+		if let Some(symbol) = symbol {
+			match &symbol.kind {
+				SymbolKind::BuiltinType { type_id, .. } => match type_id.numeric_kind(type_store) {
+					None | Some(NumericKind::F32 | NumericKind::F64) => {
+						let error = error!("Symbol `{}` is not a supported built-in type for enum tag", symbol.name);
+						messages.message(error.span(tag_type.span));
+						default_tag
+					}
+
+					Some(kind) => EnumTag { kind, type_id: *type_id },
+				},
+
+				_ => {
+					let error = error!("Symbol `{}` is not a supported built-in type for enum tag", symbol.name);
+					messages.message(error.span(tag_type.span));
+					default_tag
+				}
+			}
+		} else {
+			default_tag
+		}
+	} else {
+		default_tag
+	};
+
 	let capacity = statement.generics.len() + enclosing_generic_parameters.parameters().len();
 	let mut explicit_generics = Vec::with_capacity(capacity);
 
@@ -1908,6 +1936,7 @@ fn create_block_enum<'a>(
 		});
 	}
 
+	// TODO: Detect this upper bound based on `tag_kind`
 	if statement.variants.len() > 256 {
 		let name = statement.name.item;
 		let error = error!("Enum `{name}` has more than 256 variants, this is currently unsupported and disallowed");
@@ -1987,7 +2016,7 @@ fn create_block_enum<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = EnumShape::new(variants);
+	let shape = EnumShape::new(tag, variants);
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	assert_eq!(user_types.len(), enum_shape_index);
@@ -6129,57 +6158,96 @@ fn lookup_name_on_base<'a>(
 	match entry.kind {
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
 			let external_access = context.check_is_external_access(shape_index);
-			let user_type = context.type_store.user_types.read()[shape_index].clone();
+			let user_types = context.type_store.user_types.read();
+			let user_type = user_types[shape_index].clone();
 			let user_type = user_type.read();
 
-			let (fields, is_enum_variant) = match &user_type.kind {
-				UserTypeKind::Struct { shape } => (
-					shape.specializations[specialization_index].fields.clone(),
-					shape.parent_kind == StructParentKind::Enum,
-				),
+			match &user_type.kind {
+				UserTypeKind::Struct { shape } => {
+					let tag_type_id = if shape.parent_kind == StructParentKind::Enum {
+						let parent_user_type = user_types[shape.parent_shape_index].read();
+						let UserTypeKind::Enum { shape: parent_shape } = &parent_user_type.kind else {
+							unreachable!();
+						};
+
+						parent_shape.tag.type_id
+					} else {
+						context.type_store.void_type_id()
+					};
+					drop(user_types);
+
+					let is_enum_variant = shape.parent_kind == StructParentKind::Enum;
+					let fields = shape.specializations[specialization_index].fields.clone();
+					drop(user_type);
+
+					let enum_variant_fields = [Field {
+						span: None,
+						name: "tag",
+						type_id: tag_type_id,
+						attribute: None,
+						read_only: true,
+					}];
+
+					let mut maybe_enum_variant_fields: &[Field] = &[];
+					if is_enum_variant {
+						maybe_enum_variant_fields = &enum_variant_fields;
+					}
+
+					return lookup_field_in_fields(
+						context,
+						name,
+						base_type_id,
+						is_itself_mutable,
+						is_pointer_access_mutable,
+						&[maybe_enum_variant_fields, &fields],
+						external_access,
+					);
+				}
 
 				UserTypeKind::Enum { shape } => {
+					drop(user_types);
+
 					if let ExpressionKind::Type { .. } = base.kind {
 						let variant = lookup_enum_variant(context, user_type, specialization_index, name, false);
 						return variant.map(|variant| NameOnBase::Variant(variant));
 					}
 
-					(shape.specializations[specialization_index].shared_fields.clone(), false)
+					let fields = shape.specializations[specialization_index].shared_fields.clone();
+					drop(user_type);
+
+					return lookup_field_in_fields(
+						context,
+						name,
+						base_type_id,
+						is_itself_mutable,
+						is_pointer_access_mutable,
+						&[&fields],
+						external_access,
+					);
 				}
 
 				UserTypeKind::Union { shape } => {
+					drop(user_types);
+
 					if let ExpressionKind::Type { .. } = base.kind {
 						let variant = lookup_union_variant(context, user_type, specialization_index, name, false);
 						return variant.map(|variant| NameOnBase::Variant(variant));
 					}
 
-					(shape.specializations[specialization_index].fields.clone(), false)
+					let fields = shape.specializations[specialization_index].fields.clone();
+					drop(user_type);
+
+					return lookup_field_in_fields(
+						context,
+						name,
+						base_type_id,
+						is_itself_mutable,
+						is_pointer_access_mutable,
+						&[&fields],
+						external_access,
+					);
 				}
-			};
-			drop(user_type);
-
-			let enum_variant_fields = [Field {
-				span: None,
-				name: "tag",
-				type_id: context.type_store.u8_type_id(),
-				attribute: None,
-				read_only: true,
-			}];
-
-			let mut maybe_enum_variant_fields: &[Field] = &[];
-			if is_enum_variant {
-				maybe_enum_variant_fields = &enum_variant_fields;
 			}
-
-			return lookup_field_in_fields(
-				context,
-				name,
-				base_type_id,
-				is_itself_mutable,
-				is_pointer_access_mutable,
-				&[maybe_enum_variant_fields, &fields],
-				external_access,
-			);
 		}
 
 		_ => {}

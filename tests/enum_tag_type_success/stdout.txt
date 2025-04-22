@@ -1,0 +1,11 @@
+4, 16, 4
+
+tag_value = 2, equals = true
+
+tag_value = 65535, equals = false
+
+tag_value = 9223372036854775807
+two.field = 42
+
+tag_value = 127
+three.field = 5

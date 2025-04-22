@@ -1,0 +1,27 @@
+fn main() {
+	let _: One = One.A
+	let _: Two = Two.B { field: true }
+	let _: Three = Three.A { field: 42 }
+	let _: i8 = Four.B.tag
+}
+
+enum One: f32 {
+	A
+	B { field: bool }
+	C
+}
+
+enum Two: abc {
+	A { field: i32 }
+	B { field: bool }
+}
+
+enum Three: One {
+	A { field: u16 }
+	B { field: i8 }
+}
+
+enum Four: u32 {
+	A
+	B
+}
