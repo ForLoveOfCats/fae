@@ -1,4 +1,7 @@
+use std::u64;
+
 use bumpalo_herd::Herd;
+use rust_decimal::prelude::ToPrimitive;
 use rustc_hash::FxHashMap;
 
 use crate::cli::CliArguments;
@@ -465,20 +468,29 @@ pub fn validate<'a>(
 
 				wait_on_barriers_and_replenish_iter();
 
+				let mut yield_targets = YieldTargets::new();
 				fill_root_types(
+					cli_arguments,
+					&herd_member,
 					when_context,
 					&root_messages,
-					root_layers,
 					lang_items,
+					root_layers,
 					&mut type_store,
 					function_store,
+					&externs,
+					&constants,
+					statics,
+					&mut readables,
+					&mut yield_targets,
+					&parsed_files,
 					&parsed_files_iter,
 					&type_shape_indicies,
+					&trait_shape_indicies,
 				);
 
 				wait_on_barriers_and_replenish_iter();
 
-				let mut yield_targets = YieldTargets::new();
 				validate_root_consts(
 					cli_arguments,
 					&herd_member,
@@ -913,50 +925,90 @@ fn fill_root_traits<'a>(
 }
 
 fn fill_root_types<'a>(
+	cli_arguments: &'a CliArguments,
+	herd_member: &bumpalo_herd::Member<'a>,
 	when_context: &WhenContext,
 	root_messages: &RwLock<&mut RootMessages<'a>>,
-	root_layers: &RootLayers<'a>,
 	lang_items: &RwLock<LangItems>,
+	root_layers: &RootLayers<'a>,
 	type_store: &mut TypeStore<'a>,
 	function_store: &FunctionStore<'a>,
-	parsed_files: &RwLock<std::slice::Iter<tree::File<'a>>>,
+	externs: &RwLock<Externs<'a>>,
+	constants: &RwLock<Vec<ConstantValue<'a>>>,
+	statics: &RwLock<Statics<'a>>,
+	readables: &mut Readables<'a>,
+	yield_targets: &mut YieldTargets,
+	parsed_files: &'a [tree::File<'a>],
+	parsed_files_iter: &RwLock<std::slice::Iter<tree::File<'a>>>,
 	type_shape_indicies: &[RwLock<Vec<usize>>],
+	trait_shape_indicies: &[RwLock<Vec<usize>>],
 ) {
 	loop {
-		let mut guard = parsed_files.write();
+		let mut guard = parsed_files_iter.write();
 		let Some(parsed_file) = guard.next() else {
 			return;
 		};
 		drop(guard);
 
 		let file_index = parsed_file.source_file.index;
+		let module_path = parsed_file.module_path;
 		let scope_id = ScopeId { file_index, scope_index: 0 };
 
 		let layer = root_layers.lookup_module_path(parsed_file.module_path);
 		let mut symbols = layer.read().symbols.clone();
 		let mut type_shape_indicies = type_shape_indicies[parsed_file.source_file.index as usize].write();
+		let mut trait_shape_indicies = trait_shape_indicies[parsed_file.source_file.index as usize].write();
 
-		// TODO: This is definitely wrong
-		let mut generic_usages = Vec::new();
+		let mut next_scope_index = 1;
+		let mut function_generic_usages = Vec::new(); // TODO: This is definitely wrong
+		let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 		let mut messages = Messages::new(parsed_file.module_path);
-
-		fill_block_types(
+		let mut context = Context {
+			cli_arguments,
+			herd_member,
+			file_index: parsed_file.source_file.index,
+			module_path,
+			parsed_files,
 			when_context,
-			&mut messages,
-			lang_items,
+			next_scope_index: &mut next_scope_index,
+			scope_index: 0,
+			messages: &mut messages,
+			type_shape_indicies: &mut type_shape_indicies,
+			trait_shape_indicies: &mut trait_shape_indicies,
 			type_store,
 			function_store,
-			&mut generic_usages,
+			function_generic_usages: &mut function_generic_usages,
 			root_layers,
-			&mut symbols,
-			parsed_file.module_path,
-			0,
-			&GenericParameters::new_from_explicit(Vec::new()),
-			&parsed_file.block,
-			scope_id,
-			&mut type_shape_indicies.iter(),
-		);
-		type_shape_indicies.clear();
+			lang_items,
+			externs,
+			constants,
+			statics,
+			initial_local_function_shape_indicies_len: 0,
+			local_function_shape_indicies: &mut Vec::new(),
+			initial_readables_starting_index: readables.starting_index,
+			initial_readables_overall_len: readables.overall_len(),
+			readables,
+			initial_yield_targets_starting_index: 0,
+			initial_yield_targets_overall_len: 0,
+			yield_targets,
+			current_yield_target_index: None,
+			function_initial_symbols_length: symbols.symbols.len(),
+			symbols_scope: symbols.child_scope(),
+			next_loop_index: 0,
+			current_loop_index: None,
+			can_is_bind: false,
+			expected_type: None,
+			return_type: None,
+			generic_parameters: &blank_generic_parameters,
+			method_base_index: None,
+			is_extension_method: false,
+		};
+
+		let type_shape_indicies = context.type_shape_indicies.clone();
+		fill_block_types(&mut context, &parsed_file.block, scope_id, &mut type_shape_indicies.iter());
+
+		context.type_shape_indicies.clear(); // TODO: Is this actually necessary?
+		std::mem::forget(context);
 
 		layer.write().symbols = symbols;
 
@@ -1977,9 +2029,9 @@ fn create_block_enum<'a>(
 			variant_generic_parameters.push_implicit(parameter);
 		}
 
-		let (name, is_transparent) = match variant {
-			tree::Variant::StructLike(struct_like) => (struct_like.name, false),
-			tree::Variant::Transparent(transparent) => (transparent.name, true),
+		let (name, is_transparent) = match &variant.kind {
+			tree::VariantKind::StructLike(struct_like) => (struct_like.name, false),
+			tree::VariantKind::Transparent(transparent) => (transparent.name, true),
 		};
 
 		let span = name.span;
@@ -2011,6 +2063,7 @@ fn create_block_enum<'a>(
 			struct_shape_index,
 			methods_index,
 			is_transparent,
+			tag_value: u64::MAX,
 		};
 		variants.push(variant_shape);
 	}
@@ -2146,9 +2199,9 @@ fn create_block_union<'a>(
 			variant_generic_parameters.push_implicit(parameter);
 		}
 
-		let (name, is_transparent) = match variant {
-			tree::Variant::StructLike(struct_like) => (struct_like.name, false),
-			tree::Variant::Transparent(transparent) => (transparent.name, true),
+		let (name, is_transparent) = match &variant.kind {
+			tree::VariantKind::StructLike(struct_like) => (struct_like.name, false),
+			tree::VariantKind::Transparent(transparent) => (transparent.name, true),
 		};
 
 		let span = name.span;
@@ -2268,17 +2321,7 @@ fn fill_block_traits<'a>(
 }
 
 fn fill_block_types<'a>(
-	when_context: &WhenContext,
-	messages: &mut Messages<'a>,
-	lang_items: &RwLock<LangItems>,
-	type_store: &mut TypeStore<'a>,
-	function_store: &FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
-	root_layers: &RootLayers<'a>,
-	symbols: &mut Symbols<'a>,
-	module_path: &'a [String],
-	function_initial_symbols_length: usize,
-	enclosing_generic_parameters: &GenericParameters<'a>,
+	context: &mut Context<'a, '_, '_>,
 	block: &tree::Block<'a>,
 	scope_id: ScopeId,
 	shape_index_iter: &mut std::slice::Iter<usize>,
@@ -2287,70 +2330,43 @@ fn fill_block_types<'a>(
 		match statement {
 			tree::Statement::Struct(statement) => {
 				fill_block_struct(
-					messages,
-					type_store,
-					function_store,
-					generic_usages,
-					enclosing_generic_parameters,
-					root_layers,
-					symbols,
-					module_path,
-					function_initial_symbols_length,
+					context.messages,
+					context.type_store,
+					context.function_store,
+					context.function_generic_usages,
+					context.generic_parameters,
+					context.root_layers,
+					context.symbols_scope.symbols,
+					context.module_path,
+					context.function_initial_symbols_length,
 					statement,
 					*shape_index_iter.next().unwrap(),
 				);
 			}
 
 			tree::Statement::Enum(statement) => {
-				fill_block_enum(
-					messages,
-					type_store,
-					function_store,
-					generic_usages,
-					enclosing_generic_parameters,
-					root_layers,
-					symbols,
-					module_path,
-					function_initial_symbols_length,
-					statement,
-					*shape_index_iter.next().unwrap(),
-				);
+				fill_block_enum(context, statement, *shape_index_iter.next().unwrap());
 			}
 
 			tree::Statement::Union(statement) => {
 				fill_block_union(
-					messages,
-					type_store,
-					function_store,
-					generic_usages,
-					enclosing_generic_parameters,
-					root_layers,
-					symbols,
-					module_path,
-					function_initial_symbols_length,
+					context.messages,
+					context.type_store,
+					context.function_store,
+					context.function_generic_usages,
+					context.generic_parameters,
+					context.root_layers,
+					context.symbols_scope.symbols,
+					context.module_path,
+					context.function_initial_symbols_length,
 					statement,
 					*shape_index_iter.next().unwrap(),
 				);
 			}
 
 			tree::Statement::WhenElseChain(statement) => {
-				if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
-					fill_block_types(
-						when_context,
-						messages,
-						lang_items,
-						type_store,
-						function_store,
-						generic_usages,
-						root_layers,
-						symbols,
-						module_path,
-						function_initial_symbols_length,
-						enclosing_generic_parameters,
-						&body.item,
-						scope_id,
-						shape_index_iter,
-					);
+				if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
+					fill_block_types(context, &body.item, scope_id, shape_index_iter);
 				}
 			}
 
@@ -2819,20 +2835,8 @@ fn fill_block_struct<'a>(
 	}
 }
 
-fn fill_block_enum<'a>(
-	messages: &mut Messages<'a>,
-	type_store: &mut TypeStore<'a>,
-	function_store: &FunctionStore<'a>,
-	generic_usages: &mut Vec<GenericUsage>,
-	enclosing_generic_parameters: &GenericParameters<'a>,
-	root_layers: &RootLayers<'a>,
-	symbols: &mut Symbols<'a>,
-	module_path: &'a [String],
-	function_initial_symbols_length: usize,
-	statement: &tree::Enum<'a>,
-	enum_shape_index: usize,
-) {
-	let lock = type_store.user_types.read()[enum_shape_index].clone();
+fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum<'a>, enum_shape_index: usize) {
+	let lock = context.type_store.user_types.read()[enum_shape_index].clone();
 	let user_type = lock.read();
 	let enum_name = user_type.name;
 
@@ -2843,7 +2847,7 @@ fn fill_block_enum<'a>(
 	};
 	let _filling_guard = filling_lock.lock();
 
-	let scope = symbols.child_scope();
+	let mut context = context.child_scope();
 
 	for (generic_index, generic) in user_type.generic_parameters.parameters().iter().enumerate() {
 		let kind = SymbolKind::UserTypeGeneric { shape_index: enum_shape_index, generic_index };
@@ -2854,34 +2858,25 @@ fn fill_block_enum<'a>(
 			used: true,
 			imported: false,
 		};
-		scope.symbols.push_symbol(messages, function_initial_symbols_length, symbol);
+		context
+			.symbols_scope
+			.symbols
+			.push_symbol(context.messages, context.function_initial_symbols_length, symbol);
 	}
 	drop(user_type);
 
-	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
 	let mut shared_fields: Vec<Node<FieldShape>> = Vec::with_capacity(statement.shared_fields.len());
-
 	for shared_field in statement.shared_fields {
-		let field_type = match type_store.lookup_type(
-			messages,
-			function_store,
-			module_path,
-			generic_usages,
-			root_layers,
-			scope.symbols,
-			function_initial_symbols_length,
-			&blank_generic_parameters,
-			&shared_field.parsed_type,
-		) {
+		let field_type = match context.lookup_type(&shared_field.parsed_type) {
 			Some(type_id) => type_id,
-			None => type_store.any_collapse_type_id(),
+			None => context.type_store.any_collapse_type_id(),
 		};
 
 		let span = shared_field.name.span + shared_field.parsed_type.span;
 		if let Some(existing) = shared_fields.iter().find(|f| f.item.name == shared_field.name.item) {
 			let error = error!("Duplicate shared field `{}` on enum `{}`", shared_field.name.item, enum_name);
 			let note = note!(existing.span, "Original shared field here");
-			messages.message(error.span(span).note(note))
+			context.message(error.span(span).note(note))
 		}
 
 		let field_shape = FieldShape {
@@ -2902,24 +2897,30 @@ fn fill_block_enum<'a>(
 		UserTypeKind::Union { .. } => unreachable!("union"),
 	};
 
-	// Yuck
-	let mut variant_shapes = shape.variant_shapes.to_vec();
+	let tag_type_id = shape.tag.type_id;
+	let mut variant_shapes = shape.variant_shapes.to_vec(); // Yuck
 	drop(user_type);
 
-	for variant_shape in &mut variant_shapes {
+	assert_eq!(variant_shapes.len(), statement.variants.len());
+	let mut next_tag_value = 0;
+	for (variant_shape, tree_variant) in variant_shapes.iter_mut().zip(statement.variants) {
 		fill_struct_like_enum_variant(
-			messages,
-			type_store,
-			function_store,
-			generic_usages,
-			enclosing_generic_parameters,
-			root_layers,
-			scope.symbols,
-			module_path,
-			function_initial_symbols_length,
-			&variant_shape,
+			context.messages,
+			context.type_store,
+			context.function_store,
+			context.function_generic_usages,
+			context.generic_parameters,
+			context.root_layers,
+			context.symbols_scope.symbols,
+			context.module_path,
+			context.function_initial_symbols_length,
+			variant_shape,
 			statement,
 		);
+
+		let tag_value = validate_enum_variant_tag_value(&mut context, tree_variant, tag_type_id, next_tag_value);
+		variant_shape.tag_value = tag_value;
+		next_tag_value = tag_value + 1;
 	}
 
 	let mut user_type = lock.write();
@@ -2936,12 +2937,12 @@ fn fill_block_enum<'a>(
 
 			if has_specializations {
 				fill_pre_existing_enum_specializations(
-					messages,
-					type_store,
-					function_store,
-					generic_usages,
-					enclosing_generic_parameters,
-					module_path,
+					context.messages,
+					context.type_store,
+					context.function_store,
+					context.function_generic_usages,
+					context.generic_parameters,
+					context.module_path,
 					enum_shape_index,
 				);
 			}
@@ -3014,8 +3015,8 @@ fn fill_struct_like_enum_variant<'a>(
 	}
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-	match tree_variant {
-		tree::Variant::StructLike(struct_like) => {
+	match &tree_variant.kind {
+		tree::VariantKind::StructLike(struct_like) => {
 			let variant_name = struct_like.name.item;
 
 			for field in struct_like.fields {
@@ -3052,7 +3053,7 @@ fn fill_struct_like_enum_variant<'a>(
 			}
 		}
 
-		tree::Variant::Transparent(transparent) => {
+		tree::VariantKind::Transparent(transparent) => {
 			let field_type = match type_store.lookup_type(
 				messages,
 				function_store,
@@ -3106,6 +3107,27 @@ fn fill_struct_like_enum_variant<'a>(
 		UserTypeKind::Enum { .. } => unreachable!("enum"),
 		UserTypeKind::Union { .. } => unreachable!("union"),
 	}
+}
+
+fn validate_enum_variant_tag_value<'a>(
+	context: &mut Context<'a, '_, '_>,
+	tree_variant: &'a tree::Variant<'a>,
+	tag_type_id: TypeId,
+	next_tag_value: u64,
+) -> u64 {
+	if let Some(tree_expression) = &tree_variant.tag_value {
+		let mut expression = validate_expression(context, tree_expression);
+		let succeeded = !expression.type_id.is_any_collapse(context.type_store);
+		if succeeded && context.collapse_to(tag_type_id, &mut expression) == Ok(true) {
+			let ExpressionKind::NumberValue(value) = expression.kind else {
+				unreachable!("{expression:#?}");
+			};
+
+			return value.value().to_u64().unwrap();
+		}
+	}
+
+	next_tag_value
 }
 
 fn fill_block_union<'a>(
@@ -3235,8 +3257,8 @@ fn fill_union_variant<'a>(
 	let mut fields: Vec<Node<FieldShape<'_>>> = Vec::new();
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-	match tree_variant {
-		tree::Variant::StructLike(struct_like) => {
+	match &tree_variant.kind {
+		tree::VariantKind::StructLike(struct_like) => {
 			let variant_name = struct_like.name.item;
 
 			for field in struct_like.fields {
@@ -3273,7 +3295,7 @@ fn fill_union_variant<'a>(
 			}
 		}
 
-		tree::Variant::Transparent(transparent) => {
+		tree::VariantKind::Transparent(transparent) => {
 			let field_type = match type_store.lookup_type(
 				messages,
 				function_store,
@@ -3438,6 +3460,7 @@ fn fill_pre_existing_enum_specializations<'a>(
 
 	let shared_fields_shapes = shape.shared_fields.clone();
 	let mut specializations = shape.specializations.clone(); // Belch
+	let variant_shapes = shape.variant_shapes.clone();
 	drop(user_type);
 
 	for specialization in &mut specializations {
@@ -3473,6 +3496,10 @@ fn fill_pre_existing_enum_specializations<'a>(
 		}
 
 		specialization.shared_fields = SliceRef::from(shared_fields);
+
+		for (variant, variant_shape) in specialization.variants.iter_mut().zip(variant_shapes.iter()) {
+			variant.tag_value = variant_shape.tag_value;
+		}
 	}
 
 	let mut user_type = lock.write();
@@ -4237,22 +4264,8 @@ fn validate_block_in_context<'a>(
 			&mut context.trait_shape_indicies.iter(),
 		);
 
-		fill_block_types(
-			context.when_context,
-			context.messages,
-			context.lang_items,
-			context.type_store,
-			context.function_store,
-			context.function_generic_usages,
-			context.root_layers,
-			context.symbols_scope.symbols,
-			context.module_path,
-			context.function_initial_symbols_length,
-			context.generic_parameters,
-			block,
-			scope_id,
-			&mut context.type_shape_indicies.iter(),
-		);
+		let type_shape_indicies = context.type_shape_indicies.clone();
+		fill_block_types(context, block, scope_id, &mut type_shape_indicies.iter());
 		context.type_shape_indicies.clear();
 	}
 
@@ -5336,10 +5349,10 @@ fn validate_match_expression<'a>(
 		let mut variant_infos = Vec::with_capacity(arm.variant_names.len());
 
 		for variant_name in arm.variant_names {
-			let (variant_type_id, variant_index) = match variants_by_name.get(variant_name.item) {
+			let (variant_type_id, tag_value, variant_index) = match variants_by_name.get(variant_name.item) {
 				Some(&variant_index) => {
 					let variant = &variants[variant_index];
-					(variant.type_id, variant_index)
+					(variant.type_id, variant.tag_value, variant_index)
 				}
 
 				None => {
@@ -5350,7 +5363,7 @@ fn validate_match_expression<'a>(
 				}
 			};
 
-			let info = VariantInfo { type_id: variant_type_id, variant_index };
+			let info = VariantInfo { type_id: variant_type_id, tag_value };
 			variant_infos.push(info);
 
 			if let Some(existing) = encountered_variants[variant_index] {
@@ -8302,10 +8315,10 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	let mut variant_infos = Vec::with_capacity(check.variant_names.len());
 
 	for variant_name in check.variant_names {
-		let (variant_type_id, variant_index) = match variants_by_name.get(variant_name.item) {
+		let (variant_type_id, tag_value, variant_index) = match variants_by_name.get(variant_name.item) {
 			Some(&variant_index) => {
 				let variant = &variants[variant_index];
-				(variant.type_id, variant_index)
+				(variant.type_id, variant.tag_value, variant_index)
 			}
 
 			None => {
@@ -8316,7 +8329,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 			}
 		};
 
-		let info = VariantInfo { type_id: variant_type_id, variant_index };
+		let info = VariantInfo { type_id: variant_type_id, tag_value };
 		variant_infos.push(info);
 
 		if let Some(existing) = encountered_variants[variant_index] {

@@ -628,6 +628,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 				let variant_type_id = context.type_store.string_type_id();
 				let variant_index = variant_type_id.format_item_variant_index(context.type_store, None);
 
+				let tag_value = get_tag_value(context, enum_shape_index, variant_index);
 				let variant_binding = generator.generate_string_literal(context.type_store, text);
 
 				let wrapped = generator.generate_enum_variant_to_enum(
@@ -635,7 +636,7 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 					item_type_id,
 					enum_shape_index,
 					enum_specialization_index,
-					variant_index,
+					tag_value,
 					Some(variant_binding),
 				);
 
@@ -646,13 +647,15 @@ fn generate_format_string_literal<'a, 'b, G: Generator>(
 				let variant_type_id = context.specialize_type_id(expression.type_id);
 				let variant_index = variant_type_id.format_item_variant_index(context.type_store, Some(expression));
 
+				let tag_value = get_tag_value(context, enum_shape_index, variant_index);
 				let variant_binding = generate_expression(context, generator, expression);
+
 				let wrapped = generator.generate_enum_variant_to_enum(
 					context.type_store,
 					item_type_id,
 					enum_shape_index,
 					enum_specialization_index,
-					variant_index,
+					tag_value,
 					variant_binding,
 				);
 
@@ -858,8 +861,14 @@ fn generate_field_read<'a, 'b, G: Generator>(
 		if let UserTypeKind::Struct { shape } = &user_type.kind {
 			// Is specifically an *enum* variant and the field being accessed is the tag
 			if shape.parent_kind == StructParentKind::Enum && read.field_index == 0 {
-				let tag = Decimal::from(shape.variant_index.unwrap());
-				return Some(generator.generate_number_value(context.type_store, read.field_type_id, tag));
+				let enum_shape_index = shape.parent_shape_index;
+				let variant_index = shape.variant_index.unwrap();
+
+				drop(user_type);
+				drop(user_types);
+
+				let tag_value = get_tag_value(context, enum_shape_index, variant_index);
+				return Some(generator.generate_number_value(context.type_store, read.field_type_id, tag_value.into()));
 			}
 		}
 	}
@@ -1127,18 +1136,29 @@ fn generate_string_to_format_string<'a, 'b, G: Generator>(
 
 	let variant_type_id = context.type_store.string_type_id();
 	let variant_index = variant_type_id.format_item_variant_index(context.type_store, None);
+	let tag_value = get_tag_value(context, enum_shape_index, variant_index);
 
 	let wrapped = generator.generate_enum_variant_to_enum(
 		context.type_store,
 		pointee_type_id,
 		enum_shape_index,
 		enum_specialization_index,
-		variant_index,
+		tag_value,
 		Some(string_binding),
 	);
 
 	let elements = vec![wrapped];
 	Some(generator.generate_slice_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
+}
+
+fn get_tag_value(context: &mut Context, enum_shape_index: usize, variant_index: usize) -> u64 {
+	let user_types = context.type_store.user_types.read();
+	let user_type = user_types[enum_shape_index].read();
+	let UserTypeKind::Enum { shape } = &user_type.kind else {
+		unreachable!();
+	};
+
+	shape.variant_shapes[variant_index].tag_value
 }
 
 fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
@@ -1157,8 +1177,6 @@ fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
 		kind => unreachable!("{kind:?}"),
 	};
 
-	let variant_binding = generate_expression(context, generator, &conversion.expression);
-
 	let type_id = context.specialize_type_id(conversion.type_id);
 	let entry = context.type_store.type_entries.get(type_id);
 	let (shape_index, specialization_index) = match entry.kind {
@@ -1166,12 +1184,15 @@ fn generate_enum_variant_to_enum<'a, 'b, G: Generator>(
 		_ => unreachable!("{:?}", entry.kind),
 	};
 
+	let tag_value = get_tag_value(context, shape_index, variant_index);
+	let variant_binding = generate_expression(context, generator, &conversion.expression);
+
 	Some(generator.generate_enum_variant_to_enum(
 		context.type_store,
 		type_id,
 		shape_index,
 		specialization_index,
-		variant_index,
+		tag_value,
 		variant_binding,
 	))
 }

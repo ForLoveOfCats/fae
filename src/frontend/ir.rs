@@ -411,7 +411,7 @@ pub struct MatchArm<'a> {
 #[derive(Debug, Clone)]
 pub struct VariantInfo {
 	pub type_id: TypeId,
-	pub variant_index: usize,
+	pub tag_value: u64,
 }
 
 #[derive(Debug)]

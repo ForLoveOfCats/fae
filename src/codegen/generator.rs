@@ -249,7 +249,7 @@ pub trait Generator {
 		enum_type_id: TypeId,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
-		variant_index: usize,
+		tag_value: u64,
 		variant_binding: Option<Self::Binding>,
 	) -> Self::Binding;
 

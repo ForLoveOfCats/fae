@@ -1,7 +1,7 @@
 use std::boxed::Box;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 
 #[cfg(feature = "measure-lock-contention")]
@@ -63,6 +63,12 @@ impl<T> Deref for Ref<T> {
 	}
 }
 
+impl<T> DerefMut for Ref<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.allocated_mut().data
+	}
+}
+
 impl<T> AsRef<T> for Ref<T> {
 	fn as_ref(&self) -> &T {
 		&**self
@@ -95,6 +101,11 @@ impl<T> Ref<T> {
 	#[inline]
 	fn allocated(&self) -> &RefAllocated<T> {
 		unsafe { self.pointer.as_ref() }
+	}
+
+	#[inline]
+	fn allocated_mut(&mut self) -> &mut RefAllocated<T> {
+		unsafe { self.pointer.as_mut() }
 	}
 }
 
@@ -164,6 +175,13 @@ impl<T> Deref for SliceRef<T> {
 	#[inline]
 	fn deref(&self) -> &[T] {
 		unsafe { self.data.as_ref() }
+	}
+}
+
+impl<T> DerefMut for SliceRef<T> {
+	#[inline]
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		unsafe { self.data.as_mut() }
 	}
 }
 

@@ -1,5 +1,6 @@
 use std::collections::hash_map;
 use std::num::NonZeroU32;
+use std::u64;
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -485,6 +486,7 @@ pub struct EnumVariantShape<'a> {
 	pub struct_shape_index: usize,
 	pub methods_index: usize,
 	pub is_transparent: bool,
+	pub tag_value: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -504,6 +506,7 @@ pub struct Variant {
 	pub span: Span,
 	pub type_id: TypeId,
 	pub is_transparent: bool,
+	pub tag_value: u64,
 }
 
 #[derive(Debug)]
@@ -3284,7 +3287,8 @@ impl<'a> TypeStore<'a> {
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
 			let is_transparent = variant_shape.is_transparent;
-			variants.push(Variant { span, type_id, is_transparent });
+			let tag_value = variant_shape.tag_value;
+			variants.push(Variant { span, type_id, is_transparent, tag_value });
 			variants_by_name.insert(variant_shape.name, variant_index);
 		}
 
@@ -3577,7 +3581,7 @@ impl<'a> TypeStore<'a> {
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
 			let is_transparent = variant_shape.is_transparent;
-			variants.push(Variant { span, type_id, is_transparent });
+			variants.push(Variant { span, type_id, is_transparent, tag_value: u64::MAX });
 			variants_by_name.insert(variant_shape.name, variant_index);
 
 			if is_transparent {

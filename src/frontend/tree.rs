@@ -190,7 +190,13 @@ pub struct Union<'a> {
 }
 
 #[derive(Debug)]
-pub enum Variant<'a> {
+pub struct Variant<'a> {
+	pub kind: VariantKind<'a>,
+	pub tag_value: Option<Node<Expression<'a>>>,
+}
+
+#[derive(Debug)]
+pub enum VariantKind<'a> {
 	StructLike(StructLikeVariant<'a>),
 	Transparent(TransparentVariant<'a>),
 }

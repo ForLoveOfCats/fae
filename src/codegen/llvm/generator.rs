@@ -1144,7 +1144,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			for info in &arm.variant_infos {
 				unsafe {
-					let expected = LLVMConstInt(tag_type, info.variant_index as _, false as _);
+					let expected = LLVMConstInt(tag_type, info.tag_value as _, false as _);
 					LLVMAddCase(switch, expected, case_block);
 				}
 			}
@@ -3259,7 +3259,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let mut result = LLVMConstInt(i1_type, 0, false as _);
 
 			for info in &check_expression.variant_infos {
-				let expected = LLVMConstInt(tag_type, info.variant_index as _, false as _);
+				let expected = LLVMConstInt(tag_type, info.tag_value as _, false as _);
 				let flag = LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr());
 				result = LLVMBuildOr(self.builder, result, flag, c"".as_ptr());
 			}
@@ -3297,7 +3297,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		enum_type_id: TypeId,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
-		variant_index: usize,
+		tag_value: u64,
 		variant_binding: Option<Binding>,
 	) -> Self::Binding {
 		let shape = &self.llvm_types.user_type_structs[enum_shape_index];
@@ -3315,7 +3315,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let alloca = self.build_alloca(enum_type, c"generate_enum_variant_to_enum.enum_alloca");
 
 		unsafe {
-			let tag_value = LLVMConstInt(tag_type, variant_index as _, false as _);
+			let tag_value = LLVMConstInt(tag_type, tag_value, false as _);
 			let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"variant_to_enum.tag_pointer".as_ptr());
 			LLVMBuildStore(self.builder, tag_value, tag_pointer);
 

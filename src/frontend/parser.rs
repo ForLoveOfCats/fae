@@ -2119,33 +2119,47 @@ fn parse_enum_declaration<'a>(
 				}
 
 				tokens.expect(messages, TokenKind::CloseBrace)?;
+
+				let tag_value = if tokens.peek_kind() == Ok(TokenKind::Equal) {
+					tokens.next(messages)?;
+					Some(parse_expression(bump, messages, tokens, true)?)
+				} else {
+					None
+				};
+
+				let name = Node::from_token(field_name_token.text, field_name_token);
+				let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
+				let kind = VariantKind::StructLike(struct_like);
+				variants.push(Variant { kind, tag_value });
 			} else if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
 				tokens.next(messages)?;
 				let parsed_type = parse_type(bump, messages, tokens)?;
 				tokens.expect(messages, TokenKind::CloseParen)?;
 
+				let tag_value = if tokens.peek_kind() == Ok(TokenKind::Equal) {
+					tokens.next(messages)?;
+					Some(parse_expression(bump, messages, tokens, true)?)
+				} else {
+					None
+				};
+
 				let name = Node::from_token(field_name_token.text, field_name_token);
 				let transparent = TransparentVariant { name, parsed_type };
-				let variant = Variant::Transparent(transparent);
-				variants.push(variant);
-
-				if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
-					break;
-				} else if tokens.peek_kind() == Ok(TokenKind::Comma) {
+				let kind = VariantKind::Transparent(transparent);
+				variants.push(Variant { kind, tag_value });
+			} else {
+				let tag_value = if tokens.peek_kind() == Ok(TokenKind::Equal) {
 					tokens.next(messages)?;
-					tokens.consume_newlines();
+					Some(parse_expression(bump, messages, tokens, true)?)
 				} else {
-					tokens.expect(messages, TokenKind::Newline)?;
-					tokens.consume_newlines();
-				}
+					None
+				};
 
-				continue;
+				let name = Node::from_token(field_name_token.text, field_name_token);
+				let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
+				let kind = VariantKind::StructLike(struct_like);
+				variants.push(Variant { kind, tag_value });
 			}
-
-			let name = Node::from_token(field_name_token.text, field_name_token);
-			let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
-			let variant = Variant::StructLike(struct_like);
-			variants.push(variant);
 		}
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {
@@ -2227,14 +2241,14 @@ fn parse_union_declaration<'a>(
 
 			let name = Node::from_token(field_name_token.text, field_name_token);
 			let struct_like = StructLikeVariant { name, fields: variant_fields.into_bump_slice() };
-			let variant = Variant::StructLike(struct_like);
-			variants.push(variant);
+			let kind = VariantKind::StructLike(struct_like);
+			variants.push(Variant { kind, tag_value: None });
 		} else {
 			let name = Node::from_token(field_name_token.text, field_name_token);
 			let parsed_type = parse_type(bump, messages, tokens)?;
 			let transparent = TransparentVariant { name, parsed_type };
-			let variant = Variant::Transparent(transparent);
-			variants.push(variant);
+			let kind = VariantKind::Transparent(transparent);
+			variants.push(Variant { kind, tag_value: None });
 		}
 
 		if tokens.peek_kind() == Ok(TokenKind::CloseBrace) {

@@ -1,0 +1,68 @@
+enum Abc: i32 {
+	A
+	B { field: i32 } = 5
+	C = 3 << 2
+	D
+}
+
+fn main() {
+	let a: Abc = .A
+	let b: Abc = .B { field: 42 }
+	let c: Abc = .C
+	let d: Abc = .D
+	println(f"{Abc.A.tag}, (B has fields), {Abc.C.tag}, {Abc.D.tag}")
+	println(f"{a.tag}, {b.tag}, {c.tag}, {d.tag}")
+	println(f"{a.&.(*i32).*}, {b.&.(*i32).*}, {c.&.(*i32).*}, {d.&.(*i32).*}")
+
+	println("")
+
+	if a is A => println("a is A")
+	if a is B => println("a is B")
+	if a is C => println("a is C")
+	if a is D => println("a is D")
+
+	if b is A => println("b is A")
+	if b is B => println("b is B")
+	if b is C => println("b is C")
+	if b is D => println("b is D")
+
+	if c is A => println("c is A")
+	if c is B => println("c is B")
+	if c is C => println("c is C")
+	if c is D => println("c is D")
+
+	if d is A => println("d is A")
+	if d is B => println("d is B")
+	if d is C => println("d is C")
+	if d is D => println("d is D")
+
+	println("")
+
+	match a {
+		A => println("matched a to A")
+		B => println("matched a to B")
+		C => println("matched a to C")
+		D => println("matched a to D")
+	}
+
+	match b {
+		A => println("matched b to A")
+		B => println("matched b to B")
+		C => println("matched b to C")
+		D => println("matched b to D")
+	}
+
+	match c {
+		A => println("matched c to A")
+		B => println("matched c to B")
+		C => println("matched c to C")
+		D => println("matched c to D")
+	}
+
+	match d {
+		A => println("matched d to A")
+		B => println("matched d to B")
+		C => println("matched d to C")
+		D => println("matched d to D")
+	}
+}
