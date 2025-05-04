@@ -1,7 +1,8 @@
 use std::collections::hash_map;
 use std::num::NonZeroU32;
-use std::u64;
+use std::{u64, usize};
 
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use rustc_hash::FxHashMap;
@@ -9,8 +10,8 @@ use rustc_hash::FxHashMap;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::{FunctionStore, MethodBaseType};
 use crate::frontend::ir::{
-	EnumVariantToEnum, Expression, ExpressionKind, GenericConstraint, GenericParameters, GenericUsage, ScopeId,
-	SliceMutableToImmutable, StringToFormatString, TypeArguments, UnionVariantToUnion,
+	EnumVariantToEnum, Expression, ExpressionKind, GenericConstraint, GenericParameters, GenericUsage, IntegerBitflagsLiteral,
+	ScopeId, SliceMutableToImmutable, StringToFormatString, TypeArguments, UnionVariantToUnion,
 };
 use crate::frontend::root_layers::RootLayers;
 use crate::frontend::span::Span;
@@ -81,6 +82,19 @@ impl TypeId {
 			let shape = user_types[shape_index].as_ref().read();
 			if let UserTypeKind::Struct { shape } = &shape.kind {
 				return shape.opaque;
+			}
+		}
+
+		false
+	}
+
+	pub fn is_bitflags_enum(self, type_store: &mut TypeStore) -> bool {
+		let type_entry = type_store.type_entries.get(self);
+		if let TypeEntryKind::UserType { shape_index, .. } = type_entry.kind {
+			let user_types = type_store.user_types.read();
+			let shape = user_types[shape_index].as_ref().read();
+			if let UserTypeKind::Enum { shape } = &shape.kind {
+				return shape.is_bitflags;
 			}
 		}
 
@@ -433,6 +447,7 @@ pub struct Struct<'a> {
 	pub been_filled: bool,
 	pub fields: SliceRef<Field<'a>>,
 	pub layout: Option<Layout>,
+	pub parent_bitflags_type_id: Option<TypeId>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -456,6 +471,7 @@ pub struct EnumShape<'a> {
 	pub filling_lock: Ref<ReentrantMutex<()>>,
 	pub been_filled: bool,
 
+	pub is_bitflags: bool,
 	pub tag: EnumTag,
 	pub shared_fields: SliceRef<Node<FieldShape<'a>>>,
 	pub variant_shapes: SliceRef<EnumVariantShape<'a>>,
@@ -465,10 +481,11 @@ pub struct EnumShape<'a> {
 }
 
 impl<'a> EnumShape<'a> {
-	pub fn new(tag: EnumTag, variant_shapes: Vec<EnumVariantShape<'a>>) -> Self {
+	pub fn new(is_bitflags: bool, tag: EnumTag, variant_shapes: Vec<EnumVariantShape<'a>>) -> Self {
 		EnumShape {
 			filling_lock: Ref::new(ReentrantMutex::new(())),
 			been_filled: false,
+			is_bitflags,
 			tag,
 			shared_fields: SliceRef::new_empty(),
 			variant_shapes: SliceRef::from(variant_shapes),
@@ -1037,6 +1054,13 @@ pub enum TypeIdSpecializationSituation {
 	Trait { trait_shape_index: usize },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollapseResult {
+	Success,      // Successfully collapsed or was already the same type
+	Incompatible, // Was was a different type and could not collapse
+	Errored,      // Attempted to collapse but encountered and emitted an error
+}
+
 impl<'a> TypeStore<'a> {
 	pub fn new(debug_generics: bool, debug_type_ids: bool) -> Self {
 		let mut primative_type_symbols = Vec::new();
@@ -1256,7 +1280,8 @@ impl<'a> TypeStore<'a> {
 		// if either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is an enum, collapse the other to it
 		// if either type is an union, collapse the other to it
-		// if either type is a transparent variant, collaps it to the other
+		// if either type is a transparent variant, collapse it to the other
+		// if either type is a bitflag enum variant, collapse both to the parent enum type
 
 		if a.type_id.entry == self.any_collapse_type_id.entry {
 			return Ok(self.any_collapse_type_id);
@@ -1269,19 +1294,19 @@ impl<'a> TypeStore<'a> {
 
 		if a_number {
 			assert!(!b_number);
-			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
-				true => Ok(b.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if b_number {
 			assert!(!a_number);
-			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b);
 			return match collapsed {
-				true => Ok(a.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(a.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
@@ -1291,54 +1316,54 @@ impl<'a> TypeStore<'a> {
 		if let TypeEntryKind::Pointer { mutable: a_mutable, .. } = a_entry.kind {
 			let collapsed = if let TypeEntryKind::Pointer { mutable: b_mutable, .. } = b_entry.kind {
 				if a_mutable && !b_mutable {
-					self.collapse_to(messages, function_store, b.type_id, a)?
+					self.collapse_to(messages, function_store, b.type_id, a)
 				} else {
-					self.collapse_to(messages, function_store, a.type_id, b)?
+					self.collapse_to(messages, function_store, a.type_id, b)
 				}
 			} else {
-				self.collapse_to(messages, function_store, a.type_id, b)?
+				self.collapse_to(messages, function_store, a.type_id, b)
 			};
 
 			return match collapsed {
-				true => Ok(a.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(a.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if matches!(b_entry.kind, TypeEntryKind::Pointer { .. }) {
 			// No need to check for mutability and prefer a different direction because if both
 			// are pointers then that case would have been caught by the `a` block
-			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
-				true => Ok(b.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if let TypeEntryKind::Slice(a_slice) = a_entry.kind {
 			let collapsed = if let TypeEntryKind::Slice(b_slice) = b_entry.kind {
 				if a_slice.mutable && !b_slice.mutable {
-					self.collapse_to(messages, function_store, b.type_id, a)?
+					self.collapse_to(messages, function_store, b.type_id, a)
 				} else {
-					self.collapse_to(messages, function_store, a.type_id, b)?
+					self.collapse_to(messages, function_store, a.type_id, b)
 				}
 			} else {
-				self.collapse_to(messages, function_store, a.type_id, b)?
+				self.collapse_to(messages, function_store, a.type_id, b)
 			};
 
 			return match collapsed {
-				true => Ok(a.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(a.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if matches!(b_entry.kind, TypeEntryKind::Slice(_)) {
 			// No need to check for mutability and prefer a different direction because if both
 			// are slices then that case would have been caught by the `a` block
-			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
-				true => Ok(b.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
@@ -1363,78 +1388,151 @@ impl<'a> TypeStore<'a> {
 		let mut b_is_transparent_variant = false;
 		is_things(b_entry, &mut b_is_enum, &mut b_is_union, &mut b_is_transparent_variant);
 
+		drop(user_types);
+
 		if a_is_enum {
-			drop(user_types);
-			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b);
 			return match collapsed {
-				true => Ok(a.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(a.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if b_is_enum {
-			drop(user_types);
-			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
-				true => Ok(b.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if a_is_union {
-			drop(user_types);
-			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b);
 			return match collapsed {
-				true => Ok(a.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(a.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if b_is_union {
-			drop(user_types);
-			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
-				true => Ok(b.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if a_is_transparent_variant {
-			drop(user_types);
-			let collapsed = self.collapse_to(messages, function_store, b.type_id, a)?;
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
-				true => Ok(b.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
 
 		if b_is_transparent_variant {
-			drop(user_types);
-			let collapsed = self.collapse_to(messages, function_store, a.type_id, b)?;
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b);
 			return match collapsed {
-				true => Ok(a.type_id),
-				false => Err(()),
+				CollapseResult::Success => Ok(a.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
+		}
+
+		if let Ok(type_id) = self.attempt_collapse_fair_bitflag_enums_impl(messages, function_store, a, b, a_entry, b_entry) {
+			return Ok(type_id);
 		}
 
 		Err(())
 	}
 
-	// `true` -> collapsed or was already the same type
-	// `false` -> was was a different type and could not collapse
+	fn attempt_collapse_fair_bitflag_enums_impl(
+		&mut self,
+		messages: &mut Messages<'a>,
+		function_store: &FunctionStore,
+		a: &mut Expression<'a>,
+		b: &mut Expression<'a>,
+		a_entry: TypeEntry,
+		b_entry: TypeEntry,
+	) -> Result<TypeId, ()> {
+		let user_types = self.user_types.read();
+
+		let TypeEntryKind::UserType {
+			shape_index: a_shape_index,
+			specialization_index: a_specialization_index,
+			..
+		} = a_entry.kind
+		else {
+			return Err(());
+		};
+		let TypeEntryKind::UserType {
+			shape_index: b_shape_index,
+			specialization_index: b_specialization_index,
+			..
+		} = b_entry.kind
+		else {
+			return Err(());
+		};
+
+		let a_user_type = user_types[a_shape_index].read();
+		let b_user_type = user_types[b_shape_index].read();
+
+		let UserTypeKind::Struct { shape: a_shape } = &a_user_type.kind else {
+			return Err(());
+		};
+		let UserTypeKind::Struct { shape: b_shape } = &b_user_type.kind else {
+			return Err(());
+		};
+
+		if a_shape.parent_kind != StructParentKind::Enum {
+			return Err(());
+		}
+		if b_shape.parent_kind != StructParentKind::Enum {
+			return Err(());
+		}
+
+		if a_shape.parent_shape_index != b_shape.parent_shape_index {
+			return Err(());
+		}
+
+		let a_specialization = &a_shape.specializations[a_specialization_index];
+		let b_specialization = &b_shape.specializations[b_specialization_index];
+
+		let a_parent_type_id = a_specialization.parent_bitflags_type_id.unwrap();
+		let b_parent_type_id = b_specialization.parent_bitflags_type_id.unwrap();
+
+		drop(a_user_type);
+		drop(b_user_type);
+		drop(user_types);
+
+		assert_eq!(a_parent_type_id.entry, b_parent_type_id.entry);
+		let parent_type_id = a_parent_type_id;
+
+		let a_collapsed = self.collapse_to(messages, function_store, parent_type_id, a);
+		let b_collapsed = self.collapse_to(messages, function_store, parent_type_id, b);
+
+		if a_collapsed == CollapseResult::Success && b_collapsed == CollapseResult::Success {
+			Ok(parent_type_id)
+		} else {
+			Err(())
+		}
+	}
+
 	pub fn collapse_to(
 		&mut self,
 		messages: &mut Messages<'a>,
 		function_store: &FunctionStore,
 		to: TypeId,
 		from: &mut Expression<'a>,
-	) -> Result<bool, ()> {
+	) -> CollapseResult {
 		if to.entry == from.type_id.entry {
-			return Ok(true);
+			return CollapseResult::Success;
 		}
 
 		// any collapse -> anything else
-		// untyped number -> signed of large enough if whole number | unsigned of large enough if not negative whole number | float of large enough
+		// untyped number -> signed of large enough if whole number
+		//     || unsigned of large enough if not negative whole number
+		//     || float of large enough
+		//     || bitflags enum if number is zero
 		// mutable reference -> immutable reference
 		// mutable slice -> immutable slice
 		// str -> fstr
@@ -1445,7 +1543,7 @@ impl<'a> TypeStore<'a> {
 		if from.type_id.entry == any_collapse_entry || to.entry == any_collapse_entry {
 			// From or to any collapse
 			// No need to convert anything, this only gets introduced in case of error so we know we won't codegen
-			return Ok(true);
+			return CollapseResult::Success;
 		}
 
 		if from.type_id.entry == self.number_type_id.entry {
@@ -1470,12 +1568,15 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let err = error!("Constant number {value} is unable to be represented as {name}");
 					messages.message(err.span(span));
-					return Err(());
+					return CollapseResult::Errored;
 				}
 
 				// constant number -> float of large enough
 				from.type_id = to;
-				return Ok(from_value.collapse(self, to));
+				return match from_value.collapse(self, to) {
+					true => CollapseResult::Success,
+					false => CollapseResult::Incompatible,
+				};
 			}
 
 			let (to_signed, to_unsigned, bit_count) = match to.entry {
@@ -1500,14 +1601,14 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let error = error!("Constant number {value} is a decimal and so cannot be represented as {name}");
 					messages.message(error.span(span));
-					return Err(());
+					return CollapseResult::Errored;
 				} else if value.is_sign_negative() {
 					let min_value = Decimal::from(-i128::pow(2, bit_count - 1));
 					if value < min_value {
 						let name = self.type_name(function_store, &[], to);
 						let error = error!("Constant number {value} is too small to be represented as {name}");
 						messages.message(error.span(span));
-						return Err(());
+						return CollapseResult::Errored;
 					}
 				} else {
 					let max_value = Decimal::from(i128::pow(2, bit_count - 1) - 1);
@@ -1515,13 +1616,16 @@ impl<'a> TypeStore<'a> {
 						let name = self.type_name(function_store, &[], to);
 						let error = error!("Constant number {value} is too large to be represented as {name}");
 						messages.message(error.span(span));
-						return Err(());
+						return CollapseResult::Errored;
 					}
 				}
 
 				// constant number -> signed of large enough
 				from.type_id = to;
-				return Ok(from_value.collapse(self, to));
+				return match from_value.collapse(self, to) {
+					true => CollapseResult::Success,
+					false => CollapseResult::Incompatible,
+				};
 			}
 
 			if to_unsigned {
@@ -1529,12 +1633,12 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let error = error!("Constant number {value} is a decimal and so cannot be represented as {name}");
 					messages.message(error.span(span));
-					return Err(());
+					return CollapseResult::Errored;
 				} else if value.is_sign_negative() {
 					let name = self.type_name(function_store, &[], to);
 					let error = error!("Constant number {value} is negative and so cannot be represented as {name}",);
 					messages.message(error.span(span));
-					return Err(());
+					return CollapseResult::Errored;
 				}
 
 				let max_value = Decimal::from(i128::pow(2, bit_count) - 1);
@@ -1542,12 +1646,50 @@ impl<'a> TypeStore<'a> {
 					let name = self.type_name(function_store, &[], to);
 					let error = error!("Constant number {value} is too large to be represented as {name}");
 					messages.message(error.span(span));
-					return Err(());
+					return CollapseResult::Errored;
 				}
 
 				// constant number -> unsigned of large enough if not negative
-				return Ok(from_value.collapse(self, to));
+				return match from_value.collapse(self, to) {
+					true => CollapseResult::Success,
+					false => CollapseResult::Incompatible,
+				};
 			}
+
+			if value.is_zero() {
+				let to_entry = self.type_entries.get(to);
+				if let TypeEntryKind::UserType { shape_index, .. } = to_entry.kind {
+					let user_types = self.user_types.read();
+					let user_type = user_types[shape_index].read();
+					if let UserTypeKind::Enum { shape } = &user_type.kind {
+						if shape.is_bitflags {
+							// TODO: This replace is a dumb solution
+							let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
+							let span = expression.span;
+							let yields = expression.yields;
+							let returns = expression.returns;
+							let debug_location = expression.debug_location;
+							let value = value.to_u64().unwrap();
+							let literal = IntegerBitflagsLiteral { type_id: to, value };
+							let kind = ExpressionKind::IntegerBitflagsLiteral(literal);
+							*from = Expression {
+								span,
+								type_id: to,
+								is_itself_mutable: false,
+								is_pointer_access_mutable: false,
+								yields,
+								returns,
+								kind,
+								debug_location,
+							};
+
+							return CollapseResult::Success;
+						}
+					}
+				}
+			}
+
+			return CollapseResult::Incompatible;
 		}
 
 		let to_entry = self.type_entries.get(to);
@@ -1557,7 +1699,7 @@ impl<'a> TypeStore<'a> {
 		if let TypeEntryKind::Pointer { type_id: to, mutable: to_mutable } = to_entry.kind {
 			if let TypeEntryKind::Pointer { type_id: from, mutable: from_mutable } = from_entry.kind {
 				if to.entry == from.entry && from_mutable && !to_mutable {
-					return Ok(true);
+					return CollapseResult::Success;
 				}
 			}
 		}
@@ -1570,7 +1712,7 @@ impl<'a> TypeStore<'a> {
 						// See `get_or_create_reference_entries`, mutable slice directly follows immutable slice of same type
 						// Back up one entry to turn the array's slice from mutable to immutable
 						literal.type_id.entry -= 1;
-						return Ok(true);
+						return CollapseResult::Success;
 					}
 
 					// TODO: This replace is a dumb solution
@@ -1592,7 +1734,7 @@ impl<'a> TypeStore<'a> {
 						kind,
 						debug_location,
 					};
-					return Ok(true);
+					return CollapseResult::Success;
 				}
 			}
 		}
@@ -1617,7 +1759,7 @@ impl<'a> TypeStore<'a> {
 				kind,
 				debug_location,
 			};
-			return Ok(true);
+			return CollapseResult::Success;
 		}
 
 		if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = from_entry.kind {
@@ -1683,7 +1825,7 @@ impl<'a> TypeStore<'a> {
 									kind,
 									debug_location: from.debug_location,
 								};
-								return Ok(true);
+								return CollapseResult::Success;
 							}
 						}
 					}
@@ -1693,14 +1835,14 @@ impl<'a> TypeStore<'a> {
 						let specialization = &shape.specializations[specialization_index];
 						let wrapped_type_id = specialization.fields.first().unwrap().type_id;
 						if wrapped_type_id.entry == to.entry {
-							return Ok(true);
+							return CollapseResult::Success;
 						}
 					}
 				}
 			}
 		}
 
-		Ok(false)
+		CollapseResult::Incompatible
 	}
 
 	fn get_or_create_reference_entries(&mut self, type_id: TypeId) -> u32 {
@@ -2928,6 +3070,7 @@ impl<'a> TypeStore<'a> {
 					shape_index,
 					invoke_span,
 					type_arguments,
+					None,
 				)
 			}
 
@@ -2971,6 +3114,7 @@ impl<'a> TypeStore<'a> {
 		shape_index: usize,
 		invoke_span: Option<Span>,
 		type_arguments: Ref<TypeArguments>,
+		parent_type_id: Option<TypeId>,
 	) -> Option<TypeId> {
 		let _zone = zone!("struct specialization");
 
@@ -3092,6 +3236,7 @@ impl<'a> TypeStore<'a> {
 			been_filled,
 			fields: SliceRef::from(fields),
 			layout: None,
+			parent_bitflags_type_id: parent_type_id,
 		};
 
 		let specialization_index = shape.specializations.len();
@@ -3233,13 +3378,43 @@ impl<'a> TypeStore<'a> {
 			});
 		}
 
-		let user_type = lock.read();
-		let shape = match &user_type.kind {
+		let mut user_type = lock.write();
+		let shape = match &mut user_type.kind {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
 		let tag = shape.tag;
 		let variant_shapes: Vec<_> = shape.variant_shapes.iter().copied().collect();
+
+		let been_filled = shape.been_filled;
+		let specialization = Enum {
+			type_id: TypeId::unusable(),
+			generic_poisoned: type_arguments_generic_poisoned,
+			type_arguments: type_arguments.clone(),
+			been_filled,
+			shared_fields: SliceRef::new_empty(),
+			variants: SliceRef::new_empty(),
+			variants_by_name: Ref::new(FxHashMap::default()),
+			layout: None,
+		};
+		let specialization_index = shape.specializations.len();
+		shape.specializations.push(specialization);
+		shape
+			.specializations_by_type_arguments
+			.insert(type_arguments.clone(), specialization_index);
+
+		let methods_index = user_type.methods_index;
+		let kind = TypeEntryKind::UserType {
+			shape_index: enum_shape_index,
+			specialization_index,
+			methods_index,
+		};
+		let enum_type_id = self.type_entries.push_entry(TypeEntry {
+			kind,
+			reference_entries: None,
+			arrays_index: None,
+			generic_poisoned: type_arguments_generic_poisoned,
+		});
 		drop(user_type);
 
 		let mut variants = Vec::new();
@@ -3280,6 +3455,7 @@ impl<'a> TypeStore<'a> {
 					variant_shape.struct_shape_index,
 					None,
 					Ref::new(new_struct_type_arguments),
+					Some(enum_type_id),
 				)
 				.unwrap();
 
@@ -3308,42 +3484,11 @@ impl<'a> TypeStore<'a> {
 			UserTypeKind::Enum { shape } => shape,
 			kind => unreachable!("{kind:?}"),
 		};
-
-		let been_filled = shape.been_filled;
-		let specialization = Enum {
-			type_id: TypeId::unusable(),
-			generic_poisoned: type_arguments_generic_poisoned,
-			type_arguments: type_arguments.clone(),
-			been_filled,
-			shared_fields: SliceRef::from(shared_fields),
-			variants: SliceRef::from(variants),
-			variants_by_name: Ref::new(variants_by_name),
-			layout: None,
-		};
-		let specialization_index = shape.specializations.len();
-		shape.specializations.push(specialization);
-		shape
-			.specializations_by_type_arguments
-			.insert(type_arguments.clone(), specialization_index);
-
-		let methods_index = user_type.methods_index;
-		let kind = TypeEntryKind::UserType {
-			shape_index: enum_shape_index,
-			specialization_index,
-			methods_index,
-		};
-		let type_id = self.type_entries.push_entry(TypeEntry {
-			kind,
-			reference_entries: None,
-			arrays_index: None,
-			generic_poisoned: type_arguments_generic_poisoned,
-		});
-
-		let shape = match &mut user_type.kind {
-			UserTypeKind::Enum { shape } => shape,
-			kind => unreachable!("{kind:?}"),
-		};
-		shape.specializations[specialization_index].type_id = type_id;
+		let specialization = &mut shape.specializations[specialization_index];
+		specialization.type_id = enum_type_id;
+		specialization.shared_fields = SliceRef::from(shared_fields);
+		specialization.variants = SliceRef::from(variants);
+		specialization.variants_by_name = Ref::new(variants_by_name);
 
 		drop(user_type);
 
@@ -3352,7 +3497,7 @@ impl<'a> TypeStore<'a> {
 			generic_usages.push(usage)
 		}
 
-		Some(type_id)
+		Some(enum_type_id)
 	}
 
 	fn get_or_add_union_shape_specialization(
@@ -3574,6 +3719,7 @@ impl<'a> TypeStore<'a> {
 					variant_shape.struct_shape_index,
 					None,
 					Ref::new(new_struct_type_arguments),
+					None,
 				)
 				.unwrap();
 
@@ -3800,6 +3946,7 @@ impl<'a> TypeStore<'a> {
 							*shape_index,
 							None,
 							Ref::new(new_struct_type_arguments),
+							None,
 						)
 						.unwrap()
 					}

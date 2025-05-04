@@ -1,0 +1,40 @@
+enum(bitflags) Abc: i32 {
+	A
+	B
+	C = 0b1000
+}
+
+fn main() {
+	mut val: Abc = .A | .C
+	println(f"A tag:   {Abc.A.tag}")
+	println(f"B tag:   {Abc.B.tag}")
+	println(f"C tag:   {Abc.C.tag}")
+
+	println("\nInitial value A | C")
+
+	println(f"val tag: {val.tag}")
+	println(f"is A:    {val is A}")
+	println(f"is B:    {val is B}")
+	println(f"is C:    {val is C}")
+
+	println("\n\"and\"-ing A | B")
+
+	val &= .A | .B
+	println(f"is A: {val is A}")
+	println(f"is B: {val is B}")
+	println(f"is C: {val is C}")
+
+	println("\nAssigning A~")
+
+	val = .A.~
+	println(f"is A: {val is A}")
+	println(f"is B: {val is B}")
+	println(f"is C: {val is C}")
+
+	println("\nAssigning zero")
+
+	val = 0
+	println(f"is A: {val is A}")
+	println(f"is B: {val is B}")
+	println(f"is C: {val is C}")
+}

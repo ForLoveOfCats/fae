@@ -1922,6 +1922,32 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id, kind }
 	}
 
+	fn generate_integer_bitflags_literal(
+		&mut self,
+		type_id: TypeId,
+		tag_kind: NumericKind,
+		shape_index: usize,
+		specialization_index: usize,
+		value: u64,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let struct_type = self.llvm_types.user_type_structs[shape_index][specialization_index].actual;
+		let tag_type = numeric_kind_to_llvm_type(self.context, tag_kind);
+
+		let alloca = self.build_alloca(struct_type, c"generate_integer_bitflags_literal.alloca");
+
+		unsafe {
+			let tag_value = LLVMConstInt(tag_type, value, false as _);
+			let tag_pointer = LLVMBuildStructGEP2(self.builder, struct_type, alloca, 0, c"".as_ptr());
+			LLVMBuildStore(self.builder, tag_value, tag_pointer);
+		}
+
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: struct_type };
+		Binding { type_id, kind }
+	}
+
 	fn generate_call(
 		&mut self,
 		type_store: &mut TypeStore,
@@ -2205,6 +2231,49 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let type_id = value.type_id;
 		let value = value.to_value(self.builder);
 		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"invert.inverted".as_ptr()) };
+		let kind = BindingKind::Value(inverted);
+		Binding { type_id, kind }
+	}
+
+	fn generate_bitwise_not(
+		&mut self,
+		type_store: &mut TypeStore,
+		value: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let type_entry = type_store.type_entries.get(value.type_id);
+		if let TypeEntryKind::UserType { shape_index, .. } = type_entry.kind {
+			let ValuePointer { pointer, pointed_type: enum_type, .. } = self.value_auto_deref_pointer(type_store, value);
+
+			let user_types = type_store.user_types.read();
+			let user_type = user_types[shape_index].read();
+			let UserTypeKind::Enum { shape } = &user_type.kind else {
+				unreachable!("{:#?}", &user_type.kind);
+			};
+
+			assert!(shape.is_bitflags);
+			let tag_type = numeric_kind_to_llvm_type(self.context, shape.tag.kind);
+
+			let alloca = self.build_alloca(enum_type, c"bitwise_not.bitflags_enum_alloca");
+
+			unsafe {
+				let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, pointer, 0, c"".as_ptr());
+				let tag_value = LLVMBuildLoad2(self.builder, tag_type, tag_pointer, c"".as_ptr());
+				let inverted = LLVMBuildNot(self.builder, tag_value, c"bitwise_not.inverted_tag".as_ptr());
+
+				let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"".as_ptr());
+				LLVMBuildStore(self.builder, inverted, tag_pointer);
+			}
+
+			let kind = BindingKind::Pointer { pointer: alloca, pointed_type: enum_type };
+			return Binding { type_id: value.type_id, kind };
+		}
+
+		let type_id = value.type_id;
+		let value = value.to_value(self.builder);
+		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"bitwise_not.inverted".as_ptr()) };
 		let kind = BindingKind::Value(inverted);
 		Binding { type_id, kind }
 	}
@@ -2901,6 +2970,77 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 		}
 
+		let left_binding = codegen::generate_expression(context, self, left).unwrap();
+		let right_binding = codegen::generate_expression(context, self, right).unwrap();
+
+		let type_entry = context.type_store.type_entries.get(left_binding.type_id);
+		if let TypeEntryKind::UserType { shape_index, .. } = type_entry.kind {
+			let ValuePointer { pointer: left_pointer, pointed_type: enum_type, .. } =
+				self.value_auto_deref_pointer(context.type_store, left_binding);
+			let ValuePointer { pointer: right_pointer, .. } = self.value_auto_deref_pointer(context.type_store, right_binding);
+
+			let user_types = context.type_store.user_types.read();
+			let user_type = user_types[shape_index].read();
+			let UserTypeKind::Enum { shape } = &user_type.kind else {
+				unreachable!("{:#?}", &user_type.kind);
+			};
+
+			assert!(shape.is_bitflags);
+			let tag_type = numeric_kind_to_llvm_type(self.context, shape.tag.kind);
+
+			let left_tag_pointer = unsafe { LLVMBuildStructGEP2(self.builder, enum_type, left_pointer, 0, c"".as_ptr()) };
+			let right_tag_pointer = unsafe { LLVMBuildStructGEP2(self.builder, enum_type, right_pointer, 0, c"".as_ptr()) };
+
+			let left_tag = unsafe { LLVMBuildLoad2(self.builder, tag_type, left_tag_pointer, c"".as_ptr()) };
+			let right_tag = unsafe { LLVMBuildLoad2(self.builder, tag_type, right_tag_pointer, c"".as_ptr()) };
+
+			let alloca = match op {
+				BinaryOperator::BitwiseAnd | BinaryOperator::BitwiseAndAssign => unsafe {
+					let resulting_tag = LLVMBuildAnd(self.builder, left_tag, right_tag, c"".as_ptr());
+					if op == BinaryOperator::BitwiseAndAssign {
+						LLVMBuildStore(self.builder, resulting_tag, left_tag_pointer);
+						return None;
+					}
+
+					let alloca = self.build_alloca(enum_type, c"generate_binary_operation.bitflag_and_alloca");
+					let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"".as_ptr());
+					LLVMBuildStore(self.builder, resulting_tag, tag_pointer);
+					alloca
+				},
+
+				BinaryOperator::BitwiseOr | BinaryOperator::BitwiseOrAssign => unsafe {
+					let resulting_tag = LLVMBuildOr(self.builder, left_tag, right_tag, c"".as_ptr());
+					if op == BinaryOperator::BitwiseOrAssign {
+						LLVMBuildStore(self.builder, resulting_tag, left_tag_pointer);
+						return None;
+					}
+
+					let alloca = self.build_alloca(enum_type, c"generate_binary_operation.bitflag_or_alloca");
+					let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"".as_ptr());
+					LLVMBuildStore(self.builder, resulting_tag, tag_pointer);
+					alloca
+				},
+
+				BinaryOperator::BitwiseXor | BinaryOperator::BitwiseXorAssign => unsafe {
+					let resulting_tag = LLVMBuildXor(self.builder, left_tag, right_tag, c"".as_ptr());
+					if op == BinaryOperator::BitwiseXorAssign {
+						LLVMBuildStore(self.builder, resulting_tag, left_tag_pointer);
+						return None;
+					}
+
+					let alloca = self.build_alloca(enum_type, c"generate_binary_operation.bitflag_xor_alloca");
+					let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"".as_ptr());
+					LLVMBuildStore(self.builder, resulting_tag, tag_pointer);
+					alloca
+				},
+
+				_ => unreachable!("{op:#?}"),
+			};
+
+			let kind = BindingKind::Pointer { pointer: alloca, pointed_type: enum_type };
+			return Some(Binding { type_id: left_binding.type_id, kind });
+		}
+
 		if matches!(
 			op,
 			BinaryOperator::AddAssign
@@ -2914,15 +3054,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				| BinaryOperator::BitwiseOrAssign
 				| BinaryOperator::BitwiseXorAssign
 		) {
-			let left = codegen::generate_expression(context, self, left).unwrap();
-			let right = codegen::generate_expression(context, self, right).unwrap();
-
-			let target = match left.kind {
+			let target = match left_binding.kind {
 				BindingKind::Pointer { pointer, .. } => pointer,
 				BindingKind::Value(value) => unreachable!("{value:?}"),
 			};
-			let left = left.to_value(self.builder);
-			let right = right.to_value(self.builder);
+			let left = left_binding.to_value(self.builder);
+			let right = right_binding.to_value(self.builder);
 			unsafe { assert_eq!(LLVMTypeOf(left), LLVMTypeOf(right)) };
 			let left_is_int = unsafe { LLVMGetTypeKind(LLVMTypeOf(left)) == LLVMIntegerTypeKind };
 
@@ -3034,14 +3171,11 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 		}
 
-		let left_binding = codegen::generate_expression(context, self, left).unwrap();
-		let right_binding = codegen::generate_expression(context, self, right).unwrap();
-
 		let left = left_binding.to_value(self.builder);
 		let right = right_binding.to_value(self.builder);
 		unsafe { assert_eq!(LLVMTypeOf(left), LLVMTypeOf(right)) };
 
-		if let BinaryOperator::Range = op {
+		if op == BinaryOperator::Range {
 			unsafe {
 				let llvm_type = self.llvm_types.range_struct;
 				let alloca = self.build_alloca(llvm_type, c"generate_binary_operation.range_alloca");
@@ -3243,13 +3377,15 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let ValuePointer { pointer, .. } = self.value_auto_deref_pointer(context.type_store, value);
 
-		let tag_type = {
+		let (tag_type, is_bitflags) = {
 			let user_types = context.type_store.user_types.read();
 			let user_type = user_types[enum_shape_index].read();
 			let UserTypeKind::Enum { shape } = &user_type.kind else {
 				unreachable!();
 			};
-			numeric_kind_to_llvm_type(self.context, shape.tag.kind)
+
+			let tag_type = numeric_kind_to_llvm_type(self.context, shape.tag.kind);
+			(tag_type, shape.is_bitflags)
 		};
 
 		let result = unsafe {
@@ -3257,10 +3393,16 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let tag = LLVMBuildLoad2(self.builder, tag_type, pointer, c"check_is.tag".as_ptr());
 
 			let mut result = LLVMConstInt(i1_type, 0, false as _);
+			let zero = LLVMConstInt(tag_type, 0, false as _);
 
 			for info in &check_expression.variant_infos {
 				let expected = LLVMConstInt(tag_type, info.tag_value as _, false as _);
-				let flag = LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr());
+				let flag = if is_bitflags {
+					let bitwise_result = LLVMBuildAnd(self.builder, tag, expected, c"".as_ptr());
+					LLVMBuildICmp(self.builder, LLVMIntNE, bitwise_result, zero, c"".as_ptr())
+				} else {
+					LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr())
+				};
 				result = LLVMBuildOr(self.builder, result, flag, c"".as_ptr());
 			}
 

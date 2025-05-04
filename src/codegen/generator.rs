@@ -7,7 +7,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::{self, BinaryOperator};
-use crate::frontend::type_store::{TypeId, TypeStore};
+use crate::frontend::type_store::{NumericKind, TypeId, TypeStore};
 
 // TODO: Rip out this abstraction, it's causing more touble than it's worth. It didn't end up moving
 // very much common logic out of the generator and resulted in plenty of complications
@@ -124,6 +124,16 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
+	fn generate_integer_bitflags_literal(
+		&mut self,
+		type_id: TypeId,
+		tag_kind: NumericKind,
+		shape_index: usize,
+		specialization_index: usize,
+		value: u64,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
+
 	fn generate_call(
 		&mut self,
 		type_store: &mut TypeStore,
@@ -157,6 +167,13 @@ pub trait Generator {
 	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId, debug_location: DebugLocation) -> Self::Binding;
 
 	fn generate_invert(&mut self, value: Self::Binding, debug_location: DebugLocation) -> Self::Binding;
+
+	fn generate_bitwise_not(
+		&mut self,
+		type_store: &mut TypeStore,
+		value: Self::Binding,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
 	fn generate_address_of(
 		&mut self,

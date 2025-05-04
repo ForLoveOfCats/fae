@@ -1,0 +1,17 @@
+Validation error: ./tests/bitflags_enum_failure/bitflags_enum_failure.fae, line 4: Constant number 0.1 is a decimal and so cannot be represented as `i32`
+  4|     C = 0.1
+             ^^^
+
+Validation error: ./tests/bitflags_enum_failure/bitflags_enum_failure.fae, line 9: Assignment type mismatch
+  9|     val = 1
+         ^^^^^^^
+Note: ./tests/bitflags_enum_failure/bitflags_enum_failure.fae, line 9: Left type `Abc`
+  9|     val = 1
+         ^^^
+Note: ./tests/bitflags_enum_failure/bitflags_enum_failure.fae, line 9: Right type `untyped number`
+  9|     val = 1
+               ^
+
+Validation error: ./tests/bitflags_enum_failure/bitflags_enum_failure.fae, line 10: Cannot match on value of type `Abc` as it is a bitflags enum
+  10|     match val {}
+          ^^^^^^^^^^^^

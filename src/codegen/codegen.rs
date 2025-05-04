@@ -6,9 +6,9 @@ use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{
 	ArrayLiteral, BinaryOperation, Binding, Block, Break, ByteCodepointLiteral, Call, CheckIs, CodepointLiteral, Continue,
 	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, Function,
-	FunctionId, FunctionShape, GenericParameters, IfElseChain, Match, MethodCall, NumberValue, Read, SliceLiteral,
-	SliceMutableToImmutable, Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString, StructLiteral,
-	TypeArguments, UnaryOperation, UnaryOperator, UnionVariantToUnion, While,
+	FunctionId, FunctionShape, GenericParameters, IfElseChain, IntegerBitflagsLiteral, Match, MethodCall, NumberValue, Read,
+	SliceLiteral, SliceMutableToImmutable, Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString,
+	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, UnionVariantToUnion, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -409,6 +409,14 @@ fn generate_expression_impl<'a, 'b, G: Generator, const IS_STATEMENT: bool>(
 
 		ExpressionKind::StructLiteral(literal) => generate_struct_literal(context, generator, literal, debug_location),
 
+		ExpressionKind::IntegerBitflagsLiteral(literal) => {
+			if IS_STATEMENT {
+				None
+			} else {
+				generate_integer_bitflags_literal(context, generator, literal, debug_location)
+			}
+		}
+
 		ExpressionKind::Call(call) => generate_call(context, generator, call, debug_location),
 
 		ExpressionKind::MethodCall(method_call) => generate_method_call(context, generator, method_call, debug_location),
@@ -741,13 +749,41 @@ fn generate_struct_literal<'a, 'b, G: Generator>(
 		assert!(!fields.is_empty());
 
 		let entry = context.type_store.type_entries.get(type_id);
-		let (shape_index, specialization_index) = match entry.kind {
-			TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
-			_ => unreachable!("{:?}", entry.kind),
+		let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind else {
+			unreachable!("{:#?}", entry.kind);
 		};
 
 		Some(generator.generate_struct_literal(type_id, shape_index, specialization_index, &fields, debug_location))
 	}
+}
+
+fn generate_integer_bitflags_literal<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	literal: &'b IntegerBitflagsLiteral,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
+	let type_id = context.specialize_type_id(literal.type_id);
+	let entry = context.type_store.type_entries.get(type_id);
+	let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind else {
+		unreachable!("{:#?}", entry.kind);
+	};
+
+	let user_types = context.type_store.user_types.read();
+	let user_type = &user_types[shape_index].read();
+	let UserTypeKind::Enum { shape } = &user_type.kind else {
+		unreachable!("{:#?}", &user_type.kind);
+	};
+
+	assert!(shape.is_bitflags);
+	Some(generator.generate_integer_bitflags_literal(
+		type_id,
+		shape.tag.kind,
+		shape_index,
+		specialization_index,
+		literal.value,
+		debug_location,
+	))
 }
 
 fn generate_call<'a, 'b, G: Generator>(
@@ -970,6 +1006,8 @@ fn generate_unary_operation<'a, 'b, G: Generator>(
 		UnaryOperator::Negate => Some(generator.generate_negate(expression, resultant_type_id, debug_location)),
 
 		UnaryOperator::Invert => Some(generator.generate_invert(expression, debug_location)),
+
+		UnaryOperator::BitwiseNot => Some(generator.generate_bitwise_not(context.type_store, expression, debug_location)),
 
 		UnaryOperator::AddressOf | UnaryOperator::AddressOfMut => {
 			Some(generator.generate_address_of(expression, resultant_type_id, debug_location))

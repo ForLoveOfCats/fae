@@ -612,6 +612,7 @@ pub enum ExpressionKind<'a> {
 	SliceLiteral(SliceLiteral<'a>),
 	StructLiteral(StructLiteral<'a>),
 	FieldlessVariantLiteral,
+	IntegerBitflagsLiteral(IntegerBitflagsLiteral),
 
 	Call(Call<'a>),
 	MethodCall(Box<MethodCall<'a>>),
@@ -649,6 +650,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::SliceLiteral(_) => "slice literal",
 			ExpressionKind::StructLiteral(_) => "struct literal",
 			ExpressionKind::FieldlessVariantLiteral => "fieldless variant literal",
+			ExpressionKind::IntegerBitflagsLiteral(_) => "integer bitflags literal",
 			ExpressionKind::Call(_) => "function call",
 			ExpressionKind::MethodCall(_) => "method call",
 			ExpressionKind::Read(_) => "binding read",
@@ -683,6 +685,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::SliceLiteral(_) => "a slice literal",
 			ExpressionKind::StructLiteral(_) => "a struct literal",
 			ExpressionKind::FieldlessVariantLiteral => "a fieldless variant literal",
+			ExpressionKind::IntegerBitflagsLiteral(_) => "an integer bitflags literal",
 			ExpressionKind::Call(_) => "a function call",
 			ExpressionKind::MethodCall(_) => "a method call",
 			ExpressionKind::Read(_) => "a binding read",
@@ -1021,6 +1024,12 @@ pub struct FieldInitializer<'a> {
 }
 
 #[derive(Debug)]
+pub struct IntegerBitflagsLiteral {
+	pub type_id: TypeId,
+	pub value: u64,
+}
+
+#[derive(Debug)]
 pub struct Call<'a> {
 	pub span: Span,
 	pub name: &'a str,
@@ -1065,6 +1074,7 @@ pub struct FieldRead<'a> {
 pub enum UnaryOperator<'a> {
 	Negate,
 	Invert,
+	BitwiseNot,
 	AddressOf,
 	AddressOfMut,
 	Dereference,

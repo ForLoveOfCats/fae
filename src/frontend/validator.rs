@@ -329,7 +329,7 @@ impl<'a, 'b, 'c> Context<'a, 'b, 'c> {
 		self.type_store.collapse_fair(self.messages, self.function_store, a, b)
 	}
 
-	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> Result<bool, ()> {
+	pub fn collapse_to(&mut self, to: TypeId, from: &mut Expression<'a>) -> CollapseResult {
 		self.type_store.collapse_to(self.messages, self.function_store, to, from)
 	}
 }
@@ -2069,7 +2069,7 @@ fn create_block_enum<'a>(
 	}
 
 	let name = statement.name.item;
-	let shape = EnumShape::new(tag, variants);
+	let shape = EnumShape::new(statement.is_bitflags, tag, variants);
 	let kind = UserTypeKind::Enum { shape };
 	let span = statement.name.span;
 	assert_eq!(user_types.len(), enum_shape_index);
@@ -2897,12 +2897,21 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 		UserTypeKind::Union { .. } => unreachable!("union"),
 	};
 
+	let is_bitflags = shape.is_bitflags;
 	let tag_type_id = shape.tag.type_id;
+	let first_shared_field_span = shape.shared_fields.first().map(|f| f.span);
 	let mut variant_shapes = shape.variant_shapes.to_vec(); // Yuck
 	drop(user_type);
 
+	if is_bitflags {
+		if let Some(first_shared_field_span) = first_shared_field_span {
+			let error = error!("Bitflags enum may not have shared_fields");
+			context.message(error.span(first_shared_field_span));
+		}
+	}
+
 	assert_eq!(variant_shapes.len(), statement.variants.len());
-	let mut next_tag_value = 0;
+	let mut next_tag_value = if is_bitflags { 1 } else { 0 };
 	for (variant_shape, tree_variant) in variant_shapes.iter_mut().zip(statement.variants) {
 		fill_struct_like_enum_variant(
 			context.messages,
@@ -2916,11 +2925,18 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 			context.function_initial_symbols_length,
 			variant_shape,
 			statement,
+			is_bitflags,
 		);
 
 		let tag_value = validate_enum_variant_tag_value(&mut context, tree_variant, tag_type_id, next_tag_value);
 		variant_shape.tag_value = tag_value;
-		next_tag_value = tag_value + 1;
+
+		if is_bitflags {
+			// Get the highest bit and shift it one to the left
+			next_tag_value = (1 << 63) >> (tag_value.leading_zeros() - 1)
+		} else {
+			next_tag_value = tag_value + 1;
+		}
 	}
 
 	let mut user_type = lock.write();
@@ -2965,6 +2981,7 @@ fn fill_struct_like_enum_variant<'a>(
 	function_initial_symbols_length: usize,
 	variant_shape: &EnumVariantShape<'a>,
 	statement: &tree::Enum<'a>,
+	is_bitflags: bool,
 ) {
 	let scope = symbols.child_scope();
 	let tree_variant = &statement.variants[variant_shape.variant_index];
@@ -3019,6 +3036,13 @@ fn fill_struct_like_enum_variant<'a>(
 		tree::VariantKind::StructLike(struct_like) => {
 			let variant_name = struct_like.name.item;
 
+			if is_bitflags {
+				if let Some(first_field) = struct_like.fields.first() {
+					let error = error!("Bitflags enum variants may not have fields");
+					messages.message(error.span(first_field.name.span));
+				}
+			}
+
 			for field in struct_like.fields {
 				let field_type = match type_store.lookup_type(
 					messages,
@@ -3054,6 +3078,11 @@ fn fill_struct_like_enum_variant<'a>(
 		}
 
 		tree::VariantKind::Transparent(transparent) => {
+			if is_bitflags {
+				let error = error!("Bitflags enum may not have a transparent variant");
+				messages.message(error.span(transparent.name.span));
+			}
+
 			let field_type = match type_store.lookup_type(
 				messages,
 				function_store,
@@ -3118,7 +3147,7 @@ fn validate_enum_variant_tag_value<'a>(
 	if let Some(tree_expression) = &tree_variant.tag_value {
 		let mut expression = validate_expression(context, tree_expression);
 		let succeeded = !expression.type_id.is_any_collapse(context.type_store);
-		if succeeded && context.collapse_to(tag_type_id, &mut expression) == Ok(true) {
+		if succeeded && context.collapse_to(tag_type_id, &mut expression) == CollapseResult::Success {
 			let ExpressionKind::NumberValue(value) = expression.kind else {
 				unreachable!("{expression:#?}");
 			};
@@ -4549,7 +4578,7 @@ fn validate_statement<'a>(
 
 				let target_type = context.yield_targets.get_mut(yield_target_index);
 				if let Some(expected) = target_type.type_id {
-					if let Ok(false) = context.collapse_to(expected, &mut expression) {
+					if context.collapse_to(expected, &mut expression) == CollapseResult::Incompatible {
 						let expected = context.type_name(expected);
 						let got = context.type_name(expression.type_id);
 						let error = error!("Expected yield type of {expected}, got {got}");
@@ -4588,7 +4617,7 @@ fn validate_statement<'a>(
 			if let Some(expression) = &mut expression {
 				expression.into_value(context);
 				let return_type = context.return_type.unwrap();
-				if let Ok(false) = context.collapse_to(return_type, expression) {
+				if context.collapse_to(return_type, expression) == CollapseResult::Incompatible {
 					let expected = context.type_name(return_type);
 					let got = context.type_name(expression.type_id);
 					let error = error!("Expected return type of {expected}, got {got}");
@@ -4896,7 +4925,7 @@ fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::No
 	let mut expression = validate_expression(context, &statement.item.expression);
 	expression.into_value(context);
 	if let Some(explicit_type) = explicit_type {
-		if !context.collapse_to(explicit_type, &mut expression).ok()? {
+		if context.collapse_to(explicit_type, &mut expression) == CollapseResult::Incompatible {
 			let explicit = context.type_name(explicit_type);
 			let expression = context.type_name(expression.type_id);
 			let error = error!("Const type mismatch between explicit type {explicit} and expression type {expression}");
@@ -4974,7 +5003,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 			// Make sure we still take this path even if the parsed type lookup failed
 			let explicit_type = explicit_type.unwrap_or(context.type_store.any_collapse_type_id());
 
-			if !context.collapse_to(explicit_type, &mut expression).ok()? {
+			if context.collapse_to(explicit_type, &mut expression) == CollapseResult::Incompatible {
 				let expected = context.type_name(explicit_type);
 				let got = context.type_name(expression.type_id);
 				let error = error!("Expected {expected} but got expression with type {got}");
@@ -5290,7 +5319,7 @@ fn validate_match_expression<'a>(
 
 	let report_not_enum_error = |context: &mut Context| {
 		let found = context.type_name(expression_type_id);
-		let error = error!("Cannot match on type {found} as it is not an enum");
+		let error = error!("Cannot match on value of type {found} as it is not an enum");
 		context.messages.message(error.span(expression.span));
 	};
 
@@ -5307,9 +5336,20 @@ fn validate_match_expression<'a>(
 	let user_type = context.type_store.user_types.read()[shape_index].clone();
 	let user_type = user_type.read();
 	let enum_specialization = match &user_type.kind {
-		UserTypeKind::Enum { shape } => &shape.specializations[specialization_index],
+		UserTypeKind::Enum { shape } => {
+			if shape.is_bitflags {
+				drop(user_type);
+				let found = context.type_name(expression_type_id);
+				let error = error!("Cannot match on value of type {found} as it is a bitflags enum");
+				context.message(error.span(span));
+				return Expression::any_collapse(context.type_store, span);
+			}
+
+			&shape.specializations[specialization_index]
+		}
 
 		UserTypeKind::Struct { .. } | UserTypeKind::Union { .. } => {
+			drop(user_type);
 			report_not_enum_error(context);
 			return Expression::any_collapse(context.type_store, span);
 		}
@@ -5826,7 +5866,7 @@ fn validate_array_literal<'a>(
 
 	for expression in &mut expressions {
 		let collapsed = context.collapse_to(item_type_id, expression);
-		if !collapsed.unwrap_or(true) && !item_type_id.is_any_collapse(context.type_store) {
+		if collapsed == CollapseResult::Incompatible && !item_type_id.is_any_collapse(context.type_store) {
 			let error = error!(
 				"Type mismatch for array entry, expected {} but got {}",
 				context.type_name(item_type_id),
@@ -5891,7 +5931,7 @@ fn validate_slice_literal<'a>(
 
 	for expression in &mut expressions {
 		let collapsed = context.collapse_to(item_type_id, expression);
-		if !collapsed.unwrap_or(true) && !item_type_id.is_any_collapse(context.type_store) {
+		if collapsed == CollapseResult::Incompatible && !item_type_id.is_any_collapse(context.type_store) {
 			let error = error!(
 				"Type mismatch for slice entry, expected {} but got {}",
 				context.type_name(item_type_id),
@@ -6073,7 +6113,7 @@ fn validate_struct_initializer<'a>(
 			context.message(error.span(intializer.name.span + expression.span));
 		}
 
-		if !context.collapse_to(field.type_id, &mut expression).unwrap_or(true) {
+		if context.collapse_to(field.type_id, &mut expression) == CollapseResult::Incompatible {
 			// Avoids a silly error message when something happend in the field definition, causing it to
 			// have `AnyCollapse` as its type, leading to an "Expected `AnyCollapse` got `_`" error
 			if !field.type_id.is_any_collapse(context.type_store) {
@@ -6701,12 +6741,7 @@ fn validate_function_arguments<'a>(
 				None => break,
 			};
 
-			let collapsed = context
-				.type_store
-				.collapse_to(context.messages, context.function_store, parameter.type_id, argument)
-				.unwrap_or(true);
-
-			if !collapsed {
+			if context.collapse_to(parameter.type_id, argument) == CollapseResult::Incompatible {
 				let error = error!(
 					"Expected argument of type {}, got {}",
 					context.type_name(parameter.type_id),
@@ -7433,7 +7468,7 @@ fn validate_transparent_variant_initialization<'a>(
 	let yields = expression.yields;
 	let returns = expression.returns;
 
-	if !context.collapse_to(expected_type_id, &mut expression).unwrap_or(true) {
+	if context.collapse_to(expected_type_id, &mut expression) == CollapseResult::Incompatible {
 		if !expected_type_id.is_any_collapse(context.type_store) {
 			let expected = context.type_name(expected_type_id);
 			let found = context.type_name(expression.type_id);
@@ -7469,6 +7504,7 @@ fn validate_unary_operation<'a>(
 	let op = match &operation.op.item {
 		tree::UnaryOperator::Negate => UnaryOperator::Negate,
 		tree::UnaryOperator::Invert => UnaryOperator::Invert,
+		tree::UnaryOperator::BitwiseNot => UnaryOperator::BitwiseNot,
 		tree::UnaryOperator::AddressOf => UnaryOperator::AddressOf,
 		tree::UnaryOperator::AddressOfMut => UnaryOperator::AddressOfMut,
 		tree::UnaryOperator::Dereference => UnaryOperator::Dereference,
@@ -7537,6 +7573,59 @@ fn validate_unary_operation<'a>(
 					let error = error!("Cannot invert {} as it is not a boolean", context.type_name(type_id));
 					context.message(error.span(span));
 				}
+				return Expression::any_collapse(context.type_store, span);
+			}
+
+			let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+			return Expression {
+				span,
+				type_id,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
+				yields,
+				returns,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			};
+		}
+
+		UnaryOperator::BitwiseNot => {
+			let type_entry = context.type_store.type_entries.get(type_id);
+			if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = type_entry.kind {
+				let user_types = context.type_store.user_types.read();
+				let user_type = user_types[shape_index].read();
+				if let UserTypeKind::Struct { shape } = &user_type.kind {
+					let specialization = &shape.specializations[specialization_index];
+					if let Some(parent_bitflags_type_id) = specialization.parent_bitflags_type_id {
+						drop(user_type);
+						drop(user_types);
+
+						let collapsed = context.collapse_to(parent_bitflags_type_id, &mut expression);
+						assert_eq!(collapsed, CollapseResult::Success);
+						let type_id = expression.type_id;
+						assert_eq!(type_id.index(), parent_bitflags_type_id.index());
+
+						let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+						return Expression {
+							span,
+							type_id,
+							is_itself_mutable: true,
+							is_pointer_access_mutable: true,
+							yields,
+							returns,
+							kind,
+							debug_location: span.debug_location(context.parsed_files),
+						};
+					}
+				}
+			}
+
+			if !type_id.is_numeric(context.type_store) && !type_id.is_bitflags_enum(context.type_store) {
+				let error = error!(
+					"Cannot perform bitwise not on {}, type must be a numeric type or bitflags enum",
+					context.type_name(type_id)
+				);
+				context.message(error.span(span));
 				return Expression::any_collapse(context.type_store, span);
 			}
 
@@ -7830,8 +7919,7 @@ fn validate_bracket_index<'a>(
 	};
 
 	let isize_type_id = context.type_store.isize_type_id();
-	let collapsed = context.collapse_to(isize_type_id, &mut index_expression);
-	if !collapsed.unwrap_or(true) {
+	if context.collapse_to(isize_type_id, &mut index_expression) == CollapseResult::Incompatible {
 		let error = error!("Cannot index by a value of {}", context.type_name(index_expression.type_id));
 		context.message(error.span(index_expression.span));
 	}
@@ -7868,8 +7956,22 @@ fn validate_binary_operation<'a>(
 	left.into_value(context);
 
 	let original_expected_type = context.expected_type;
-	if op == BinaryOperator::Assign {
-		context.expected_type = Some(left.type_id);
+	match op {
+		BinaryOperator::Assign
+		| BinaryOperator::AddAssign
+		| BinaryOperator::SubAssign
+		| BinaryOperator::MulAssign
+		| BinaryOperator::DivAssign
+		| BinaryOperator::ModuloAssign
+		| BinaryOperator::BitshiftLeftAssign
+		| BinaryOperator::BitshiftRightAssign
+		| BinaryOperator::BitwiseAndAssign
+		| BinaryOperator::BitwiseOrAssign
+		| BinaryOperator::BitwiseXorAssign => {
+			context.expected_type = Some(left.type_id);
+		}
+
+		_ => {}
 	}
 
 	let mut right = validate_expression(context, &operation.right);
@@ -7882,14 +7984,14 @@ fn validate_binary_operation<'a>(
 		let isize_type_id = context.type_store.isize_type_id();
 		let mut had_error = false;
 
-		if !context.collapse_to(isize_type_id, &mut left).unwrap_or(true) {
+		if context.collapse_to(isize_type_id, &mut left) == CollapseResult::Incompatible {
 			let found = context.type_name(left.type_id);
 			let error = error!("Cannot create a range with a left value of type {found}, expected `isize`");
 			context.message(error.span(left.span));
 			had_error = true;
 		}
 
-		if !context.collapse_to(isize_type_id, &mut right).unwrap_or(true) {
+		if context.collapse_to(isize_type_id, &mut right) == CollapseResult::Incompatible {
 			let found = context.type_name(right.type_id);
 			let error = error!("Cannot create a range with a right value of type {found}, expected `isize`");
 			context.message(error.span(right.span));
@@ -7949,9 +8051,12 @@ fn validate_binary_operation<'a>(
 			| BinaryOperator::BitwiseOrAssign
 			| BinaryOperator::BitwiseXor
 			| BinaryOperator::BitwiseXorAssign => {
-				if !left.type_id.is_bool(context.type_store) && !left.type_id.is_integer(context.type_store, &left) {
+				let t = left.type_id;
+				let type_store = &mut *context.type_store;
+				if !t.is_bool(type_store) && !t.is_integer(type_store, &left) && !t.is_bitflags_enum(type_store) {
 					let found = context.type_name(left.type_id);
-					let error = error!("Cannot perform bitwise operation on {found}, type must be integer or boolean");
+					let error =
+						error!("Cannot perform bitwise operation on {found}, type must be integer, boolean, or bitflags enum");
 					context.message(error.span(span));
 					return Expression::any_collapse(context.type_store, span);
 				}

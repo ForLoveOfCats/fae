@@ -742,6 +742,16 @@ fn parse_following_period<'a>(
 		return Ok(Node::new(expression, span));
 	}
 
+	if tokens.peek_kind() == Ok(TokenKind::Tilde) {
+		let tilde = tokens.next(messages)?;
+		let span = atom.span + tilde.span;
+
+		let op = Node::new(UnaryOperator::BitwiseNot, tilde.span);
+		let operation = UnaryOperation { op, expression: atom };
+		let expression = Expression::UnaryOperation(bump.alloc(operation));
+		return Ok(Node::new(expression, span));
+	}
+
 	if tokens.peek_kind() == Ok(TokenKind::Ampersand) {
 		let ampersand = tokens.next(messages)?;
 
@@ -2066,6 +2076,15 @@ fn parse_enum_declaration<'a>(
 
 	tokens.expect_word(messages, "enum")?;
 
+	let is_bitflags = if tokens.peek_kind() == Ok(TokenKind::OpenParen) {
+		tokens.next(messages)?;
+		tokens.expect_word(messages, "bitflags")?;
+		tokens.expect(messages, TokenKind::CloseParen)?;
+		true
+	} else {
+		false
+	};
+
 	let enum_name_token = tokens.expect(messages, TokenKind::Word)?;
 	check_not_reserved(messages, enum_name_token, "enum name")?;
 	let name = Node::from_token(enum_name_token.text, enum_name_token);
@@ -2180,6 +2199,7 @@ fn parse_enum_declaration<'a>(
 		lang_attribute,
 		generics,
 		name,
+		is_bitflags,
 		tag_type,
 		shared_fields: shared_fields.into_bump_slice(),
 		variants: variants.into_bump_slice(),

@@ -1,0 +1,24 @@
+A tag:   1
+B tag:   2
+C tag:   8
+
+Initial value A | C
+val tag: 9
+is A:    true
+is B:    false
+is C:    true
+
+"and"-ing A | B
+is A: true
+is B: false
+is C: false
+
+Assigning A~
+is A: false
+is B: true
+is C: true
+
+Assigning zero
+is A: false
+is B: false
+is C: false

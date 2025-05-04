@@ -54,6 +54,7 @@ pub enum TokenKind {
 	PipeAssign,
 	Caret,
 	CaretAssign,
+	Tilde,
 
 	Colon,
 	DoubleColon,
@@ -121,6 +122,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::PipeAssign => "'|='",
 			TokenKind::Caret => "'^'",
 			TokenKind::CaretAssign => "'^='",
+			TokenKind::Tilde => "'~'",
 
 			TokenKind::Colon => "':'",
 			TokenKind::DoubleColon => "'::'",
@@ -743,6 +745,8 @@ impl<'a> Tokenizer<'a> {
 			}
 
 			[b'^', ..] => Ok(Token::new("^", Caret, self.offset, self.offset + 1, self.file_index, self.line_index)),
+
+			[b'~', ..] => Ok(Token::new("~", Tilde, self.offset, self.offset + 1, self.file_index, self.line_index)),
 
 			[b'#', ..] => Ok(Token::new("#", PoundSign, self.offset, self.offset + 1, self.file_index, self.line_index)),
 

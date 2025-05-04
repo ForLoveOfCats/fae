@@ -1,0 +1,11 @@
+enum(bitflags) Abc: i32 {
+	A
+	B
+	C = 0.1
+}
+
+fn main() {
+	mut val: Abc = .A
+	val = 1
+	match val {}
+}
