@@ -1650,6 +1650,7 @@ impl<'a> TypeStore<'a> {
 				}
 
 				// constant number -> unsigned of large enough if not negative
+				from.type_id = to;
 				return match from_value.collapse(self, to) {
 					true => CollapseResult::Success,
 					false => CollapseResult::Incompatible,

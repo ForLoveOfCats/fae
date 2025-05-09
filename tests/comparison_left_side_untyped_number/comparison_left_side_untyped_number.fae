@@ -1,0 +1,4 @@
+fn main() {
+	let a = 5 > 2.(u8)
+	println(f"{a}")
+}
