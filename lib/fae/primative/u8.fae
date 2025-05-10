@@ -1,0 +1,4 @@
+method u8
+fn is_ascii_whitespace(): bool {
+	return (9 <= self.* and self.* <= 13) or self.* == 32
+}

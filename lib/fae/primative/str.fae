@@ -1,0 +1,10 @@
+method str
+fn equals(other=: str): bool {
+	if self.length != other.length => return false
+
+	for expected, index in self.bytes
+		=> if other.bytes[index] != expected
+			=> return false
+
+	return true
+}
