@@ -9,6 +9,41 @@ fn equals(other=: str): bool {
 	return true
 }
 
+struct LinesIterator {
+	string: str internal
+	offset: isize internal
+}
+
+method static LinesIterator
+fn new(string: str): LinesIterator {
+	return LinesIterator { string, offset: 0 }
+}
+
+method mut LinesIterator
+fn next(): Option<str> {
+	if self.offset >= self.string.length => return .None
+	let start = self.offset
+
+	while true {
+		let byte = self.string.bytes[self.offset]
+		self.offset += 1
+
+		if byte == b'\n' {
+			let line = self.string[start..self.offset]
+			return .Some(line)
+		}
+
+		if self.offset >= self.string.length => break
+	}
+
+	return .None
+}
+
+method str
+fn lines_iterator(): LinesIterator {
+	return LinesIterator.new(string: self.*)
+}
+
 method str
 fn parse_i64(): Option<i64> {
 	return parse_bytes_i64(self.bytes)
