@@ -8,3 +8,27 @@ fn equals(other=: str): bool {
 
 	return true
 }
+
+method str
+fn parse_i64(): Option<i64> {
+	return parse_bytes_i64(self.bytes)
+}
+
+// TODO: This really wants to be a method on `[]u8` but that's not possible yet
+fn parse_bytes_i64(bytes=: []u8): Option<i64> {
+	let negative = bytes.length > 0 and bytes[0] == b'-'
+	mut result: i64 = 0
+
+	for byte in bytes {
+		if byte < b'0' or b'9' < byte => return .None
+
+		result *= 10
+		result += (byte - b'0').(i64)
+
+		// Check for overflow
+		if result < 0 => return .None
+	}
+
+	if negative => result = -result
+	return .Some(result)
+}

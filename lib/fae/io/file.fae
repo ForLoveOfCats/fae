@@ -1,3 +1,4 @@
+import fae.intrinsics.create_str
 import fae.collections.list.List
 import fae.string.String
 import fae.libc.StdInDescriptor, open, read, write, close
@@ -147,6 +148,14 @@ fn next(): Option<[]u8> {
 
 		if bytes_read == 0 => break
 	}
+
+	return .None
+}
+
+method mut DelimitedReader
+fn next_str(): Option<str> {
+	if self.next() is bytes: Some
+		=> return .Some(create_str(bytes.pointer, length: bytes.length))
 
 	return .None
 }

@@ -1,6 +1,5 @@
 import fae.libc.rand
 import fae.io.file.File
-import fae.string.parse.parse_bytes_to_integer
 
 fn main() {
 	play_round()
@@ -23,9 +22,9 @@ fn play_round() {
 
 	while true {
 		print(">>> ")
-		let line = reader.next().unwrap()
+		let line = reader.next_str().unwrap()
 
-		if parse_bytes_to_integer(line) is guess: Some {
+		if line.parse_i64() is guess: Some {
 			println(f"You guessed {guess}")
 
 			if guess < number => println("Too low")
