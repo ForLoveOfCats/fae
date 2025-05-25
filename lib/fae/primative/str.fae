@@ -1,3 +1,23 @@
+method static str
+fn create(pointer=: *u8, length: isize): str {
+	return fae.intrinsics.create_str(pointer, length)
+}
+
+method static str
+fn from_slice(slice=: []u8): str {
+	return fae.intrinsics.create_str(slice.pointer, length: slice.length)
+}
+
+method str
+fn allocate_copied(): str {
+	return fae.memory.allocate_str_copied(self.*)
+}
+
+method str
+fn allocate_copied_mut(): strmut {
+	return fae.memory.allocate_str_mut_copied(self.*)
+}
+
 method str
 fn equals(other=: str): bool {
 	if self.length != other.length => return false
@@ -19,6 +39,7 @@ fn new(string: str): LinesIterator {
 	return LinesIterator { string, offset: 0 }
 }
 
+// See also the identical implementation in `LinesIteratorMut.next`
 method mut LinesIterator
 fn next(): Option<str> {
 	if self.offset >= self.string.length => return .None
@@ -29,11 +50,18 @@ fn next(): Option<str> {
 		self.offset += 1
 
 		if byte == b'\n' {
-			let line = self.string[start..self.offset]
+			mut end = self.offset - 1
+			if end >= 1 and self.string.bytes[end] == b'\r'
+				=> end -= 1
+
+			let line = self.string[start..end]
 			return .Some(line)
 		}
 
-		if self.offset >= self.string.length => break
+		if self.offset >= self.string.length {
+			let line = self.string[start..self.offset]
+			return .Some(line)
+		}
 	}
 
 	return .None

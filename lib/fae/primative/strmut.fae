@@ -1,0 +1,52 @@
+method static strmut
+fn create(pointer=: *mut u8, length: isize): strmut {
+	return fae.intrinsics.create_str_mut(pointer, length)
+}
+
+method static strmut
+fn from_slice(slice=: []mut u8): strmut {
+	return fae.intrinsics.create_str_mut(slice.pointer, length: slice.length)
+}
+
+struct LinesIteratorMut {
+	string: strmut internal
+	offset: isize internal
+}
+
+method static LinesIteratorMut
+fn new(string: strmut): LinesIteratorMut {
+	return LinesIteratorMut { string, offset: 0 }
+}
+
+// See also the identical implementation in `LinesIterator.next`
+method mut LinesIteratorMut
+fn next(): Option<strmut> {
+	if self.offset >= self.string.length => return .None
+	let start = self.offset
+
+	while true {
+		let byte = self.string.bytes[self.offset]
+		self.offset += 1
+
+		if byte == b'\n' {
+			mut end = self.offset - 1
+			if end >= 1 and self.string.bytes[end] == b'\r'
+				=> end -= 1
+
+			let line = self.string[start..end]
+			return .Some(line)
+		}
+
+		if self.offset >= self.string.length {
+			let line = self.string[start..self.offset]
+			return .Some(line)
+		}
+	}
+
+	return .None
+}
+
+method strmut
+fn lines_iterator(): LinesIteratorMut {
+	return LinesIteratorMut.new(string: self.*)
+}

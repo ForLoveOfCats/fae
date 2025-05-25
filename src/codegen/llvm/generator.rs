@@ -165,7 +165,7 @@ impl LLVMTypes {
 
 				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
 
-				PrimativeKind::String | PrimativeKind::FormatString => self.slice_struct,
+				PrimativeKind::String | PrimativeKind::StringMut | PrimativeKind::FormatString => self.slice_struct,
 
 				PrimativeKind::Void => self.void_struct,
 
@@ -2102,7 +2102,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::String, .. } => {
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::String | PrimativeKind::StringMut, .. } => {
 				if index == 2 {
 					field_type = self.llvm_types.slice_struct;
 					field_pointer = pointer;

@@ -20,6 +20,7 @@ enum FormatStringItem {
 
 	Bool(bool)
 	String(str)
+	StringMut(strmut) // Unfortunate that this is a separate variant
 	FormatString(fstr)
 }
 
@@ -48,6 +49,7 @@ fn print_to_file_stream(stream: *FileStream, message: fstr) {
 			}
 
 			String => fwrite(buffer: item.pointer, item_size: 1, count: item.length.(usize), stream)
+			StringMut => fwrite(buffer: item.pointer, item_size: 1, count: item.length.(usize), stream)
 			FormatString => print_fstr(stream, item)
 		}
 	}

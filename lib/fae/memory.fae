@@ -1,4 +1,5 @@
-import fae.intrinsics.create_slice_mut, create_str, create_non_null_invalid_pointer, create_non_null_invalid_slice
+import fae.intrinsics.create_slice_mut, create_str_mut
+import fae.intrinsics.create_non_null_invalid_pointer, create_non_null_invalid_slice
 import fae.libc.calloc, memcpy, memmove, memset
 
 generic T
@@ -122,11 +123,15 @@ fn free_slice(slice=: []T) {
 	free<T>(slice.pointer)
 }
 
-fn allocate_string_copied(source=: str): str {
+fn allocate_str_copied(source=: str): str {
+	return allocate_str_mut_copied(source)
+}
+
+fn allocate_str_mut_copied(source=: str): strmut {
 	let size = source.length.(usize)
 	let pointer = calloc(count: 1, size)
 	memcpy(destination: pointer, source: source.pointer, size)
-	return create_str(pointer, length: source.length)
+	return create_str_mut(pointer, length: source.length)
 }
 
 fn free_str(string=: str) {

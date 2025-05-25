@@ -1,0 +1,30 @@
+import fae.memory.allocate_slice_copied, allocate_str_mut_copied, free_str
+import fae.intrinsics.create_str_mut
+
+struct String {
+	contents: strmut readable
+}
+
+method static String
+fn from_str(input=: str): String {
+	let contents = allocate_str_mut_copied(input)
+	return String { contents }
+}
+
+method static String
+fn from_bytes(input=: []u8): String {
+	let bytes = allocate_slice_copied<u8>(input)
+	let contents = create_str_mut(bytes.pointer, length: bytes.length)
+	return String { contents }
+}
+
+method static String
+fn clone_str(input=: str): String {
+	let contents = allocate_str_mut_copied(input)
+	return String { contents }
+}
+
+method mut String
+fn free() {
+	free_str(self.contents)
+}

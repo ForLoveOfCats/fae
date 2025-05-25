@@ -1050,7 +1050,9 @@ fn generate_unary_operation<'a, 'b, G: Generator>(
 
 		UnaryOperator::RangeIndex { index_expression } => {
 			let index_expression = generate_expression(context, generator, index_expression).unwrap();
-			let item_type = if resultant_type_id.is_string(context.type_store) {
+
+			let result_is_string = resultant_type_id.is_string(context.type_store);
+			let item_type = if result_is_string || resultant_type_id.is_string_mut(context.type_store) {
 				context.type_store.u8_type_id()
 			} else {
 				context.type_store.sliced_of(resultant_type_id).unwrap().0
@@ -1342,7 +1344,7 @@ fn generate_intrinsic<'a, 'b, G: Generator>(
 			Some(generator.generate_slice(specialization.return_type, pointer, length, debug_location))
 		}
 
-		"create_str" => {
+		"create_str" | "create_str_mut" => {
 			assert_eq!(specialization.type_arguments.explicit_len, 0);
 			assert_eq!(specialization.parameters.len(), 2);
 			assert_eq!(call.arguments.len(), 2);

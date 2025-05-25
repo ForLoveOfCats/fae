@@ -31,24 +31,24 @@ fn offset_pointer_mut(pointer=: *mut T, by_bytes: isize): *mut T {
 
 fn print(message=: fstr) {
 	let stream = fae.libc.StdOutFile
-	fae.string.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(stream, message)
 }
 
 fn println(message=: fstr) {
 	let stream = fae.libc.StdOutFile
 	let message = f"{message}\n"
-	fae.string.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(stream, message)
 }
 
 fn eprint(message=: fstr) {
 	let stream = fae.libc.StdErrFile
-	fae.string.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(stream, message)
 }
 
 fn eprintln(message=: fstr) {
 	let stream = fae.libc.StdErrFile
 	let message = f"{message}\n"
-	fae.string.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(stream, message)
 }
 
 fn panic(): noreturn {

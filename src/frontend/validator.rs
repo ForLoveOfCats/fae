@@ -6171,7 +6171,7 @@ fn lookup_name_on_base<'a>(
 	name: Node<&'a str>,
 	is_call: bool,
 ) -> Option<NameOnBase<'a>> {
-	let base_type_id = match &base.kind {
+	let (base_type_id, is_type_itself) = match &base.kind {
 		ExpressionKind::ModuleLayer(layer) => {
 			let mut lock = layer.write();
 			if let Some(child) = lock.children.get(name.item) {
@@ -6182,11 +6182,11 @@ fn lookup_name_on_base<'a>(
 			return symbol.map(|symbol| NameOnBase::Symbol(symbol));
 		}
 
-		ExpressionKind::Type { type_id } => *type_id,
+		ExpressionKind::Type { type_id } => (*type_id, true),
 
 		ExpressionKind::AnyCollapse => return None,
 
-		_ => base.type_id,
+		_ => (base.type_id, false),
 	};
 
 	let (type_id, is_itself_mutable, is_pointer_access_mutable) = match base_type_id.as_pointed(context.type_store) {
@@ -6202,6 +6202,18 @@ fn lookup_name_on_base<'a>(
 			if let Some(method_index) = collection.methods_by_name.get(name.item).copied() {
 				let info = collection.methods[method_index];
 				return Some(NameOnBase::Method(info));
+			}
+		}
+
+		// Static methods should not fall back
+		if !is_type_itself {
+			if let Some(methods_index) = entry.kind.fallback_methods_index(context.type_store) {
+				let collections = context.type_store.method_collections.read();
+				let collection = collections[methods_index].read();
+				if let Some(method_index) = collection.methods_by_name.get(name.item).copied() {
+					let info = collection.methods[method_index];
+					return Some(NameOnBase::Method(info));
+				}
 			}
 		}
 	}
@@ -6355,7 +6367,7 @@ fn lookup_name_on_base<'a>(
 				name: "length",
 				type_id: context.type_store.isize_type_id(),
 				attribute: None,
-				read_only: false,
+				read_only: !as_slice.mutable,
 			},
 		];
 
@@ -6402,6 +6414,41 @@ fn lookup_name_on_base<'a>(
 			is_itself_mutable,
 			is_pointer_access_mutable,
 			&[str_fields],
+			false,
+		);
+	} else if type_id.is_string_mut(context.type_store) {
+		let u8_type_id = context.type_store.u8_type_id();
+		let str_mut_fields = &[
+			Field {
+				span: None,
+				name: "pointer",
+				type_id: context.type_store.pointer_to(u8_type_id, true),
+				attribute: None,
+				read_only: false,
+			},
+			Field {
+				span: None,
+				name: "length",
+				type_id: context.type_store.isize_type_id(),
+				attribute: None,
+				read_only: false,
+			},
+			Field {
+				span: None,
+				name: "bytes",
+				type_id: context.type_store.u8_slice_mut_type_id(),
+				attribute: None,
+				read_only: false,
+			},
+		];
+
+		return lookup_field_in_fields(
+			context,
+			name,
+			base.type_id,
+			is_itself_mutable,
+			is_pointer_access_mutable,
+			&[str_mut_fields],
 			false,
 		);
 	} else if type_id.is_format_string(context.type_store) {
@@ -7909,6 +7956,30 @@ fn validate_bracket_index<'a>(
 			}
 
 			(context.type_store.u8_type_id(), false)
+		}
+
+		TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } => {
+			let is_pointer_access_mutable = expression.is_pointer_access_mutable;
+
+			if is_range {
+				let type_id = context.type_store.string_mut_type_id();
+				let yields = expression.yields || index_expression.yields;
+				let returns = expression.returns || index_expression.returns;
+				let op = UnaryOperator::RangeIndex { index_expression };
+				let kind = ExpressionKind::UnaryOperation(Box::new(UnaryOperation { op, type_id, expression }));
+				return Expression {
+					span,
+					type_id,
+					is_itself_mutable: true,
+					is_pointer_access_mutable,
+					yields,
+					returns,
+					kind,
+					debug_location: span.debug_location(context.parsed_files),
+				};
+			}
+
+			(context.type_store.u8_type_id(), is_pointer_access_mutable)
 		}
 
 		_ => {

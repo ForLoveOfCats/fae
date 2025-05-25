@@ -10,6 +10,9 @@ fn create_slice_mut(pointer=: *mut T, length: isize): []mut T
 fn create_str(pointer=: *u8, length: isize): str
 
 #intrinsic
+fn create_str_mut(pointer=: *mut u8, length: isize): strmut
+
+#intrinsic
 generic T
 fn create_non_null_invalid_pointer(): *mut T
 

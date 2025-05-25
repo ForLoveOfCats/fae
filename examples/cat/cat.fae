@@ -1,7 +1,6 @@
 import fae.io.file.File
 import fae.collections.list.List
 import fae.os.arguments.Arguments
-import fae.string.slice_to_str
 
 fn main() {
 	mut arguments = Arguments.parse_user_arguments()
@@ -15,7 +14,7 @@ fn main() {
 		defer file.close()
 
 		file.read_all_into(buffer.&mut)
-		let contents = slice_to_str(buffer.items)
+		let contents = str.from_slice(buffer.items)
 		print(f"{contents}")
 	}
 }

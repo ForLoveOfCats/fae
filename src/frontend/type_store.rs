@@ -71,6 +71,10 @@ impl TypeId {
 		type_store.direct_match(self, type_store.string_type_id)
 	}
 
+	pub fn is_string_mut(self, type_store: &TypeStore) -> bool {
+		type_store.direct_match(self, type_store.string_mut_type_id)
+	}
+
 	pub fn is_format_string(self, type_store: &TypeStore) -> bool {
 		type_store.direct_match(self, type_store.format_string_type_id)
 	}
@@ -723,6 +727,7 @@ pub enum PrimativeKind {
 	Bool,
 	Numeric(NumericKind),
 	String,
+	StringMut,
 	FormatString,
 }
 
@@ -736,6 +741,7 @@ impl PrimativeKind {
 			PrimativeKind::Bool => "bool",
 			PrimativeKind::Numeric(numeric) => numeric.name(),
 			PrimativeKind::String => "str",
+			PrimativeKind::StringMut => "strmut",
 			PrimativeKind::FormatString => "fstr",
 		}
 	}
@@ -748,7 +754,9 @@ impl PrimativeKind {
 			PrimativeKind::UntypedNumber => unreachable!(),
 			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
 			PrimativeKind::Numeric(numeric) => numeric.layout(),
-			PrimativeKind::String | PrimativeKind::FormatString => Layout { size: 8 * 2, alignment: 8 },
+			PrimativeKind::String | PrimativeKind::StringMut | PrimativeKind::FormatString => {
+				Layout { size: 8 * 2, alignment: 8 }
+			}
 		}
 	}
 }
@@ -891,6 +899,17 @@ impl TypeEntryKind {
 			| UserType { methods_index, .. }
 			| UserTypeGeneric { methods_index, .. }
 			| FunctionGeneric { methods_index, .. } => Some(methods_index),
+
+			_ => None,
+		}
+	}
+
+	pub fn fallback_methods_index(self, type_store: &mut TypeStore) -> Option<usize> {
+		match self {
+			TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } => {
+				let string_entry = type_store.type_entries.get(type_store.string_type_id);
+				string_entry.kind.methods_index()
+			}
 
 			_ => None,
 		}
@@ -1042,9 +1061,11 @@ pub struct TypeStore<'a> {
 
 	bool_type_id: TypeId,
 	string_type_id: TypeId,
+	string_mut_type_id: TypeId,
 	format_string_type_id: TypeId,
 
 	u8_slice_type_id: TypeId,
+	u8_slice_mut_type_id: TypeId,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1132,6 +1153,7 @@ impl<'a> TypeStore<'a> {
 
 		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
 		let string_type_id = push_primative(Some("str"), PrimativeKind::String);
+		let string_mut_type_id = push_primative(Some("strmut"), PrimativeKind::StringMut);
 		let format_string_type_id = push_primative(Some("fstr"), PrimativeKind::FormatString);
 
 		let mut type_store = TypeStore {
@@ -1164,13 +1186,17 @@ impl<'a> TypeStore<'a> {
 			f32_type_id,
 			f64_type_id,
 			string_type_id,
+			string_mut_type_id,
 			format_string_type_id,
 			u8_slice_type_id: TypeId { entry: u32::MAX },
+			u8_slice_mut_type_id: TypeId { entry: u32::MAX },
 		};
 
 		// This is a hack, consider moving the saved type ids into a different struct
 		let u8_slice_type_id = type_store.slice_of(u8_type_id, false);
 		type_store.u8_slice_type_id = u8_slice_type_id;
+		let u8_slice_mut_type_id = type_store.slice_of(u8_type_id, true);
+		type_store.u8_slice_mut_type_id = u8_slice_mut_type_id;
 
 		type_store
 	}
@@ -1251,12 +1277,20 @@ impl<'a> TypeStore<'a> {
 		self.string_type_id
 	}
 
+	pub fn string_mut_type_id(&self) -> TypeId {
+		self.string_mut_type_id
+	}
+
 	pub fn format_string_type_id(&self) -> TypeId {
 		self.format_string_type_id
 	}
 
 	pub fn u8_slice_type_id(&self) -> TypeId {
 		self.u8_slice_type_id
+	}
+
+	pub fn u8_slice_mut_type_id(&self) -> TypeId {
+		self.u8_slice_mut_type_id
 	}
 
 	pub fn direct_match(&self, a: TypeId, b: TypeId) -> bool {
@@ -1278,6 +1312,7 @@ impl<'a> TypeStore<'a> {
 		// if either type is an untyped number we know the other isn't, collapse to the other type
 		// if either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
 		// if either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
+		// if either type is a str, collapse the other to it
 		// if either type is an enum, collapse the other to it
 		// if either type is an union, collapse the other to it
 		// if either type is a transparent variant, collapse it to the other
@@ -1363,6 +1398,22 @@ impl<'a> TypeStore<'a> {
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
 				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
+			};
+		}
+
+		if let TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } = a_entry.kind {
+			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
+			return match collapsed {
+				CollapseResult::Success => Ok(b.type_id),
+				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
+			};
+		}
+
+		if let TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } = b_entry.kind {
+			let collapsed = self.collapse_to(messages, function_store, a.type_id, b);
+			return match collapsed {
+				CollapseResult::Success => Ok(a.type_id),
 				CollapseResult::Incompatible | CollapseResult::Errored => Err(()),
 			};
 		}
@@ -1535,7 +1586,9 @@ impl<'a> TypeStore<'a> {
 		//     || bitflags enum if number is zero
 		// mutable reference -> immutable reference
 		// mutable slice -> immutable slice
+		// strmut -> str
 		// str -> fstr
+		// strmut -> fstr
 		// enum/union variant -> enum/union
 		// transparent variant -> its wrapped type
 
@@ -1740,8 +1793,15 @@ impl<'a> TypeStore<'a> {
 			}
 		}
 
+		// strmut -> str
+		if from.type_id.is_string_mut(self) && to.is_string(self) {
+			from.type_id = to;
+			return CollapseResult::Success;
+		}
+
 		// str -> fstr
-		if from.type_id.is_string(self) && to.is_format_string(self) {
+		// strmut -> fstr
+		if (from.type_id.is_string(self) || from.type_id.is_string_mut(self)) && to.is_format_string(self) {
 			// TODO: This replace is a dumb solution
 			let expression = std::mem::replace(from, Expression::any_collapse(self, from.span));
 			let span = expression.span;
