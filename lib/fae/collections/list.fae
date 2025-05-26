@@ -25,6 +25,13 @@ fn with_capacity(capacity=: isize): List<T> {
 	return list
 }
 
+method static List
+fn from_slice(slice=: []T): List<T> {
+	mut list = List<T>.new()
+	list.extend_from_slice(slice)
+	return list
+}
+
 method mut List
 fn push(item=: T) {
 	self.reserve_at_least(self.items.length + 1)
