@@ -1,4 +1,5 @@
-import fae.libc.FileStream, fprintf, fwrite, fflush
+import fae.libc.FileStream, fprintf, fwrite, fflush, snprintf
+import fae.collections.string.String
 
 #lang "format_string_item_type"
 enum FormatStringItem {
@@ -24,8 +25,8 @@ enum FormatStringItem {
 	FormatString(fstr)
 }
 
-fn print_to_file_stream(stream: *FileStream, message: fstr) {
-	fn print_fstr(stream=: *FileStream, message=: fstr) {
+fn print_to_file_stream(message: fstr, stream: *FileStream) {
+	fn print_fstr(message=: fstr, stream=: *FileStream) {
 		for item in message.items => match item {
 			I8 => fprintf(stream, "%hhd".pointer, item)
 			I16 => fprintf(stream, "%hd".pointer, item)
@@ -50,10 +51,75 @@ fn print_to_file_stream(stream: *FileStream, message: fstr) {
 
 			String => fwrite(buffer: item.pointer, item_size: 1, count: item.length.(usize), stream)
 			StringMut => fwrite(buffer: item.pointer, item_size: 1, count: item.length.(usize), stream)
-			FormatString => print_fstr(stream, item)
+			FormatString => print_fstr(item, stream)
 		}
 	}
 
-	print_fstr(stream, message)
+	print_fstr(message, stream)
 	fflush(stream)
+}
+
+fn print_to_string(message: fstr, buffer: *mut String) {
+	const MINIMUM_BUFFER_SPACE = 32
+
+	generic T
+	fn perform_print(buffer: *mut String, format=: str, item=: T) {
+		let original_length = buffer.contents.length
+		let original_capacity = buffer.capacity
+
+		if buffer.capacity - buffer.contents.length < MINIMUM_BUFFER_SPACE
+			=> buffer.reserve_at_least(buffer.capacity + MINIMUM_BUFFER_SPACE)
+
+		buffer.set_length(buffer.capacity)
+		mut start = buffer.contents.bytes[original_length].&mut
+		mut space = buffer.capacity - original_length
+		mut needed_space = snprintf(buffer: start, size: space.(usize), format.pointer, item).(isize)
+		needed_space += 1 // null terminator
+
+		if needed_space > space {
+			buffer.reserve_at_least(original_capacity + needed_space)
+			buffer.set_length(buffer.capacity)
+
+			start = buffer.contents.bytes[original_length].&mut
+			space = buffer.capacity - original_length
+			needed_space = snprintf(buffer: start, size: space.(usize), format.pointer, item).(isize)
+			needed_space += 1 // null terminator
+
+			assertf(needed_space <= space, f"needed_space: {needed_space}, space: {space}")
+		}
+	
+		let added_length = needed_space - /* null terminator */ 1
+		buffer.set_length(original_length + added_length)
+	}
+
+	fn print_fstr(message=: fstr, buffer=: *mut String) {
+		for item in message.items => match item {
+			I8 => perform_print<i8>(buffer, "%hhd", item)
+			I16 => perform_print<i16>(buffer, "%hd", item)
+			I32 => perform_print<i32>(buffer, "%d", item)	
+			I64 => perform_print<i64>(buffer, "%ld", item)
+
+			U8 => perform_print<u8>(buffer, "%hhu", item)
+			U16 => perform_print<u16>(buffer, "%hu", item)
+			U32 => perform_print<u32>(buffer, "%u", item)
+			U64 => perform_print<u64>(buffer, "%lu", item)
+
+			Isize => perform_print<isize>(buffer, "%ld", item)
+			Usize => perform_print<usize>(buffer, "%lu", item)
+
+			F32 => perform_print<f32>(buffer, "%f", item)
+			F64 => perform_print<f64>(buffer, "%f", item)
+
+			Bool {
+				if item => buffer.push_str("true")
+				else => buffer.push_str("false")
+			}
+
+			String => buffer.push_str(item)
+			StringMut => buffer.push_str(item)
+			FormatString => print_fstr(item, buffer)
+		}
+	}
+
+	print_fstr(message, buffer)
 }

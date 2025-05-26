@@ -8,6 +8,11 @@ fn from_slice(slice=: []mut u8): strmut {
 	return fae.intrinsics.create_str_mut(slice.pointer, length: slice.length)
 }
 
+method static strmut
+fn allocate_copied(input=: str): strmut {
+	return fae.memory.allocate_str_mut_copied(input)
+}
+
 struct LinesIteratorMut {
 	string: strmut internal
 	offset: isize internal

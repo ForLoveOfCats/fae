@@ -1,4 +1,4 @@
-import fae.intrinsics.create_slice_mut
+import fae.intrinsics.create_slice_mut, create_str, create_str_mut
 
 #intrinsic
 generic T
@@ -19,6 +19,16 @@ fn null_slice(): []mut T {
 	return create_slice_mut<T>(null, length: 0)
 }
 
+fn null_str(): str {
+	let null = null_pointer<u8>()
+	return create_str(null, length: 0)
+}
+
+fn null_str_mut(): strmut {
+	let null = null_pointer<u8>()
+	return create_str_mut(null, length: 0)
+}
+
 generic T
 fn offset_pointer(pointer=: *T, by_bytes: isize): *T {
 	return (pointer.(isize) + by_bytes).(*T)
@@ -31,24 +41,24 @@ fn offset_pointer_mut(pointer=: *mut T, by_bytes: isize): *mut T {
 
 fn print(message=: fstr) {
 	let stream = fae.libc.StdOutFile
-	fae.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(message, stream)
 }
 
 fn println(message=: fstr) {
 	let stream = fae.libc.StdOutFile
 	let message = f"{message}\n"
-	fae.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(message, stream)
 }
 
 fn eprint(message=: fstr) {
 	let stream = fae.libc.StdErrFile
-	fae.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(message, stream)
 }
 
 fn eprintln(message=: fstr) {
 	let stream = fae.libc.StdErrFile
 	let message = f"{message}\n"
-	fae.format.print_to_file_stream(stream, message)
+	fae.format.print_to_file_stream(message, stream)
 }
 
 fn panic(): noreturn {

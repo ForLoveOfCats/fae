@@ -120,6 +120,9 @@ fn realloc(ptr=: *mut u8, new_size: usize): *mut u8
 extern "sleep"
 fn sleep(seconds: u32): u32
 
+extern "snprintf"
+fn snprintf(buffer: *mut u8, size: usize, pointer=: *u8, ...): i32
+
 extern "srand"
 fn srand(seed: u32)
 

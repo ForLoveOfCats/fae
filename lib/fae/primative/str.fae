@@ -8,13 +8,18 @@ fn from_slice(slice=: []u8): str {
 	return fae.intrinsics.create_str(slice.pointer, length: slice.length)
 }
 
+method static str
+fn allocate_copied(input=: str): str {
+	return fae.memory.allocate_str_copied(input)
+}
+
 method str
-fn allocate_copied(): str {
+fn clone(): str {
 	return fae.memory.allocate_str_copied(self.*)
 }
 
 method str
-fn allocate_copied_mut(): strmut {
+fn clone_mut(): strmut {
 	return fae.memory.allocate_str_mut_copied(self.*)
 }
 

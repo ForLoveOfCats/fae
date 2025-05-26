@@ -1,30 +1,101 @@
-import fae.memory.allocate_slice_copied, allocate_str_mut_copied, free_str
-import fae.intrinsics.create_str_mut
+import fae.memory.allocate_slice_copied, allocate_str_mut_copied, reallocate_region, free_str
+import fae.memory.copy_slice_nonoverlapping
+import fae.collections.list.GrowthFactor, InitialGrowth
+import fae.format.print_to_string
 
 struct String {
 	contents: strmut readable
+	capacity: isize readable
+}
+
+method static String
+fn new(): String {
+	return String { contents: null_str_mut(), capacity: 0 }
+}
+
+method static String
+fn with_capacity(capacity=: isize): String {
+	mut string = String.new()
+	string.reserve_exact(capacity)
+	return string
 }
 
 method static String
 fn from_str(input=: str): String {
 	let contents = allocate_str_mut_copied(input)
-	return String { contents }
+	return String { contents, capacity: contents.length }
 }
 
 method static String
 fn from_bytes(input=: []u8): String {
 	let bytes = allocate_slice_copied<u8>(input)
-	let contents = create_str_mut(bytes.pointer, length: bytes.length)
-	return String { contents }
+	let contents = strmut.from_slice(bytes)
+	return String { contents, capacity: contents.length }
 }
 
 method static String
-fn clone_str(input=: str): String {
-	let contents = allocate_str_mut_copied(input)
-	return String { contents }
+fn format(fstring=: fstr): String {
+	mut string = String.new()
+	print_to_string(message: fstring, buffer: string.&mut)
+	return string
 }
 
 method mut String
 fn free() {
 	free_str(self.contents)
+}
+
+method mut String
+fn clear() {
+	self.contents.length = 0
+}
+
+method mut String
+fn truncate(to_length=to: isize) {
+	if to_length >= self.contents.length => return
+	self.contents.length = to_length
+}
+
+method mut String
+fn set_length(to_length=: isize) {
+	self.contents.length = to_length
+}
+
+method String
+fn length(): isize {
+	return self.contents.length
+}
+
+method mut String
+fn reserve_exact(new_capacity=: isize) {
+	assertf(new_capacity > 0, f"{new_capacity}")
+	if new_capacity <= self.capacity => return
+
+	reallocate_region<u8>(self.contents.bytes.pointer.&mut, old_length: self.capacity, new_length: new_capacity)
+	self.capacity = new_capacity
+}
+
+method mut String
+fn reserve_at_least(mut new_capacity=: isize) {
+	assertf(new_capacity > 0, f"{new_capacity}")
+	if new_capacity <= self.capacity => return
+
+	if new_capacity < InitialGrowth => new_capacity = InitialGrowth
+	if new_capacity < self.capacity * GrowthFactor {
+		new_capacity = self.capacity * GrowthFactor
+	}
+
+	reallocate_region<u8>(self.contents.bytes.pointer.&mut, old_length: self.capacity, new_length: new_capacity)
+	self.capacity = new_capacity
+}
+
+method mut String
+fn push_str(input=: str) {
+	let original_length = self.contents.length
+	let result_length = self.contents.length + input.length
+	self.reserve_at_least(result_length)
+
+	self.contents.length = result_length
+	let destination = self.contents.bytes[original_length..result_length]
+	copy_slice_nonoverlapping<u8>(source: input.bytes, destination)
 }

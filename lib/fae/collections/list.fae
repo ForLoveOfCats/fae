@@ -95,11 +95,13 @@ fn reserve_at_least(mut new_capacity=: isize) {
 
 method mut List
 fn extend_from_slice(slice=: []T) {
+	let original_length = self.items.length
 	let result_length = self.items.length + slice.length
 	self.reserve_at_least(result_length)
-	let destination = self.items[self.items.length..result_length]
-	copy_slice_nonoverlapping<T>(source: slice, destination)
+
 	self.items.length = result_length
+	let destination = self.items[original_length..result_length]
+	copy_slice_nonoverlapping<T>(source: slice, destination)
 }
 
 method List

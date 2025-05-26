@@ -134,6 +134,14 @@ fn allocate_str_mut_copied(source=: str): strmut {
 	return create_str_mut(pointer, length: source.length)
 }
 
+fn reallocate_str_mut(source=: *mut strmut, old_length: isize, new_length: isize) {
+	if new_length == source.length => return
+
+	// as reallocate_region checks assertions we need not check the values here
+	reallocate_region<u8>(source.bytes.pointer.&mut, old_length, new_length)
+	source.length = new_length
+}
+
 fn free_str(string=: str) {
 	free<u8>(string.pointer)
 }
