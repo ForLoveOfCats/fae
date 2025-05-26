@@ -1,0 +1,22 @@
+generic T
+enum Enum {
+	Variant { variant_field: T }
+}
+
+generic T
+struct Struct {
+	struct_field: Enum<T>
+}
+
+fn main() {
+	let instance = Struct<i32> {
+		struct_field: .Variant {
+			variant_field: 42
+		}
+	}
+
+	if instance.struct_field is variant: Variant {
+		let a: i32 = variant.variant_field
+		println(f"{a}")
+	}
+}

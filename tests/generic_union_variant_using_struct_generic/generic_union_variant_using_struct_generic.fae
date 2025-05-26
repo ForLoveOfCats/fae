@@ -1,0 +1,20 @@
+generic T
+union Union {
+	variant: { variant_field: T }
+}
+
+generic T
+struct Struct {
+	struct_field: Union<T>
+}
+
+fn main() {
+	let instance = Struct<i32> {
+		struct_field: .variant {
+			variant_field: 42
+		}
+	}
+
+	let a: i32 = instance.struct_field.variant.variant_field
+	println(f"{a}")
+}

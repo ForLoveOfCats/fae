@@ -3500,8 +3500,6 @@ impl<'a> TypeStore<'a> {
 						);
 					}
 
-					TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
-
 					_ => {}
 				}
 			}
@@ -3763,8 +3761,6 @@ impl<'a> TypeStore<'a> {
 							TypeIdSpecializationSituation::UserType { user_type_shape_index: union_shape_index },
 						);
 					}
-
-					TypeEntryKind::UserTypeGeneric { .. } => unreachable!(),
 
 					_ => {}
 				}
