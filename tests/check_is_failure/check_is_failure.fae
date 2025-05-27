@@ -1,0 +1,14 @@
+struct Struct {}
+
+union Union {
+	variant: i32
+}
+
+fn main() {
+	if (Struct {}) is Abc {}
+
+	let u: Union = .variant(43)
+	if u is Abc {}
+
+	if 42.(i32) is Abc {}
+}

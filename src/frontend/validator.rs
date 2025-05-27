@@ -8442,9 +8442,9 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		None => (left.type_id, left.is_itself_mutable),
 	};
 
-	let report_not_enum_or_union = |context: &mut Context| {
+	let report_not_enum = |context: &mut Context| {
 		let found = context.type_name(left_type_id);
-		let error = error!("Cannot check is on type {found} as it is not an enum or union");
+		let error = error!("Cannot check is on type {found} as it is not an enum");
 		context.messages.message(error.span(left.span));
 	};
 
@@ -8453,7 +8453,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
 
 		_ => {
-			report_not_enum_or_union(context);
+			report_not_enum(context);
 			return Expression::any_collapse(context.type_store, span);
 		}
 	};
@@ -8466,20 +8466,15 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 			Some((base.variants.clone(), base.variants_by_name.clone()))
 		}
 
-		UserTypeKind::Union { shape } => {
-			let base = &shape.specializations[specialization_index];
-			Some((base.variants.clone(), base.variants_by_name.clone()))
-		}
-
-		UserTypeKind::Struct { .. } => {
-			report_not_enum_or_union(context);
+		UserTypeKind::Struct { .. } | UserTypeKind::Union { .. } => {
+			report_not_enum(context);
 			return Expression::any_collapse(context.type_store, span);
 		}
 	};
 	drop(user_type);
 
 	let Some((variants, variants_by_name)) = base_specialization else {
-		report_not_enum_or_union(context);
+		report_not_enum(context);
 		return Expression::any_collapse(context.type_store, span);
 	};
 
