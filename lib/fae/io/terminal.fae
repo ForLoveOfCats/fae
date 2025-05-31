@@ -1,7 +1,8 @@
 import fae.libc.StdOutFile, fflush, fwrite
 
 fn clear() {
-	let string = []u8 { 27, 91, 49, 59, 49, 72, 27, 91, 50, 74, 0 }
+	// Byte representation of the string "\e[1;1H\e[2J"
+	let string = []u8 { 27, 91, 49, 59, 49, 72, 27, 91, 50, 74 }
 	fwrite(buffer: string.pointer, item_size: 1, count: string.length.(usize), stream: StdOutFile)
 	fflush(StdOutFile)
 }
