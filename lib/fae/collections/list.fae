@@ -32,6 +32,16 @@ fn from_slice(slice=: []T): List<T> {
 	return list
 }
 
+method List
+fn clone(): List<T> {
+	return List<T>.from_slice(self.items)
+}
+
+method mut List
+fn free() {
+	free_slice<T>(self.items)
+}
+
 method mut List
 fn push(item=: T) {
 	self.reserve_at_least(self.items.length + 1)
@@ -226,9 +236,4 @@ fn slice(range=: Range): []T {
 method mut List
 fn slice_mut(range=: Range): []mut T {
 	return self.items[range]
-}
-
-method mut List
-fn free() {
-	free_slice<T>(self.items)
 }
