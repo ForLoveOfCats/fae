@@ -1,5 +1,5 @@
 import fae.memory.allocate_slice_copied, allocate_str_mut_copied, reallocate_region, free_str
-import fae.memory.copy_slice_nonoverlapping
+import fae.memory.copy_slice_nonoverlapping, copy_slice_overlapping
 import fae.collections.list.GrowthFactor, InitialGrowth
 import fae.format.print_to_string
 
@@ -103,4 +103,12 @@ fn push_str(input=: str) {
 	self.contents.length = result_length
 	let destination = self.contents.bytes[original_length..result_length]
 	copy_slice_nonoverlapping<u8>(source: input.bytes, destination)
+}
+
+method mut String
+fn remove_range(range=: Range) {
+	let source = self.contents[range.end..self.contents.length].bytes
+	let destination = self.contents[range.start..self.contents.length].bytes
+	copy_slice_overlapping<u8>(source, destination)
+	self.truncate(to: range.start + source.length)
 }
