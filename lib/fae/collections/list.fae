@@ -37,7 +37,7 @@ fn clone(): List<T> {
 	return List<T>.from_slice(self.items)
 }
 
-method mut List
+method List
 fn free() {
 	free_slice<T>(self.items)
 }

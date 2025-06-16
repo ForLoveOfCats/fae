@@ -119,7 +119,7 @@ struct DelimitedReader {
 	buffer: List<u8>
 }
 
-method mut DelimitedReader
+method DelimitedReader
 fn free() {
 	self.buffer.free()
 }

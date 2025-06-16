@@ -45,7 +45,7 @@ fn clone(): String {
 	return String.from_str(self.contents)
 }
 
-method mut String
+method String
 fn free() {
 	free_str(self.contents)
 }

@@ -35,7 +35,7 @@ fn parse_all_arguments(): Arguments {
 	return Arguments { items: parsed.items }
 }
 
-method mut Arguments
+method Arguments
 fn free() {
 	fae.memory.free_slice<str>(self.items)
 }

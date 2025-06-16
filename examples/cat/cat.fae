@@ -3,7 +3,7 @@ import fae.collections.list.List
 import fae.os.arguments.Arguments
 
 fn main() {
-	mut arguments = Arguments.parse_user_arguments()
+	let arguments = Arguments.parse_user_arguments()
 	defer arguments.free()
 
 	mut buffer = List<u8>.new()
