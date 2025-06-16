@@ -94,20 +94,20 @@ fn print_to_string(message: fstr, buffer: *mut String) {
 
 	fn print_fstr(message=: fstr, buffer=: *mut String) {
 		for item in message.items => match item {
-			I8 => perform_print<i8>(buffer, "%hhd", item)
-			I16 => perform_print<i16>(buffer, "%hd", item)
-			I32 => perform_print<i32>(buffer, "%d", item)	
+			I8 => perform_print<i64>(buffer, "%ld", item.(i64))
+			I16 => perform_print<i64>(buffer, "%ld", item.(i64))
+			I32 => perform_print<i64>(buffer, "%ld", item.(i64))	
 			I64 => perform_print<i64>(buffer, "%ld", item)
 
-			U8 => perform_print<u8>(buffer, "%hhu", item)
-			U16 => perform_print<u16>(buffer, "%hu", item)
-			U32 => perform_print<u32>(buffer, "%u", item)
+			U8 => perform_print<u64>(buffer, "%lu", item.(u64))
+			U16 => perform_print<u64>(buffer, "%lu", item.(u64))
+			U32 => perform_print<u64>(buffer, "%lu", item.(u64))
 			U64 => perform_print<u64>(buffer, "%lu", item)
 
-			Isize => perform_print<isize>(buffer, "%ld", item)
-			Usize => perform_print<usize>(buffer, "%lu", item)
+			Isize => perform_print<isize>(buffer, "%zd", item)
+			Usize => perform_print<usize>(buffer, "%zu", item)
 
-			F32 => perform_print<f32>(buffer, "%f", item)
+			F32 => perform_print<f64>(buffer, "%f", item.(f64))
 			F64 => perform_print<f64>(buffer, "%f", item)
 
 			Bool {
