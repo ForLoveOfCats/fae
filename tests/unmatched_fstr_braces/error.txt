@@ -1,3 +1,4 @@
-Parse error: ./tests/unmatched_fstr_braces/unmatched_fstr_braces.fae, line 2: Missing closing brace for format string sub-expression
+Parse error: ./tests/unmatched_fstr_braces/unmatched_fstr_braces.fae:2
+ Missing closing brace for format string sub-expression
   2|     println(f"{message")
                            ^

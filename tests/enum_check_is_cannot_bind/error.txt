@@ -1,19 +1,24 @@
-Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae, line 7: Cannot bind `is` check to a name in the current context
+Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae:7
+ Cannot bind `is` check to a name in the current context
   7|     value is a: A
                   ^
 
-Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae, line 8: Cannot bind `is` check to a name in the current context
+Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae:8
+ Cannot bind `is` check to a name in the current context
   8|     value is b: B
                   ^
 
-Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae, line 10: No field `field` on `Enum`
+Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae:10
+ No field `field` on `Enum`
   10|     if value is B or value.field == 3 {}
                                  ^^^^^
 
-Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae, line 13: Cannot bind `is` check to a name in the current context
+Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae:13
+ Cannot bind `is` check to a name in the current context
   13|     if value is b: B or b.field == 3 {}
                       ^
 
-Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae, line 13: No symbol `b` in the current scope
+Validation error: ./tests/enum_check_is_cannot_bind/enum_check_is_cannot_bind.fae:13
+ No symbol `b` in the current scope
   13|     if value is b: B or b.field == 3 {}
                               ^

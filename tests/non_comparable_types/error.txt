@@ -1,35 +1,45 @@
-Validation error: ./tests/non_comparable_types/non_comparable_types.fae, line 3: Cannot perform equality comparison on non-comparable type `[]str`
+Validation error: ./tests/non_comparable_types/non_comparable_types.fae:3
+ Cannot perform equality comparison on non-comparable type `[]str`
   3|     println(f"{a == a}")
                     ^^^^^^
 
-Validation error: ./tests/non_comparable_types/non_comparable_types.fae, line 4: Cannot perform equality comparison on non-comparable type `[]str`
+Validation error: ./tests/non_comparable_types/non_comparable_types.fae:4
+ Cannot perform equality comparison on non-comparable type `[]str`
   4|     println(f"{a != a}")
                     ^^^^^^
 
-Validation error: ./tests/non_comparable_types/non_comparable_types.fae, line 7: Cannot perform equality comparison on non-comparable type `Empty`
+Validation error: ./tests/non_comparable_types/non_comparable_types.fae:7
+ Cannot perform equality comparison on non-comparable type `Empty`
   7|     println(f"{b == b}")
                     ^^^^^^
 
-Validation error: ./tests/non_comparable_types/non_comparable_types.fae, line 8: Cannot perform equality comparison on non-comparable type `Empty`
+Validation error: ./tests/non_comparable_types/non_comparable_types.fae:8
+ Cannot perform equality comparison on non-comparable type `Empty`
   8|     println(f"{b != b}")
                     ^^^^^^
 
-Validation error: ./tests/non_comparable_types/non_comparable_types.fae, line 10: Equals type mismatch
+Validation error: ./tests/non_comparable_types/non_comparable_types.fae:10
+ Equals type mismatch
   10|     println(f"{a == b}")
                      ^^^^^^
-Note: ./tests/non_comparable_types/non_comparable_types.fae, line 10: Left type `[]str`
+Note: ./tests/non_comparable_types/non_comparable_types.fae:10
+ Left type `[]str`
   10|     println(f"{a == b}")
                      ^
-Note: ./tests/non_comparable_types/non_comparable_types.fae, line 10: Right type `Empty`
+Note: ./tests/non_comparable_types/non_comparable_types.fae:10
+ Right type `Empty`
   10|     println(f"{a == b}")
                           ^
 
-Validation error: ./tests/non_comparable_types/non_comparable_types.fae, line 11: Not Equals type mismatch
+Validation error: ./tests/non_comparable_types/non_comparable_types.fae:11
+ Not Equals type mismatch
   11|     println(f"{a != b}")
                      ^^^^^^
-Note: ./tests/non_comparable_types/non_comparable_types.fae, line 11: Left type `[]str`
+Note: ./tests/non_comparable_types/non_comparable_types.fae:11
+ Left type `[]str`
   11|     println(f"{a != b}")
                      ^
-Note: ./tests/non_comparable_types/non_comparable_types.fae, line 11: Right type `Empty`
+Note: ./tests/non_comparable_types/non_comparable_types.fae:11
+ Right type `Empty`
   11|     println(f"{a != b}")
                           ^

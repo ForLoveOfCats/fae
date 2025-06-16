@@ -1,3 +1,4 @@
-Validation error: ./tests/array_of_unknown_type/array_of_unknown_type.fae, line 2: No symbol `abc` in the current scope
+Validation error: ./tests/array_of_unknown_type/array_of_unknown_type.fae:2
+ No symbol `abc` in the current scope
   2|     name: [5]abc
                   ^^^

@@ -1,6 +1,8 @@
-Validation error: ./tests/generic_calling_generic_trait_failure/generic_calling_generic_trait_failure.fae, line 8: Type is expected to conform to trait `Trait` but does not
+Validation error: ./tests/generic_calling_generic_trait_failure/generic_calling_generic_trait_failure.fae:8
+ Type is expected to conform to trait `Trait` but does not
   8|     function_b<T>(arg)
                     ^
-Note: ./tests/generic_calling_generic_trait_failure/generic_calling_generic_trait_failure.fae, line 18: Type does not implement method `calculate_hash`
+Note: ./tests/generic_calling_generic_trait_failure/generic_calling_generic_trait_failure.fae:18
+ Type does not implement method `calculate_hash`
   18|     fn calculate_hash(): u64
              ^^^^^^^^^^^^^^

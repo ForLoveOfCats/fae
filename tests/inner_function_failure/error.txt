@@ -1,11 +1,14 @@
-Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 17: Expected return type of `f64`, got `i32`
+Validation error: ./tests/inner_function_failure/inner_function_failure.fae:17
+ Expected return type of `f64`, got `i32`
   17|     return inner(arg + 1)
           ^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 37: Expected 0 type arguments, got 1
+Validation error: ./tests/inner_function_failure/inner_function_failure.fae:37
+ Expected 0 type arguments, got 1
   37|         return level_two<E>(a)
                      ^^^^^^^^^^^^^^^
 
-Validation error: ./tests/inner_function_failure/inner_function_failure.fae, line 41: Expected argument of type `T`, got `untyped number`
+Validation error: ./tests/inner_function_failure/inner_function_failure.fae:41
+ Expected argument of type `T`, got `untyped number`
   41|     return level_one(b, 4)
                               ^

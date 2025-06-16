@@ -1,25 +1,32 @@
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 2: Cannot construct struct-like variant `Enum.B` without an initializer
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:2
+ Cannot construct struct-like variant `Enum.B` without an initializer
   2|     mut v: Enum = .B.immutable_method()
                        ^^
 
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 2: Cannot call instance method `immutable_method` statically
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:2
+ Cannot call instance method `immutable_method` statically
   2|     mut v: Enum = .B.immutable_method()
                        ^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 5: Cannot construct struct-like variant `Enum.B` without an initializer
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:5
+ Cannot construct struct-like variant `Enum.B` without an initializer
   5|     v = .B.mutable_method()
              ^^
 
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 5: Cannot call instance method `mutable_method` statically
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:5
+ Cannot call instance method `mutable_method` statically
   5|     v = .B.mutable_method()
              ^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 8: Assignment type mismatch
+Validation error: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:8
+ Assignment type mismatch
   8|     v = .B.returns_bool()
          ^^^^^^^^^^^^^^^^^^^^^
-Note: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 8: Left type `Enum`
+Note: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:8
+ Left type `Enum`
   8|     v = .B.returns_bool()
          ^
-Note: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae, line 8: Right type `bool`
+Note: ./tests/dot_infer_method_call_failure/dot_infer_method_call_failure.fae:8
+ Right type `bool`
   8|     v = .B.returns_bool()
              ^^^^^^^^^^^^^^^^^

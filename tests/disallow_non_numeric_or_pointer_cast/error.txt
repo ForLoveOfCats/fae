@@ -1,30 +1,39 @@
-Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 3: Cannot cast to a value which is not numeric or a pointer
+Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:3
+ Cannot cast to a value which is not numeric or a pointer
   3|     1.(Abc)
          ^^^^^^^
-Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 3: Attempted to cast to type `Abc`
+Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:3
+ Attempted to cast to type `Abc`
   3|     1.(Abc)
             ^^^
 
-Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 4: Cannot cast to a value which is not numeric or a pointer
+Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:4
+ Cannot cast to a value which is not numeric or a pointer
   4|     1.(i32).(Abc)
          ^^^^^^^^^^^^^
-Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 4: Attempted to cast to type `Abc`
+Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:4
+ Attempted to cast to type `Abc`
   4|     1.(i32).(Abc)
                   ^^^
 
-Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 5: Cannot cast from a value which is not numeric or a pointer
+Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:5
+ Cannot cast from a value which is not numeric or a pointer
   5|     abc.(i32)
          ^^^^^^^^^
-Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 5: Attempted to cast from type `Abc`
+Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:5
+ Attempted to cast from type `Abc`
   5|     abc.(i32)
          ^^^
 
-Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 6: Cannot cast between values which are not numeric or a pointer
+Validation error: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:6
+ Cannot cast between values which are not numeric or a pointer
   6|     abc.(Def)
          ^^^^^^^^^
-Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 6: Attempted to cast from type `Abc`
+Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:6
+ Attempted to cast from type `Abc`
   6|     abc.(Def)
          ^^^
-Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae, line 6: Attempted to cast to type `Def`
+Note: ./tests/disallow_non_numeric_or_pointer_cast/disallow_non_numeric_or_pointer_cast.fae:6
+ Attempted to cast to type `Def`
   6|     abc.(Def)
               ^^^

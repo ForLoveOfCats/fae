@@ -1,19 +1,24 @@
-Validation error: ./tests/condition_type_failure/condition_type_failure.fae, line 2: Expected `if` condition of type `bool`, found `void`
+Validation error: ./tests/condition_type_failure/condition_type_failure.fae:2
+ Expected `if` condition of type `bool`, found `void`
   2|     if void {
             ^^^^
 
-Validation error: ./tests/condition_type_failure/condition_type_failure.fae, line 3: Expected `if` condition of type `bool`, found `void`
+Validation error: ./tests/condition_type_failure/condition_type_failure.fae:3
+ Expected `if` condition of type `bool`, found `void`
   3|     } else if void {
                    ^^^^
 
-Validation error: ./tests/condition_type_failure/condition_type_failure.fae, line 6: Expected `while` condition of type `bool`, found `void`
+Validation error: ./tests/condition_type_failure/condition_type_failure.fae:6
+ Expected `while` condition of type `bool`, found `void`
   6|     while void {}
                ^^^^
 
-Validation error: ./tests/condition_type_failure/condition_type_failure.fae, line 8: Cannot iterate over type `void`, expected a slice or `Range`
+Validation error: ./tests/condition_type_failure/condition_type_failure.fae:8
+ Cannot iterate over type `void`, expected a slice or `Range`
   8|     for _ in void {}
                   ^^^^
 
-Validation error: ./tests/condition_type_failure/condition_type_failure.fae, line 9: Cannot iterate over type `void`, expected a slice or `Range`
+Validation error: ./tests/condition_type_failure/condition_type_failure.fae:9
+ Cannot iterate over type `void`, expected a slice or `Range`
   9|     for _ of void {}
                   ^^^^

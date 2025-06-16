@@ -1,13 +1,17 @@
-Parse warning: ./tests/match_else_parse_failure/match_else_parse_failure.fae, line 12: Match expression arm should not follow else arm
+Parse warning: ./tests/match_else_parse_failure/match_else_parse_failure.fae:12
+ Match expression arm should not follow else arm
   12|         C => println("C")
               ^
-Note: ./tests/match_else_parse_failure/match_else_parse_failure.fae, line 11: Match else arm here, it should be the last arm
+Note: ./tests/match_else_parse_failure/match_else_parse_failure.fae:11
+ Match else arm here, it should be the last arm
   11|         else => println("else 1")
               ^^^^
 
-Parse error: ./tests/match_else_parse_failure/match_else_parse_failure.fae, line 15: Match expression may not have multiple else arms
+Parse error: ./tests/match_else_parse_failure/match_else_parse_failure.fae:15
+ Match expression may not have multiple else arms
   15|         else => println("else 2")
               ^^^^
-Note: ./tests/match_else_parse_failure/match_else_parse_failure.fae, line 11: Previous else arm here
+Note: ./tests/match_else_parse_failure/match_else_parse_failure.fae:11
+ Previous else arm here
   11|         else => println("else 1")
               ^^^^

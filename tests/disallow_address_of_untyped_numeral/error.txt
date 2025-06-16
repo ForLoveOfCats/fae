@@ -1,7 +1,9 @@
-Validation error: ./tests/disallow_address_of_untyped_numeral/disallow_address_of_untyped_numeral.fae, line 2: Cannot take address of untyped number, try casting it to a concrete type first
+Validation error: ./tests/disallow_address_of_untyped_numeral/disallow_address_of_untyped_numeral.fae:2
+ Cannot take address of untyped number, try casting it to a concrete type first
   2|     1.&
          ^^^
 
-Validation error: ./tests/disallow_address_of_untyped_numeral/disallow_address_of_untyped_numeral.fae, line 3: Cannot take address of untyped number, try casting it to a concrete type first
+Validation error: ./tests/disallow_address_of_untyped_numeral/disallow_address_of_untyped_numeral.fae:3
+ Cannot take address of untyped number, try casting it to a concrete type first
   3|     1.&mut
          ^^^^^^

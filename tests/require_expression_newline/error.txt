@@ -1,3 +1,4 @@
-Parse error: ./tests/require_expression_newline/require_expression_newline.fae, line 4: Expected newline but found "func"
+Parse error: ./tests/require_expression_newline/require_expression_newline.fae:4
+ Expected newline but found "func"
   4|     func() func()
                 ^^^^

@@ -404,29 +404,29 @@ impl Message {
 		if let Some(kind) = kind {
 			let kind_name = kind.name();
 			match kind {
-				MessageKind::Error => write!(
+				MessageKind::Error => writeln!(
 					output,
-					"{error_label_color}{stage} {kind_name}: {path_color}{}{reset_color}, line {}: ",
+					"{error_label_color}{stage} {kind_name}: {path_color}{}:{}{reset_color}",
 					path.display(),
 					line_num
 				),
 
-				MessageKind::Warning => write!(
+				MessageKind::Warning => writeln!(
 					output,
-					"{warning_label_color}{stage} {kind_name}: {path_color}{}{reset_color}, line {}: ",
+					"{warning_label_color}{stage} {kind_name}: {path_color}{}:{}{reset_color}",
 					path.display(),
 					line_num
 				),
 			}
 		} else {
-			write!(
+			writeln!(
 				output,
-				"{warning_label_color}{stage}: {path_color}{}{reset_color}, line {}: ",
+				"{warning_label_color}{stage}: {path_color}{}:{}{reset_color}",
 				path.display(),
 				line_num
 			);
 		}
-		writeln!(output, "{message_color}{}{reset_color}", text);
+		writeln!(output, " {message_color}{}{reset_color}", text);
 
 		//TODO: Handle multi-line spans
 		let gutter = format!("  {}| ", line_num);

@@ -1,7 +1,9 @@
-Validation error: ./tests/unknown_function_return_type/unknown_function_return_type.fae, line 3: No symbol `ThisTypeDoesNotExist` in the current scope
+Validation error: ./tests/unknown_function_return_type/unknown_function_return_type.fae:3
+ No symbol `ThisTypeDoesNotExist` in the current scope
   3| fn function(): ThisTypeDoesNotExist {}
                     ^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/unknown_function_return_type/unknown_function_return_type.fae, line 3: Not all code paths for function `function` return a value
+Validation error: ./tests/unknown_function_return_type/unknown_function_return_type.fae:3
+ Not all code paths for function `function` return a value
   3| fn function(): ThisTypeDoesNotExist {}
         ^^^^^^^^

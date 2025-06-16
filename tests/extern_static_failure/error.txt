@@ -1,15 +1,19 @@
-Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 7: A static definition does not allow generic attribute
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae:7
+ A static definition does not allow generic attribute
   7| generic T
      ^^^^^^^^^
 
-Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 9: A static definition does not allow export attribute
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae:9
+ A static definition does not allow export attribute
   9| export "TODO: Allow exporting"
      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 10: A static definition does not allow intrinsic attribute
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae:10
+ A static definition does not allow intrinsic attribute
   10| #intrinsic
       ^^^^^^^^^^
 
-Parse error: ./tests/extern_static_failure/extern_static_failure.fae, line 11: A static definition does not allow lang attribute
+Parse error: ./tests/extern_static_failure/extern_static_failure.fae:11
+ A static definition does not allow lang attribute
   11| #lang "made_up_lang_item"
       ^^^^^^^^^^^^^^^^^^^^^^^^^

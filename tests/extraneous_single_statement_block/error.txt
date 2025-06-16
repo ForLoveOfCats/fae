@@ -1,3 +1,4 @@
-Parse warning: ./tests/extraneous_single_statement_block/extraneous_single_statement_block.fae, line 2: A single statement block is extraneous if it only contains another block, consider removing the `=>`
+Parse warning: ./tests/extraneous_single_statement_block/extraneous_single_statement_block.fae:2
+ A single statement block is extraneous if it only contains another block, consider removing the `=>`
   2|     if true => {}
                  ^^

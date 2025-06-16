@@ -1,3 +1,4 @@
-Parse error: ./tests/ran_out_of_tokens/ran_out_of_tokens.fae, line 5: Ran out of tokens to parse, expected newline
+Parse error: ./tests/ran_out_of_tokens/ran_out_of_tokens.fae:5
+ Ran out of tokens to parse, expected newline
   5| fn func() {}
                 ^

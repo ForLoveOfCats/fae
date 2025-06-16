@@ -1,3 +1,4 @@
-Validation error: ./tests/to_many_enum_variants/to_many_enum_variants.fae, line 1: Enum `LargeEnum` has more than 256 variants, this is currently unsupported and disallowed
+Validation error: ./tests/to_many_enum_variants/to_many_enum_variants.fae:1
+ Enum `LargeEnum` has more than 256 variants, this is currently unsupported and disallowed
   1| enum LargeEnum {
           ^^^^^^^^^

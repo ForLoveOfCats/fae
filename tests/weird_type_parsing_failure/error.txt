@@ -1,31 +1,39 @@
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 21: Cannot path sub-access `T` as it is a function generic parameter
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:21
+ Cannot path sub-access `T` as it is a function generic parameter
   21| fn function(): T.abc {
                      ^^^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 10: Cannot path sub-access `T` as it is a type generic parameter
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:10
+ Cannot path sub-access `T` as it is a type generic parameter
   10|     field: T.abc
                  ^^^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 11: Type generic parameters do not accept type arguments
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:11
+ Type generic parameters do not accept type arguments
   11|     other_field: T<f32>
                        ^^^^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 2: Builtin types do not accept type arguments
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:2
+ Builtin types do not accept type arguments
   2|     let _: i32<bool> = void
                 ^^^^^^^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 3: Type `Struct<i32>` may not be dot-accessed
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:3
+ Type `Struct<i32>` may not be dot-accessed
   3|     let _: Struct<i32>.abc = void
                 ^^^^^^^^^^^^^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 4: Enum `Enum<i32>` has no variant named `abc`
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:4
+ Enum `Enum<i32>` has no variant named `abc`
   4|     let _: Enum<i32>.abc = void
                           ^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 5: Types may not have more than one level of dot access, found 2 levels
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:5
+ Types may not have more than one level of dot access, found 2 levels
   5|     let _: Enum<i32>.A.B = void
                 ^^^^^^^^^^^^^
 
-Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae, line 22: Function generic parameters do not accept type arguments
+Validation error: ./tests/weird_type_parsing_failure/weird_type_parsing_failure.fae:22
+ Function generic parameters do not accept type arguments
   22|     let _: T<i32> = void
                  ^^^^^^

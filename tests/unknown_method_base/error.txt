@@ -1,3 +1,4 @@
-Validation error: ./tests/unknown_method_base/unknown_method_base.fae, line 3: No symbol `UnknownType` in the current scope
+Validation error: ./tests/unknown_method_base/unknown_method_base.fae:3
+ No symbol `UnknownType` in the current scope
   3| method UnknownType
             ^^^^^^^^^^^

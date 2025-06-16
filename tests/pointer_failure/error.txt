@@ -1,11 +1,14 @@
-Validation error: ./tests/pointer_failure/pointer_failure.fae, line 3: Cannot take mutable address of immutable value
+Validation error: ./tests/pointer_failure/pointer_failure.fae:3
+ Cannot take mutable address of immutable value
   3|     a.&mut
          ^^^^^^
 
-Validation error: ./tests/pointer_failure/pointer_failure.fae, line 5: Cannot dereference `untyped number` as it is not a pointer
+Validation error: ./tests/pointer_failure/pointer_failure.fae:5
+ Cannot dereference `untyped number` as it is not a pointer
   5|     5.*
          ^^^
 
-Validation error: ./tests/pointer_failure/pointer_failure.fae, line 8: Cannot assign to immutable memory location
+Validation error: ./tests/pointer_failure/pointer_failure.fae:8
+ Cannot assign to immutable memory location
   8|     ptr.* = 6
          ^^^^^^^^^

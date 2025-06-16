@@ -1,6 +1,8 @@
-Validation error: ./tests/static_method_variant_collision/static_method_variant_collision.fae, line 6: Static method `OnFire` on enum `State` conflicts with variant `OnFire`
+Validation error: ./tests/static_method_variant_collision/static_method_variant_collision.fae:6
+ Static method `OnFire` on enum `State` conflicts with variant `OnFire`
   6| fn OnFire() {}
         ^^^^^^
-Note: ./tests/static_method_variant_collision/static_method_variant_collision.fae, line 2: Variant `OnFire` here
+Note: ./tests/static_method_variant_collision/static_method_variant_collision.fae:2
+ Variant `OnFire` here
   2|     OnFire
          ^^^^^^

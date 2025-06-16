@@ -1,3 +1,4 @@
-Parse error: ./tests/multi_byte_byte_codepoint/multi_byte_byte_codepoint.fae, line 2: Byte codepoint literal may not contain a multi-byte codepoint
+Parse error: ./tests/multi_byte_byte_codepoint/multi_byte_byte_codepoint.fae:2
+ Byte codepoint literal may not contain a multi-byte codepoint
   2|     b'£'
            ^

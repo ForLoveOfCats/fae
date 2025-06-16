@@ -1,3 +1,4 @@
-Validation error: ./tests/const_any_collapse/const_any_collapse.fae, line 1: No symbol `unknown` in the current scope
+Validation error: ./tests/const_any_collapse/const_any_collapse.fae:1
+ No symbol `unknown` in the current scope
   1| const A = unknown
                ^^^^^^^

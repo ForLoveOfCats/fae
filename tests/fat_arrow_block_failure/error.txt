@@ -1,7 +1,9 @@
-Parse error: ./tests/fat_arrow_block_failure/fat_arrow_block_failure.fae, line 1: Expected '{' but found "=>"
+Parse error: ./tests/fat_arrow_block_failure/fat_arrow_block_failure.fae:1
+ Expected '{' but found "=>"
   1| fn function() => print_string("Functions do not allow fat arrow")
                    ^^
 
-Parse error: ./tests/fat_arrow_block_failure/fat_arrow_block_failure.fae, line 5: Unexpected token "\n" while attempting to parse expression atom
+Parse error: ./tests/fat_arrow_block_failure/fat_arrow_block_failure.fae:5
+ Unexpected token "\n" while attempting to parse expression atom
   5|     while index < 10 =>
                             ^

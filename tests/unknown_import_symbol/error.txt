@@ -1,11 +1,14 @@
-Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae, line 1: Cannot find module for path segment
+Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae:1
+ Cannot find module for path segment
   1| import abc.Abc
             ^^^
 
-Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae, line 2: No importable module `Abc`
+Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae:2
+ No importable module `Abc`
   2| import fae.Abc
                 ^^^
 
-Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae, line 4: Cannot find symbol `Abc` to import
+Validation error: ./tests/unknown_import_symbol/unknown_import_symbol.fae:4
+ Cannot find symbol `Abc` to import
   4| import other.Abc
                   ^^^

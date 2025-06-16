@@ -1,7 +1,9 @@
-Validation warning: ./tests/unused_parameter_variable/unused_parameter_variable.fae, line 5: Unused symbol `arg`
+Validation warning: ./tests/unused_parameter_variable/unused_parameter_variable.fae:5
+ Unused symbol `arg`
   5| fn func(arg=: i32) {
              ^^^
 
-Validation warning: ./tests/unused_parameter_variable/unused_parameter_variable.fae, line 6: Unused symbol `variable`
+Validation warning: ./tests/unused_parameter_variable/unused_parameter_variable.fae:6
+ Unused symbol `variable`
   6|     let variable = false
              ^^^^^^^^

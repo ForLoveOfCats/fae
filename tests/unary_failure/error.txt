@@ -1,15 +1,19 @@
-Validation error: ./tests/unary_failure/unary_failure.fae, line 2: Cannot invert `untyped number` as it is not a boolean
+Validation error: ./tests/unary_failure/unary_failure.fae:2
+ Cannot invert `untyped number` as it is not a boolean
   2|     let _ = 5.!
                  ^^^
 
-Validation error: ./tests/unary_failure/unary_failure.fae, line 3: Cannot invert `str` as it is not a boolean
+Validation error: ./tests/unary_failure/unary_failure.fae:3
+ Cannot invert `str` as it is not a boolean
   3|     let _ = "hi".!
                  ^^^^^^
 
-Validation error: ./tests/unary_failure/unary_failure.fae, line 4: Cannot negate `str` as it is not a numeric type
+Validation error: ./tests/unary_failure/unary_failure.fae:4
+ Cannot negate `str` as it is not a numeric type
   4|     let _ = -"hi"
                  ^^^^^
 
-Validation error: ./tests/unary_failure/unary_failure.fae, line 5: Cannot negate `bool` as it is not a numeric type
+Validation error: ./tests/unary_failure/unary_failure.fae:5
+ Cannot negate `bool` as it is not a numeric type
   5|     let _ = -true
                  ^^^^^

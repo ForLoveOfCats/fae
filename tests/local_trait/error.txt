@@ -1,6 +1,8 @@
-Validation error: ./tests/local_trait/local_trait.fae, line 15: Type is expected to conform to trait `Trait` but does not
+Validation error: ./tests/local_trait/local_trait.fae:15
+ Type is expected to conform to trait `Trait` but does not
   15|     function<i32>()
                    ^^^
-Note: ./tests/local_trait/local_trait.fae, line 11: Expected method `method_name` to have the return type `void`, found return type `i32`
+Note: ./tests/local_trait/local_trait.fae:11
+ Expected method `method_name` to have the return type `void`, found return type `i32`
   11|     fn method_name(): i32 {
                             ^^^

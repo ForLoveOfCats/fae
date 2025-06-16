@@ -1,13 +1,17 @@
-Validation error: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae, line 9: Field intializer type mismatch, expected `i64` but got `i32` instead
+Validation error: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae:9
+ Field intializer type mismatch, expected `i64` but got `i32` instead
   9|     Struct { field: A }
                   ^^^^^^^^
 
-Validation error: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae, line 10: Addition type mismatch
+Validation error: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae:10
+ Addition type mismatch
   10|     A + B
           ^^^^^
-Note: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae, line 10: Left type `i32`
+Note: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae:10
+ Left type `i32`
   10|     A + B
           ^
-Note: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae, line 10: Right type `f64`
+Note: ./tests/const_explicit_number_type_failure/const_explicit_number_type_failure.fae:10
+ Right type `f64`
   10|     A + B
               ^

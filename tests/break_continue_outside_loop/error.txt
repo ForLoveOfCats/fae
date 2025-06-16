@@ -1,23 +1,29 @@
-Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae, line 1: A break statement is not allowed in a root scope
+Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae:1
+ A break statement is not allowed in a root scope
   1| break
      ^^^^^
 
-Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae, line 2: A continue statement is not allowed in a root scope
+Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae:2
+ A continue statement is not allowed in a root scope
   2| continue
      ^^^^^^^^
 
-Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae, line 5: Cannot break when outside a loop
+Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae:5
+ Cannot break when outside a loop
   5|     break
          ^^^^^
 
-Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae, line 6: Cannot continue when outside a loop
+Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae:6
+ Cannot continue when outside a loop
   6|     continue
          ^^^^^^^^
 
-Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae, line 10: Cannot break when outside a loop
+Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae:10
+ Cannot break when outside a loop
   10|             break
                   ^^^^^
 
-Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae, line 11: Cannot continue when outside a loop
+Validation error: ./tests/break_continue_outside_loop/break_continue_outside_loop.fae:11
+ Cannot continue when outside a loop
   11|             continue
                   ^^^^^^^^

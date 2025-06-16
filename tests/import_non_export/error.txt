@@ -1,43 +1,54 @@
-Validation error: ./tests/import_non_export/import_non_export.fae, line 1: Cannot find symbol `Pi` to import
+Validation error: ./tests/import_non_export/import_non_export.fae:1
+ Cannot find symbol `Pi` to import
   1| import module.Pi, MyStatic, MyStruct, MyEnum, my_function, do_something
                    ^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 1: Cannot find symbol `MyStatic` to import
+Validation error: ./tests/import_non_export/import_non_export.fae:1
+ Cannot find symbol `MyStatic` to import
   1| import module.Pi, MyStatic, MyStruct, MyEnum, my_function, do_something
                        ^^^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 1: Cannot find symbol `MyStruct` to import
+Validation error: ./tests/import_non_export/import_non_export.fae:1
+ Cannot find symbol `MyStruct` to import
   1| import module.Pi, MyStatic, MyStruct, MyEnum, my_function, do_something
                                  ^^^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 1: Cannot find symbol `MyEnum` to import
+Validation error: ./tests/import_non_export/import_non_export.fae:1
+ Cannot find symbol `MyEnum` to import
   1| import module.Pi, MyStatic, MyStruct, MyEnum, my_function, do_something
                                            ^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 1: Cannot find symbol `my_function` to import
+Validation error: ./tests/import_non_export/import_non_export.fae:1
+ Cannot find symbol `my_function` to import
   1| import module.Pi, MyStatic, MyStruct, MyEnum, my_function, do_something
                                                    ^^^^^^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 6: No symbol `MyStatic` in root of module `module`
+Validation error: ./tests/import_non_export/import_non_export.fae:6
+ No symbol `MyStatic` in root of module `module`
   6|     module.MyStatic = "Hello world!"
                 ^^^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 8: No symbol `Pi` in root of module `module`
+Validation error: ./tests/import_non_export/import_non_export.fae:8
+ No symbol `Pi` in root of module `module`
   8|     let _: f32 = module.Pi
                              ^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 9: No symbol `MyStruct` in root of module `module`
+Validation error: ./tests/import_non_export/import_non_export.fae:9
+ No symbol `MyStruct` in root of module `module`
   9|     let s = module.MyStruct { field: 1 }
                         ^^^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 12: No symbol `MyEnum` in root of module `module`
+Validation error: ./tests/import_non_export/import_non_export.fae:12
+ No symbol `MyEnum` in root of module `module`
   12|     let e: module.MyEnum = .B
                         ^^^^^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 12: Cannot infer base type for variant, there is no specific expected type in this context
+Validation error: ./tests/import_non_export/import_non_export.fae:12
+ Cannot infer base type for variant, there is no specific expected type in this context
   12|     let e: module.MyEnum = .B
                                  ^^
 
-Validation error: ./tests/import_non_export/import_non_export.fae, line 16: No symbol `my_function` in root of module `module`
+Validation error: ./tests/import_non_export/import_non_export.fae:16
+ No symbol `my_function` in root of module `module`
   16|     println(f"{module.my_function(true)}")
                             ^^^^^^^^^^^

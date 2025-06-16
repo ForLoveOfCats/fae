@@ -1,11 +1,14 @@
-Validation error: ./tests/check_is_failure/check_is_failure.fae, line 8: Cannot check is on type `Struct` as it is not an enum
+Validation error: ./tests/check_is_failure/check_is_failure.fae:8
+ Cannot check is on type `Struct` as it is not an enum
   8|     if (Struct {}) is Abc {}
              ^^^^^^^^^
 
-Validation error: ./tests/check_is_failure/check_is_failure.fae, line 11: Cannot check is on type `Union` as it is not an enum
+Validation error: ./tests/check_is_failure/check_is_failure.fae:11
+ Cannot check is on type `Union` as it is not an enum
   11|     if u is Abc {}
              ^
 
-Validation error: ./tests/check_is_failure/check_is_failure.fae, line 13: Cannot check is on type `i32` as it is not an enum
+Validation error: ./tests/check_is_failure/check_is_failure.fae:13
+ Cannot check is on type `i32` as it is not an enum
   13|     if 42.(i32) is Abc {}
              ^^^^^^^^

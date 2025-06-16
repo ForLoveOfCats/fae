@@ -1,43 +1,54 @@
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 2: Expected enum `Enum` has no variant named `Something`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:2
+ Expected enum `Enum` has no variant named `Something`
   2|     let _: Enum = .Something
                         ^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 3: Cannot infer base type for variant, there is no specific expected type in this context
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:3
+ Cannot infer base type for variant, there is no specific expected type in this context
   3|     let _ = .WhoKnows
                  ^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 5: Expected enum `Enum` has no variant named `Blah`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:5
+ Expected enum `Enum` has no variant named `Blah`
   5|     dump_enum(.Blah)
                     ^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 8: Expected enum `Enum` has no variant named `Nope`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:8
+ Expected enum `Enum` has no variant named `Nope`
   8|         first: .Nope
                      ^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 10: Expected enum `Enum` has no variant named `Another`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:10
+ Expected enum `Enum` has no variant named `Another`
   10|         third: .Another
                       ^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 13: Expected enum `Enum` has no variant named `NonExistant`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:13
+ Expected enum `Enum` has no variant named `NonExistant`
   13|     value.update_enum(.NonExistant)
                              ^^^^^^^^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 15: Expected enum `Enum` has no variant named `Abc`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:15
+ Expected enum `Enum` has no variant named `Abc`
   15|     value = Struct.new(.Abc { another: 6.4 }, -8)
                               ^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 17: Expected enum `Enum` has no variant named `Nope`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:17
+ Expected enum `Enum` has no variant named `Nope`
   17|     let _: OtherEnum = .Variant { shared: .A, unshared: .Nope }
                                                                ^^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 19: Expected enum `Enum` has no variant named `Abc`
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:19
+ Expected enum `Enum` has no variant named `Abc`
   19|     value.first = .Abc
                          ^^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 21: Cannot infer base type for variant, there is no specific expected type in this context
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:21
+ Cannot infer base type for variant, there is no specific expected type in this context
   21|     let _ = if true => yield .A
                                    ^^
 
-Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae, line 22: Cannot infer base type for variant, the expected type is not an enum or union
+Validation error: ./tests/inferred_enum_literal_failure/inferred_enum_literal_failure.fae:22
+ Cannot infer base type for variant, the expected type is not an enum or union
   22|     else => yield .B
                         ^^

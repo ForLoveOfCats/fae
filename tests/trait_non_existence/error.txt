@@ -1,11 +1,14 @@
-Validation error: ./tests/trait_non_existence/trait_non_existence.fae, line 6: No symbol `One` in the current scope
+Validation error: ./tests/trait_non_existence/trait_non_existence.fae:6
+ No symbol `One` in the current scope
   6| generic B: One
                 ^^^
 
-Validation error: ./tests/trait_non_existence/trait_non_existence.fae, line 9: No symbol `Two` in the current scope
+Validation error: ./tests/trait_non_existence/trait_non_existence.fae:9
+ No symbol `Two` in the current scope
   9| generic E: Two
                 ^^^
 
-Validation error: ./tests/trait_non_existence/trait_non_existence.fae, line 3: No symbol `Abc` in the current scope
+Validation error: ./tests/trait_non_existence/trait_non_existence.fae:3
+ No symbol `Abc` in the current scope
   3| generic T: Abc
                 ^^^

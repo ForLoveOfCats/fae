@@ -1,3 +1,4 @@
-Validation error: ./tests/underscore_parameter_name_label/underscore_parameter_name_label.fae, line 5: Expected parameter label `a` for argument
+Validation error: ./tests/underscore_parameter_name_label/underscore_parameter_name_label.fae:5
+ Expected parameter label `a` for argument
   5|     func(42, true)
               ^^

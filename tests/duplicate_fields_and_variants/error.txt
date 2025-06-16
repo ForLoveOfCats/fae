@@ -1,34 +1,44 @@
-Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 11: Duplicate variant `Variant` on enum `B`
+Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:11
+ Duplicate variant `Variant` on enum `B`
   11|     Variant { }
           ^^^^^^^
-Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 10: Original variant here
+Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:10
+ Original variant here
   10|     Variant { inner: i32, inner: i32, thing: str }
           ^^^^^^^
 
-Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 3: Duplicate field `a_field` on struct `A`
+Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:3
+ Duplicate field `a_field` on struct `A`
   3|     a_field: f32
          ^^^^^^^^^^^^
-Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 2: Original field here
+Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:2
+ Original field here
   2|     a_field: i32
          ^^^^^^^^^^^^
 
-Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 8: Duplicate shared field `thing` on enum `B`
+Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:8
+ Duplicate shared field `thing` on enum `B`
   8|     thing: f64
          ^^^^^^^^^^
-Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 7: Original shared field here
+Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:7
+ Original shared field here
   7|     thing: bool
          ^^^^^^^^^^^
 
-Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 10: Duplicate field `inner` on enum variant struct `Variant`
+Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:10
+ Duplicate field `inner` on enum variant struct `Variant`
   10|     Variant { inner: i32, inner: i32, thing: str }
                                 ^^^^^^^^^^
-Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 10: Original field here
+Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:10
+ Original field here
   10|     Variant { inner: i32, inner: i32, thing: str }
                     ^^^^^^^^^^
 
-Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 10: Duplicate field `thing` on enum variant struct `Variant`
+Validation error: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:10
+ Duplicate field `thing` on enum variant struct `Variant`
   10|     Variant { inner: i32, inner: i32, thing: str }
                                             ^^^^^^^^^^
-Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae, line 7: Original field here
+Note: ./tests/duplicate_fields_and_variants/duplicate_fields_and_variants.fae:7
+ Original field here
   7|     thing: bool
          ^^^^^^^^^^^

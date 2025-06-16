@@ -1,7 +1,9 @@
-Validation error: ./tests/call_not_function/call_not_function.fae, line 2: Cannot call `Struct`, it is a type
+Validation error: ./tests/call_not_function/call_not_function.fae:2
+ Cannot call `Struct`, it is a type
   2|     Struct(nonexistant())
          ^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/call_not_function/call_not_function.fae, line 4: Cannot call `a`, it is an immutable binding
+Validation error: ./tests/call_not_function/call_not_function.fae:4
+ Cannot call `a`, it is an immutable binding
   4|     a()
          ^^^

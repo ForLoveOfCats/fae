@@ -1,11 +1,14 @@
-Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae, line 9: Expected initalizer for field `first`, got `second` instead
+Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae:9
+ Expected initalizer for field `first`, got `second` instead
   9|         second: 2
              ^^^^^^
 
-Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae, line 10: Expected initalizer for field `second`, got `first` instead
+Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae:10
+ Expected initalizer for field `second`, got `first` instead
   10|         first: 1
               ^^^^^
 
-Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae, line 8: Too few field initializers, expected 3, but only found 2
+Validation error: ./tests/field_order_count_failure/field_order_count_failure.fae:8
+ Too few field initializers, expected 3, but only found 2
   8|     let _ = A {
                    ^^

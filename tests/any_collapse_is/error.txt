@@ -1,3 +1,4 @@
-Validation error: ./tests/any_collapse_is/any_collapse_is.fae, line 3: No symbol `unknown_function` in the current scope
+Validation error: ./tests/any_collapse_is/any_collapse_is.fae:3
+ No symbol `unknown_function` in the current scope
   3|     if unknown_function() is index: Some {
             ^^^^^^^^^^^^^^^^

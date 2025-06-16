@@ -1,47 +1,59 @@
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 2: Constant number 1.1 is a decimal and so cannot be represented as `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:2
+ Constant number 1.1 is a decimal and so cannot be represented as `isize`
   2|     print_range(1.1..4)
                      ^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 3: Constant number 100.8 is a decimal and so cannot be represented as `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:3
+ Constant number 100.8 is a decimal and so cannot be represented as `isize`
   3|     print_range(3..100.8)
                         ^^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 5: Cannot create a range with a left value of type `bool`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:5
+ Cannot create a range with a left value of type `bool`, expected `isize`
   5|     let a = true..false
                  ^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 5: Cannot create a range with a right value of type `bool`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:5
+ Cannot create a range with a right value of type `bool`, expected `isize`
   5|     let a = true..false
                        ^^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 8: Cannot create a range with a left value of type `void`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:8
+ Cannot create a range with a left value of type `void`, expected `isize`
   8|     let b: Range = void..void
                         ^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 8: Cannot create a range with a right value of type `void`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:8
+ Cannot create a range with a right value of type `void`, expected `isize`
   8|     let b: Range = void..void
                               ^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 11: Cannot create a range with a left value of type `EmptyStruct`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:11
+ Cannot create a range with a left value of type `EmptyStruct`, expected `isize`
   11|     print_range(function()..function())
                       ^^^^^^^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 11: Cannot create a range with a right value of type `EmptyStruct`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:11
+ Cannot create a range with a right value of type `EmptyStruct`, expected `isize`
   11|     print_range(function()..function())
                                   ^^^^^^^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 13: Cannot create a range with a left value of type `MyStruct`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:13
+ Cannot create a range with a left value of type `MyStruct`, expected `isize`
   13|     print_range(identity<MyStruct>(x)..identity<MyStruct>(x))
                       ^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 13: Cannot create a range with a right value of type `MyStruct`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:13
+ Cannot create a range with a right value of type `MyStruct`, expected `isize`
   13|     print_range(identity<MyStruct>(x)..identity<MyStruct>(x))
                                              ^^^^^^^^^^^^^^^^^^^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 16: Cannot create a range with a left value of type `i32`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:16
+ Cannot create a range with a left value of type `i32`, expected `isize`
   16|     print_range(int..int)
                       ^^^
 
-Validation error: ./tests/range_literal_failure/range_literal_failure.fae, line 16: Cannot create a range with a right value of type `i32`, expected `isize`
+Validation error: ./tests/range_literal_failure/range_literal_failure.fae:16
+ Cannot create a range with a right value of type `i32`, expected `isize`
   16|     print_range(int..int)
                            ^^^

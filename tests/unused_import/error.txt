@@ -1,15 +1,19 @@
-Validation warning: ./tests/unused_import/unused_import.fae, line 1: Unused symbol `A`
+Validation warning: ./tests/unused_import/unused_import.fae:1
+ Unused symbol `A`
   1| import other.A, B, C, d
                   ^
 
-Validation warning: ./tests/unused_import/unused_import.fae, line 1: Unused symbol `B`
+Validation warning: ./tests/unused_import/unused_import.fae:1
+ Unused symbol `B`
   1| import other.A, B, C, d
                      ^
 
-Validation warning: ./tests/unused_import/unused_import.fae, line 1: Unused symbol `C`
+Validation warning: ./tests/unused_import/unused_import.fae:1
+ Unused symbol `C`
   1| import other.A, B, C, d
                         ^
 
-Validation warning: ./tests/unused_import/unused_import.fae, line 1: Unused symbol `d`
+Validation warning: ./tests/unused_import/unused_import.fae:1
+ Unused symbol `d`
   1| import other.A, B, C, d
                            ^

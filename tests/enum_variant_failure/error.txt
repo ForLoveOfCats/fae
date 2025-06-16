@@ -1,39 +1,49 @@
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 4: Cannot construct struct-like variant `Enum.A` like a transparent variant
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:4
+ Cannot construct struct-like variant `Enum.A` like a transparent variant
   4|     let _: Enum = .A(1)
                        ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 6: Cannot construct transparent variant `Enum.B` without an initializer
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:6
+ Cannot construct transparent variant `Enum.B` without an initializer
   6|     let _: Enum = .B
                        ^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 7: Cannot construct transparent variant `Enum.B` like a struct-like variant
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:7
+ Cannot construct transparent variant `Enum.B` like a struct-like variant
   7|     let _: Enum = .B {}
                        ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 9: Constant number 0.1 is a decimal and so cannot be represented as `i32`
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:9
+ Constant number 0.1 is a decimal and so cannot be represented as `i32`
   9|     let _: Enum = .B(0.1)
                           ^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 11: Cannot construct struct-like variant `Enum.C` without an initializer
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:11
+ Cannot construct struct-like variant `Enum.C` without an initializer
   11|     let _: Enum = .C
                         ^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 12: Too few field initializers, expected 1, but only found 0
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:12
+ Too few field initializers, expected 1, but only found 0
   12|     let _: Enum = .C {}
                            ^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 14: Constant number 0.1 is a decimal and so cannot be represented as `i32`
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:14
+ Constant number 0.1 is a decimal and so cannot be represented as `i32`
   14|     let _: Enum = .C { field: 0.1 }
                                     ^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 15: Expected initalizer for field `field`, got `wrong` instead
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:15
+ Expected initalizer for field `field`, got `wrong` instead
   15|     let _: Enum = .C { wrong: 1}
                              ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 16: Unexpected extra field initalizer
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:16
+ Unexpected extra field initalizer
   16|     let _: Enum = .C { field: 1, extra: 2 }
                                        ^^^^^
 
-Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae, line 17: Cannot construct struct-like variant `Enum.C` like a transparent variant
+Validation error: ./tests/enum_variant_failure/enum_variant_failure.fae:17
+ Cannot construct struct-like variant `Enum.C` like a transparent variant
   17|     let _: Enum = .C(1)
                         ^^^^^
