@@ -165,7 +165,7 @@ fn parse_statement<'a>(
 		}
 
 		Token { kind: TokenKind::Word, text: "when", .. } => {
-			disallow_all_attributes(messages, attributes, peeked.span, "A while statement");
+			disallow_all_attributes(messages, attributes, peeked.span, "A when statement");
 			if let Ok(statement) = parse_when_else_chain(bump, messages, tokens) {
 				return Some(Statement::WhenElseChain(statement));
 			} else {
