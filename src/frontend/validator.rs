@@ -1669,8 +1669,39 @@ fn create_block_traits<'a>(
 				| tree::Statement::Union(..)
 				| tree::Statement::Trait(..)
 				| tree::Statement::Function(..)
+				| tree::Statement::Test(..)
 				| tree::Statement::Const(..)
 				| tree::Statement::Static(..) => {}
+			}
+		} else {
+			match statement {
+				tree::Statement::Test(..) => {
+					let error = error!("{} is only allowed in a root scope", statement.name_and_article());
+					messages.message(error.span(statement.span()));
+					continue;
+				}
+
+				tree::Statement::Expression(..)
+				| tree::Statement::Block(..)
+				| tree::Statement::WhenElseChain(..)
+				| tree::Statement::IfElseChain(..)
+				| tree::Statement::Match(..)
+				| tree::Statement::While(..)
+				| tree::Statement::For(..)
+				| tree::Statement::Import(..)
+				| tree::Statement::Struct(..)
+				| tree::Statement::Enum(..)
+				| tree::Statement::Union(..)
+				| tree::Statement::Trait(..)
+				| tree::Statement::Function(..)
+				| tree::Statement::Const(..)
+				| tree::Statement::Static(..)
+				| tree::Statement::Binding(..)
+				| tree::Statement::Defer(..)
+				| tree::Statement::Break(..)
+				| tree::Statement::Continue(..)
+				| tree::Statement::Yield(..)
+				| tree::Statement::Return(..) => {}
 			}
 		}
 
@@ -4051,6 +4082,36 @@ fn create_block_functions<'a>(
 
 			readables.readables.truncate(original_readables_overall_len);
 			readables.starting_index = original_readables_starting_index;
+		} else if let tree::Statement::Test(statement) = statement {
+			let shape = FunctionShape {
+				name: statement.name,
+				module_path,
+				is_main: false,
+				trait_method_marker: None,
+				generic_parameters: GenericParameters::new_from_explicit(Vec::new()),
+				extern_attribute: None,
+				export_attribute: None,
+				intrinsic_attribute: None,
+				lang_attribute: None,
+				method_base_index: None,
+				parameters: Node::new(Vec::new(), statement.name.span),
+				c_varargs: None,
+				return_type: Node::new(type_store.void_type_id(), statement.name.span),
+				block: None,
+				generic_usages: SliceRef::new_empty(),
+				specializations_by_type_arguments: FxHashMap::default(),
+				specializations: Vec::new(),
+			};
+
+			let mut shapes = function_store.shapes.write();
+			let function_shape_index = shapes.len();
+			shapes.push(Some(Ref::new(RwLock::new(shape))));
+			drop(shapes);
+
+			local_function_shape_indicies.push(function_shape_index);
+
+			let mut function_store_generics = function_store.generics.write();
+			function_store_generics.push(GenericParameters::new_from_explicit(Vec::new()));
 		} else if let tree::Statement::WhenElseChain(statement) = statement {
 			if let Some(body) = when_context.evaluate_when(messages, &statement.item) {
 				create_block_functions(
@@ -4469,7 +4530,16 @@ fn validate_statement<'a>(
 		tree::Statement::Function(statement) => {
 			let index = *index_in_block;
 			*index_in_block += 1;
-			validate_function(context, statement, index, scope_id)
+			validate_function(context, statement, index, scope_id);
+		}
+
+		tree::Statement::Test(statement) => {
+			let index = *index_in_block;
+			*index_in_block += 1;
+
+			if is_root {
+				validate_test(context, statement, index);
+			}
 		}
 
 		tree::Statement::Const(..) => {}
@@ -4748,7 +4818,7 @@ fn validate_function<'a>(
 
 	drop(shape);
 
-	let tree_block = &statement.block.as_ref().unwrap().item;
+	let tree_block = statement.block.as_ref().unwrap();
 	let block = validate_block(scope, tree_block, false);
 
 	if !return_type.item.is_void(context.type_store) && !block.returns {
@@ -4914,6 +4984,40 @@ fn validate_function<'a>(
 			Ref::new(TypeArguments::new_from_explicit(Vec::new())),
 		);
 	}
+}
+
+fn validate_test<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Test<'a>, index_in_block: usize) {
+	let generics = GenericParameters::new_from_explicit(Vec::new());
+	let scope = context.child_scope_for_function(context.type_store.void_type_id(), &generics);
+	let block = validate_block(scope, &statement.block, false);
+
+	let function_shape_index = context.local_function_shape_index(index_in_block);
+	let mut shapes = context.function_store.shapes.write();
+	let mut shape = shapes[function_shape_index].as_mut().unwrap().write();
+
+	assert!(shape.block.is_none());
+	shape.block = Some(Ref::new(block));
+
+	let type_arguments = Ref::new(TypeArguments::new_from_explicit(Vec::new()));
+	assert!(shape.specializations.is_empty());
+	let specialization_index = shape.specializations.len();
+	shape.specializations.push(Function {
+		type_arguments: type_arguments.clone(),
+		generic_poisoned: false,
+		parameters: SliceRef::new_empty(),
+		return_type: context.type_store.void_type_id(),
+	});
+
+	assert!(shape.specializations_by_type_arguments.is_empty());
+	shape
+		.specializations_by_type_arguments
+		.insert(type_arguments, specialization_index);
+
+	let function_id = FunctionId { function_shape_index, specialization_index };
+	let test = Test { name: statement.name.item, function_id };
+
+	let mut tests = context.function_store.tests.write();
+	tests.push(test);
 }
 
 fn validate_const<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Const<'a>>) -> Option<()> {

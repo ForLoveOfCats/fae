@@ -66,11 +66,15 @@ fn main() {
 		}
 	};
 
-	if cli_arguments.command == CompileCommand::Run {
-		if cli_arguments.loud {
+	if cli_arguments.loud {
+		if cli_arguments.command == CompileCommand::Run {
 			eprintln!("     {BOLD_GREEN}Running project{RESET}");
+		} else if cli_arguments.command == CompileCommand::Test {
+			eprintln!("     {BOLD_GREEN}Testing project{RESET}");
 		}
+	}
 
+	if let CompileCommand::Run | CompileCommand::Test = cli_arguments.command {
 		let mut command = Command::new(binary_path);
 		command.args(cli_arguments.child_arguments);
 		let mut child = command.spawn().unwrap();

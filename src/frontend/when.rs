@@ -7,6 +7,7 @@ pub struct WhenContext {
 	pub target_platform: TargetPlatform,
 	pub release_mode: bool,
 	pub provide_main: bool,
+	pub in_test: bool,
 	pub in_compiler_test: bool,
 }
 
@@ -36,6 +37,8 @@ impl WhenContext {
 			"ReleaseBuild" => self.release_mode,
 
 			"ProvideMain" => self.provide_main,
+
+			"InTest" => self.in_test,
 
 			"InCompilerTest" => self.in_compiler_test,
 

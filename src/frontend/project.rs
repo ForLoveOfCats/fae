@@ -125,9 +125,10 @@ pub fn build_project(
 		match cli_arguments.command {
 			CompileCommand::Parse => message_output.alertln("    Parsing project", format_args!("{root_name}")),
 			CompileCommand::Check => message_output.alertln("    Checking project", format_args!("{root_name}")),
-			CompileCommand::Build | CompileCommand::Run => {
+			CompileCommand::Build | CompileCommand::Run | CompileCommand::Test => {
 				message_output.alertln("    Building project", format_args!("{root_name}"))
 			}
+
 			CompileCommand::Clean | CompileCommand::CompilerTest => {}
 		}
 	}
@@ -181,6 +182,7 @@ pub fn build_project(
 		release_mode: cli_arguments.optimize_artifacts,
 		provide_main: project_config.provide_main,
 		in_compiler_test,
+		in_test: cli_arguments.command == CompileCommand::Test,
 	};
 
 	let validate_start = Instant::now();
@@ -261,6 +263,7 @@ pub fn build_project(
 			&statics.read(),
 		),
 	};
+
 	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Finished codegen", format_args!("took {} ms", codegen_start.elapsed().as_millis()));
 	}

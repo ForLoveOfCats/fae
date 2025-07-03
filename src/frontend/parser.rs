@@ -50,6 +50,7 @@ fn parse_braceless_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &m
 	return Ok(Node::new(block, span));
 }
 
+// TODO: Does anywhere actually need this return to be a Node?
 pub fn parse_block<'a>(
 	bump: &'a Bump,
 	messages: &mut Messages,
@@ -185,6 +186,15 @@ fn parse_statement<'a>(
 		Token { kind: TokenKind::Word, text: "fn", .. } => {
 			if let Ok(statement) = parse_function_declaration(bump, messages, tokens, attributes) {
 				return Some(Statement::Function(bump.alloc(statement)));
+			} else {
+				consume_error_syntax(messages, tokens);
+			}
+		}
+
+		Token { kind: TokenKind::Word, text: "test", .. } => {
+			disallow_all_attributes(messages, attributes, peeked.span, "A test block");
+			if let Ok(statement) = parse_test(bump, messages, tokens) {
+				return Some(Statement::Test(bump.alloc(statement)));
 			} else {
 				consume_error_syntax(messages, tokens);
 			}
@@ -1894,7 +1904,7 @@ fn parse_function_declaration<'a>(
 	let block = if extern_attribute.is_some() || intrinsic_attribute.is_some() {
 		None
 	} else {
-		Some(parse_block(bump, messages, tokens, false)?)
+		Some(parse_block(bump, messages, tokens, false)?.item)
 	};
 
 	tokens.expect(messages, TokenKind::Newline)?;
@@ -1986,6 +1996,15 @@ fn parse_parameters<'a>(
 	};
 
 	Ok(Node::new(parameters, open_token.span + close_token.span))
+}
+
+fn parse_test<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Test<'a>> {
+	tokens.expect_word(messages, "test")?;
+	let name_string = tokens.expect(messages, TokenKind::String)?;
+
+	let block = parse_block(bump, messages, tokens, false)?.item;
+
+	Ok(Test { name: Node::from_token(name_string.text, name_string), block })
 }
 
 fn parse_struct_declaration<'a>(
@@ -2571,7 +2590,7 @@ pub fn is_word_reserved(word: &str) -> bool {
 			| "defer" | "break"
 			| "continue"
 			| "yield" | "true"
-			| "false"
+			| "false" | "test"
 	)
 }
 

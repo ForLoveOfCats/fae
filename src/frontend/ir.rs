@@ -1132,3 +1132,10 @@ pub struct SliceMutableToImmutable<'a> {
 pub struct StringToFormatString<'a> {
 	pub expression: Expression<'a>,
 }
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Test<'a> {
+	pub name: &'a str,
+	pub function_id: FunctionId,
+}

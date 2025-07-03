@@ -80,6 +80,7 @@ pub fn generate_code<'a>(
 		statics,
 		&mut generator,
 		cli_arguments.optimize_artifacts,
+		cli_arguments.command,
 	);
 
 	unsafe {

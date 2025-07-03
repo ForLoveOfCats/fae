@@ -1,6 +1,7 @@
 use crate::frontend::error::Messages;
 use crate::frontend::ir::{
-	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, TypeArguments,
+	Function, FunctionId, FunctionShape, FunctionSpecializationResult, GenericParameters, GenericUsage, Parameter, Test,
+	TypeArguments,
 };
 use crate::frontend::span::Span;
 use crate::frontend::tree::Node;
@@ -24,6 +25,8 @@ pub struct FunctionStore<'a> {
 	pub generics: RwLock<Vec<GenericParameters<'a>>>,
 
 	pub main: RwLock<Option<FunctionId>>,
+
+	pub tests: RwLock<Vec<Test<'a>>>,
 }
 
 impl<'a> FunctionStore<'a> {
@@ -32,6 +35,7 @@ impl<'a> FunctionStore<'a> {
 			shapes: RwLock::new(Vec::new()),
 			generics: RwLock::new(Vec::new()),
 			main: RwLock::new(None),
+			tests: RwLock::new(Vec::new()),
 		}
 	}
 

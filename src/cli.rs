@@ -29,6 +29,7 @@ pub enum CompileCommand {
 	Build,
 	Run,
 	Clean,
+	Test,
 	CompilerTest,
 }
 
@@ -105,6 +106,8 @@ fn parse_command(
 		"build" | "b" => cli_arguments.command = CompileCommand::Build,
 
 		"run" | "r" => cli_arguments.command = CompileCommand::Run,
+
+		"test" | "t" => cli_arguments.command = CompileCommand::Test,
 
 		"clean" => cli_arguments.command = CompileCommand::Clean,
 

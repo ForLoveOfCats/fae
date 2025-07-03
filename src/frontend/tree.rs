@@ -254,7 +254,7 @@ pub struct Function<'a> {
 	pub name: Node<&'a str>,
 	pub parameters: Node<Parameters<'a>>,
 	pub parsed_type: Option<Node<Type<'a>>>,
-	pub block: Option<Node<Block<'a>>>,
+	pub block: Option<Block<'a>>,
 }
 
 #[derive(Debug)]
@@ -269,6 +269,12 @@ pub struct Parameter<'a> {
 	pub label: Option<&'a str>,
 	pub parsed_type: Node<Type<'a>>,
 	pub is_mutable: bool,
+}
+
+#[derive(Debug)]
+pub struct Test<'a> {
+	pub name: Node<&'a str>,
+	pub block: Block<'a>,
 }
 
 #[derive(Debug)]
@@ -599,6 +605,7 @@ pub enum Statement<'a> {
 	Union(Union<'a>),
 	Trait(Trait<'a>),
 	Function(&'a Function<'a>),
+	Test(&'a Test<'a>),
 
 	Const(&'a Node<Const<'a>>),
 	Static(&'a Node<Static<'a>>),
@@ -631,6 +638,7 @@ impl<'a> Statement<'a> {
 			Union(statement) => statement.name.span,
 			Trait(statement) => statement.name.span,
 			Function(statement) => statement.name.span,
+			Test(statement) => statement.name.span,
 			Const(statement) => statement.span,
 			Static(statement) => statement.span,
 			Binding(statement) => statement.span,
@@ -659,6 +667,7 @@ impl<'a> Statement<'a> {
 			Union(..) => "A union definition",
 			Trait(..) => "A trait definition",
 			Function(..) => "A function definition",
+			Test(..) => "A test block",
 			Const(..) => "A const definition",
 			Static(..) => "A static definition",
 			Binding(..) => "A binding definition",

@@ -5,8 +5,17 @@ when ProvideMain {
 	export "main"
 	fn fae_runtime_main(argc: i32, argv: **u8): i32 {
 		perform_setup(argc, argv)
-		fae.intrinsics.user_main_function()
+
+		when InTest => run_tests()
+		else => fae.intrinsics.user_main_function()
+
 		return 0
+	}
+}
+
+when InTest {
+	fn run_tests() {
+		println("TODO: Run tests!")
 	}
 }
 

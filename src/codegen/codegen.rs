@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 
+use crate::cli::CompileCommand;
 use crate::codegen::generator::Generator;
 use crate::frontend::error::Messages;
 use crate::frontend::function_store::FunctionStore;
@@ -28,6 +29,7 @@ pub fn generate<'a, G: Generator>(
 	statics: &Statics,
 	generator: &mut G,
 	optimizing: bool,
+	_compile_command: CompileCommand,
 ) {
 	generator.register_type_descriptions(type_store);
 	generator.register_statics(type_store, statics);
