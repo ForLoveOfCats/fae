@@ -1773,6 +1773,7 @@ fn parse_dot_infer<'a>(
 
 fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Type<'a>>> {
 	let parsed_type = match tokens.peek()? {
+		// TODO: Why is this here? We have a symbol `void` for this
 		Token { text: "Void", .. } => {
 			let token = tokens.next(messages)?;
 			Node::from_token(Type::Void, token)
@@ -1791,6 +1792,38 @@ fn parse_type<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 			let pointee = bump.alloc(parse_type(bump, messages, tokens)?);
 			let span = asterisk.span + pointee.span;
 			Node::new(Type::Pointer { pointee, mutable }, span)
+		}
+
+		Token { text: "fn", .. } => {
+			let fn_token = tokens.next(messages)?;
+			let mut span = fn_token.span;
+
+			let mut parameters = BumpVec::new_in(bump);
+
+			tokens.expect(messages, TokenKind::OpenParen)?;
+			while tokens.peek_kind() != Ok(TokenKind::CloseParen) {
+				let parsed_type = parse_type(bump, messages, tokens)?;
+				parameters.push(parsed_type);
+
+				if tokens.peek_kind() != Ok(TokenKind::Comma) {
+					continue;
+				}
+				tokens.expect(messages, TokenKind::Comma)?;
+			}
+			let close_paren = tokens.expect(messages, TokenKind::CloseParen)?;
+			span += close_paren.span;
+
+			let mut return_type: Option<&'a Node<Type>> = None;
+			if tokens.peek_kind() == Ok(TokenKind::Colon) {
+				tokens.next(messages)?;
+
+				let parsed_type = parse_type(bump, messages, tokens)?;
+				span += parsed_type.span;
+				return_type = Some(bump.alloc(parsed_type));
+			}
+
+			let parameters = parameters.into_bump_slice();
+			Node::new(Type::FunctionPointer { parameters, return_type }, span)
 		}
 
 		Token { kind: TokenKind::OpenBracket, .. } => {

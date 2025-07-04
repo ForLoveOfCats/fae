@@ -146,6 +146,12 @@ pub enum Type<'a> {
 		mutable: bool,
 	},
 
+	#[allow(unused)]
+	FunctionPointer {
+		parameters: &'a [Node<Type<'a>>],
+		return_type: Option<&'a Node<Type<'a>>>,
+	},
+
 	Array {
 		item: &'a Node<Type<'a>>,
 		length: u64, // TODO: Allow array length to be a proper expression

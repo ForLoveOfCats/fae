@@ -2868,6 +2868,10 @@ impl<'a> TypeStore<'a> {
 				return Some(self.pointer_to(id, *mutable));
 			}
 
+			tree::Type::FunctionPointer { parameters: _, return_type: _ } => {
+				unimplemented!()
+			}
+
 			tree::Type::Array { item, length } => {
 				let id = self.lookup_type(
 					messages,
