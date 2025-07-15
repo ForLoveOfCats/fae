@@ -3439,7 +3439,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		enum_type_id: TypeId,
 		enum_shape_index: usize,
 		enum_specialization_index: usize,
-		tag_value: u64,
+		tag_value: i128,
 		variant_binding: Option<Binding>,
 	) -> Self::Binding {
 		let shape = &self.llvm_types.user_type_structs[enum_shape_index];
@@ -3457,7 +3457,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let alloca = self.build_alloca(enum_type, c"generate_enum_variant_to_enum.enum_alloca");
 
 		unsafe {
-			let tag_value = LLVMConstInt(tag_type, tag_value, false as _);
+			// TODO: This downcast to `u64` is a huge kludge
+			let tag_value = LLVMConstInt(tag_type, tag_value as u64, false as _);
 			let tag_pointer = LLVMBuildStructGEP2(self.builder, enum_type, alloca, 0, c"variant_to_enum.tag_pointer".as_ptr());
 			LLVMBuildStore(self.builder, tag_value, tag_pointer);
 

@@ -408,10 +408,10 @@ pub struct MatchArm<'a> {
 	pub variant_infos: Vec<VariantInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct VariantInfo {
 	pub type_id: TypeId,
-	pub tag_value: u64,
+	pub tag_value: i128,
 }
 
 #[derive(Debug)]

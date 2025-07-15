@@ -507,7 +507,7 @@ pub struct EnumVariantShape<'a> {
 	pub struct_shape_index: usize,
 	pub methods_index: usize,
 	pub is_transparent: bool,
-	pub tag_value: u64,
+	pub tag_value: i128, // TODO: This being an `i128` is a bit of a kludge
 }
 
 #[derive(Debug, Clone)]
@@ -527,7 +527,7 @@ pub struct Variant {
 	pub span: Span,
 	pub type_id: TypeId,
 	pub is_transparent: bool,
-	pub tag_value: u64,
+	pub tag_value: i128,
 }
 
 #[derive(Debug)]
@@ -712,6 +712,15 @@ impl NumericKind {
 			NumericKind::I8 | NumericKind::I16 | NumericKind::I32 | NumericKind::I64 | NumericKind::ISize => true,
 			NumericKind::U8 | NumericKind::U16 | NumericKind::U32 | NumericKind::U64 | NumericKind::USize => false,
 			NumericKind::F32 | NumericKind::F64 => true,
+		}
+	}
+
+	pub fn max_value(self) -> i128 {
+		let bit_count = self.layout().size as u32 * 8;
+		if self.is_signed() {
+			i128::pow(2, bit_count - 1) - 1
+		} else {
+			i128::pow(2, bit_count) - 1
 		}
 	}
 }
@@ -3788,7 +3797,7 @@ impl<'a> TypeStore<'a> {
 			let variant_index = variant_shape.variant_index;
 			assert_eq!(variant_index, variants.len());
 			let is_transparent = variant_shape.is_transparent;
-			variants.push(Variant { span, type_id, is_transparent, tag_value: u64::MAX });
+			variants.push(Variant { span, type_id, is_transparent, tag_value: i128::MAX });
 			variants_by_name.insert(variant_shape.name, variant_index);
 
 			if is_transparent {

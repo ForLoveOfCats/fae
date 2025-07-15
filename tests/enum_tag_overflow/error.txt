@@ -1,0 +1,29 @@
+Validation error: ./tests/enum_tag_overflow/enum_tag_overflow.fae:6
+ Next enum tag value `128` would overflow tag of type `i8`
+  6|     C // 128
+         ^
+
+Validation error: ./tests/enum_tag_overflow/enum_tag_overflow.fae:10
+ Constant number -200 is too small to be represented as `i8`
+  10|     A = -200
+              ^^^^
+
+Validation error: ./tests/enum_tag_overflow/enum_tag_overflow.fae:18
+ Next enum tag value `256` would overflow tag of type `u8`
+  18|     C // 256
+          ^
+
+Validation error: ./tests/enum_tag_overflow/enum_tag_overflow.fae:22
+ Constant number 256 is too large to be represented as `u8`
+  22|     A = 256
+              ^^^
+
+Validation error: ./tests/enum_tag_overflow/enum_tag_overflow.fae:36
+ Next bitflags enum tag value 0x100 would overflow tag of type `u8`
+  36|     J
+          ^
+
+Validation error: ./tests/enum_tag_overflow/enum_tag_overflow.fae:37
+ Constant number 300 is too large to be represented as `u8`
+  37|     K = 300
+              ^^^

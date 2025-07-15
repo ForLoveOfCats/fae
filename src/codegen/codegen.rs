@@ -1193,7 +1193,7 @@ fn generate_string_to_format_string<'a, 'b, G: Generator>(
 	Some(generator.generate_slice_literal(context.type_store, &elements, pointee_type_id, type_id, debug_location))
 }
 
-fn get_tag_value(context: &mut Context, enum_shape_index: usize, variant_index: usize) -> u64 {
+fn get_tag_value(context: &mut Context, enum_shape_index: usize, variant_index: usize) -> i128 {
 	let user_types = context.type_store.user_types.read();
 	let user_type = user_types[enum_shape_index].read();
 	let UserTypeKind::Enum { shape } = &user_type.kind else {

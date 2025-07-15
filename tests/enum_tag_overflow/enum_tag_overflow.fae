@@ -1,0 +1,38 @@
+fn main() {}
+
+enum IEnum: i8 {
+	A = 126
+	B // 127
+	C // 128
+}
+
+enum IEnum2: i8 {
+	A = -200
+	B // -199 ish
+	C // -198 ish
+}
+
+enum UEnum: u8 {
+	A = 254
+	B // 255
+	C // 256
+}
+
+enum UEnum2: u8 {
+	A = 256
+	B // 257 ish
+	C // 258 ish
+}
+
+enum(bitflags) BitflagsEnum: u8 {
+	A
+	B
+	D
+	E
+	F
+	G
+	H
+	I
+	J
+	K = 300
+}

@@ -208,6 +208,15 @@ pub enum VariantKind<'a> {
 	Transparent(TransparentVariant<'a>),
 }
 
+impl<'a> VariantKind<'a> {
+	pub fn name_span(&self) -> Span {
+		match self {
+			VariantKind::StructLike(struct_like) => struct_like.name.span,
+			VariantKind::Transparent(transparent) => transparent.name.span,
+		}
+	}
+}
+
 #[derive(Debug)]
 pub struct StructLikeVariant<'a> {
 	pub name: Node<&'a str>,

@@ -1,4 +1,4 @@
-use std::u64;
+use std::{i128, u64};
 
 use bumpalo_herd::Herd;
 use rust_decimal::prelude::ToPrimitive;
@@ -2019,13 +2019,6 @@ fn create_block_enum<'a>(
 		});
 	}
 
-	// TODO: Detect this upper bound based on `tag_kind`
-	if statement.variants.len() > 256 {
-		let name = statement.name.item;
-		let error = error!("Enum `{name}` has more than 256 variants, this is currently unsupported and disallowed");
-		messages.message(error.span(statement.name.span));
-	}
-
 	let mut variants: Vec<EnumVariantShape> = Vec::new();
 
 	for (variant_index, variant) in statement.variants.iter().enumerate() {
@@ -2094,7 +2087,7 @@ fn create_block_enum<'a>(
 			struct_shape_index,
 			methods_index,
 			is_transparent,
-			tag_value: u64::MAX,
+			tag_value: i128::MAX,
 		};
 		variants.push(variant_shape);
 	}
@@ -2930,6 +2923,8 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 
 	let is_bitflags = shape.is_bitflags;
 	let tag_type_id = shape.tag.type_id;
+	let max_tag_bits = (shape.tag.kind.layout().size * 8) as u32;
+	let max_tag_value = shape.tag.kind.max_value();
 	let first_shared_field_span = shape.shared_fields.first().map(|f| f.span);
 	let mut variant_shapes = shape.variant_shapes.to_vec(); // Yuck
 	drop(user_type);
@@ -2942,8 +2937,11 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 	}
 
 	assert_eq!(variant_shapes.len(), statement.variants.len());
+	let variant_len = variant_shapes.len();
+
 	let mut next_tag_value = if is_bitflags { 1 } else { 0 };
-	for (variant_shape, tree_variant) in variant_shapes.iter_mut().zip(statement.variants) {
+	let mut emitted_tag_error = false; // Yuck
+	for (index, (variant_shape, tree_variant)) in variant_shapes.iter_mut().zip(statement.variants).enumerate() {
 		fill_struct_like_enum_variant(
 			context.messages,
 			context.type_store,
@@ -2959,14 +2957,40 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 			is_bitflags,
 		);
 
-		let tag_value = validate_enum_variant_tag_value(&mut context, tree_variant, tag_type_id, next_tag_value);
-		variant_shape.tag_value = tag_value;
+		let chosen_tag_value =
+			validate_enum_variant_tag_value(&mut context, tree_variant, tag_type_id, next_tag_value, &mut emitted_tag_error);
+		variant_shape.tag_value = chosen_tag_value;
 
+		let is_last = index + 1 >= variant_len;
 		if is_bitflags {
-			// Get the highest bit and shift it one to the left
-			next_tag_value = (1 << 63) >> (tag_value.leading_zeros() - 1)
+			let i128_bits = (size_of_val(&next_tag_value) * 8) as u32;
+			let i128_bits_difference = i128_bits - max_tag_bits;
+
+			let leading_zeros = chosen_tag_value.leading_zeros() - i128_bits_difference;
+			let bits_needed = max_tag_bits - leading_zeros + 1;
+
+			let next_tag_bits: u128 = (1 << (i128_bits - 1)) >> (chosen_tag_value.leading_zeros().saturating_sub(1));
+
+			if bits_needed <= max_tag_bits {
+				// Get the highest bit and shift it one to the left
+				// Performs the bitshifts on a u128 to utilize logical shift rather than arithmetic
+				next_tag_value = next_tag_bits as i128;
+			} else if !is_last && !emitted_tag_error {
+				emitted_tag_error = true;
+				let tag_type = context.type_name(tag_type_id);
+				let error = error!("Next bitflags enum tag value {next_tag_bits:#x} would overflow tag of type {tag_type}");
+				let next_tree_variant = &statement.variants[index + 1];
+				context.message(error.span(next_tree_variant.kind.name_span()));
+			}
 		} else {
-			next_tag_value = tag_value + 1;
+			next_tag_value = chosen_tag_value + 1;
+			if !is_last && !emitted_tag_error && next_tag_value > max_tag_value {
+				emitted_tag_error = true;
+				let tag_type = context.type_name(tag_type_id);
+				let error = error!("Next enum tag value `{next_tag_value}` would overflow tag of type {tag_type}");
+				let next_tree_variant = &statement.variants[index + 1];
+				context.message(error.span(next_tree_variant.kind.name_span()));
+			}
 		}
 	}
 
@@ -3173,8 +3197,9 @@ fn validate_enum_variant_tag_value<'a>(
 	context: &mut Context<'a, '_, '_>,
 	tree_variant: &'a tree::Variant<'a>,
 	tag_type_id: TypeId,
-	next_tag_value: u64,
-) -> u64 {
+	next_tag_value: i128,
+	emitted_tag_error: &mut bool,
+) -> i128 {
 	if let Some(tree_expression) = &tree_variant.tag_value {
 		let mut expression = validate_expression(context, tree_expression);
 		let succeeded = !expression.type_id.is_any_collapse(context.type_store);
@@ -3183,8 +3208,10 @@ fn validate_enum_variant_tag_value<'a>(
 				unreachable!("{expression:#?}");
 			};
 
-			return value.value().to_u64().unwrap();
+			return value.value().to_i128().unwrap();
 		}
+
+		*emitted_tag_error = true;
 	}
 
 	next_tag_value
