@@ -310,7 +310,7 @@ pub struct Static<'a> {
 pub struct Binding<'a> {
 	pub name: Node<&'a str>,
 	pub parsed_type: Option<&'a Node<Type<'a>>>,
-	pub expression: Node<Expression<'a>>,
+	pub expression: Option<Node<Expression<'a>>>,
 	pub is_mutable: bool,
 }
 

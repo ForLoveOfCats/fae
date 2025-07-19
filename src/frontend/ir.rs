@@ -469,7 +469,7 @@ pub enum StatementKind<'a> {
 pub struct Binding<'a> {
 	pub name: &'a str,
 	pub type_id: TypeId,
-	pub expression: Expression<'a>,
+	pub expression: Option<Expression<'a>>,
 	pub readable_index: usize,
 }
 

@@ -1,0 +1,11 @@
+fn main() {
+	let var: Abc ---
+	println(f"{var.a}, {var.b}, {var.c}, {var.d is Some}")
+}
+
+struct Abc {
+	a: i32
+	b: bool
+	c: f64
+	d: Option<u8>
+}

@@ -1268,9 +1268,20 @@ fn generate_binding<'a, 'b, G: Generator>(
 	binding: &'b Binding<'a>,
 	debug_location: DebugLocation,
 ) {
-	let value = generate_expression(context, generator, &binding.expression);
 	let type_id = context.specialize_type_id(binding.type_id);
-	generator.generate_binding(binding.readable_index, value, type_id, binding.name, debug_location);
+
+	if let Some(expression) = &binding.expression {
+		let value = generate_expression(context, generator, expression);
+		generator.generate_initialized_binding(binding.readable_index, value, type_id, binding.name, debug_location);
+	} else {
+		generator.generate_zero_initialized_binding(
+			context.type_store,
+			binding.readable_index,
+			type_id,
+			binding.name,
+			debug_location,
+		);
+	}
 }
 
 fn generate_break<G: Generator>(generator: &mut G, statement: &Break, debug_location: DebugLocation) {

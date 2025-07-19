@@ -5118,6 +5118,17 @@ fn validate_static<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::N
 }
 
 fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::Node<tree::Binding<'a>>) -> Option<Binding<'a>> {
+	match &statement.item.expression {
+		Some(tree_expression) => validate_initialized_binding(context, statement, tree_expression),
+		None => validate_zero_initialized_binding(context, statement),
+	}
+}
+
+fn validate_initialized_binding<'a>(
+	context: &mut Context<'a, '_, '_>,
+	statement: &'a tree::Node<tree::Binding<'a>>,
+	tree_expression: &'a Node<tree::Expression<'a>>,
+) -> Option<Binding<'a>> {
 	let explicit_type = match &statement.item.parsed_type {
 		Some(parsed_type) => context.lookup_type(parsed_type),
 		None => None,
@@ -5125,7 +5136,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 
 	let mut scope = context.child_scope();
 	scope.expected_type = explicit_type;
-	let mut expression = validate_expression(&mut scope, &statement.item.expression);
+	let mut expression = validate_expression(&mut scope, tree_expression);
 	expression.into_value(&mut scope);
 	drop(scope);
 
@@ -5138,7 +5149,7 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 				let expected = context.type_name(explicit_type);
 				let got = context.type_name(expression.type_id);
 				let error = error!("Expected {expected} but got expression with type {got}");
-				context.message(error.span(statement.item.expression.span));
+				context.message(error.span(tree_expression.span));
 				context.type_store.any_collapse_type_id()
 			} else {
 				explicit_type
@@ -5171,7 +5182,33 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	let readable_index = context.push_readable(statement.item.name, type_id, kind, false, true);
 
 	let name = statement.item.name.item;
-	Some(Binding { name, type_id, expression, readable_index })
+	Some(Binding { name, type_id, expression: Some(expression), readable_index })
+}
+
+fn validate_zero_initialized_binding<'a>(
+	context: &mut Context<'a, '_, '_>,
+	statement: &'a tree::Node<tree::Binding<'a>>,
+) -> Option<Binding<'a>> {
+	let type_id = match &statement.item.parsed_type {
+		Some(parsed_type) => context
+			.lookup_type(parsed_type)
+			.unwrap_or(context.type_store.any_collapse_type_id()),
+
+		None => {
+			let error = error!("Zero-initialized binding must have explicit type specified");
+			context.message(error.span(statement.span));
+			context.type_store.any_collapse_type_id()
+		}
+	};
+
+	let kind = match statement.item.is_mutable {
+		true => ReadableKind::Mut,
+		false => ReadableKind::Let,
+	};
+	let readable_index = context.push_readable(statement.item.name, type_id, kind, false, true);
+
+	let name = statement.item.name.item;
+	Some(Binding { name, type_id, expression: None, readable_index })
 }
 
 pub fn validate_expression<'a>(

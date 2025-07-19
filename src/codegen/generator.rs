@@ -279,10 +279,19 @@ pub trait Generator {
 		variant_binding: Option<Self::Binding>,
 	) -> Self::Binding;
 
-	fn generate_binding(
+	fn generate_initialized_binding(
 		&mut self,
 		readable_index: usize,
 		value: Option<Self::Binding>,
+		type_id: TypeId,
+		name: &str,
+		debug_location: DebugLocation,
+	);
+
+	fn generate_zero_initialized_binding(
+		&mut self,
+		type_store: &mut TypeStore,
+		readable_index: usize,
 		type_id: TypeId,
 		name: &str,
 		debug_location: DebugLocation,

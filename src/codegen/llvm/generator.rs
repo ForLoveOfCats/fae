@@ -3517,7 +3517,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		Binding { type_id: union_type_id, kind }
 	}
 
-	fn generate_binding(
+	fn generate_initialized_binding(
 		&mut self,
 		readable_index: usize,
 		value: Option<Self::Binding>,
@@ -3554,6 +3554,28 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		};
 
 		let kind = BindingKind::Pointer { pointer, pointed_type };
+		let binding = Binding { type_id, kind };
+		self.readables.push(Some(binding));
+	}
+
+	fn generate_zero_initialized_binding(
+		&mut self,
+		type_store: &mut TypeStore,
+		readable_index: usize,
+		type_id: TypeId,
+		name: &str,
+		debug_location: DebugLocation,
+	) {
+		let _debug_scope = self.create_debug_scope(debug_location);
+		assert_eq!(self.readables.len(), readable_index);
+
+		let llvm_type = self.llvm_types.type_to_llvm_type(self.context, type_store, type_id);
+
+		// This format hurts my soul
+		let alloca = self.build_alloca(llvm_type, CString::new(format!("generate_binding.{}", name)).unwrap());
+		unsafe { LLVMBuildStore(self.builder, LLVMConstNull(llvm_type), alloca) };
+
+		let kind = BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type };
 		let binding = Binding { type_id, kind };
 		self.readables.push(Some(binding));
 	}

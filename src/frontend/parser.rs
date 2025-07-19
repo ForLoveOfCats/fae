@@ -2531,13 +2531,22 @@ fn parse_binding_statement<'a>(
 		None
 	};
 
-	tokens.expect(messages, TokenKind::Equal)?;
+	let mut span = keyword_token.span;
+	let expression = if tokens.peek_kind() == Ok(TokenKind::Sub) {
+		tokens.next(messages)?;
+		tokens.expect(messages, TokenKind::Sub)?;
+		span += tokens.expect(messages, TokenKind::Sub)?.span;
+		None
+	} else {
+		tokens.expect(messages, TokenKind::Equal)?;
 
-	let expression = parse_expression(bump, messages, tokens, true)?;
+		let expression = parse_expression(bump, messages, tokens, true)?;
+		span += expression.span;
+		Some(expression)
+	};
 
 	tokens.expect_peek(messages, TokenKind::Newline)?;
 
-	let span = keyword_token.span + expression.span;
 	let item = Binding { name, parsed_type, expression, is_mutable };
 	Ok(Node { item, span })
 }
