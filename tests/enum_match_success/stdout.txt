@@ -1,4 +1,4 @@
 A or C
-99.200000 is B
+99.2 is B
 A or C
 65 is D

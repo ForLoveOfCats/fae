@@ -1,1 +1,1 @@
-0, false, 0.000000, false
+0, false, 0, false

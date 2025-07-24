@@ -41,8 +41,8 @@ fn print_to_file_stream(message: fstr, stream: *FileStream) {
 			Isize => fprintf(stream, "%ld".pointer, item)
 			Usize => fprintf(stream, "%lu".pointer, item)
 
-			F32 => fprintf(stream, "%f".pointer, item)
-			F64 => fprintf(stream, "%f".pointer, item)
+			F32 => fprintf(stream, "%g".pointer, item)
+			F64 => fprintf(stream, "%g".pointer, item)
 
 			Bool {
 				if item => fprintf(stream, "true".pointer)
@@ -107,8 +107,8 @@ fn print_to_string(message: fstr, buffer: *mut String) {
 			Isize => perform_print<isize>(buffer, "%zd", item)
 			Usize => perform_print<usize>(buffer, "%zu", item)
 
-			F32 => perform_print<f64>(buffer, "%f", item.(f64))
-			F64 => perform_print<f64>(buffer, "%f", item)
+			F32 => perform_print<f64>(buffer, "%g", item.(f64))
+			F64 => perform_print<f64>(buffer, "%g", item)
 
 			Bool {
 				if item => buffer.push_str("true")

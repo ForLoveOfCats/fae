@@ -1,3 +1,3 @@
 First is not C
-Second is C: 42.000000
-Self is C, divided: 21.000000
+Second is C: 42
+Self is C, divided: 21

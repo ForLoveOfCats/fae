@@ -12,8 +12,8 @@ a:
 3
 
 b:
-3.400000
-8.100000
+3.4
+8.1
 
 c:
 First
@@ -21,14 +21,14 @@ Second
 
 Variant A fields:
 2
-3.400000
+3.4
 First
 16
 300
 
 Variant B fields:
 3
-8.100000
+8.1
 Second
-2.250000
+2.25
 -300
