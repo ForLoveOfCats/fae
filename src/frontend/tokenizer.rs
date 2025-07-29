@@ -105,7 +105,7 @@ impl std::fmt::Display for TokenKind {
 			TokenKind::BitshiftLeft => "'<<'",
 			TokenKind::BitshiftLeftAssign => "'<<='",
 			TokenKind::BitshiftRight => "'>>'",
-			TokenKind::BitshiftRightAssign => "'>>=='",
+			TokenKind::BitshiftRightAssign => "'>>='",
 
 			TokenKind::Equal => "'='",
 			TokenKind::CompEqual => "'=='",
