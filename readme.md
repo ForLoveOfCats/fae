@@ -48,7 +48,7 @@ Browse a selection of example programs [here](./examples)
 
 ## Language details
 
-The Fae compiler and standard library are *very* incomplete, missing features include traits, allocator system, error system, unions, and much more.
+The Fae compiler and standard library are *very* incomplete, missing features include traits, allocator system, error system, and much more.
 
 Read the [language reference](./docs/language_reference.md) for a detailed snapshot of the *current* status of the Fae language.
 
