@@ -9,9 +9,10 @@ use llvm_sys::core::{
 	LLVMAddModuleFlag, LLVMConstInt, LLVMContextCreate, LLVMInt32TypeInContext, LLVMPrintModuleToFile, LLVMValueAsMetadata,
 };
 use llvm_sys::debuginfo::{LLVMDIBuilderFinalize, LLVMDebugMetadataVersion};
+use llvm_sys::target::LLVMSetModuleDataLayout;
 use llvm_sys::target_machine::{
-	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetMachine, LLVMGetTargetFromTriple, LLVMRelocMode,
-	LLVMTargetMachineEmitToFile,
+	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
+	LLVMGetTargetFromTriple, LLVMRelocMode, LLVMTargetMachineEmitToFile,
 };
 use llvm_sys::transforms::pass_builder::{LLVMCreatePassBuilderOptions, LLVMRunPasses};
 
@@ -68,32 +69,6 @@ pub fn generate_code<'a>(
 		Architecture::Aarch64
 	};
 
-	let context = unsafe { LLVMContextCreate() };
-	let mut generator = LLVMGenerator::<SysvAbi>::new(context, architecture, cli_arguments.optimize_artifacts);
-
-	generate(
-		parsed_files,
-		messages,
-		lang_items,
-		type_store,
-		function_store,
-		statics,
-		&mut generator,
-		cli_arguments.optimize_artifacts,
-		cli_arguments.command,
-	);
-
-	unsafe {
-		let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
-		let key = "Debug Info Version";
-		let ty = LLVMInt32TypeInContext(generator.context);
-		let int = LLVMConstInt(ty, LLVMDebugMetadataVersion() as _, false as _);
-		let value = LLVMValueAsMetadata(int);
-		LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
-
-		LLVMDIBuilderFinalize(generator.di_builder);
-	}
-
 	#[cfg(target_os = "linux")]
 	let triple = c"x86_64-pc-linux-gnu";
 	#[cfg(target_os = "macos")]
@@ -139,6 +114,38 @@ pub fn generate_code<'a>(
 		)
 	};
 	assert!(!machine.is_null());
+
+	let context = unsafe { LLVMContextCreate() };
+	let mut generator = LLVMGenerator::<SysvAbi>::new(context, architecture, cli_arguments.optimize_artifacts);
+
+	unsafe {
+		let data_layout = LLVMCreateTargetDataLayout(machine);
+		assert!(!data_layout.is_null());
+		LLVMSetModuleDataLayout(generator.module, data_layout);
+	}
+
+	generate(
+		parsed_files,
+		messages,
+		lang_items,
+		type_store,
+		function_store,
+		statics,
+		&mut generator,
+		cli_arguments.optimize_artifacts,
+		cli_arguments.command,
+	);
+
+	unsafe {
+		let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
+		let key = "Debug Info Version";
+		let ty = LLVMInt32TypeInContext(generator.context);
+		let int = LLVMConstInt(ty, LLVMDebugMetadataVersion() as _, false as _);
+		let value = LLVMValueAsMetadata(int);
+		LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
+
+		LLVMDIBuilderFinalize(generator.di_builder);
+	}
 
 	if cli_arguments.optimize_artifacts {
 		unsafe {
