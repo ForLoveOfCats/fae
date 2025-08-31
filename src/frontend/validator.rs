@@ -4711,15 +4711,19 @@ fn validate_statement<'a>(
 				validate_expression(&mut scope, expression)
 			});
 
+			let return_type = context.return_type.unwrap();
 			if let Some(expression) = &mut expression {
 				expression.into_value(context);
-				let return_type = context.return_type.unwrap();
 				if context.collapse_to(return_type, expression) == CollapseResult::Incompatible {
 					let expected = context.type_name(return_type);
 					let got = context.type_name(expression.type_id);
 					let error = error!("Expected return type of {expected}, got {got}");
 					context.message(error.span(statement.span));
 				}
+			} else if !return_type.is_void(context.type_store) {
+				let expected = context.type_name(return_type);
+				let error = error!("Missing expression of type {expected} for return statement");
+				context.message(error.span(statement.span));
 			}
 
 			let kind = StatementKind::Return(Return { expression });

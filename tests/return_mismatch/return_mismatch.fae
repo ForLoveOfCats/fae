@@ -1,0 +1,9 @@
+fn a(): i32 {
+	return 1.(f32)
+}
+
+fn b(): i32 {
+	return
+}
+
+fn main() {}

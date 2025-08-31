@@ -1,0 +1,9 @@
+Validation error: ./tests/return_mismatch/return_mismatch.fae:2
+ Expected return type of `i32`, got `f32`
+  2|     return 1.(f32)
+         ^^^^^^^^^^^^^^
+
+Validation error: ./tests/return_mismatch/return_mismatch.fae:6
+ Missing expression of type `i32` for return statement
+  6|     return
+         ^^^^^^
