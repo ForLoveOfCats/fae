@@ -938,12 +938,6 @@ pub struct Slice {
 	pub mutable: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UserTypeSpecializationDescription {
-	pub shape_index: usize,
-	pub specialization_index: usize,
-}
-
 const TYPE_ENTRY_CHUNK_MAX_LENGTH: usize = 50;
 
 #[derive(Debug)]

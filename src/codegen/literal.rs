@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: Remove when custom backends are developed further
+
 // NOTE: Literal values are represented in little-endian, but are displayed in big-endian
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

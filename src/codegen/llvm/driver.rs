@@ -72,18 +72,7 @@ pub fn generate_code<'a>(
 	#[cfg(target_os = "linux")]
 	let triple = c"x86_64-pc-linux-gnu";
 	#[cfg(target_os = "macos")]
-	let triple = {
-		unsafe {
-			let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
-			let key = "Dwarf Version";
-			let ty = llvm_sys::core::LLVMInt64TypeInContext(generator.context);
-			let int = LLVMConstInt(ty, 2, false as _);
-			let value = LLVMValueAsMetadata(int);
-			LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
-		}
-
-		c"arm64-apple-darwin20.1.0"
-	};
+	let triple = c"arm64-apple-darwin20.1.0";
 
 	let target = unsafe {
 		let mut target = std::ptr::null_mut();
@@ -117,6 +106,16 @@ pub fn generate_code<'a>(
 
 	let context = unsafe { LLVMContextCreate() };
 	let mut generator = LLVMGenerator::<SysvAbi>::new(context, architecture, cli_arguments.optimize_artifacts);
+
+	#[cfg(target_os = "macos")]
+	unsafe {
+		let behavior = llvm_sys::LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning;
+		let key = "Dwarf Version";
+		let ty = llvm_sys::core::LLVMInt64TypeInContext(generator.context);
+		let int = LLVMConstInt(ty, 2, false as _);
+		let value = LLVMValueAsMetadata(int);
+		LLVMAddModuleFlag(generator.module, behavior, key.as_ptr() as _, key.len(), value);
+	};
 
 	unsafe {
 		let data_layout = LLVMCreateTargetDataLayout(machine);
