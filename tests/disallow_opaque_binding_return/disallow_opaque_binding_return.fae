@@ -1,0 +1,16 @@
+struct(opaque) Opaque
+
+fn main() {
+	let _: Opaque ---
+}
+
+fn function(_=: Opaque) {}
+
+method static Opaque
+fn a(): Opaque {}
+
+method Opaque
+fn b() {}
+
+method mut Opaque
+fn c() {}

@@ -3934,7 +3934,7 @@ fn create_block_functions<'a>(
 					parsed_type,
 				);
 
-				let return_type = match type_id {
+				let mut return_type = match type_id {
 					Some(type_id) => type_id,
 					None => type_store.any_collapse_type_id(),
 				};
@@ -3942,6 +3942,11 @@ fn create_block_functions<'a>(
 				if return_type.is_void(type_store) {
 					let warning = warning!("`void` return type can be omitted");
 					messages.message(warning.span(parsed_type.span));
+				} else if return_type.is_opaque(type_store) {
+					let s = type_store.type_name(function_store, module_path, return_type);
+					let error = error!("Function or method may not return opaque struct {s}");
+					messages.message(error.span(parsed_type.span));
+					return_type = type_store.any_collapse_type_id();
 				}
 
 				Node::new(return_type, parsed_type.span)
@@ -4009,10 +4014,14 @@ fn create_block_functions<'a>(
 					&parameter.item.parsed_type,
 				);
 
-				let type_id = match type_id {
+				let mut type_id = match type_id {
 					Some(type_id) => type_id,
 					None => type_store.any_collapse_type_id(),
 				};
+
+				if validate_binding_disallowed_type(messages, type_store, function_store, module_path, type_id, parameter.span) {
+					type_id = type_store.any_collapse_type_id();
+				}
 
 				let readable_kind = match parameter.item.is_mutable {
 					false => ReadableKind::Let,
@@ -4852,7 +4861,9 @@ fn validate_function<'a>(
 	let tree_block = statement.block.as_ref().unwrap();
 	let block = validate_block(scope, tree_block, false);
 
-	if !return_type.item.is_void(context.type_store) && !block.returns {
+	let return_is_void = return_type.item.is_void(context.type_store);
+	let return_is_any_collapse = return_type.item.is_any_collapse(context.type_store);
+	if !return_is_void && !return_is_any_collapse && !block.returns {
 		let error = error!("Not all code paths for function `{}` return a value", statement.name.item);
 		context.message(error.span(statement.name.span));
 	}
@@ -5128,6 +5139,24 @@ fn validate_binding<'a>(context: &mut Context<'a, '_, '_>, statement: &'a tree::
 	}
 }
 
+fn validate_binding_disallowed_type<'a>(
+	messages: &mut Messages<'a>,
+	type_store: &mut TypeStore<'a>,
+	function_store: &FunctionStore<'a>,
+	module_path: &'a [String],
+	type_id: TypeId,
+	span: Span,
+) -> bool {
+	if type_id.is_opaque(type_store) {
+		let opaque = type_store.type_name(function_store, module_path, type_id);
+		let error = error!("Cannot create binding with type {opaque} as it is an opaque struct");
+		messages.message(error.span(span));
+		return true;
+	}
+
+	false
+}
+
 fn validate_initialized_binding<'a>(
 	context: &mut Context<'a, '_, '_>,
 	statement: &'a tree::Node<tree::Binding<'a>>,
@@ -5163,7 +5192,16 @@ fn validate_initialized_binding<'a>(
 		_ => expression.type_id,
 	};
 
-	if type_id.is_untyped_number(context.type_store) {
+	if validate_binding_disallowed_type(
+		context.messages,
+		context.type_store,
+		context.function_store,
+		context.module_path,
+		type_id,
+		statement.span,
+	) {
+		type_id = context.type_store.any_collapse_type_id();
+	} else if type_id.is_untyped_number(context.type_store) {
 		context.message(error!("Cannot create binding of untyped number").span(statement.span));
 		type_id = context.type_store.any_collapse_type_id();
 	} else if let ExpressionKind::ModuleLayer { .. } = &expression.kind {
@@ -5193,7 +5231,7 @@ fn validate_zero_initialized_binding<'a>(
 	context: &mut Context<'a, '_, '_>,
 	statement: &'a tree::Node<tree::Binding<'a>>,
 ) -> Option<Binding<'a>> {
-	let type_id = match &statement.item.parsed_type {
+	let mut type_id = match &statement.item.parsed_type {
 		Some(parsed_type) => context
 			.lookup_type(parsed_type)
 			.unwrap_or(context.type_store.any_collapse_type_id()),
@@ -5204,6 +5242,17 @@ fn validate_zero_initialized_binding<'a>(
 			context.type_store.any_collapse_type_id()
 		}
 	};
+
+	if validate_binding_disallowed_type(
+		context.messages,
+		context.type_store,
+		context.function_store,
+		context.module_path,
+		type_id,
+		statement.span,
+	) {
+		type_id = context.type_store.any_collapse_type_id();
+	}
 
 	let kind = match statement.item.is_mutable {
 		true => ReadableKind::Mut,

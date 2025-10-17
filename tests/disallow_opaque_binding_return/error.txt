@@ -1,0 +1,14 @@
+Validation error: ./tests/disallow_opaque_binding_return/disallow_opaque_binding_return.fae:7
+ Cannot create binding with type `Opaque` as it is an opaque struct
+  7| fn function(_=: Opaque) {}
+                 ^^^^^^^^^^
+
+Validation error: ./tests/disallow_opaque_binding_return/disallow_opaque_binding_return.fae:10
+ Function or method may not return opaque struct `Opaque`
+  10| fn a(): Opaque {}
+              ^^^^^^
+
+Validation error: ./tests/disallow_opaque_binding_return/disallow_opaque_binding_return.fae:4
+ Cannot create binding with type `Opaque` as it is an opaque struct
+  4|     let _: Opaque ---
+         ^^^^^^^^^^^^^^^^^
