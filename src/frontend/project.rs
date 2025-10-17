@@ -121,16 +121,14 @@ pub fn build_project(
 		usage_error!("Input path is neither directory nor file");
 	};
 
-	if cli_arguments.loud {
-		match cli_arguments.command {
-			CompileCommand::Parse => message_output.alertln("    Parsing project", format_args!("{root_name}")),
-			CompileCommand::Check => message_output.alertln("    Checking project", format_args!("{root_name}")),
-			CompileCommand::Build | CompileCommand::Run | CompileCommand::Test => {
-				message_output.alertln("    Building project", format_args!("{root_name}"))
-			}
-
-			CompileCommand::Clean | CompileCommand::CompilerTest => {}
+	match cli_arguments.command {
+		CompileCommand::Parse => message_output.alertln("    Parsing project", format_args!("{root_name}")),
+		CompileCommand::Check => message_output.alertln("    Checking project", format_args!("{root_name}")),
+		CompileCommand::Build | CompileCommand::Run | CompileCommand::Test => {
+			message_output.alertln("    Building project", format_args!("{root_name}"))
 		}
+
+		CompileCommand::Clean | CompileCommand::CompilerTest => {}
 	}
 
 	let mut any_errors = false;
@@ -157,7 +155,7 @@ pub fn build_project(
 	root_messages.print_messages(&project_config, message_output, "Parse", &externs.read(), in_compiler_test, false);
 	root_messages.reset();
 
-	if !any_errors && cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
+	if !any_errors && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Parsed all files", format_args!("took {} ms", parse_start.elapsed().as_millis()));
 	}
 
@@ -227,7 +225,7 @@ pub fn build_project(
 		return BuiltProject { binary_path: None, any_messages };
 	}
 
-	if !any_errors && cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
+	if !any_errors && cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("   Validated project", format_args!("took {} ms", validate_start.elapsed().as_millis()));
 	}
 
@@ -252,6 +250,7 @@ pub fn build_project(
 	let binary_path = match cli_arguments.codegen_backend {
 		CodegenBackend::LLVM => llvm::driver::generate_code(
 			cli_arguments,
+			message_output,
 			&project_config,
 			project_path,
 			&binary_name,
@@ -264,13 +263,13 @@ pub fn build_project(
 		),
 	};
 
-	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
+	if cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Finished codegen", format_args!("took {} ms", codegen_start.elapsed().as_millis()));
 	}
 
 	assert!(!codegen_messages.any_messages());
 
-	if cli_arguments.loud && cli_arguments.command != CompileCommand::CompilerTest {
+	if cli_arguments.command != CompileCommand::CompilerTest {
 		message_output.alertln("    Built executable", format_args!("{}", binary_path.display()));
 	}
 

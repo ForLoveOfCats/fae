@@ -21,8 +21,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::cli::{parse_arguments, CompileCommand};
-use crate::color::{BOLD_GREEN, RESET};
-use crate::frontend::error::StderrOutput;
+use crate::frontend::error::{StderrOutput, WriteFmt};
 use crate::frontend::project::build_project;
 
 #[cfg(not(target_env = "msvc"))]
@@ -44,7 +43,11 @@ fn main() {
 
 	let supports_color = cli_arguments.color_messages;
 	let mut stderr = std::io::stderr();
-	let mut output = StderrOutput { supports_color, stderr: &mut stderr };
+	let mut output = StderrOutput {
+		supports_color,
+		loud: cli_arguments.loud,
+		stderr: &mut stderr,
+	};
 
 	let project_path = cli_arguments.project_path.as_deref().unwrap_or_else(|| Path::new("./"));
 	let built_project = build_project(&cli_arguments, &mut output, project_path, None);
@@ -66,12 +69,10 @@ fn main() {
 		}
 	};
 
-	if cli_arguments.loud {
-		if cli_arguments.command == CompileCommand::Run {
-			eprintln!("     {BOLD_GREEN}Running project{RESET}");
-		} else if cli_arguments.command == CompileCommand::Test {
-			eprintln!("     {BOLD_GREEN}Testing project{RESET}");
-		}
+	if cli_arguments.command == CompileCommand::Run {
+		output.alertln("     Running project", format_args!(""));
+	} else if cli_arguments.command == CompileCommand::Test {
+		output.alertln("     Testing project", format_args!(""));
 	}
 
 	if let CompileCommand::Run | CompileCommand::Test = cli_arguments.command {

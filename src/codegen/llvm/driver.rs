@@ -20,7 +20,7 @@ use crate::cli::CliArguments;
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::abi::SysvAbi;
 use crate::codegen::llvm::generator::{Architecture, LLVMGenerator};
-use crate::frontend::error::Messages;
+use crate::frontend::error::{Messages, WriteFmt};
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::project::ProjectConfig;
@@ -31,6 +31,7 @@ use crate::TARGET_DIR;
 
 pub fn generate_code<'a>(
 	cli_arguments: &CliArguments,
+	message_output: &mut impl WriteFmt,
 	project_config: &ProjectConfig,
 	project_path: &Path,
 	name: &str,
@@ -158,12 +159,14 @@ pub fn generate_code<'a>(
 	if cli_arguments.emit_llvm_ir {
 		unsafe {
 			let formatted_path = format!("{TARGET_DIR}/{name}.ll");
-			let path = CString::new(formatted_path).unwrap();
+			let path = CString::new(formatted_path.clone()).unwrap();
 			let mut error_string = MaybeUninit::uninit();
 			if LLVMPrintModuleToFile(generator.module, path.as_ptr(), error_string.as_mut_ptr()) == 1 {
 				let error = CStr::from_ptr(error_string.assume_init());
 				panic!("{error:?}");
 			}
+
+			message_output.alertln("     Emitted LLVM IR", format_args!("{formatted_path}"));
 		}
 	}
 

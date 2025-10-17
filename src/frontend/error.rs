@@ -53,6 +53,7 @@ impl WriteFmt for String {
 }
 
 pub struct StderrOutput<'a> {
+	pub loud: bool,
 	pub supports_color: bool,
 	pub stderr: &'a mut std::io::Stderr,
 }
@@ -68,6 +69,11 @@ impl<'a> WriteFmt for StderrOutput<'a> {
 
 	fn alertln(&mut self, prefix: &str, trailing: std::fmt::Arguments) {
 		use crate::color::{BOLD_GREEN, RESET};
+
+		if !self.loud {
+			return;
+		}
+
 		if self.supports_color {
 			writeln!(self.stderr, "{BOLD_GREEN}{prefix}{RESET} {trailing}").unwrap();
 		} else {
