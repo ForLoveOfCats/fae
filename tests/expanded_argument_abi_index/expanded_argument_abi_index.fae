@@ -1,0 +1,27 @@
+struct FontId {
+	value: u32
+}
+
+struct LoadedFont {
+	id: FontId
+	freetype_face: *void
+	harfbuzz_font: *void
+}
+
+fn main() {
+	let font = LoadedFont {
+		id: FontId { value: 42 }
+		freetype_face: null_pointer<void>() 
+		harfbuzz_font: null_pointer<void>() 
+	}
+	perform_shaping(Abc { a: 1, b: 2, }, font)
+}
+
+struct Abc {
+	a: i64
+	b: i64
+}
+
+fn perform_shaping(abc=: Abc, font=: LoadedFont) {
+	println(f"a = {abc.a}, b = {abc.b}, id = {font.id.value}")
+}

@@ -87,7 +87,13 @@ struct ParameterAttribute {
 }
 
 #[derive(Debug, Clone)]
-pub enum ParameterInformation {
+pub struct ParameterInformation {
+	pub expanded_count: u32,
+	pub kind: ParameterInformationKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ParameterInformationKind {
 	BareValue {
 		llvm_type: LLVMTypeRef,
 		type_id: TypeId,
@@ -205,6 +211,7 @@ impl SysvAbi {
 
 		let mut classes_buffer = sysv_abi::classification_buffer();
 		let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, parameter_type_id);
+		let expanded_count = classes.len() as u32;
 		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_type_buffer, classes.iter());
 
 		self.parameter_composition_field_type_buffer.clear();
@@ -217,10 +224,13 @@ impl SysvAbi {
 		if is_bare_value {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			let llvm_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
-			Some(ParameterInformation::BareValue {
-				llvm_type,
-				type_id: parameter_type_id,
-				needs_alloca: is_mutable,
+			Some(ParameterInformation {
+				expanded_count,
+				kind: ParameterInformationKind::BareValue {
+					llvm_type,
+					type_id: parameter_type_id,
+					needs_alloca: is_mutable,
+				},
 			})
 		} else if is_by_pointer {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
@@ -231,10 +241,13 @@ impl SysvAbi {
 				self.attribute_buffer.push(ParameterAttribute { index, attribute });
 			}
 
-			Some(ParameterInformation::ByPointer {
-				pointed_type,
-				pointed_type_id: parameter_type_id,
-				needs_alloca: is_mutable,
+			Some(ParameterInformation {
+				expanded_count,
+				kind: ParameterInformationKind::ByPointer {
+					pointed_type,
+					pointed_type_id: parameter_type_id,
+					needs_alloca: is_mutable,
+				},
 			})
 		} else {
 			let composition_struct = unsafe {
@@ -248,7 +261,10 @@ impl SysvAbi {
 			let actual_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
 			let actual_type_id = parameter_type_id;
 			let composition = ParameterComposition { composition_struct, actual_type, actual_type_id, layout };
-			Some(ParameterInformation::Composition(composition))
+			Some(ParameterInformation {
+				expanded_count,
+				kind: ParameterInformationKind::Composition(composition),
+			})
 		}
 	}
 
@@ -259,11 +275,11 @@ impl SysvAbi {
 		value: generator::Binding,
 		information: &ParameterInformation,
 		index: Option<u32>,
-	) {
-		let composition = match information {
-			ParameterInformation::Composition(composition) => composition,
+	) -> u32 {
+		let composition = match &information.kind {
+			ParameterInformationKind::Composition(composition) => composition,
 
-			&ParameterInformation::ByPointer { pointed_type, .. } => {
+			&ParameterInformationKind::ByPointer { pointed_type, .. } => {
 				match value.kind {
 					generator::BindingKind::Value(value) => {
 						let alloca = generator.build_alloca(pointed_type, c"generate_argument.by_pointer.from_value");
@@ -282,13 +298,13 @@ impl SysvAbi {
 					self.attribute_buffer.push(ParameterAttribute { index, attribute });
 				}
 
-				return;
+				return 1;
 			}
 
-			ParameterInformation::BareValue { .. } => {
+			ParameterInformationKind::BareValue { .. } => {
 				let value = value.to_value(generator.builder);
 				self.argument_value_buffer.push(value);
-				return;
+				return 1;
 			}
 		};
 
@@ -323,6 +339,8 @@ impl SysvAbi {
 				self.argument_value_buffer.push(value);
 			}
 		}
+
+		return composition_field_count;
 	}
 }
 
@@ -404,7 +422,8 @@ impl LLVMAbi for SysvAbi {
 		self.parameter_composition_field_type_buffer.clear();
 		self.parameter_information_buffer.clear();
 
-		for (index, parameter) in function.parameters.iter().enumerate() {
+		let mut expanded_count = 0;
+		for parameter in function.parameters.iter() {
 			let information = self.construct_parameter_information(
 				type_store,
 				context,
@@ -412,8 +431,13 @@ impl LLVMAbi for SysvAbi {
 				attribute_kinds,
 				parameter.type_id,
 				parameter.is_mutable,
-				Some(index as u32 + maybe_sret),
+				Some(expanded_count + maybe_sret),
 			);
+
+			if let Some(information) = &information {
+				expanded_count += information.expanded_count
+			}
+
 			self.parameter_information_buffer.push(information);
 		}
 
@@ -495,8 +519,8 @@ impl LLVMAbi for SysvAbi {
 				continue;
 			};
 
-			let composition = match information {
-				&ParameterInformation::BareValue { llvm_type, type_id, needs_alloca } => {
+			let composition = match &information.kind {
+				&ParameterInformationKind::BareValue { llvm_type, type_id, needs_alloca } => {
 					let parameter = unsafe { LLVMGetParam(llvm_function, parameter_index) };
 
 					let kind = if needs_alloca {
@@ -518,7 +542,7 @@ impl LLVMAbi for SysvAbi {
 					continue;
 				}
 
-				&ParameterInformation::ByPointer { pointed_type, pointed_type_id, needs_alloca, .. } => {
+				&ParameterInformationKind::ByPointer { pointed_type, pointed_type_id, needs_alloca, .. } => {
 					let parameter = unsafe { LLVMGetParam(llvm_function, parameter_index) };
 
 					let kind = if needs_alloca {
@@ -542,7 +566,7 @@ impl LLVMAbi for SysvAbi {
 					continue;
 				}
 
-				ParameterInformation::Composition(composition) => composition,
+				ParameterInformationKind::Composition(composition) => composition,
 			};
 
 			assert!(composition.layout.size > 0, "{:?}", composition.layout);
@@ -614,13 +638,15 @@ impl LLVMAbi for SysvAbi {
 			assert_eq!(arguments.len(), function.parameter_information.len());
 		}
 
-		for ((index, &value), information) in arguments.iter().enumerate().zip(function.parameter_information.iter()) {
+		let mut expanded_count = 0;
+		for (&value, information) in arguments.iter().zip(function.parameter_information.iter()) {
 			let (Some(value), Some(information)) = (value, information) else {
 				assert_eq!(value.is_none(), information.is_none(), "{value:?}, {information:?}");
 				continue;
 			};
 
-			self.generate_argument(generator, attribute_kinds, value, information, Some(index as u32 + maybe_sret));
+			let index = Some(expanded_count + maybe_sret);
+			expanded_count += self.generate_argument(generator, attribute_kinds, value, information, index);
 		}
 
 		if function.c_varargs {
@@ -643,7 +669,7 @@ impl LLVMAbi for SysvAbi {
 				let information = constructed.unwrap();
 
 				// Some numeric varargs need to be widened before passing
-				if let ParameterInformation::BareValue { type_id, .. } = information {
+				if let ParameterInformationKind::BareValue { type_id, .. } = information.kind {
 					if let Some(numeric_kind) = type_id.numeric_kind(type_store) {
 						match numeric_kind {
 							// Sign extend
