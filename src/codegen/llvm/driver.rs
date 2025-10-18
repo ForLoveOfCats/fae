@@ -9,7 +9,7 @@ use llvm_sys::core::{
 	LLVMAddModuleFlag, LLVMConstInt, LLVMContextCreate, LLVMInt32TypeInContext, LLVMPrintModuleToFile, LLVMValueAsMetadata,
 };
 use llvm_sys::debuginfo::{LLVMDIBuilderFinalize, LLVMDebugMetadataVersion};
-use llvm_sys::target::LLVMSetModuleDataLayout;
+use llvm_sys::target::{LLVMCreateTargetData, LLVMSetModuleDataLayout};
 use llvm_sys::target_machine::{
 	LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout, LLVMCreateTargetMachine,
 	LLVMGetTargetFromTriple, LLVMRelocMode, LLVMTargetMachineEmitToFile,
@@ -119,7 +119,12 @@ pub fn generate_code<'a>(
 	};
 
 	unsafe {
-		let data_layout = LLVMCreateTargetDataLayout(machine);
+		let data_layout = if cfg!(target_os = "macos") {
+			LLVMCreateTargetData(c"e-m:o-i64:64-i128:128-n32:64-S128-Fn32-a:0:0".as_ptr() as _)
+		} else {
+			LLVMCreateTargetDataLayout(machine)
+		};
+
 		assert!(!data_layout.is_null());
 		LLVMSetModuleDataLayout(generator.module, data_layout);
 	}
