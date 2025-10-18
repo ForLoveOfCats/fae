@@ -3495,6 +3495,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let union_type = shape[union_specialization_index].actual;
 
 		let alloca = self.build_alloca(union_type, c"generate_union_variant_to_union.union_alloca");
+		unsafe { LLVMBuildStore(self.builder, LLVMConstNull(union_type), alloca) };
 
 		unsafe {
 			if let Some(variant_binding) = variant_binding {
