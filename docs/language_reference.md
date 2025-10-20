@@ -230,7 +230,7 @@ const C = 299792458
 
 ## Binary operators
 
-All binary operators expect both sides to be of the same type, or barring that, able to perform the [[#Collapse fair]] rules to collapse both to the same type. Range initialization does *not* perform the collapse fair rules.
+All binary operators expect both sides to be of the same type, or barring that, able to perform the [Collapse fair](#collapse-fair) rules to collapse both to the same type. Range initialization does *not* perform the collapse fair rules.
 
 | Name                              | Syntax    | Details                                                                                                                                                                                                                                                                                                             |
 | --------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -289,7 +289,7 @@ All binary operators expect both sides to be of the same type, or barring that, 
 
 Numeric literals in Fae do not have a type like `i32` or `f64`. Rather they represent the abstract concept of the number, and math between untyped numerals is performed at compile time with large capacity decimal values.
 
-As untyped numerals have no inherit "runtime" type, they must be coerced to a sized numeric type like `i32` or `f64` in order to be assigned to bindings, stored in fields, or passed as arguments. The compiler will determine this type automatically from context when required, throwing an error if the value is out of the representable bounds of the type. See [[#Type coercion]] for details.
+As untyped numerals have no inherit "runtime" type, they must be coerced to a sized numeric type like `i32` or `f64` in order to be assigned to bindings, stored in fields, or passed as arguments. The compiler will determine this type automatically from context when required, throwing an error if the value is out of the representable bounds of the type. See [Type coercion](#type-coercion) for details.
 
 Untyped numerals can be used as the value of a `const` and the untyped numeral will be substituted into all usages of that `const`, allowing for the same `const` to be coerced to different "runtime" numeric types at different substitution points, throwing an error anytime a loss in precision would occur. 
 
@@ -620,7 +620,7 @@ assert(a == 2) // Example assumes a little-endian system
 
 Pointers may be freely cast to numeric types, and integers of sufficient size for the target platform may be cast back into pointers of any mutability.
 
-**Note**: It is planned to remove the ability to cast integers to pointers. See [[#Pointers]] for more details.
+**Note**: It is planned to remove the ability to cast integers to pointers. See [Pointers](#pointers) for more details.
 
 
 ## Structures
@@ -794,7 +794,7 @@ assert(kind.tag == 1)
 ```
 **Note**: Due to a temporary compiler limitation the enum tag is restricted to be type `u8` and an enum may not have more than 256 variants.
 
-For which variant an enum is and accessing the values in a specific variant see [[#`is` operator]] and [[#`match` expression]] .
+For which variant an enum is and accessing the values in a specific variant see [`is` operator](#is-operator) and [`match` expression](#match-expression).
 
 
 ## Field access modifiers
@@ -843,7 +843,7 @@ The memory allocation functions in the standard library module `fae.memory` hand
 
 ## `if-else` expression
 
-An `if` expression branches into the specified block if the condition expression returns a `true` value, otherwise continues to do the same for any following `else if`, and if none of those branch then it will branch into the `else` block if present. It is an expression as it may be used as a block expression, see [[#Block expressions and `yield`]] for more. 
+An `if` expression branches into the specified block if the condition expression returns a `true` value, otherwise continues to do the same for any following `else if`, and if none of those branch then it will branch into the `else` block if present. It is an expression as it may be used as a block expression, see [Block expressions and `yield`](#block-expressions-and-yield) for more. 
 
 Syntactically it takes the following forms.
 ```
@@ -974,7 +974,7 @@ if color is Rgba {
 
 ## `match` expression
 
-A `match` expression selects a branch, known as an arm, based on which `enum` variant the condition expression produces. Arms do not fall through to other arms. It is an expression as it may be used as a block expression, see [[#Block expressions and `yield`]] for more.
+A `match` expression selects a branch, known as an arm, based on which `enum` variant the condition expression produces. Arms do not fall through to other arms. It is an expression as it may be used as a block expression, see [Block expressions and `yield`](#block-expressions-and-yield) for more.
 ```
 enum OffsetKind {
     Absolute
