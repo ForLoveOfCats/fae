@@ -92,7 +92,7 @@
 - The bitwise not operator `~` has been added
 - The new `fae.toml` key `provide_main` disables the std provided `main` function when `false`
 - A warning is now emitted when an `fstr` contains no expression items
-- There may now be a single newline between the `=>` and the singular statement in braceless blocks 
+- There may now be a single newline preceding the arrow `=>` of braceless blocks 
 - `trait` and `opaque` are now reserved words
 
 ## Compiler Usability Improvements
