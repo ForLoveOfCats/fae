@@ -252,8 +252,11 @@ some_function(value.&mut)
 
 ### Opaque Structs
 
-A struct may now be marked as opaque, to signify to the compiler that the size and layout of the struct is unknown. This prevents usage of `size_of` on the struct, storing an instance on the stack, passing by value, de
-
+A struct may now be marked as opaque, to signify to the compiler that the size and layout of the struct is unknown. This prevents usage of `size_of` on the struct, constructing an instance, storing an instance on the stack, and passing by value. One exception is that currently generic functions may break these rules for practical reasons.
+```
+struct(opaque) Handle
+let _: Handle --- // Compile error!
+```
 
 ### Statically Sized Arrays
 
