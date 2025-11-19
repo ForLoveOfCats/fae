@@ -1,0 +1,12 @@
+struct A {
+	empty: void
+	one: u32
+	two: u32
+}
+
+fn main() {
+	mut instance: A ---
+	println(f"one: {instance.one}, two: {instance.two}")
+	instance = A { empty: void, one: 42, two: 42 }
+	println(f"one: {instance.one}, two: {instance.two}")
+}

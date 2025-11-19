@@ -120,7 +120,7 @@ pub trait Generator {
 		type_id: TypeId,
 		shape_index: usize,
 		specialization_index: usize,
-		fields: &[Self::Binding],
+		fields: &[Option<Self::Binding>],
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 

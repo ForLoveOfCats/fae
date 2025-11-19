@@ -736,16 +736,19 @@ fn generate_struct_literal<'a, 'b, G: Generator>(
 ) -> Option<G::Binding> {
 	// TODO: Avoid this creating this vec every time
 	let mut fields = Vec::with_capacity(literal.field_initializers.len());
+	let mut non_zero_sized_field_count = 0;
 	for initalizer in &literal.field_initializers {
-		if let Some(step) = generate_expression(context, generator, &initalizer.expression) {
-			fields.push(step);
+		let binding = generate_expression(context, generator, &initalizer.expression);
+		if binding.is_some() {
+			non_zero_sized_field_count += 1;
 		}
+		fields.push(binding);
 	}
 
 	let type_id = context.specialize_type_id(literal.type_id);
 	let layout = context.type_store.type_layout(type_id);
 	if layout.size <= 0 {
-		assert_eq!(fields.len(), 0);
+		assert_eq!(non_zero_sized_field_count, 0);
 		None
 	} else {
 		assert!(!fields.is_empty());

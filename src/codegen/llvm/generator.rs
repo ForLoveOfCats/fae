@@ -1896,7 +1896,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		type_id: TypeId,
 		shape_index: usize,
 		specialization_index: usize,
-		fields: &[Self::Binding],
+		fields: &[Option<Self::Binding>],
 		debug_location: DebugLocation,
 	) -> Self::Binding {
 		let _debug_scope = self.create_debug_scope(debug_location);
@@ -1905,6 +1905,10 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		let alloca = self.build_alloca(struct_type, c"generate_struct_literal.alloca");
 		for (index, field) in fields.iter().enumerate() {
+			let Some(field) = field else {
+				continue;
+			};
+
 			let value = field.to_value(self.builder);
 			unsafe {
 				let field_pointer = LLVMBuildStructGEP2(

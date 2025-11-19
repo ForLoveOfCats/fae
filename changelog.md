@@ -118,6 +118,8 @@
 - Fixed an issue where a bitshift-right-assign operator would display incorrectly in error messages (Thanks @yazaldefilimone!)
 - Fixed an issue where undefined behavior could be encountered when handling integers larger than 4-bytes
 - Fixed an oversight where a `return` statement in a `void` function erronously would accept a non-void expression 
+- Fixed an issue where integer casts would incorrectly sign-extend unsigned integers
+- Fixed an issue where struct/enum literals would incorrectly initialize any fields following a zero-sized field
 
 ## VSCode Extension
 - `trait` and `opaque` are now highlighted as keywords
