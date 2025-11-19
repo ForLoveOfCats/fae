@@ -6,7 +6,7 @@ use llvm_sys::core::{
 	LLVMAddAttributeAtIndex, LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext,
 	LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildAnd, LLVMBuildBr,
 	LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPCast,
-	LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast, LLVMBuildIntToPtr,
+	LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFSub, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIntCast2, LLVMBuildIntToPtr,
 	LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildMul, LLVMBuildNeg, LLVMBuildNot, LLVMBuildOr, LLVMBuildPhi,
 	LLVMBuildPtrToInt, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl,
 	LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildSub, LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP,
@@ -24,7 +24,7 @@ use llvm_sys::debuginfo::{
 	LLVMDIBuilderCreateSubroutineType, LLVMDIFlagPrototyped, LLVMDIFlagZero, LLVMSetSubprogram,
 };
 use llvm_sys::prelude::{
-	LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMDIBuilderRef, LLVMMetadataRef, LLVMModuleRef, LLVMTypeRef,
+	LLVMBasicBlockRef, LLVMBool, LLVMBuilderRef, LLVMContextRef, LLVMDIBuilderRef, LLVMMetadataRef, LLVMModuleRef, LLVMTypeRef,
 	LLVMValueRef,
 };
 use llvm_sys::{
@@ -2143,7 +2143,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					1 => {
 						let value = unsafe { LLVMConstInt(LLVMInt64TypeInContext(self.context), length, false as _) };
 						let kind = BindingKind::Value(value);
-						return Some(Binding { type_id, kind });
+						return Some(Binding { type_id: type_store.isize_type_id(), kind });
 					}
 
 					// Slice
@@ -2367,16 +2367,17 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			}
 		}
 
+		let from_kind = base.type_id.numeric_kind(type_store).unwrap();
+
 		// Int to int
 		if from_int {
 			if let Some(to_type) = to_int_type {
-				let int = unsafe { LLVMBuildIntCast(self.builder, from, to_type, c"".as_ptr()) };
+				let signed = from_kind.is_signed() as LLVMBool;
+				let int = unsafe { LLVMBuildIntCast2(self.builder, from, to_type, signed, c"".as_ptr()) };
 				let kind = BindingKind::Value(int);
 				return Binding { type_id: to, kind };
 			}
 		}
-
-		let from_kind = base.type_id.numeric_kind(type_store).unwrap();
 
 		// Int to float
 		if from_int {

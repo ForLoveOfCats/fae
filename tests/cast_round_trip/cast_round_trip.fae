@@ -18,4 +18,9 @@ fn main() {
 
 	println(f"{c.(f64)}")
 	println(f"{4.9.(f64).(f32)}")
+
+	let d: u8 = 255
+	let e = d.(u64)
+	println(f"{e}")
+	println(f"{e.(u8)}")
 }
