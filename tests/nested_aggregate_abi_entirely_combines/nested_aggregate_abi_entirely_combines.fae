@@ -1,0 +1,20 @@
+struct A {
+	a: i32
+	b: B
+}
+
+struct B {
+	inner_b: i32
+}
+
+fn func(): A {
+	return A {
+		a: 42
+		b: B { inner_b: 55 }
+	}
+}
+
+fn main() {
+	let a = func()
+	println(f"a: {a.a}, b: {a.b.inner_b}")
+}

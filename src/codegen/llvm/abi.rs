@@ -171,7 +171,7 @@ impl SysvAbi {
 					let llvm_type = unsafe {
 						match class.size {
 							4 => LLVMVectorType(LLVMHalfTypeInContext(context), 2),
-							8 => LLVMVectorType(LLVMHalfTypeInContext(context), 4),
+							8 => LLVMVectorType(LLVMFloatTypeInContext(context), 2),
 							unknown_size => panic!("{unknown_size}"),
 						}
 					};
@@ -210,8 +210,9 @@ impl SysvAbi {
 		}
 
 		let mut classes_buffer = sysv_abi::classification_buffer();
-		let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, parameter_type_id);
-		let expanded_count = classes.len() as u32;
+		let classify_result = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, parameter_type_id);
+		let expanded_count = classify_result.new_classes_len as u32;
+		let classes = &classes_buffer[..classify_result.new_classes_len];
 		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_type_buffer, classes.iter());
 
 		self.parameter_composition_field_type_buffer.clear();
@@ -379,7 +380,8 @@ impl LLVMAbi for SysvAbi {
 			let return_type = llvm_types.type_to_llvm_type(context, type_store, function.return_type);
 
 			let mut classes_buffer = sysv_abi::classification_buffer();
-			let classes = sysv_abi::classify_type(type_store, &mut classes_buffer, function.return_type);
+			let classify_result = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, function.return_type);
+			let classes = &classes_buffer[..classify_result.new_classes_len];
 			Self::map_classes_into_llvm_type_buffer(context, &mut self.return_type_buffer, classes.iter());
 
 			if let Some(Class { kind: ClassKind::Memory, .. }) = classes.first() {

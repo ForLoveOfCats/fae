@@ -1,0 +1,25 @@
+struct Vec2 {
+	x: f32
+	y: f32
+}
+
+struct Camera2d {
+	zoom: f32
+	position: Vec2
+	rotation_degrees: f32
+}
+
+fn new_camera(): Camera2d {
+	return Camera2d {
+		zoom: 42
+		position: Vec2 { x: 1, y: 2 }
+		rotation_degrees: 55
+	}
+}
+
+fn main() {
+	let camera = new_camera()
+	println(f"zoom: {camera.zoom}")
+	println(f"position: {camera.position.x}, {camera.position.y}")
+	println(f"rotation_degrees: {camera.rotation_degrees}")
+}
