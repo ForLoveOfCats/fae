@@ -566,7 +566,7 @@ fn parse_expression_atom<'a>(
 			let token = tokens.next(messages)?;
 			let op = Node::new(UnaryOperator::Negate, token.span);
 
-			let expression = parse_expression(bump, messages, tokens, allow_struct_literal)?;
+			let expression = parse_expression_atom(bump, messages, tokens, allow_struct_literal)?;
 
 			let span = token.span + expression.span;
 			let negate = bump.alloc(UnaryOperation { op, expression });

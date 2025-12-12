@@ -1,0 +1,12 @@
+fn func_a(x=: f32, r=: f32): f32 {
+	return -r + x
+}
+
+fn func_b(x=: f32, r=: f32): f32 {
+	return (-r) + x
+}
+
+fn main() {
+	println(f"{func_a(10, 8)}")
+	println(f"{func_b(10, 8)}")
+}

@@ -101,6 +101,8 @@
 
 ## Compiler Bugfixes
 - Fixed a bug where imported modules would not be usable in certain contexts
+- Fixed a bug where a parameter or return type of certain nested aggregates would generate incorrectly
+- Fixed a bug where the unary negation operator would consume all remaining expression to the right as its sub-expression
 - Fixed an issue where `static` global variables were not mutable
 - Fixed a crash during codegen with an empty `fstr`
 - Fixed a crash during codegen with a number literal statement
