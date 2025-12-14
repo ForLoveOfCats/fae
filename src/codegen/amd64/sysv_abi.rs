@@ -28,18 +28,24 @@ pub enum ClassKind {
 	NoClass,
 }
 
+// Note: It is counterintuitive that this array has space for *nine* classes when
+// there should never be more than eight. However the algorithm as implemented
+// below can use up to one extra as a temporary spot to put a class which is about
+// to be combined, bringing the total classes back down to eight.
 #[inline]
-pub fn classification_buffer() -> [Class; 8] {
-	[
-		Class::default(),
-		Class::default(),
-		Class::default(),
-		Class::default(),
-		Class::default(),
-		Class::default(),
-		Class::default(),
-		Class::default(),
-	]
+pub fn classification_buffer() -> [Class; 9] {
+	Default::default()
+}
+
+pub fn classify_type<'buf>(
+	type_store: &mut TypeStore,
+	buffer: &'buf mut [Class; 9],
+	buffer_index: usize,
+	type_id: TypeId,
+) -> usize {
+	let result = classify_type_internal(type_store, buffer, buffer_index, type_id);
+	assert!(result.new_classes_len <= 8);
+	result.new_classes_len
 }
 
 #[derive(Debug)]
@@ -49,9 +55,9 @@ pub struct ClassifyResult {
 }
 
 // Huge thanks to the Zig selfhost compiler for making the spec algorithm make sense
-pub fn classify_type<'buf>(
+fn classify_type_internal<'buf>(
 	type_store: &mut TypeStore,
-	buffer: &'buf mut [Class],
+	buffer: &'buf mut [Class; 9],
 	buffer_index: usize,
 	type_id: TypeId,
 ) -> ClassifyResult {
@@ -144,7 +150,7 @@ pub fn classify_type<'buf>(
 					let mut output_len = 0;
 					for field in specialization.fields.iter() {
 						let mut field_buffer = classification_buffer();
-						let result = classify_type(type_store, &mut field_buffer, 0, field.type_id);
+						let result = classify_type_internal(type_store, &mut field_buffer, 0, field.type_id);
 						output_len = output_len.max(result.new_classes_len);
 
 						for (index, field_class) in field_buffer[..result.new_classes_len].iter().enumerate() {
@@ -191,7 +197,7 @@ pub fn classify_type<'buf>(
 
 fn classify_merge_fields<I: Iterator<Item = TypeId>>(
 	type_store: &mut TypeStore,
-	buffer: &mut [Class],
+	buffer: &mut [Class; 9],
 	mut buffer_index: usize,
 	field_type_ids: I,
 ) {
@@ -207,7 +213,7 @@ fn classify_merge_fields<I: Iterator<Item = TypeId>>(
 			continue;
 		}
 
-		let result = classify_type(type_store, buffer, buffer_index, field_type_id);
+		let result = classify_type_internal(type_store, buffer, buffer_index, field_type_id);
 
 		// This is counter-intuitive but the nested type can entirely merge itself into
 		// an already existing item in the buffer, leaving the index class untouched
@@ -340,7 +346,7 @@ fn merge_classes_union(mut a: Class, b: Class) -> Class {
 	}
 }
 
-fn post_merge_cleanup<'buf>(aggregate_layout: Layout, buffer: &'buf mut [Class], old_length: usize) -> usize {
+fn post_merge_cleanup<'buf>(aggregate_layout: Layout, buffer: &'buf mut [Class; 9], old_length: usize) -> usize {
 	let mut contains_sse_up = false;
 	for (index, &class) in buffer.iter().enumerate() {
 		// (a) If one of the classes is MEMORY, the whole argument is passed in memory.

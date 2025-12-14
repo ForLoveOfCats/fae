@@ -210,9 +210,8 @@ impl SysvAbi {
 		}
 
 		let mut classes_buffer = sysv_abi::classification_buffer();
-		let classify_result = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, parameter_type_id);
-		let expanded_count = classify_result.new_classes_len as u32;
-		let classes = &classes_buffer[..classify_result.new_classes_len];
+		let classes_len = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, parameter_type_id);
+		let classes = &classes_buffer[..classes_len];
 		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_type_buffer, classes.iter());
 
 		self.parameter_composition_field_type_buffer.clear();
@@ -226,7 +225,7 @@ impl SysvAbi {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			let llvm_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
 			Some(ParameterInformation {
-				expanded_count,
+				expanded_count: classes_len as u32,
 				kind: ParameterInformationKind::BareValue {
 					llvm_type,
 					type_id: parameter_type_id,
@@ -243,7 +242,7 @@ impl SysvAbi {
 			}
 
 			Some(ParameterInformation {
-				expanded_count,
+				expanded_count: classes_len as u32,
 				kind: ParameterInformationKind::ByPointer {
 					pointed_type,
 					pointed_type_id: parameter_type_id,
@@ -263,7 +262,7 @@ impl SysvAbi {
 			let actual_type_id = parameter_type_id;
 			let composition = ParameterComposition { composition_struct, actual_type, actual_type_id, layout };
 			Some(ParameterInformation {
-				expanded_count,
+				expanded_count: classes_len as u32,
 				kind: ParameterInformationKind::Composition(composition),
 			})
 		}
@@ -380,8 +379,8 @@ impl LLVMAbi for SysvAbi {
 			let return_type = llvm_types.type_to_llvm_type(context, type_store, function.return_type);
 
 			let mut classes_buffer = sysv_abi::classification_buffer();
-			let classify_result = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, function.return_type);
-			let classes = &classes_buffer[..classify_result.new_classes_len];
+			let classes_len = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, function.return_type);
+			let classes = &classes_buffer[..classes_len];
 			Self::map_classes_into_llvm_type_buffer(context, &mut self.return_type_buffer, classes.iter());
 
 			if let Some(Class { kind: ClassKind::Memory, .. }) = classes.first() {
