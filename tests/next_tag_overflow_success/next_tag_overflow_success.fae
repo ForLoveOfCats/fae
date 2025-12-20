@@ -1,0 +1,19 @@
+enum(bitflags) Keymod: u16 {
+	Scroll = 32768
+	Ctrl = 1
+}
+
+enum Other: u8 {
+	A = 255
+	B = 1
+}
+
+fn main() {
+	println(f"Scroll tag: {Keymod.Scroll.tag}")
+	println(f"Ctrl tag: {Keymod.Ctrl.tag}")
+
+	println("")
+
+	println(f"A tag: {Other.A.tag}")
+	println(f"B tag: {Other.B.tag}")
+}

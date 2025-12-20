@@ -1,0 +1,5 @@
+Scroll tag: 32768
+Ctrl tag: 1
+
+A tag: 255
+B tag: 1

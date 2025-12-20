@@ -1,0 +1,9 @@
+Validation error: ./tests/next_tag_overflow_failure/next_tag_overflow_failure.fae:3
+ Next bitflags enum tag value 0x10000 would overflow tag of type `u16`
+  3|     Ctrl
+         ^^^^
+
+Validation error: ./tests/next_tag_overflow_failure/next_tag_overflow_failure.fae:8
+ Next enum tag value `256` would overflow tag of type `u8`
+  8|     B
+         ^

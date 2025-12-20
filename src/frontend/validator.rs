@@ -2937,11 +2937,9 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 	}
 
 	assert_eq!(variant_shapes.len(), statement.variants.len());
-	let variant_len = variant_shapes.len();
 
-	let mut next_tag_value = if is_bitflags { 1 } else { 0 };
-	let mut emitted_tag_error = false; // Yuck
-	for (index, (variant_shape, tree_variant)) in variant_shapes.iter_mut().zip(statement.variants).enumerate() {
+	let mut previous_tag_value: Option<i128> = None;
+	for (variant_shape, tree_variant) in variant_shapes.iter_mut().zip(statement.variants) {
 		fill_struct_like_enum_variant(
 			context.messages,
 			context.type_store,
@@ -2957,41 +2955,52 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 			is_bitflags,
 		);
 
-		let chosen_tag_value =
-			validate_enum_variant_tag_value(&mut context, tree_variant, tag_type_id, next_tag_value, &mut emitted_tag_error);
-		variant_shape.tag_value = chosen_tag_value;
+		let chosen_tag_value = validate_enum_variant_tag_value(
+			&mut context,
+			tree_variant,
+			tag_type_id,
+			previous_tag_value,
+			is_bitflags,
+			max_tag_bits,
+			max_tag_value,
+		);
 
-		let is_last = index + 1 >= variant_len;
-		if is_bitflags {
-			let i128_bits = (size_of_val(&next_tag_value) * 8) as u32;
-			let i128_bits_difference = i128_bits - max_tag_bits;
-
-			let leading_zeros = chosen_tag_value.leading_zeros() - i128_bits_difference;
-			let bits_needed = max_tag_bits - leading_zeros + 1;
-
-			let next_tag_bits: u128 = (1 << (i128_bits - 1)) >> (chosen_tag_value.leading_zeros().saturating_sub(1));
-
-			if bits_needed <= max_tag_bits {
-				// Get the highest bit and shift it one to the left
-				// Performs the bitshifts on a u128 to utilize logical shift rather than arithmetic
-				next_tag_value = next_tag_bits as i128;
-			} else if !is_last && !emitted_tag_error {
-				emitted_tag_error = true;
-				let tag_type = context.type_name(tag_type_id);
-				let error = error!("Next bitflags enum tag value {next_tag_bits:#x} would overflow tag of type {tag_type}");
-				let next_tree_variant = &statement.variants[index + 1];
-				context.message(error.span(next_tree_variant.kind.name_span()));
-			}
-		} else {
-			next_tag_value = chosen_tag_value + 1;
-			if !is_last && !emitted_tag_error && next_tag_value > max_tag_value {
-				emitted_tag_error = true;
-				let tag_type = context.type_name(tag_type_id);
-				let error = error!("Next enum tag value `{next_tag_value}` would overflow tag of type {tag_type}");
-				let next_tree_variant = &statement.variants[index + 1];
-				context.message(error.span(next_tree_variant.kind.name_span()));
-			}
+		variant_shape.tag_value = chosen_tag_value.unwrap_or(i128::MIN);
+		if let Some(chosen_tag_value) = chosen_tag_value {
+			previous_tag_value = Some(chosen_tag_value);
 		}
+
+		// let is_last = index + 1 >= variant_len;
+		// if is_bitflags {
+		// 	let i128_bits = (size_of_val(&next_tag_value) * 8) as u32;
+		// 	let i128_bits_difference = i128_bits - max_tag_bits;
+
+		// 	let leading_zeros = chosen_tag_value.leading_zeros() - i128_bits_difference;
+		// 	let bits_needed = max_tag_bits - leading_zeros + 1;
+
+		// 	let next_tag_bits: u128 = (1 << (i128_bits - 1)) >> (chosen_tag_value.leading_zeros().saturating_sub(1));
+
+		// 	if bits_needed <= max_tag_bits {
+		// 		// Get the highest bit and shift it one to the left
+		// 		// Performs the bitshifts on a u128 to utilize logical shift rather than arithmetic
+		// 		next_tag_value = next_tag_bits as i128;
+		// 	} else if !is_last && !emitted_tag_error {
+		// 		emitted_tag_error = true;
+		// 		let tag_type = context.type_name(tag_type_id);
+		// 		let error = error!("Next bitflags enum tag value {next_tag_bits:#x} would overflow tag of type {tag_type}");
+		// 		let next_tree_variant = &statement.variants[index + 1];
+		// 		context.message(error.span(next_tree_variant.kind.name_span()));
+		// 	}
+		// } else {
+		// 	next_tag_value = chosen_tag_value + 1;
+		// 	if !is_last && !emitted_tag_error && next_tag_value > max_tag_value {
+		// 		emitted_tag_error = true;
+		// 		let tag_type = context.type_name(tag_type_id);
+		// 		let error = error!("Next enum tag value `{next_tag_value}` would overflow tag of type {tag_type}");
+		// 		let next_tree_variant = &statement.variants[index + 1];
+		// 		context.message(error.span(next_tree_variant.kind.name_span()));
+		// 	}
+		// }
 	}
 
 	let mut user_type = lock.write();
@@ -3197,9 +3206,11 @@ fn validate_enum_variant_tag_value<'a>(
 	context: &mut Context<'a, '_, '_>,
 	tree_variant: &'a tree::Variant<'a>,
 	tag_type_id: TypeId,
-	next_tag_value: i128,
-	emitted_tag_error: &mut bool,
-) -> i128 {
+	previous_tag_value: Option<i128>,
+	is_bitflags: bool,
+	max_tag_bits: u32,
+	max_tag_value: i128,
+) -> Option<i128> {
 	if let Some(tree_expression) = &tree_variant.tag_value {
 		let mut expression = validate_expression(context, tree_expression);
 		let succeeded = !expression.type_id.is_any_collapse(context.type_store);
@@ -3208,13 +3219,54 @@ fn validate_enum_variant_tag_value<'a>(
 				unreachable!("{expression:#?}");
 			};
 
-			return value.value().to_i128().unwrap();
+			return Some(value.value().to_i128().unwrap());
 		}
 
-		*emitted_tag_error = true;
-	}
+		return None;
+	} else {
+		if is_bitflags {
+			let previous_tag_value = match previous_tag_value {
+				Some(previous_tag_value) => previous_tag_value,
+				None => return Some(1),
+			};
 
-	next_tag_value
+			let i128_bits = (size_of::<i128>() * 8) as u32;
+			let i128_bits_difference = i128_bits - max_tag_bits;
+
+			let leading_zeros = previous_tag_value.leading_zeros() - i128_bits_difference;
+			let bits_needed = max_tag_bits - leading_zeros + 1;
+
+			let next_tag_bits: u128 = (1 << (i128_bits - 1)) >> (previous_tag_value.leading_zeros().saturating_sub(1));
+
+			if bits_needed <= max_tag_bits {
+				// Get the highest bit and shift it one to the left
+				// Performs the bitshifts on a u128 to utilize logical shift rather than arithmetic
+				return Some(next_tag_bits as i128);
+			} else {
+				let tag_type = context.type_name(tag_type_id);
+				let error = error!("Next bitflags enum tag value {next_tag_bits:#x} would overflow tag of type {tag_type}");
+				context.message(error.span(tree_variant.kind.name_span()));
+
+				return None;
+			}
+		} else {
+			let previous_tag_value = match previous_tag_value {
+				Some(previous_tag_value) => previous_tag_value,
+				None => return Some(0),
+			};
+
+			let next_tag_value = previous_tag_value + 1;
+			if next_tag_value > max_tag_value {
+				let tag_type = context.type_name(tag_type_id);
+				let error = error!("Next enum tag value `{next_tag_value}` would overflow tag of type {tag_type}");
+				context.message(error.span(tree_variant.kind.name_span()));
+
+				return None;
+			}
+
+			return Some(next_tag_value);
+		}
+	}
 }
 
 fn fill_block_union<'a>(
