@@ -2898,6 +2898,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			return None;
 		}
 
+		let mut should_phi_left_and_right = true;
 		if matches!(op, BinaryOperator::LogicalAnd | BinaryOperator::LogicalIsAnd | BinaryOperator::LogicalOr) {
 			unsafe {
 				let current_block = LLVMGetInsertBlock(self.builder);
@@ -2929,12 +2930,20 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 					BinaryOperator::LogicalIsAnd => {
 						let following_block = match self.in_check_is {
-							InCheckIs::IfElse => self.if_follow_blocks.last().unwrap(),
-							InCheckIs::WhileLoop => self.loop_follow_blocks.last().unwrap(),
-							InCheckIs::None => unreachable!(),
+							InCheckIs::IfElse => {
+								should_phi_left_and_right = false;
+								*self.if_follow_blocks.last().unwrap()
+							}
+
+							InCheckIs::WhileLoop => {
+								should_phi_left_and_right = false;
+								*self.loop_follow_blocks.last().unwrap()
+							}
+
+							InCheckIs::None => following_block,
 						};
 
-						LLVMBuildCondBr(self.builder, left, right_block, *following_block)
+						LLVMBuildCondBr(self.builder, left, right_block, following_block)
 					}
 
 					BinaryOperator::LogicalOr => LLVMBuildCondBr(self.builder, left, following_block, right_block),
@@ -2958,9 +2967,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				LLVMBuildBr(self.builder, following_block);
 
 				LLVMPositionBuilderAtEnd(self.builder, following_block);
-				let value = if op == BinaryOperator::LogicalIsAnd {
-					right
-				} else {
+				let value = if should_phi_left_and_right {
 					let phi = LLVMBuildPhi(
 						self.builder,
 						LLVMInt1TypeInContext(self.context),
@@ -2968,6 +2975,8 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 					);
 					LLVMAddIncoming(phi, [left, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
 					phi
+				} else {
+					right
 				};
 
 				let kind = BindingKind::Value(value);

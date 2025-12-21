@@ -1,0 +1,39 @@
+enum E {
+	A { field: bool }
+	B
+	C
+}
+
+fn func_one(instance=: E) {
+	if instance is A and instance.field {
+		println("A and field is true")
+	} else if instance is B {
+		println("B")
+	} else if instance is C {
+		println("C")
+	} else {
+		println("else")
+	}
+}
+
+fn func_two(instance=: E) {
+	if instance is A and instance.field {
+		println("A and field is true")
+	} else {
+		println("else")
+	}
+}
+
+fn main() {
+	func_one(.A { field: true })
+	func_one(.A { field: false })
+	func_one(.B)
+	func_one(.C)
+
+	println("")
+
+	func_two(.A { field: true })
+	func_two(.A { field: false })
+	func_two(.B)
+	func_two(.C)
+}

@@ -1,0 +1,20 @@
+enum KeyState {
+	just_changed: bool
+
+	Pressed
+	Released
+}
+
+fn is_physical_key_just_pressed(state: KeyState): bool {
+	return state is Pressed and state.just_changed
+}
+
+fn main() {
+	let a = is_physical_key_just_pressed(state: .Pressed { just_changed: true })
+	let b = is_physical_key_just_pressed(state: .Pressed { just_changed: false })
+	let c = is_physical_key_just_pressed(state: .Released { just_changed: true })
+	let d = is_physical_key_just_pressed(state: .Released { just_changed: false })
+	for value in []{ a, b, c, d } {
+		println(f"{value}")
+	}
+}

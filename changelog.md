@@ -111,6 +111,7 @@
 - Fixed an issue where `bundled` was misspelled as `bunded`
 - Fixed a crash during validation when a generc enum/union used a struct's generic parameter
 - Fixed a crash during codegen with a field-less enum/union variant literal
+- Fixed a crash during codegen when using `is` with `and` anywhere other than in `if` or `while` conditions
 - Improved link order of the C runtime and project specified additional objects
 - Fixed a bug where an import with a single module path token would not function
 - Fixed a handful of potential compiler deadlocks
