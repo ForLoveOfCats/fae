@@ -833,12 +833,13 @@ fn parse_codepoint_contents(messages: &mut Messages, token: Token) -> ParseResul
 	if bytes[0] == b'\\' {
 		assert!(bytes.len() == 2);
 		let escape_sequence = match bytes[1] {
-			b'n' => b'\n',
-			b'r' => b'\r',
-			b't' => b'\t',
-			b'\\' => b'\\',
-			b'\'' => b'\'',
-			b'0' => b'\0',
+			b'n' => '\n',
+			b'r' => '\r',
+			b't' => '\t',
+			b'e' => '\u{1b}',
+			b'\\' => '\\',
+			b'\'' => '\'',
+			b'0' => '\0',
 
 			_ => {
 				let error = error!("Unrecognized codepoint escape sequence `{}`", &token.text[..2]);
@@ -847,7 +848,7 @@ fn parse_codepoint_contents(messages: &mut Messages, token: Token) -> ParseResul
 			}
 		};
 
-		return Ok(escape_sequence as char);
+		return Ok(escape_sequence);
 	}
 
 	Ok(token.text.chars().next().unwrap())
@@ -864,6 +865,7 @@ fn parse_string_contents<'a>(string: &'a str) -> Cow<'a, str> {
 			[b'\\', b'n', ..] => escape = "\n",
 			[b'\\', b'r', ..] => escape = "\r",
 			[b'\\', b't', ..] => escape = "\t",
+			[b'\\', b'e', ..] => escape = "\u{1b}",
 			[b'\\', b'\\', ..] => escape = "\\",
 			[b'\\', b'"', ..] => escape = "\"",
 			[b'\\', b'0', ..] => escape = "\0",
@@ -909,6 +911,7 @@ fn parse_format_string_contents<'a>(
 			[b'\\', b'n', ..] => escape = "\n",
 			[b'\\', b'r', ..] => escape = "\r",
 			[b'\\', b't', ..] => escape = "\t",
+			[b'\\', b'e', ..] => escape = "\u{1b}",
 			[b'\\', b'\\', ..] => escape = "\\",
 			[b'\\', b'"', ..] => escape = "\"",
 			[b'\\', b'0', ..] => escape = "\0",

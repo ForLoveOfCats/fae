@@ -94,6 +94,7 @@
 - A warning is now emitted when an `fstr` contains no expression items
 - There may now be a single newline preceding the arrow `=>` of braceless blocks 
 - `trait` and `opaque` are now reserved words
+- The `\e` escape sequence is now supported in string, format string, and codepoint literals
 
 ## Compiler Usability Improvements
 - Error messages now display their file path on a separate line 
