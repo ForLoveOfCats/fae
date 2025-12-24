@@ -487,7 +487,14 @@ impl LLVMAbi for SysvAbi {
 		} else if function_shape.is_main {
 			(CString::from(c"fae_user_main"), LLVMLinkage::LLVMDLLExportLinkage)
 		} else {
-			let name = format!("fae_function_{}", function_shape.name.item);
+			let name = if let Some(method_base_index) = function_shape.method_base_index {
+				let user_types = type_store.user_types.read();
+				let guard = user_types[method_base_index].read();
+				format!("fae.method.{}.{}", guard.name, function_shape.name.item)
+			} else {
+				format!("fae.function.{}", function_shape.name.item)
+			};
+
 			(CString::new(name).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
 		};
 

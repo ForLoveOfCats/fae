@@ -99,6 +99,7 @@
 ## Compiler Usability Improvements
 - Error messages now display their file path on a separate line 
 - When emitting an LLVM IR file for debugging, the compiler now logs the IR file path
+- Name mangling for functions now includes the base type name if a method
 
 ## Compiler Bugfixes
 - Fixed a bug where imported modules would not be usable in certain contexts
