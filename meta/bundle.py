@@ -7,6 +7,12 @@ import platform
 import argparse
 from datetime import datetime
 
+def copy_common_files():
+	shutil.copytree("./lib", "./target/bundle/fae/lib")
+	shutil.copy("./changelog.md", "./target/bundle/fae/changelog.md")
+	shutil.copy("./meta/bundle_license.txt", "./target/bundle/fae/license.txt")
+	shutil.copy("./docs/language_reference.md", "./target/bundle/fae/language_reference.md")
+
 def linux_main():
 	print("Ensuring that Rust `x86_64-unknown-linux-musl` target toolchain is installed")
 	print("This requires that the Rust installation be managed with rustup")
@@ -46,9 +52,7 @@ def linux_main():
 	os.makedirs("./target/bundle/fae", exist_ok=True)
 
 	shutil.copy("./target/x86_64-unknown-linux-musl/bundled/fae", "./target/bundle/fae/fae")
-	shutil.copytree("./lib", "./target/bundle/fae/lib")
-	shutil.copy("./meta/bundle_license.txt", "./target/bundle/fae/license.txt")
-	shutil.copy("./docs/language_reference.md", "./target/bundle/fae/language_reference.md")
+	copy_common_files()
 
 	print("Archiving bundle")
 
@@ -77,9 +81,7 @@ def macos_main(args):
 	os.makedirs("./target/bundle/fae", exist_ok=True)
 
 	shutil.copy("./target/bundled/fae", "./target/bundle/fae/fae")
-	shutil.copytree("./lib", "./target/bundle/fae/lib")
-	shutil.copy("./meta/bundle_license.txt", "./target/bundle/fae/license.txt")
-	shutil.copy("./docs/language_reference.md", "./target/bundle/fae/language_reference.md")
+	copy_common_files()
 
 	if args.identity_uuid is not None:
 		print("Signing executable")
