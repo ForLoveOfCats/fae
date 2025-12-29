@@ -83,6 +83,7 @@
 - Bindings may now be zero initialized with `---`. See the detailed discussion below
 - Opaque structs have been added to the langauge. See the detailed discussion below
 - Statically sized arrays have been added to the language. See the detailed discussion below
+- Immutable and mutable pointer types are now written as `*T` and `*mut T` respectively
 - A new `strmut` type has been added, which allows modifying the string slice's backing bytes
 - Hexadecimal and binary number literals are now supported
 - Enum/union variants in type-position no longer accept type arguments

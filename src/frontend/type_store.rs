@@ -1584,7 +1584,7 @@ impl<'a> TypeStore<'a> {
 
 		// any collapse -> anything else
 		// untyped number -> signed of large enough if whole number
-		//     || unsigned of large enough if not negative whole number
+		//     || unsigned of large enough if non-negative whole number
 		//     || float of large enough
 		//     || bitflags enum if number is zero
 		// mutable reference -> immutable reference

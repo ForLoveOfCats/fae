@@ -4,7 +4,6 @@ This document attempts to meaningfully describe the current state of the Fae pro
 
 Just as the language and compiler are immature, so too is this document. Please report any issues encountered with factual accuracy or where where additional detail is required.
 
-
 # Table of Contents
 - [Fae Language Reference](#fae-language-reference)
 - [Table of Contents](#table-of-contents)
@@ -25,14 +24,17 @@ Just as the language and compiler are immature, so too is this document. Please 
   - [Mutable binding](#mutable-binding)
   - [Codepoint literals](#codepoint-literals)
   - [Pointers](#pointers)
+  - [Arrays](#arrays)
   - [Slices](#slices)
-  - [Slice range slicing](#slice-range-slicing)
+  - [Range slicing](#range-slicing)
   - [Allocation](#allocation)
   - [String literals](#string-literals)
+  - [`str` and `strmut`](#str-and-strmut)
   - [Format string literals](#format-string-literals)
   - [Type casts](#type-casts)
   - [Structures](#structures)
   - [Rich Enums](#rich-enums)
+  - [Unions](#unions)
   - [Field access modifiers](#field-access-modifiers)
   - [Zero size types](#zero-size-types)
   - [`if-else` expression](#if-else-expression)
@@ -113,8 +115,8 @@ The Fae language contains four keywords different categories, each allowed in di
 - `opaque`
 
 **For loop iteration keywords** are placed between a `for` loop's bindings and expression to indicate which type of iteration is to be used.
- - `in`
- - `of`
+- `in`
+- `of`
 
 **Value keywords** represent named constant values built into the language. These are syntactically valid as an atom in any expression configuration.
 - `void`
@@ -213,8 +215,8 @@ const C = 299792458
 
 | Type      | Size (bytes)         | Alignment (bytes) | Description                                                                                                     |
 | --------- | -------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------- |
-| `&T`      | 8 (on 64-bit)        | 8 (on 64-bit)     | Pointer to value of type `T` which *cannot* be used to mutate the pointed value                                 |
-| `&mut T`  | 8 (on 64-bit)        | 8 (on 64-bit)     | Pointer to value of type `T` which *can* be used to mutate the pointed value                                    |
+| `*T`      | 8 (on 64-bit)        | 8 (on 64-bit)     | Pointer to value of type `T` which *cannot* be used to mutate the pointed value                                 |
+| `*mut T`  | 8 (on 64-bit)        | 8 (on 64-bit)     | Pointer to value of type `T` which *can* be used to mutate the pointed value                                    |
 | `[]T`     | Same as two pointers | Same as a pointer | Pointer to sequence of type `T` with a runtime known length which *cannot* be used to mutate the pointed values |
 | `[]mut T` | Same as two pointers | Same as a pointer | Pointer to sequence of type `T` with a runtime known length which *can* be used to mutate the pointed values    |
 
@@ -266,10 +268,10 @@ All binary operators expect both sides to be of the same type, or barring that, 
 | Range initializer                 | `a..b`    | Produces a `Range` value indicating the value range from `a` to `b` where `a` is inclusive and `b` is exclusive<br><br>Restricted to `isize` values                                                                                                                                                                 |
 
 \* Fae calculates the modulo of two values with the *Euclidean* division definition. This will produce a different result than C/C++/Rust/Zig which employ *truncated* division or Python which utilizes *floored* division but will produce the same result as Dart which also uses Euclidean remainder. Some examples of Euclidean remainder are:
- - `5 % 4` = 1
- - `-5 % 4` = 3
- - `5 % -4` = 1
- - `-5 % -4` = 3
+- `5 % 4` = 1
+- `-5 % 4` = 3
+- `5 % -4` = 1
+- `-5 % -4` = 3
 
 ## Unary operators
 
@@ -277,9 +279,10 @@ All binary operators expect both sides to be of the same type, or barring that, 
 | ------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Negate             | `-a`     | Produces the result of negatating the sign of the signed integer or floating point number `a`                                                                   |
 | Invert             | `a.!`    | Produces the result of inverting the truthiness of the boolean value `a`                                                                                        |
-| Address of         | `a.&`    | Produces a pointer of type `&T` pointing to value `a` of type `T`                                                                                               |
-| Address of mutable | `a.&mut` | Produces a pointer of type `&mut T` pointing to value `a` of type `T`, where `a` is mutable                                                                     |
-| Dereference        | `a.*`    | Produces the value of type `T` pointed to by pointer `a`, allowing modification of the original pointed value if `a` is a pointer of type `&mut T`              |
+| Bitwise Not        | `a.~`    | Produces the result of inverting each bit of the value individually                                                                                             |
+| Address of         | `a.&`    | Produces a pointer of type `*T` pointing to value `a` of type `T`                                                                                               |
+| Address of mutable | `a.&mut` | Produces a pointer of type `*mut T` pointing to value `a` of type `T`, where `a` is mutable                                                                     |
+| Dereference        | `a.*`    | Produces the value of type `T` pointed to by pointer `a`, allowing modification of the original pointed value if `a` is a pointer of type `*mut T`              |
 | Cast               | `a.(T)`  | Produces the result of converting pointer or numeric value `a` to a different pointer or numeric type `T`                                                       |
 | Index              | `a[b]`   | Produces the value of type `T` at index `b` contained within slice `a`, allowing modification of the original pointed value if `a` is a slice of type `[]mut T` |
 | Slice              | `a[b]`   | Produces a slice pointing to the items of slice `a` described by index range `b`, with the same mutability as the original slice                                |
@@ -299,10 +302,13 @@ Untyped numerals can be used as the value of a `const` and the untyped numeral w
 | `-99`           |
 | `3.1415`        |
 | `-7.0`          |
+| `0xff`          |
+| `0xFF`          |
+| `0b11001`       |
 
 Decimal literals require a digit follow the period.
 
-**Note**: It is planned to provide the ability to write numeric literals with binary, hexadecimal, and exponential syntax in the future, as well as to allow for digit separators.
+**Note**: It is planned to provide the ability to write numeric literals with exponential syntax in the future, as well as to allow for digit separators.
 
 
 ## Const bindings
@@ -352,6 +358,12 @@ assert(a == true)
 assert(a == true)
 ```
 
+A `let` binding may omit the equal sign and an expression, instead replacing it with three minus signs `---` to indicate that the `let` binding is to be automatically initialized to zero by the compiler.
+```
+let a: i32 ---
+assert(a == 0)
+```
+
 
 ## Mutable binding
 
@@ -383,6 +395,13 @@ assert(a == true)
 assert(a == true)
 ```
 
+A `mut` binding may omit the equal sign and an expression, instead replacing it with three minus signs `---` to indicate that the `mut` binding is to be automatically initialized to zero by the compiler. This is especially useful when calling APIs which expect to populate a value via a so called "out parameter".
+```
+mut a: i32 ---
+assert(a == 0)
+some_function(a.&mut)
+```
+
 
 ## Codepoint literals
 
@@ -399,12 +418,13 @@ let letter_b: u8 = b'B'
 ```
 
 Both types of literals may contain the following escape sequences.
- - `\n` -> newline
- - `\r` -> carriage return
- - `\t` -> horizontal tab
- - `\\` -> backslash
- - `\'` -> single quote
- - `\0` -> null
+- `\n` -> newline
+- `\r` -> carriage return
+- `\t` -> horizontal tab
+- `\e` -> escape character
+- `\\` -> backslash
+- `\'` -> single quote
+- `\0` -> null
 
 
 ## Pointers
@@ -414,16 +434,16 @@ Pointers to values on the stack may be acquired by using the "address of" or "ad
 mut value: i32 = 42
 
 let _ = value.&
-let _: &i32 = value.&
+let _: *i32 = value.&
 
 let _ = value.&mut
-let _: &mut i32 = value.&mut
+let _: *mut i32 = value.&mut
 ```
 
 The "address of" and "address of mut" unary operators may also be used on arbitrary expressions which will cause the compiler to store the product of the sub-expression on the stack within the current block scope and produce a pointer to the value.
 ```
-let _: &bool = function_returning_bool().&
-let _: &mut bool = function_returning_bool().&mut
+let _: *bool = function_returning_bool().&
+let _: *mut bool = function_returning_bool().&mut
 ```
 
 The value pointed to by a pointer may be accessed via the "dereference" unary operator. Pointers of type `&mut T` may be used to mutate the value of type `T` by reaching through the pointer with a dereference. Mutating the pointed value does not require the pointer itself to be mutable, only that the pointed value be mutable.
@@ -439,19 +459,62 @@ A pointer to a mutable value may not be used to modify the value when accessed i
 ```
 mut value = false
 let ptr = value.&mut
-let ptr_ptr: &&mut bool = ptr.&
+let ptr_ptr: **mut bool = ptr.&
 ptr_ptr.*.* = true // Error: Cannot assign to immutable memory location 
 ```
 
 When pointing to a value with fields, the pointer may be *implicitly* dereferenced when accessing the fields through the normal dot access.
 ```
-let ptr: &mut SomeStruct = function()
+let ptr: *mut SomeStruct = function()
 ptr.field_name = 42
 ```
 
-Pointer arithmetic is not directly supported, instead a pointer may be cast to `usize` which arithmetic may be performed on before casting back to a pointer. Helper functions `offset_pointer<T>(ptr: &T, bytes: isize)` and `offset_pointer_mut<T>(ptr: &mut T, bytes: isize)` are provided via the prelude and are automatically in scope.
+Pointer arithmetic is not directly supported, instead a pointer may be cast to `usize` which arithmetic may be performed on before casting back to a pointer. Helper functions `offset_pointer<T>(ptr: *T, bytes: isize)` and `offset_pointer_mut<T>(ptr: *mut T, bytes: isize)` are provided via the prelude and are automatically in scope.
 
 **Note**: It is planned to remove the ability to cast integers to pointers, and turn the offset helper functions into intrinsics.
+
+
+## Arrays
+
+Arrays are statically sized sequence types which are passed by value. Their type signature is written as `[N]T` where N is some valid positive integer literal, and `T` is the type of the item. As the array itself contains the items, it follows the same mutability rules as structs and unions, where the mutability of the array's storage dictates the mutability of each individual item.
+
+The syntax for creating an array literal infers the length from the number of items in the braces.
+```
+let a: [4]i32 = [_]i32 { 0, 1, 2, 3 }
+assert(size_of<[4]i32>() == size_of<i32>() * 4)
+```
+
+When the type of the items is obvious from the first item's initializer, the array literal syntax may omit the type and allow it to be inferred.
+```
+let _ = [_] { true, false } // has type [2]bool
+```
+
+The items contained within an array may be accessed with the index unary operator and a zero-based index of type `isize`. If the array mutable then indexing allows modification of the indexed item. Taking the address of the item is also valid. If the index is beyond the range of the array length the operation will trigger a panic, terminating the application.
+```
+mut array = [_]u32 { 3, 20, 6, 50, 77 }
+assert(array[2] == 6)
+
+array[3] += 1
+assert(array[3] == 51)
+
+let ptr = array[1].&mut
+ptr.* += 1
+assert(array[1] == 21)
+
+array[5] // PANIC! Out of bounds access!
+```
+
+Arrays have three "fake" convenience fields for interpreting information about the array in different ways. These do not contribute towards the size of the array.
+
+For an immutable array:
+- `pointer` of type `*T`
+- `length` of type `isize`
+- `slice` of type `[]T` where T is the type of the items. See [Slices](#Slices) for more information of this type
+
+For a mutable array:
+- `pointer` of type `*mut T`
+- `length` of type `isize`
+- `slice` of type `[]mut T` where T is the type of the items. See [Slices](#Slices) for more information of this type
 
 
 ## Slices
@@ -459,12 +522,12 @@ Pointer arithmetic is not directly supported, instead a pointer may be cast to `
 Slices are fat pointers consisting of a pointer to the sequence of zero or more items and a number representing the number of items in the sequence. They may either point to mutable or immutable items and their types are written as `[]T` and `[]mut T` respectively, where `T` is the type of the items.
 
 For a slice `[]T`, it has the following two fields:
- - `pointer` of type `&T`
- - `length` of type `isize`
+- `pointer` of type `*T`
+- `length` of type `isize`
 
 For a slice `[]mut T`, it has the following two fields:
- - `pointer` of type `&mut T`
- - `length` of type `isize`
+- `pointer` of type `*mut T`
+- `length` of type `isize`
 
 A slice initializer produces a value of type `[]mut T` where `T` is the type of the items pointed to by the slice. The underlying buffer is placed on the stack within the current block scope and the values *are* mutable unless the type is coerced to a non-mutable slice. Syntactically it takes the following forms.
 ```
@@ -477,7 +540,6 @@ let _ = []{ true, false, true, false }
 // Slice of 0 values of specified type `f64`
 let _ = []f64 {}
 ```
-**Note**: It is planned to add statically sized array types to Fae at which point the slice initializer syntax will become the array initializer syntax instead. Using this syntax to initialize slices is a stopgap solution.
 
 The items pointed to by the slice may be accessed with the index unary operator and a zero-based index of type `isize`. If the slice is of mutable values then indexing allows modification of the indexed item. Taking the address of the item is also valid. If the index is beyond the range of the slice length the operation will trigger a panic, terminating the application.
 ```
@@ -494,9 +556,9 @@ assert(slice[1] == 21)
 slice[5] // PANIC! Out of bounds access!
 ```
 
-## Slice range slicing
+## Range slicing
 
-Slices, including `str`, may be *sliced* by using a value of type `Range`, such as produced by a range initializer binary operator, as the value of a slice index operation. The lower bound of the range is inclusive and the upper range is exclusive.
+Arrays, slices, `str`, and `strmut` may be *sliced* by using a value of type `Range`, such as produced by a range initializer binary operator, as the value of a slice index operation. The lower bound of the range is inclusive and the upper range is exclusive.
 ```
 let slice: []u32 = []u32 { 3, 20, 6, 50, 77 }
 let result = slice[0..2]
@@ -542,12 +604,37 @@ assert(strlen(message.pointer) == message.length)
 ```
 
 A string literal may contain the following escape sequences.
- - `\n` -> newline
- - `\r` -> carriage return
- - `\t` -> horizontal tab
- - `\\` -> backslash
- - `\"` -> double quote
- - `\0` -> null
+- `\n` -> newline
+- `\r` -> carriage return
+- `\t` -> horizontal tab
+- `\e` -> escape character
+- `\\` -> backslash
+- `\"` -> double quote
+- `\0` -> null
+
+
+## `str` and `strmut`
+
+Most of the time, modifying the bytes of a string directly is the wrong solution. Furthermore, many strings passed around in a program originate from string literals who's backing data is immutable. Thus for ease of a majority of cases, Fae's base `str` type does not allow for modifying the backing bytes.
+
+A `str` value has the following fields:
+- `pointer` of type `*u8`
+- `length` of type `isize`
+And the following "fake" field. This field is "fake" because it does not count towards the size of the `str` itself, but instead just re-interprets the string slice as a byte slice.
+- `bytes` of type `[]u8`
+
+However occasionally it *is* necessary to modify a string slice's bytes. For these cases Fae has a separate `strmut` type. When accessing the `pointer` or `bytes` fields gives a mutable pointer and slice respectively. Any value of this type may be implicitly coerced to `str`.
+
+A `strmut` value has the following fields:
+- `pointer` of type `*mut u8`
+- `length` of type `isize`
+And the following "fake" field. This field is "fake" because it does not count towards the size of the `strmut` itself, but instead just re-interprets the string slice as a byte slice.
+- `bytes` of type `[]mut u8`
+
+The Fae standard library provides helper intrinsics `create_str` and `create_str_mut` in the module `fae.intrinsics` to manually create these values. See [Slices](#intrinsic-functions) for more information.
+
+Furthermore the standard library also provides `fae.collections.string.String`, an owning growable heap allocated string type for any string building or direct manipulating needs. It has a `String.format` constructor for creating formated strings in memory via an `fstr` argument.
+
 
 ## Format string literals
 
@@ -575,6 +662,7 @@ The types of expressions which may be included in a format string are:
 - `f64`
 - `bool`
 - `str`
+- `strmut`
 - `fstr`
 
 A format string literal describes a string formatting operation, but *does not* perform the formatting itself. Instead it is a slice of formattable items which code may walk and format at runtime. The standard library provides a set of `print`/`println` and `eprint`/`eprintln` functions to format a format string to stdout and stderr respectively.
@@ -584,20 +672,21 @@ let name = "Tina"
 println(f"Hello there {name}!")
 ```
 
-Any location, such as a binding or function parameter, which is expecting a format string `fstr` will also accept an ordinary string `str` value which the compiler will transparently convert to a single item format string containing the original `str` value.
+Any location, such as a binding or function parameter, which is expecting a format string `fstr` will also accept an ordinary string `str` or `strmut` value which the compiler will transparently convert to a single item format string containing the original `str`/`strmut` value.
 ```
 // Prints "This is a normal string literal\n" to stdout
 println("This is a normal string literal")
 ```
 
 A format string literal may contain the following escape sequences.
- - `\n` -> newline
- - `\r` -> carriage return
- - `\t` -> horizontal tab
- - `\\` -> backslash
- - `\"` -> double quote
- - `\0` -> null
- - `\{` -> open curly brace
+- `\n` -> newline
+- `\r` -> carriage return
+- `\t` -> horizontal tab
+- `\e` -> escape character
+- `\\` -> backslash
+- `\"` -> double quote
+- `\0` -> null
+- `\{` -> open curly brace
 
 
 ## Type casts
@@ -609,10 +698,10 @@ assert(a.(u32) == 4294967254)
 assert(a.(f64) == -42)
 ```
 
-Pointer types may be cast between each other so long as the cast does not attempt to promote a pointer to immutable data into a pointer to mutable data, that is convert `&T` into `&mut T` which is disallowed.
+Pointer types may be cast between each other so long as the cast does not attempt to promote a pointer to immutable data into a pointer to mutable data, that is convert `*T` into `*mut T` which is disallowed.
 ```
 mut a: u32 = 0
-let b = a.&mut.(&mut u16)
+let b = a.&mut.(*mut u16)
 b.* = 2
 assert(a == 2) // Example assumes a little-endian system
 ```
@@ -696,6 +785,12 @@ let _ = Combo<i32, bool> {
     left
     right
 }
+```
+
+A struct may be marked as `opaque`, to signify to the compiler that the size and layout of the struct is unknown. This prevents usage of `size_of` on the struct, constructing an instance, storing an instance on the stack, and passing by value. One exception is that currently generic functions may break these rules for practical reasons.
+```
+struct(opaque) Handle
+let _: Handle --- // Compile error!
 ```
 
 
@@ -784,17 +879,89 @@ let _: Value = Value.String("Hello world"))
 let _: Value = .Number(3.14))
 ```
 
-The numerical "tag" of the enum may be accessed from any instance of an enum itself by accessing the `tag` field.
+For which variant an enum is and accessing the values in a specific variant see [`is` operator](#is-operator) and [`match` expression](#match-expression).
+
+The numerical "tag" of the enum may be accessed from any instance of an enum itself, or an instance of any variant, by accessing the `tag` field. When holding a value typed as an enum's variant itself, the `tag` field is implied in the type system and does not contribute to the variant's overall size.
 ```
 let kind: OffsetKind = .Absolute
 assert(kind.tag == 0)
 
 let kind: OffsetKind = .Relative
 assert(kind.tag == 1)
-```
-**Note**: Due to a temporary compiler limitation the enum tag is restricted to be type `u8` and an enum may not have more than 256 variants.
 
-For which variant an enum is and accessing the values in a specific variant see [`is` operator](#is-operator) and [`match` expression](#match-expression).
+let kind: OffsetKind.Relative = OffsetKind.Relative
+assert(kind.tag == 1)
+```
+
+The type of this "tag" defaults to `u8` but may be overridden, such as when interoping with a C library which uses `i32` based enums.
+```
+enum EnumCompatibleWithC: i32 {
+    A
+    B
+    C
+}
+
+assert(size_of<EnumCompatibleWithC>() == 4)
+let c_enum_instance: EnumCompatibleWithC = .A
+let _: i32 = c_enum_instance.tag
+```
+
+Typically when writing an enum the compiler automatically chooses the value of each variant's tag sequentially. This may overridden with an equal sign and any integer literal capable of being represented by the tag type. Any variant which does not specify a tag value but which follows a variant which does, resumes the automatic next value from the previous variant's tag value.
+```
+enum TagValues: u32 {
+    A = 5
+    B = 100
+    D = 0b1100
+    E = 0xff
+    F // = 0x100
+}
+```
+
+An enum may be marked as a "bitflags" enum, which enables them to act as type safe bitflag constants. The most trivial usage automatically picks the bit represntation of each variant tag.
+```
+enum(bitflags) SupportedPresentModes {
+    Mailbox
+    Fifo
+    Immediate
+}
+```
+
+When applying the `is` operator to a bitflags enum, the operation returns `true` if the specified variant's bit pattern is present. This operation may return `true` for multiple different variants when applied to the same value.
+```
+let _ = supported is Mailbox // true
+let _ = supported is Fifo // true
+let _ = supported is Immediate // false
+```
+
+A bitflags enum may be initialized with no variants set with a plain `0` (zero) number literal.
+```
+supported = 0
+let _ = supported is Mailbox // false
+```
+
+The first variant starts with a bit pattern of `0b1`, with each successive variant using the next most significant bit. Like other enums this value may be manually specified, and any following variant without a specified value will choose the next most significant bit after the most significant bit of the manually specified tag value.
+```
+enum(bitflags) BitflagsTagValues {
+  A // 0b1
+  B // 0b10
+  C = 0b111
+  D // 0b1000
+  E // 0b10000
+}
+```
+
+
+## Unions
+
+A union is a type which, like rich enums, is made up of a number of variants, and has the size of the largest variant. However a union does not have a tag field, nor shared fields.
+```
+union Union {
+    a: i32
+    b: { one: i32, two: i32 }
+}
+let u: Union = .a(42)
+assert(u.b.one == 42)
+```
 
 
 ## Field access modifiers
@@ -802,17 +969,17 @@ For which variant an enum is and accessing the values in a specific variant see 
 Struct and enum fields may be annotated with access modifiers after the field type. There are two types of modifiers, those which control field visibility and those which control field mutability. By default all struct and enum fields are allowed to be publically initialized, read, and mutated if the instance is mutable.
 
 Field visibility:
- - `internal` restricts field access and initialization to within *non-extension* methods on the type containing the field.
+- `internal` restricts field access and initialization to within *non-extension* methods on the type containing the field.
 
 Field mutability:
- - `readable` prevents the field from *itself* being mutated or initialized from outside *non-extension* methods on the type containing the field.
- - `readonly` prevents all mutation of the field *itself* after initialization.
+- `readable` prevents the field from *itself* being mutated or initialized from outside *non-extension* methods on the type containing the field.
+- `readonly` prevents all mutation of the field *itself* after initialization.
 
 They may be composed in the following combinations:
- - `internal`
- - `readable`
- - `readonly`
- - `internal readonly`
+- `internal`
+- `readable`
+- `readonly`
+- `internal readonly`
 
 When a field's mutation is disallowed due to `readable` or `readonly`, that does not prevent mutation of values pointed to with a mutable pointer or mutable slice contained *within* the field which may not itself be mutated. This mirrors how a mutable pointer may be stored in a `let` binding while still allowing the pointed data to be mutated.
 
@@ -909,6 +1076,12 @@ else if false => println("else if")
 else => println("else")
 ```
 
+A single-line block may be proceeded by no more than one newline.
+```
+if true
+    => println("if")
+```
+
 
 ## `is` operator
 
@@ -971,6 +1144,14 @@ if color is Rgba {
     assert(color.a == 30)
 }
 ```
+
+If the enum in question is a `bitflags` enum, the operation returns `true` if the specified variant's bit pattern is present. This operation may return `true` for multiple different variants when applied to the same value.
+```
+let _ = supported is Mailbox // true
+let _ = supported is Fifo // true
+let _ = supported is Immediate // false
+```
+
 
 ## `match` expression
 
@@ -1036,7 +1217,6 @@ match function_returning_animal() {
     }
 }
 ```
-
 
 
 ## `while` loops
@@ -1302,8 +1482,8 @@ fn returns_second_argument(a: A, b: B): B {
 // the outer function's generic type parameters, allowing it
 // to know about `T` and handle the type accordingly
 generic T
-fn push_four_times(list: &mut List<T>, value: T) {
-    fn push_twice(list: &mut List<T>, value: T) {
+fn push_four_times(list: *mut List<T>, value: T) {
+    fn push_twice(list: *mut List<T>, value: T) {
         list.push(value)
         list.push(value)
     }
@@ -1450,21 +1630,28 @@ Hello
 Fae includes a minimal set of type coercion rules, implemented with two algorithms used in different circumstances. Conversions of untyped numerals to a concrete "runtime" numeric type will throw a compile time error if the target type cannot represent the untyped numeral without a loss of precision.
 #### Collapse fair
 All binary operations, except for for range initialization, run the "collapse fair" algorithm on their left and right expressions. It consists of the following rules.
- - If both are of the same type, do nothing and return
- - If either type is an untyped number we know the other isn't, collapse to the other type
- - If either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
- - If either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
- - If either type is an enum, collapse the other to it
+- If both are of the same type, do nothing and return
+- If either type is an untyped number we know the other isn't, collapse to the other type
+- If either type is a pointer, collapse the other to it, preferring to collapse mutable to immutable
+- If either type is a slice, collapse the other to it, preferring to collapse mutable to immutable
+- If either type is a `str`, collapse the other to it
+- If either type is an enum, collapse the other to it
+- If either type is an union, collapse the other to it
+- If either type is an transparent variant, collapse it to the other
+- If either type is an transparent bitflags enum variant, collapse both to the parent enum type
 
 #### Collapse to
 Used by the "collapse fair" algorithm, when passing an argument to a parameter, initializing a field with a value, ect, It consists of the following rules.
- - If the expression is of the desired type, do nothing and return
- - Otherwise attempt the following conversions in order
-     - untyped number -> signed of large enough if whole number or unsigned of large enough if not negative whole number or float of large enough
-     - mutable reference -> immutable reference
-     - mutable slice -> immutable slice
-     - str -> fstr
-     - enum variant -> enum
+- If the expression is of the desired type, do nothing and return
+- Otherwise attempt the following conversions in order
+    - untyped number -> signed of large enough if whole number or unsigned of large enough if non-negative whole number or float of large enough or bitflags enum if number is zero
+    - mutable reference -> immutable reference
+    - mutable slice -> immutable slice
+    - strmut -> str
+    - str -> fstr
+    - strmut -> fstr
+    - enum/union variant -> enum/union
+    - transparent variant -> its wrapped type
 
 
 ## Prelude
@@ -1486,7 +1673,7 @@ fn alignment_of(): isize
 **Create a null pointer**
 ```
 generic T
-fn null_pointer(): &mut T
+fn null_pointer(): *mut T
 ```
 
 **Create a null slice**
@@ -1498,13 +1685,13 @@ fn null_slice(): []mut T
 **Offset a pointer by specified signed byte distance**
 ```
 generic T
-fn offset_pointer(pointer=: &T, by_bytes: isize): &T
+fn offset_pointer(pointer=: *T, by_bytes: isize): *T
 ```
 
 **Offset a mutable pointer by specified signed byte distance**
 ```
 generic T
-fn offset_pointer_mut(pointer=: &mut T, by_bytes: isize): &mut T
+fn offset_pointer_mut(pointer=: *mut T, by_bytes: isize): *mut T
 ```
 
 **Print a formatted message to stdout**
@@ -1613,24 +1800,29 @@ fn alignment_of(): isize
 **Create slice** from pointer and length
 ```
 generic T
-fn create_slice(pointer=: &T, length: isize): []T
+fn create_slice(pointer=: *T, length: isize): []T
 ```
 
 **Create mutable slice** from mutable pointer and length
 ```
 generic T
-fn create_slice_mut(pointer=: &mut T, length: isize): []mut T
+fn create_slice_mut(pointer=: *mut T, length: isize): []mut T
 ```
 
 **Create str** from pointer and length
 ```
-fn create_str(pointer=: &u8, length: isize): str
+fn create_str(pointer=: *u8, length: isize): str
+```
+
+**Create strmut** from pointer and length
+```
+fn create_str_mut(pointer=: *mut u8, length: isize): strmut
 ```
 
 **Create non-null invalid pointer** for "pointing to" a zero size "value"
 ```
 generic T
-fn create_non_null_invalid_pointer(): &mut T
+fn create_non_null_invalid_pointer(): *mut T
 ```
 
 **Create non-null invalid slice** for a "slice of" zero size "values"
