@@ -173,8 +173,8 @@ impl<'a> Symbols<'a> {
 		function_initial_symbols_length: usize,
 		name: Node<&'a str>,
 	) -> Option<Symbol<'a>> {
-		let primatives = &type_store.primative_type_symbols;
-		if let Some(found) = primatives.iter().find(|symbol| symbol.name == name.item) {
+		let primitives = &type_store.primitive_type_symbols;
+		if let Some(found) = primitives.iter().find(|symbol| symbol.name == name.item) {
 			return Some(found.clone());
 		}
 
@@ -205,8 +205,8 @@ impl<'a> Symbols<'a> {
 	) -> Option<Symbol<'a>> {
 		if let [segment] = path.segments {
 			let name = segment.item;
-			let primatives = &type_store.primative_type_symbols;
-			if let Some(found) = primatives.iter().find(|symbol| symbol.name == name) {
+			let primitives = &type_store.primitive_type_symbols;
+			if let Some(found) = primitives.iter().find(|symbol| symbol.name == name) {
 				return Some(found.clone());
 			}
 		}

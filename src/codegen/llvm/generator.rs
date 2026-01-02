@@ -45,7 +45,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::{self, BinaryOperator};
-use crate::frontend::type_store::{Array, NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{Array, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 pub struct AttributeKinds {
 	pub sret: u32,
@@ -161,15 +161,15 @@ impl LLVMTypes {
 
 		match entry.kind {
 			TypeEntryKind::BuiltinType { kind, .. } => match kind {
-				PrimativeKind::Numeric(numeric_kind) => numeric_kind_to_llvm_type(context, numeric_kind),
+				PrimitiveKind::Numeric(numeric_kind) => numeric_kind_to_llvm_type(context, numeric_kind),
 
-				PrimativeKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
+				PrimitiveKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
 
-				PrimativeKind::String | PrimativeKind::StringMut | PrimativeKind::FormatString => self.slice_struct,
+				PrimitiveKind::String | PrimitiveKind::StringMut | PrimitiveKind::FormatString => self.slice_struct,
 
-				PrimativeKind::Void => self.void_struct,
+				PrimitiveKind::Void => self.void_struct,
 
-				PrimativeKind::AnyCollapse | PrimativeKind::NoReturn | PrimativeKind::UntypedNumber => unreachable!("{kind:?}"),
+				PrimitiveKind::AnyCollapse | PrimitiveKind::NoReturn | PrimitiveKind::UntypedNumber => unreachable!("{kind:?}"),
 			},
 
 			TypeEntryKind::UserType { shape_index, specialization_index, .. } => {
@@ -2106,7 +2106,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::String | PrimativeKind::StringMut, .. } => {
+			TypeEntryKind::BuiltinType { kind: PrimitiveKind::String | PrimitiveKind::StringMut, .. } => {
 				if index == 2 {
 					field_type = self.llvm_types.slice_struct;
 					field_pointer = pointer;
@@ -2127,7 +2127,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				}
 			}
 
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::FormatString, .. } => {
+			TypeEntryKind::BuiltinType { kind: PrimitiveKind::FormatString, .. } => {
 				assert_eq!(index, 0);
 				field_type = self.llvm_types.slice_struct;
 				field_pointer = pointer;

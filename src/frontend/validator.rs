@@ -7161,7 +7161,7 @@ fn validate_method_call<'a>(
 	context.expected_type = None;
 	let entry = context.type_store.type_entries.get(base.type_id);
 	let (method_base_type, base_mutable) = match entry.kind {
-		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
+		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimitiveKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
 		}
 
@@ -7281,7 +7281,7 @@ fn validate_static_method_call<'a>(
 	context.expected_type = None;
 	let entry = context.type_store.type_entries.get(base_type_id);
 	let method_base_type = match entry.kind {
-		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimativeKind::AnyCollapse => {
+		TypeEntryKind::BuiltinType { kind, .. } if kind == PrimitiveKind::AnyCollapse => {
 			return Expression::any_collapse(context.type_store, span);
 		}
 
@@ -8209,7 +8209,7 @@ fn validate_bracket_index<'a>(
 			(sliced, is_pointer_access_mutable)
 		}
 
-		TypeEntryKind::BuiltinType { kind: PrimativeKind::String, .. } => {
+		TypeEntryKind::BuiltinType { kind: PrimitiveKind::String, .. } => {
 			if is_range {
 				let type_id = context.type_store.string_type_id();
 				let yields = expression.yields || index_expression.yields;
@@ -8231,7 +8231,7 @@ fn validate_bracket_index<'a>(
 			(context.type_store.u8_type_id(), false)
 		}
 
-		TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } => {
+		TypeEntryKind::BuiltinType { kind: PrimitiveKind::StringMut, .. } => {
 			let is_pointer_access_mutable = expression.is_pointer_access_mutable;
 
 			if is_range {

@@ -1,4 +1,5 @@
 ## Standard Library Changes
+- Renamed module `fae.primative` to `fae.primitive`
 
 ## Standard Library Bugfixes
 

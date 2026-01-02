@@ -169,14 +169,14 @@ impl TypeId {
 		}
 	}
 
-	pub fn is_primative(self, type_store: &mut TypeStore) -> bool {
+	pub fn is_primitive(self, type_store: &mut TypeStore) -> bool {
 		let entry = type_store.type_entries.get(self);
 		match entry.kind {
 			TypeEntryKind::Module | TypeEntryKind::Type | TypeEntryKind::BuiltinType { .. } | TypeEntryKind::Pointer { .. } => {
 				true
 			}
 
-			// TODO: Should Array/Slice be "primatives"?
+			// TODO: Should Array/Slice be "primitives"?
 			TypeEntryKind::UserType { .. }
 			| TypeEntryKind::Array(_)
 			| TypeEntryKind::Slice(_)
@@ -187,7 +187,7 @@ impl TypeId {
 	}
 
 	pub fn is_comparable(self, type_store: &mut TypeStore) -> bool {
-		use PrimativeKind::*;
+		use PrimitiveKind::*;
 
 		let entry = type_store.type_entries.get(self);
 		match entry.kind {
@@ -726,7 +726,7 @@ impl NumericKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimativeKind {
+pub enum PrimitiveKind {
 	AnyCollapse,
 	NoReturn,
 	Void,
@@ -740,30 +740,30 @@ pub enum PrimativeKind {
 	FormatString,
 }
 
-impl PrimativeKind {
+impl PrimitiveKind {
 	pub fn name(self) -> &'static str {
 		match self {
-			PrimativeKind::AnyCollapse => "any collapse",
-			PrimativeKind::NoReturn => "noreturn",
-			PrimativeKind::Void => "void",
-			PrimativeKind::UntypedNumber => "untyped number",
-			PrimativeKind::Bool => "bool",
-			PrimativeKind::Numeric(numeric) => numeric.name(),
-			PrimativeKind::String => "str",
-			PrimativeKind::StringMut => "strmut",
-			PrimativeKind::FormatString => "fstr",
+			PrimitiveKind::AnyCollapse => "any collapse",
+			PrimitiveKind::NoReturn => "noreturn",
+			PrimitiveKind::Void => "void",
+			PrimitiveKind::UntypedNumber => "untyped number",
+			PrimitiveKind::Bool => "bool",
+			PrimitiveKind::Numeric(numeric) => numeric.name(),
+			PrimitiveKind::String => "str",
+			PrimitiveKind::StringMut => "strmut",
+			PrimitiveKind::FormatString => "fstr",
 		}
 	}
 
 	pub fn layout(self) -> Layout {
 		match self {
-			PrimativeKind::AnyCollapse => Layout { size: 0, alignment: 1 },
-			PrimativeKind::NoReturn => Layout { size: 0, alignment: 1 },
-			PrimativeKind::Void => Layout { size: 0, alignment: 1 },
-			PrimativeKind::UntypedNumber => unreachable!(),
-			PrimativeKind::Bool => Layout { size: 1, alignment: 1 },
-			PrimativeKind::Numeric(numeric) => numeric.layout(),
-			PrimativeKind::String | PrimativeKind::StringMut | PrimativeKind::FormatString => {
+			PrimitiveKind::AnyCollapse => Layout { size: 0, alignment: 1 },
+			PrimitiveKind::NoReturn => Layout { size: 0, alignment: 1 },
+			PrimitiveKind::Void => Layout { size: 0, alignment: 1 },
+			PrimitiveKind::UntypedNumber => unreachable!(),
+			PrimitiveKind::Bool => Layout { size: 1, alignment: 1 },
+			PrimitiveKind::Numeric(numeric) => numeric.layout(),
+			PrimitiveKind::String | PrimitiveKind::StringMut | PrimitiveKind::FormatString => {
 				Layout { size: 8 * 2, alignment: 8 }
 			}
 		}
@@ -845,7 +845,7 @@ pub enum TypeEntryKind {
 	Type,
 
 	BuiltinType {
-		kind: PrimativeKind,
+		kind: PrimitiveKind,
 		methods_index: usize,
 	},
 
@@ -915,7 +915,7 @@ impl TypeEntryKind {
 
 	pub fn fallback_methods_index(self, type_store: &mut TypeStore) -> Option<usize> {
 		match self {
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } => {
+			TypeEntryKind::BuiltinType { kind: PrimitiveKind::StringMut, .. } => {
 				let string_entry = type_store.type_entries.get(type_store.string_type_id);
 				string_entry.kind.methods_index()
 			}
@@ -1026,7 +1026,7 @@ pub struct TypeStore<'a> {
 	pub debug_generics: bool,
 	pub debug_type_ids: bool,
 
-	pub primative_type_symbols: SliceRef<Symbol<'a>>,
+	pub primitive_type_symbols: SliceRef<Symbol<'a>>,
 
 	pub type_entries: TypeEntries,
 
@@ -1087,7 +1087,7 @@ pub enum CollapseResult {
 
 impl<'a> TypeStore<'a> {
 	pub fn new(debug_generics: bool, debug_type_ids: bool) -> Self {
-		let mut primative_type_symbols = Vec::new();
+		let mut primitive_type_symbols = Vec::new();
 		let mut type_entries = TypeEntries::new();
 		let mut method_collections = Vec::new();
 		let mut implementations = Vec::new();
@@ -1108,7 +1108,7 @@ impl<'a> TypeStore<'a> {
 			generic_poisoned: false,
 		});
 
-		let mut push_primative = |name: Option<&'a str>, kind| {
+		let mut push_primitive = |name: Option<&'a str>, kind| {
 			let methods_index = method_collections.len();
 			method_collections.push(Ref::new(RwLock::new(MethodCollection::blank())));
 
@@ -1125,44 +1125,44 @@ impl<'a> TypeStore<'a> {
 			if let Some(name) = name {
 				let kind = SymbolKind::BuiltinType { type_id, methods_index };
 				let symbol = Symbol { name, kind, span: None, used: true, imported: false };
-				primative_type_symbols.push(symbol);
+				primitive_type_symbols.push(symbol);
 			}
 
 			type_id
 		};
 
-		let any_collapse_type_id = push_primative(None, PrimativeKind::AnyCollapse);
-		let noreturn_type_id = push_primative(Some("noreturn"), PrimativeKind::NoReturn);
-		let void_type_id = push_primative(Some("void"), PrimativeKind::Void);
+		let any_collapse_type_id = push_primitive(None, PrimitiveKind::AnyCollapse);
+		let noreturn_type_id = push_primitive(Some("noreturn"), PrimitiveKind::NoReturn);
+		let void_type_id = push_primitive(Some("void"), PrimitiveKind::Void);
 
 		// NOTE: These numeric type ids must all be generated together for the `is_numeric` range check
-		let number_type_id = push_primative(None, PrimativeKind::UntypedNumber);
+		let number_type_id = push_primitive(None, PrimitiveKind::UntypedNumber);
 
-		let i8_type_id = push_primative(Some("i8"), PrimativeKind::Numeric(NumericKind::I8));
-		let i16_type_id = push_primative(Some("i16"), PrimativeKind::Numeric(NumericKind::I16));
-		let i32_type_id = push_primative(Some("i32"), PrimativeKind::Numeric(NumericKind::I32));
-		let i64_type_id = push_primative(Some("i64"), PrimativeKind::Numeric(NumericKind::I64));
+		let i8_type_id = push_primitive(Some("i8"), PrimitiveKind::Numeric(NumericKind::I8));
+		let i16_type_id = push_primitive(Some("i16"), PrimitiveKind::Numeric(NumericKind::I16));
+		let i32_type_id = push_primitive(Some("i32"), PrimitiveKind::Numeric(NumericKind::I32));
+		let i64_type_id = push_primitive(Some("i64"), PrimitiveKind::Numeric(NumericKind::I64));
 
-		let u8_type_id = push_primative(Some("u8"), PrimativeKind::Numeric(NumericKind::U8));
-		let u16_type_id = push_primative(Some("u16"), PrimativeKind::Numeric(NumericKind::U16));
-		let u32_type_id = push_primative(Some("u32"), PrimativeKind::Numeric(NumericKind::U32));
-		let u64_type_id = push_primative(Some("u64"), PrimativeKind::Numeric(NumericKind::U64));
+		let u8_type_id = push_primitive(Some("u8"), PrimitiveKind::Numeric(NumericKind::U8));
+		let u16_type_id = push_primitive(Some("u16"), PrimitiveKind::Numeric(NumericKind::U16));
+		let u32_type_id = push_primitive(Some("u32"), PrimitiveKind::Numeric(NumericKind::U32));
+		let u64_type_id = push_primitive(Some("u64"), PrimitiveKind::Numeric(NumericKind::U64));
 
-		let isize_type_id = push_primative(Some("isize"), PrimativeKind::Numeric(NumericKind::ISize));
-		let usize_type_id = push_primative(Some("usize"), PrimativeKind::Numeric(NumericKind::USize));
+		let isize_type_id = push_primitive(Some("isize"), PrimitiveKind::Numeric(NumericKind::ISize));
+		let usize_type_id = push_primitive(Some("usize"), PrimitiveKind::Numeric(NumericKind::USize));
 
-		let f32_type_id = push_primative(Some("f32"), PrimativeKind::Numeric(NumericKind::F32));
-		let f64_type_id = push_primative(Some("f64"), PrimativeKind::Numeric(NumericKind::F64));
+		let f32_type_id = push_primitive(Some("f32"), PrimitiveKind::Numeric(NumericKind::F32));
+		let f64_type_id = push_primitive(Some("f64"), PrimitiveKind::Numeric(NumericKind::F64));
 
-		let bool_type_id = push_primative(Some("bool"), PrimativeKind::Bool);
-		let string_type_id = push_primative(Some("str"), PrimativeKind::String);
-		let string_mut_type_id = push_primative(Some("strmut"), PrimativeKind::StringMut);
-		let format_string_type_id = push_primative(Some("fstr"), PrimativeKind::FormatString);
+		let bool_type_id = push_primitive(Some("bool"), PrimitiveKind::Bool);
+		let string_type_id = push_primitive(Some("str"), PrimitiveKind::String);
+		let string_mut_type_id = push_primitive(Some("strmut"), PrimitiveKind::StringMut);
+		let format_string_type_id = push_primitive(Some("fstr"), PrimitiveKind::FormatString);
 
 		let mut type_store = TypeStore {
 			debug_generics,
 			debug_type_ids,
-			primative_type_symbols: SliceRef::from(primative_type_symbols),
+			primitive_type_symbols: SliceRef::from(primitive_type_symbols),
 			type_entries,
 			array_types: Ref::new(RwLock::new(vec![Ref::new(RwLock::new(FxHashMap::default()))])),
 			user_types: Ref::new(RwLock::new(Vec::new())),
@@ -1405,7 +1405,7 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		if let TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } = a_entry.kind {
+		if let TypeEntryKind::BuiltinType { kind: PrimitiveKind::StringMut, .. } = a_entry.kind {
 			let collapsed = self.collapse_to(messages, function_store, b.type_id, a);
 			return match collapsed {
 				CollapseResult::Success => Ok(b.type_id),
@@ -1413,7 +1413,7 @@ impl<'a> TypeStore<'a> {
 			};
 		}
 
-		if let TypeEntryKind::BuiltinType { kind: PrimativeKind::StringMut, .. } = b_entry.kind {
+		if let TypeEntryKind::BuiltinType { kind: PrimitiveKind::StringMut, .. } = b_entry.kind {
 			let collapsed = self.collapse_to(messages, function_store, a.type_id, b);
 			return match collapsed {
 				CollapseResult::Success => Ok(a.type_id),
@@ -2052,7 +2052,7 @@ impl<'a> TypeStore<'a> {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
 			TypeEntryKind::Pointer { type_id, mutable } => Some((type_id, mutable)),
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, false)),
+			TypeEntryKind::BuiltinType { kind: PrimitiveKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, false)),
 			_ => None,
 		}
 	}
@@ -2062,7 +2062,7 @@ impl<'a> TypeStore<'a> {
 		let entry = self.type_entries.get(type_id);
 		match entry.kind {
 			TypeEntryKind::Slice(Slice { item_type_id: type_id, mutable }) => Some((type_id, mutable)),
-			TypeEntryKind::BuiltinType { kind: PrimativeKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, true)),
+			TypeEntryKind::BuiltinType { kind: PrimitiveKind::AnyCollapse, .. } => Some((self.any_collapse_type_id, true)),
 			_ => None,
 		}
 	}

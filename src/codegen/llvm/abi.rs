@@ -218,7 +218,7 @@ impl SysvAbi {
 		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_composition_field_type_buffer, classes.iter());
 
 		let is_non_memory = classes.len() == 1 && classes[0].kind != ClassKind::Memory;
-		let is_bare_value = is_non_memory && parameter_type_id.is_primative(type_store);
+		let is_bare_value = is_non_memory && parameter_type_id.is_primitive(type_store);
 		let is_by_pointer = classes.len() == 1 && classes[0].kind == ClassKind::Memory;
 
 		if is_bare_value {

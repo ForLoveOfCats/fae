@@ -1,4 +1,4 @@
-use crate::frontend::type_store::{Array, Layout, NumericKind, PrimativeKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{Array, Layout, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Class {
@@ -66,7 +66,7 @@ fn classify_type_internal<'buf>(
 
 	match entry.kind {
 		TypeEntryKind::BuiltinType { kind, .. } => match kind {
-			PrimativeKind::Numeric(kind) => {
+			PrimitiveKind::Numeric(kind) => {
 				let class = match kind {
 					NumericKind::I8 | NumericKind::U8 => Class { kind: ClassKind::Integer, size: 1 },
 					NumericKind::I16 | NumericKind::U16 => Class { kind: ClassKind::Integer, size: 2 },
@@ -83,18 +83,18 @@ fn classify_type_internal<'buf>(
 				return ClassifyResult { new_classes_len: 1, itself_may_be_combined: true };
 			}
 
-			PrimativeKind::Bool => {
+			PrimitiveKind::Bool => {
 				buffer[buffer_index] = Class { kind: ClassKind::Boolean, size: 1 };
 				return ClassifyResult { new_classes_len: 1, itself_may_be_combined: true };
 			}
 
-			PrimativeKind::String | PrimativeKind::StringMut | PrimativeKind::FormatString => {
+			PrimitiveKind::String | PrimitiveKind::StringMut | PrimitiveKind::FormatString => {
 				buffer[buffer_index] = Class { kind: ClassKind::Pointer, size: 8 };
 				buffer[buffer_index + 1] = Class { kind: ClassKind::Integer, size: 8 };
 				return ClassifyResult { new_classes_len: 2, itself_may_be_combined: false };
 			}
 
-			PrimativeKind::AnyCollapse | PrimativeKind::NoReturn | PrimativeKind::Void | PrimativeKind::UntypedNumber => {
+			PrimitiveKind::AnyCollapse | PrimitiveKind::NoReturn | PrimitiveKind::Void | PrimitiveKind::UntypedNumber => {
 				unreachable!("{:?}", entry.kind);
 			}
 		},
