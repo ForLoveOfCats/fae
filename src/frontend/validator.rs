@@ -2969,38 +2969,6 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 		if let Some(chosen_tag_value) = chosen_tag_value {
 			previous_tag_value = Some(chosen_tag_value);
 		}
-
-		// let is_last = index + 1 >= variant_len;
-		// if is_bitflags {
-		// 	let i128_bits = (size_of_val(&next_tag_value) * 8) as u32;
-		// 	let i128_bits_difference = i128_bits - max_tag_bits;
-
-		// 	let leading_zeros = chosen_tag_value.leading_zeros() - i128_bits_difference;
-		// 	let bits_needed = max_tag_bits - leading_zeros + 1;
-
-		// 	let next_tag_bits: u128 = (1 << (i128_bits - 1)) >> (chosen_tag_value.leading_zeros().saturating_sub(1));
-
-		// 	if bits_needed <= max_tag_bits {
-		// 		// Get the highest bit and shift it one to the left
-		// 		// Performs the bitshifts on a u128 to utilize logical shift rather than arithmetic
-		// 		next_tag_value = next_tag_bits as i128;
-		// 	} else if !is_last && !emitted_tag_error {
-		// 		emitted_tag_error = true;
-		// 		let tag_type = context.type_name(tag_type_id);
-		// 		let error = error!("Next bitflags enum tag value {next_tag_bits:#x} would overflow tag of type {tag_type}");
-		// 		let next_tree_variant = &statement.variants[index + 1];
-		// 		context.message(error.span(next_tree_variant.kind.name_span()));
-		// 	}
-		// } else {
-		// 	next_tag_value = chosen_tag_value + 1;
-		// 	if !is_last && !emitted_tag_error && next_tag_value > max_tag_value {
-		// 		emitted_tag_error = true;
-		// 		let tag_type = context.type_name(tag_type_id);
-		// 		let error = error!("Next enum tag value `{next_tag_value}` would overflow tag of type {tag_type}");
-		// 		let next_tree_variant = &statement.variants[index + 1];
-		// 		context.message(error.span(next_tree_variant.kind.name_span()));
-		// 	}
-		// }
 	}
 
 	let mut user_type = lock.write();
