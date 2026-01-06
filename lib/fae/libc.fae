@@ -32,6 +32,23 @@ when PlatformLinux {
 	const O_CREAT = 512
 	const O_APPEND = 8
 	const O_TRUNC = 1024
+} else when PlatformWindows {
+	// Initalized on startup by `fae.runtime.perform_setup`
+	static StdInFile: *FileStream
+	static StdOutFile: *FileStream
+	static StdErrFile: *FileStream
+
+	const O_RDONLY = 0
+	const O_RDWR = 2
+	const O_CREAT = 256
+	const O_APPEND = 8
+	const O_TRUNC = 512
+
+	// TODO: This wants to be located next to the usage. However it seems
+	// there is a bug with extern functions within functions erroniously
+	// throwing a duplicate symbol error
+	extern "__acrt_iob_func"
+	fn acrt_iob_func(arg=: i32): *FileStream
 }
 
 struct DlInfo {
@@ -54,20 +71,23 @@ fn atoi(string=: *u8): i32
 extern "atol"
 fn atol(string=: *u8): i64
 
-extern "backtrace"
-fn backtrace(address_buffer: *mut *void, length: i32): i32
+when PlatformWindows {
+} else {
+	extern "backtrace"
+	fn backtrace(address_buffer: *mut *void, length: i32): i32
 
-extern "backtrace_symbols"
-fn backtrace_symbols(addresses: **void, length: i32): **u8
+	extern "backtrace_symbols"
+	fn backtrace_symbols(addresses: **void, length: i32): **u8
 
-extern "backtrace_symbols_fd"
-fn backtrace_symbols_fd(addresses: **void, length: i32, fd: i32)
+	extern "backtrace_symbols_fd"
+	fn backtrace_symbols_fd(addresses: **void, length: i32, fd: i32)
+
+	extern "dladdr"
+	fn dladdr(address: *void, info=: *mut DlInfo): i32
+}
 
 extern "close"
 fn close(file_descriptor=: i32): i32
-
-extern "dladdr"
-fn dladdr(address: *void, info=: *mut DlInfo): i32
 
 extern "exit"
 fn exit(code=: i32): noreturn
@@ -111,8 +131,18 @@ fn puts(pointer=: *u8)
 extern "rand"
 fn rand(): i32
 
-extern "read"
-fn read(file_descriptor=: i32, buffer: *mut u8, size: usize): isize
+when PlatformWindows {
+	extern "_read"
+	fn _read(file_descriptor=: i32, buffer: *mut u8, size: u32): i32
+
+	fn read(file_descriptor=: i32, buffer: *mut u8, size: usize): isize {
+		assert(size <= 4294967295) // Make sure the cast is sound
+		return _read(file_descriptor, buffer, size: size.(u32)).(isize)
+	}
+} else {
+	extern "read"
+	fn read(file_descriptor=: i32, buffer: *mut u8, size: usize): isize
+}
 
 extern "realloc"
 fn realloc(ptr=: *mut u8, new_size: usize): *mut u8

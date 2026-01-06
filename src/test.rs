@@ -116,6 +116,9 @@ fn run_test(
 		darwin_linker: None,
 		darwin_additional_linker_flags: None,
 		darwin_additional_linker_objects: None,
+		windows_linker: None,
+		windows_additional_linker_flags: None,
+		windows_additional_linker_objects: None,
 	};
 
 	let test_config = if let Ok(config_file) = std::fs::read_to_string(&test_config_path) {

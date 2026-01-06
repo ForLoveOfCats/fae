@@ -2,7 +2,19 @@ static ArgC: i32
 static ArgV: **u8
 
 when ProvideMain {
-	export "main"
+
+	when PlatformWindows {
+		export "WinMain"
+		fn fae_runtime_main_redirect(argc: i32, argv: **u8): i32 {
+			return fae_runtime_main(argc, argv)
+		}
+	} else {
+		export "main"
+		fn fae_runtime_main_redirect(argc: i32, argv: **u8): i32 {
+			return fae_runtime_main(argc, argv)
+		}
+	}
+
 	fn fae_runtime_main(argc: i32, argv: **u8): i32 {
 		perform_setup(argc, argv)
 
@@ -22,6 +34,12 @@ when InTest {
 fn perform_setup(argc: i32, argv: **u8) {
 	ArgC = argc
 	ArgV = argv
+
+	when PlatformWindows {
+		fae.libc.StdInFile = fae.libc.acrt_iob_func(0)
+		fae.libc.StdOutFile = fae.libc.acrt_iob_func(1)
+		fae.libc.StdErrFile = fae.libc.acrt_iob_func(2)
+	}
 }
 
 #lang "array_index_out_of_bounds"
@@ -70,7 +88,7 @@ fn for_range_inverted(range: Range) {
 }
 
 fn panic_impl(message: fstr): noreturn {
-	import fae.libc.DlInfo, exit, backtrace, dladdr, strlen
+	import fae.libc.exit
 
 	eprintln(f"Fae thread panicked: {message}")	
 
@@ -79,108 +97,113 @@ fn panic_impl(message: fstr): noreturn {
 	// messages when in compiler tests
 	when InCompilerTest => exit(-1)
 
-	eprintln("Function backtrace:")
+	when PlatformWindows {
+	} else {
+		import fae.libc.DlInfo, backtrace, dladdr, strlen
 
-	let null = null_pointer<void>()
-	// 50 items
-	mut addresses = [_]*void {
-		null, null, null, null, null, null, null, null, null, null,
-		null, null, null, null, null, null, null, null, null, null,
-		null, null, null, null, null, null, null, null, null, null,
-		null, null, null, null, null, null, null, null, null, null,
-		null, null, null, null, null, null, null, null, null, null,
-	}
+		eprintln("Function backtrace:")
 
-	let symbol_count = backtrace(address_buffer: addresses.pointer, length: addresses.length.(i32)).(isize)
-	let addresses = addresses[0..symbol_count]
-
-	const Indentation = "  "
-	const Error = "<error>"
-	const Unknown = "<unknown>"
-	const Spacer = "  "
-
-	enum Symbol {
-		Error
-		Unknown { path: str }
-		Found { name: str,  path: str }
-	}
-
-	// 50 items
-	mut symbols = [_]Symbol {
-		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
-		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
-		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
-		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
-		.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
-	}
-	let symbols = symbols[0..symbol_count]
-
-	mut longest_width: isize = 0
-	fn handle_width(longest_width=: *mut isize, width: isize) {
-		if width > longest_width.* => longest_width.* = width
-	}
-
-	fn print_width(width: isize) {
-		for _ in 0..width => eprint(" ")
-	}
-
-	for address, index in addresses {
-		mut info = DlInfo {
-			dli_fname: null_pointer<u8>()
-			dli_fbase: null_pointer<void>()
-			dli_sname: null_pointer<u8>()
-			dli_saddr: null_pointer<void>()
+		let null = null_pointer<void>()
+		// 50 items
+		mut addresses = [_]*void {
+			null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null,
+			null, null, null, null, null, null, null, null, null, null,
 		}
 
-		if dladdr(address, info.&mut) == 0 {
-			symbols[index] = .Error
-			handle_width(longest_width.&mut, width: Error.length)
-			continue
+		let symbol_count = backtrace(address_buffer: addresses.pointer, length: addresses.length.(i32)).(isize)
+		let addresses = addresses[0..symbol_count]
+
+		const Indentation = "  "
+		const Error = "<error>"
+		const Unknown = "<unknown>"
+		const Spacer = "  "
+
+		enum Symbol {
+			Error
+			Unknown { path: str }
+			Found { name: str,  path: str }
 		}
 
-		let path_length = strlen(info.dli_fname).(isize)
-		let path = fae.intrinsics.create_str(info.dli_fname, length: path_length)
-
-		if info.dli_saddr.(usize) == 0 {
-			symbols[index] = .Unknown { path }
-			handle_width(longest_width.&mut, width: Unknown.length)
-		} else {
-			let name_length = strlen(info.dli_sname).(isize)
-			let name = fae.intrinsics.create_str(info.dli_sname, length: name_length)
-			symbols[index] = .Found { name, path }
-			handle_width(longest_width.&mut, width: name_length)
+		// 50 items
+		mut symbols = [_]Symbol {
+			.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+			.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+			.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+			.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
+			.Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error, .Error,
 		}
-	}
+		let symbols = symbols[0..symbol_count]
 
-	for symbol in symbols {
-		mut current_width: isize = 0
-		let path = match symbol {
-			Error {
-				eprintln(f"{Indentation}{Error}")
+		mut longest_width: isize = 0
+		fn handle_width(longest_width=: *mut isize, width: isize) {
+			if width > longest_width.* => longest_width.* = width
+		}
+
+		fn print_width(width: isize) {
+			for _ in 0..width => eprint(" ")
+		}
+
+		for address, index in addresses {
+			mut info = DlInfo {
+				dli_fname: null_pointer<u8>()
+				dli_fbase: null_pointer<void>()
+				dli_sname: null_pointer<u8>()
+				dli_saddr: null_pointer<void>()
+			}
+
+			if dladdr(address, info.&mut) == 0 {
+				symbols[index] = .Error
+				handle_width(longest_width.&mut, width: Error.length)
 				continue
 			}
 
-			Unknown {
-				eprint(f"{Indentation}{Unknown}")
-				current_width = Unknown.length
-				yield symbol.path
-			}
+			let path_length = strlen(info.dli_fname).(isize)
+			let path = fae.intrinsics.create_str(info.dli_fname, length: path_length)
 
-			Found {
-				eprint(f"{Indentation}{symbol.name}")
-				current_width = symbol.name.length
-				yield symbol.path
+			if info.dli_saddr.(usize) == 0 {
+				symbols[index] = .Unknown { path }
+				handle_width(longest_width.&mut, width: Unknown.length)
+			} else {
+				let name_length = strlen(info.dli_sname).(isize)
+				let name = fae.intrinsics.create_str(info.dli_sname, length: name_length)
+				symbols[index] = .Found { name, path }
+				handle_width(longest_width.&mut, width: name_length)
 			}
 		}
 
-		for _ in 0..longest_width - current_width => eprint(" ")
-		eprintln(f"{Spacer}({path})")
-	}
+		for symbol in symbols {
+			mut current_width: isize = 0
+			let path = match symbol {
+				Error {
+					eprintln(f"{Indentation}{Error}")
+					continue
+				}
 
-	if symbol_count == 0 {
-		eprintln(f"{Indentation}<missing backtrace>")
+				Unknown {
+					eprint(f"{Indentation}{Unknown}")
+					current_width = Unknown.length
+					yield symbol.path
+				}
+
+				Found {
+					eprint(f"{Indentation}{symbol.name}")
+					current_width = symbol.name.length
+					yield symbol.path
+				}
+			}
+
+			for _ in 0..longest_width - current_width => eprint(" ")
+			eprintln(f"{Spacer}({path})")
+		}
+
+		if symbol_count == 0 {
+			eprintln(f"{Indentation}<missing backtrace>")
+		}
+		eprintln("")
 	}
-	eprintln("")
 
 	fae.intrinsics.debugger_break()
 	exit(-1)

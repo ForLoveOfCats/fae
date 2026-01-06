@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
 	LLVMAddAttributeAtIndex, LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext,
@@ -895,9 +894,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let file = unsafe {
 					LLVMDIBuilderCreateFile(
 						self.di_builder,
-						file_name.as_bytes().as_ptr() as _,
+						file_name.as_encoded_bytes().as_ptr() as _,
 						file_name.len(),
-						directory.as_os_str().as_bytes().as_ptr() as _,
+						directory.as_os_str().as_encoded_bytes().as_ptr() as _,
 						directory.as_os_str().len(),
 					)
 				};

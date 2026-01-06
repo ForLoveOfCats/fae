@@ -16,7 +16,6 @@ mod reference;
 mod test;
 mod version;
 
-use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -29,6 +28,11 @@ use crate::frontend::project::build_project;
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 pub const TARGET_DIR: &str = "./fae_target";
+
+#[cfg(target_os = "windows")]
+pub const DEFAULT_PROJECT_PATH: &str = ".\\";
+#[cfg(not(target_os = "windows"))]
+pub const DEFAULT_PROJECT_PATH: &str = "./";
 
 fn main() {
 	#[cfg(feature = "tracy-profile")]
@@ -49,7 +53,10 @@ fn main() {
 		stderr: &mut stderr,
 	};
 
-	let project_path = cli_arguments.project_path.as_deref().unwrap_or_else(|| Path::new("./"));
+	let project_path = cli_arguments
+		.project_path
+		.as_deref()
+		.unwrap_or_else(|| Path::new(DEFAULT_PROJECT_PATH));
 	let built_project = build_project(&cli_arguments, &mut output, project_path, None);
 
 	#[cfg(feature = "measure-lock-contention")]
@@ -82,7 +89,7 @@ fn main() {
 		let status = child.wait().unwrap();
 
 		if !status.success() {
-			eprintln!("Child process exited with code {}", status.into_raw())
+			eprintln!("Child process exited with code {:?}", status.code())
 		}
 	}
 }

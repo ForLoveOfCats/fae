@@ -42,9 +42,12 @@ pub fn generate_code<'a>(
 	function_store: &FunctionStore<'a>,
 	statics: &Statics,
 ) -> PathBuf {
+	#[cfg(not(target_os = "windows"))]
 	let object_name = format!("{name}.o");
+	#[cfg(target_os = "windows")]
+	let object_name = format!("{name}.obj");
 
-	#[cfg(target_os = "linux")]
+	#[cfg(any(target_os = "linux", target_os = "windows"))]
 	let architecture = unsafe {
 		llvm_sys::target::LLVMInitializeX86Target();
 		llvm_sys::target::LLVMInitializeX86TargetInfo();
@@ -74,6 +77,8 @@ pub fn generate_code<'a>(
 	let triple = c"x86_64-pc-linux-gnu";
 	#[cfg(target_os = "macos")]
 	let triple = c"arm64-apple-darwin20.1.0";
+	#[cfg(target_os = "windows")]
+	let triple = c"x86_64-pc-windows-msvc";
 
 	let target = unsafe {
 		let mut target = std::ptr::null_mut();
@@ -281,6 +286,59 @@ pub fn generate_code<'a>(
 			.arg("-o")
 			.arg(&executable_path)
 			.args(additional_objects)
+			.spawn()
+			.unwrap();
+
+		let status = command.wait().unwrap();
+		assert!(status.success());
+
+		return executable_path;
+	}
+
+	#[cfg(target_os = "windows")]
+	{
+		let default_linker = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe";
+		let linker = project_config.windows_linker.as_deref().unwrap_or(default_linker);
+		let additional_flags = project_config.windows_additional_linker_flags.clone().unwrap_or(Vec::new());
+		let additional_objects = if let Some(objects) = &project_config.windows_additional_linker_objects {
+			let mut additional_objects = Vec::with_capacity(objects.len());
+			for object in objects {
+				let path = project_path.join(object);
+				additional_objects.push(path);
+			}
+			additional_objects
+		} else {
+			Vec::new()
+		};
+
+		let executable_path = PathBuf::from(format!("{TARGET_DIR}")).join(name);
+		let out_path = unsafe { str::from_utf8_unchecked(executable_path.as_os_str().as_encoded_bytes()) };
+
+		let mut command = Command::new(linker)
+			.arg("/nologo")
+			.arg("/subsystem:windows")
+			.arg("kernel32.lib")
+			.arg("user32.lib")
+			.arg("msvcrt.lib")
+			.arg("libucrt.lib")
+			.arg("libvcruntime.lib")
+			// .arg("-export-dynamic")
+			// .arg("--hash-style=gnu")
+			// .arg("--build-id")
+			// .arg("--eh-frame-hdr")
+			// .arg("-m")
+			// .arg("elf_x86_64")
+			// .arg("/usr/lib/crt1.o")
+			// .arg("/usr/lib/crti.o")
+			.args(additional_objects)
+			.arg(object_path)
+			// .arg("/usr/lib/crtn.o")
+			// .arg("/usr/lib/libc.so")
+			// .arg("/usr/lib/libm.so")
+			// .arg("-dynamic-linker")
+			// .arg("/lib64/ld-linux-x86-64.so.2")
+			.args(additional_flags)
+			.arg(format!("/out:{out_path}"))
 			.spawn()
 			.unwrap();
 

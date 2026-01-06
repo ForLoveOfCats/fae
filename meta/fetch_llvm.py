@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import stat
 import shutil
 import subprocess
 import multiprocessing
@@ -278,10 +279,122 @@ def macos_main():
 	print()
 	print("LLVM has been fetched and built!")
 
+def windows_main():
+	print("This script will build a local copy of LLVM for use in developing and bundling the Fae compiler.")
+	print("To accomplish this it will clone LLVM, build libc++, and build LLVM against libc++.")
+	print("This process will be quite noisy and may take a while.")
+	print()
+	print("System dependencies required: a Clang+LLD toolchain, cmake, ninja, and git.")
+	print("If any of these dependencies are missing then the fetch and build will fail.")
+	print()
+	print("[press enter to continue]", end="")
+	input()
+	print()
+
+	# remove_llvm_folder_if_exists()
+
+	cpu_count = multiprocessing.cpu_count()
+	jobs = user_number("How many compiler processes to use when building LLVM?", cpu_count)
+	print("This script will require no further user input to continue; you can get a coffee now, this may take a while.")
+	print()
+
+	# clone_llvm()
+
+	print()
+	print("LLVM source files fetched, preparing to build libc++")
+	print()
+
+	# os.chdir("./llvm/libcxx")
+	# os.makedirs("./build", exist_ok=True)
+	# os.chdir("./build")
+
+	# subprocess.run([
+	# 	"cmake",
+	# 	"-G",
+	# 	"Ninja",
+	# 	"-S",
+	# 	"../../runtimes",
+	# 	"-DLLVM_ENABLE_RUNTIMES=libcxx",
+	# 	# "-DCMAKE_C_COMPILER_TARGET=x86_64-pc-windows-msvc",
+	# 	"-DCMAKE_C_COMPILER=clang-cl",
+	# 	# f"-DCMAKE_C_FLAGS=-D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -DLIBCXX_BUILDING_LIBCXXABI",
+	# 	# "-DCMAKE_CXX_COMPILER_TARGET=x86_64-pc-windows-msvc",
+	# 	"-DCMAKE_CXX_COMPILER=clang-cl",
+	# 	# f"-DCMAKE_CXX_FLAGS=-nostdinc++ -D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -DLIBCXX_BUILDING_LIBCXXABI",
+	# 	f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
+	# ])
+
+	# print()
+	# print("libc++ build files written")
+	# print()
+
+	# subprocess.run([
+	# 	"cmake",
+	# 	"--build",
+	# 	".",
+	# ])
+
+	# print()
+	# print("libc++ has been built!")
+	# print("Preparing to build LLVM itself")
+	# print()
+
+	os.chdir("./llvm/llvm")
+	os.makedirs("./build", exist_ok=True)
+	os.chdir("./build")
+
+	# include_dir = os.path.realpath("../../libcxx/build/include/c++/v1")
+	# libcxx = os.path.realpath("../../libcxx/build/lib/libc++.lib")
+	# libcxx_abi = os.path.realpath("../../libcxx/build/lib/libc++abi.a")
+
+	subprocess.run([
+		"cmake",
+		"-G",
+		"Ninja",
+		"-DCMAKE_C_COMPILER=clang-cl",
+		"-DCMAKE_C_COMPILER_TARGET=x86_64-pc-windows-msvc",
+		"-DCMAKE_CXX_COMPILER=clang-cl",
+		"-DCMAKE_CXX_COMPILER_TARGET=x86_64-pc-windows-msvc",
+		# f"-DCMAKE_CXX_FLAGS=-nostdinc++ -nostdlib++ -I{include_dir}",
+		# f"-DCMAKE_EXE_LINKER_FLAGS={libcxx}",
+		# f"-DCMAKE_MODULE_LINKER_FLAGS={libcxx}",
+		# f"-DCMAKE_SHARED_LINKER_FLAGS={libcxx}",
+		# f"-DCMAKE_STATIC_LINKER_FLAGS={libcxx}",
+		"-DLLVM_ENABLE_LLD=ON",
+		"-DCMAKE_BUILD_TYPE=Release",
+		f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
+		"-DLLVM_PARALLEL_LINK_JOBS=1", # Linking can absolutely slurp memory
+		"-DLLVM_ENABLE_ZLIB=OFF",
+		"-DLLVM_ENABLE_ZSTD=OFF",
+		"-DLLVM_ENABLE_TERMINFO=OFF",
+		"-DLLVM_ENABLE_LIBXML2=OFF",
+		"-DLLVM_BUILD_BENCHMARKS=OFF",
+		"-DLLVM_INCLUDE_BENCHMARKS=OFF",
+		"-DLLVM_TARGETS_TO_BUILD=X86",
+		".."
+	])
+
+	print()
+	print("LLVM build files written")
+	print()
+
+	subprocess.run([
+		"cmake",
+		"--build",
+		".",
+	])
+
+	print()
+	print("LLVM has been fetched and built!")
+
 def remove_llvm_folder_if_exists():
+	def rm_readonly(action, name, exc):
+		os.chmod(name, stat.S_IWRITE)
+		os.remove(name)
+
 	if os.path.exists("./llvm"):
 		if user_confirm("LLVM folder already present, remove and continue?"):
-			shutil.rmtree("./llvm")
+			shutil.rmtree("./llvm", onerror=rm_readonly)
 			print("Existing LLVM folder removed")
 			print()
 		else:
@@ -335,5 +448,7 @@ elif platform.system().lower() == "linux":
 	linux_main()
 elif platform.system().lower() == "darwin":
 	macos_main()
+elif platform.system().lower() == "windows":
+	windows_main()
 else:
     print(f"Fetch LLVM script does not currently support {platform.system()}")

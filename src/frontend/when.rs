@@ -32,6 +32,8 @@ impl WhenContext {
 
 			"PlatformDarwin" => self.target_platform == TargetPlatform::Darwin,
 
+			"PlatformWindows" => self.target_platform == TargetPlatform::Windows,
+
 			"DebugBuild" => !self.release_mode,
 
 			"ReleaseBuild" => self.release_mode,

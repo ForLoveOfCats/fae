@@ -49,12 +49,20 @@ pub struct ProjectConfig {
 	pub darwin_additional_linker_flags: Option<Vec<String>>,
 	#[allow(dead_code)]
 	pub darwin_additional_linker_objects: Option<Vec<String>>,
+
+	#[allow(dead_code)]
+	pub windows_linker: Option<String>,
+	#[allow(dead_code)]
+	pub windows_additional_linker_flags: Option<Vec<String>>,
+	#[allow(dead_code)]
+	pub windows_additional_linker_objects: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetPlatform {
 	Linux,
 	Darwin,
+	Windows,
 }
 
 pub fn build_project(
@@ -174,6 +182,8 @@ pub fn build_project(
 	let target_platform = TargetPlatform::Linux;
 	#[cfg(target_os = "macos")]
 	let target_platform = TargetPlatform::Darwin;
+	#[cfg(target_os = "windows")]
+	let target_platform = TargetPlatform::Windows;
 
 	let when_context = WhenContext {
 		target_platform,
@@ -291,8 +301,12 @@ fn std_path() -> PathBuf {
 		};
 
 		path.pop();
-		path.join("./lib")
+		path.join("lib")
 	} else {
-		PathBuf::from("./lib")
+		#[cfg(target_os = "windows")]
+		return PathBuf::from(".\\lib");
+
+		#[cfg(not(target_os = "windows"))]
+		return PathBuf::from("./lib");
 	}
 }
