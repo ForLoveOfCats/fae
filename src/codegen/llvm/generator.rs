@@ -34,9 +34,10 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
+use crate::codegen::classification::Classifier;
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
-use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
+use crate::codegen::llvm::abi::{Abi, DefinedFunction};
 use crate::codegen::llvm::debug_scope::DebugScope;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, ForKind, Function, FunctionId, IfElseChain, Match};
@@ -362,14 +363,14 @@ enum InCheckIs {
 	WhileLoop,
 }
 
-pub struct LLVMGenerator<ABI: LLVMAbi> {
+pub struct LLVMGenerator<C: Classifier> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
 	pub builder: LLVMBuilderRef,
 	pub di_builder: LLVMDIBuilderRef,
 
 	architecture: Architecture,
-	abi: Option<ABI>, // I really dislike the lease pattern, oh well
+	abi: Option<Abi<C>>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
 	pub llvm_types: LLVMTypes,
 	pub llvm_intrinsics: LLVMIntrinsics,
@@ -388,10 +389,10 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	statics: Vec<Binding>,
 	readables: Vec<Option<Binding>>,
 
-	_marker: std::marker::PhantomData<ABI>,
+	_classifer_marker: std::marker::PhantomData<C>,
 }
 
-impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
+impl<C: Classifier> LLVMGenerator<C> {
 	pub fn new(context: LLVMContextRef, architecture: Architecture, optimize_artifacts: bool) -> Self {
 		let module = unsafe { LLVMModuleCreateWithNameInContext(c"fae_translation_unit_module".as_ptr(), context) };
 		let builder = unsafe { LLVMCreateBuilderInContext(context) };
@@ -427,14 +428,14 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			di_builder
 		};
 
-		LLVMGenerator::<ABI> {
+		LLVMGenerator {
 			context,
 			module,
 			builder,
 			di_builder,
 
 			architecture,
-			abi: Some(ABI::new()),
+			abi: Some(Abi::new()),
 			attribute_kinds: AttributeKinds::new(),
 			llvm_types,
 			llvm_intrinsics,
@@ -453,7 +454,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			statics: Vec::new(),
 			readables: Vec::new(),
 
-			_marker: std::marker::PhantomData,
+			_classifer_marker: std::marker::PhantomData,
 		}
 	}
 
@@ -817,7 +818,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 	}
 }
 
-impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
+impl<C: Classifier> Generator for LLVMGenerator<C> {
 	type Binding = Binding;
 
 	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
@@ -3643,7 +3644,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 
-		ABI::return_value(context, self, function.llvm_function, function.return_type, value, defer_callback);
+		Abi::return_value(context, self, function.llvm_function, function.return_type, value, defer_callback);
 	}
 
 	fn generate_slice(

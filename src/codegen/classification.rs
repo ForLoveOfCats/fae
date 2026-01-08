@@ -1,4 +1,4 @@
-use crate::frontend::type_store::{Array, Layout, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{TypeId, TypeStore};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Class {
