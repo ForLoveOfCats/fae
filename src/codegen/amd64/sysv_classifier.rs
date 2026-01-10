@@ -1,6 +1,7 @@
 use crate::codegen::classification::{Class, ClassKind, Classifier};
 use crate::frontend::type_store::{Array, Layout, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
+#[allow(unused)]
 pub struct SysvClassifer {
 	// Note: It is counterintuitive that this array has space for *nine* classes when
 	// there should never be more than eight. However the algorithm as implemented

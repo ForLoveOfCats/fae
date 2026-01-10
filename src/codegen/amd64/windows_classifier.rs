@@ -1,6 +1,7 @@
 use crate::codegen::classification::{Class, ClassKind, Classifier};
 use crate::frontend::type_store::{NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore};
 
+#[allow(unused)]
 pub struct WindowsClassifier {
 	class: Class,
 }

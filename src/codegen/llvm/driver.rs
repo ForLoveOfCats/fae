@@ -17,8 +17,6 @@ use llvm_sys::target_machine::{
 use llvm_sys::transforms::pass_builder::{LLVMCreatePassBuilderOptions, LLVMRunPasses};
 
 use crate::cli::CliArguments;
-use crate::codegen::amd64::sysv_classifier::SysvClassifer;
-use crate::codegen::amd64::windows_classifier::WindowsClassifier;
 use crate::codegen::codegen::generate;
 use crate::codegen::llvm::generator::{Architecture, LLVMGenerator};
 use crate::frontend::error::{Messages, WriteFmt};
@@ -112,7 +110,20 @@ pub fn generate_code<'a>(
 	assert!(!machine.is_null());
 
 	let context = unsafe { LLVMContextCreate() };
-	let mut generator = LLVMGenerator::<WindowsClassifier>::new(context, architecture, cli_arguments.optimize_artifacts);
+
+	#[cfg(any(target_os = "linux", target_os = "macos"))]
+	let mut generator = LLVMGenerator::<crate::codegen::amd64::sysv_classifier::SysvClassifer>::new(
+		context,
+		architecture,
+		cli_arguments.optimize_artifacts,
+	);
+
+	#[cfg(target_os = "windows")]
+	let mut generator = LLVMGenerator::<crate::codegen::amd64::windows_classifier::WindowsClassifier>::new(
+		context,
+		architecture,
+		cli_arguments.optimize_artifacts,
+	);
 
 	#[cfg(target_os = "macos")]
 	unsafe {

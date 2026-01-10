@@ -4316,7 +4316,7 @@ fn validate_block<'a>(mut context: Context<'a, '_, '_>, block: &'a tree::Block<'
 	};
 
 	let should_import_prelude = is_root && context.cli_arguments.std_enabled;
-	let block = validate_block_in_context(&mut context, block, &mut 0, scope_id, is_root, should_import_prelude);
+	let block = validate_block_in_context(&mut context, block, &mut 0, scope_id, is_root, true, should_import_prelude);
 	if is_root {
 		let scope = &context.symbols_scope.symbols.symbols;
 		crate::frontend::symbols::report_unused(scope, context.messages);
@@ -4333,9 +4333,10 @@ fn validate_block_in_context<'a>(
 	index_in_block: &mut usize,
 	scope_id: ScopeId,
 	is_root: bool,
+	is_otherwise_first_pass: bool,
 	should_import_prelude: bool,
 ) -> Block<'a> {
-	if !is_root {
+	if !is_root && is_otherwise_first_pass {
 		create_block_traits(
 			context.when_context,
 			context.messages,
@@ -4426,7 +4427,7 @@ fn validate_block_in_context<'a>(
 		should_import_prelude,
 	);
 
-	if !is_root {
+	if !is_root && is_otherwise_first_pass {
 		create_block_functions(
 			context.when_context,
 			context.messages,
@@ -4444,9 +4445,7 @@ fn validate_block_in_context<'a>(
 			context.local_function_shape_indicies,
 			scope_id,
 		);
-	}
 
-	if !is_root {
 		validate_block_consts(context, block);
 	}
 
@@ -4774,7 +4773,15 @@ fn validate_when<'a>(
 	is_root: bool,
 ) -> Option<Block<'a>> {
 	if let Some(body) = context.when_context.evaluate_when(context.messages, &statement.item) {
-		Some(validate_block_in_context(context, &body.item, index_in_block, scope_id, is_root, false))
+		Some(validate_block_in_context(
+			context,
+			&body.item,
+			index_in_block,
+			scope_id,
+			is_root,
+			false,
+			false,
+		))
 	} else {
 		None
 	}
