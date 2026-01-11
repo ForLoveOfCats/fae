@@ -43,12 +43,6 @@ when PlatformLinux {
 	const O_CREAT = 256
 	const O_APPEND = 8
 	const O_TRUNC = 512
-
-	// TODO: This wants to be located next to the usage. However it seems
-	// there is a bug with extern functions within functions erroniously
-	// throwing a duplicate symbol error
-	extern "__acrt_iob_func"
-	fn acrt_iob_func(arg=: i32): *FileStream
 }
 
 struct DlInfo {

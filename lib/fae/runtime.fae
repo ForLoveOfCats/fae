@@ -36,9 +36,12 @@ fn perform_setup(argc: i32, argv: **u8) {
 	ArgV = argv
 
 	when PlatformWindows {
-		fae.libc.StdInFile = fae.libc.acrt_iob_func(0)
-		fae.libc.StdOutFile = fae.libc.acrt_iob_func(1)
-		fae.libc.StdErrFile = fae.libc.acrt_iob_func(2)
+		extern "__acrt_iob_func"
+		fn acrt_iob_func(arg=: i32): *fae.libc.FileStream
+
+		fae.libc.StdInFile = acrt_iob_func(0)
+		fae.libc.StdOutFile = acrt_iob_func(1)
+		fae.libc.StdErrFile = acrt_iob_func(2)
 	}
 }
 
