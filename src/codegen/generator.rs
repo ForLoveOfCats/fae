@@ -14,7 +14,7 @@ use crate::frontend::type_store::{NumericKind, TypeId, TypeStore};
 pub trait Generator {
 	type Binding: Clone + Copy + std::fmt::Debug;
 
-	fn register_type_descriptions(&mut self, type_store: &mut TypeStore);
+	fn register_type_descriptions(&mut self, type_store: &mut TypeStore, lang_items: &LangItems);
 
 	fn register_statics(&mut self, type_store: &mut TypeStore, statics: &Statics);
 

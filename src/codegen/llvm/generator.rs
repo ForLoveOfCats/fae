@@ -116,8 +116,7 @@ pub struct LLVMTypes {
 	pub opaque_pointer: LLVMTypeRef,
 	pub void_struct: LLVMTypeRef,
 	pub slice_struct: LLVMTypeRef,
-	pub range_struct: LLVMTypeRef,
-
+	pub range_struct: Option<LLVMTypeRef>,
 	user_type_structs: Vec<Vec<UserTypeStruct>>,
 	array_types: Vec<FxHashMap<u64, LLVMTypeRef>>,
 }
@@ -130,13 +129,12 @@ impl LLVMTypes {
 
 			let void_struct = LLVMStructTypeInContext(context, [].as_mut_ptr(), 0, false as _);
 			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
-			let range_struct = LLVMStructTypeInContext(context, [i64_type, i64_type].as_mut_ptr(), 2, false as _);
 
 			LLVMTypes {
 				opaque_pointer,
 				void_struct,
 				slice_struct,
-				range_struct,
+				range_struct: None,
 				user_type_structs: Vec::new(),
 				array_types: Vec::new(),
 			}
@@ -593,7 +591,7 @@ impl<C: Classifier> LLVMGenerator<C> {
 		Binding { type_id, kind }
 	}
 
-	fn create_user_type_descriptions(&mut self, type_store: &mut TypeStore) {
+	fn create_user_type_descriptions(&mut self, type_store: &mut TypeStore, lang_items: &LangItems) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
 		for user_type in type_store.user_types.read().iter() {
@@ -615,6 +613,11 @@ impl<C: Classifier> LLVMGenerator<C> {
 			}));
 			self.llvm_types.user_type_structs.push(specializations);
 		}
+
+		assert_eq!(self.llvm_types.range_struct, None);
+		let range_type_id = lang_items.range_type.unwrap();
+		let range_struct = self.llvm_types.type_to_llvm_type(self.context, type_store, range_type_id);
+		self.llvm_types.range_struct = Some(range_struct);
 	}
 
 	fn create_array_type_descriptions(&mut self, type_store: &mut TypeStore) {
@@ -821,8 +824,8 @@ impl<C: Classifier> LLVMGenerator<C> {
 impl<C: Classifier> Generator for LLVMGenerator<C> {
 	type Binding = Binding;
 
-	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
-		self.create_user_type_descriptions(type_store);
+	fn register_type_descriptions(&mut self, type_store: &mut TypeStore, lang_items: &LangItems) {
+		self.create_user_type_descriptions(type_store, lang_items);
 		self.create_array_type_descriptions(type_store);
 
 		self.fill_user_type_descriptions(type_store);
@@ -1611,11 +1614,12 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
 			let i1_type = LLVMInt1TypeInContext(self.context);
+			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(initializer);
-			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 0, c"".as_ptr());
 			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"for_range.range_start".as_ptr());
-			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 1, c"".as_ptr());
 			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"for_range.range_end".as_ptr());
 
 			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
@@ -2601,11 +2605,12 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			let end_in_bounds_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
+			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(range);
-			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 0, c"".as_ptr());
 			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"generate_array_slice.range_start".as_ptr());
-			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 1, c"".as_ptr());
 			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"generate_array_slice.range_end".as_ptr());
 
 			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
@@ -2746,11 +2751,12 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			let end_in_bounds_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
+			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(range);
-			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 0, c"".as_ptr());
 			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"generate_slice_slice.range_start".as_ptr());
-			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 1, c"".as_ptr());
 			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"generate_slice_slice.range_end".as_ptr());
 
 			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
@@ -3191,7 +3197,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 		if op == BinaryOperator::Range {
 			unsafe {
-				let llvm_type = self.llvm_types.range_struct;
+				let llvm_type = self.llvm_types.range_struct.unwrap();
 				let alloca = self.build_alloca(llvm_type, c"generate_binary_operation.range_alloca");
 
 				let start_name = c"generate_binary_operation.range_start_pointer".as_ptr();

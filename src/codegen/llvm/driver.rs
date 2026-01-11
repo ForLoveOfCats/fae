@@ -323,12 +323,12 @@ pub fn generate_code<'a>(
 			Vec::new()
 		};
 
-		let executable_path = PathBuf::from(format!("{TARGET_DIR}")).join(name);
+		let executable_path = PathBuf::from(format!("{TARGET_DIR}")).join(format!("{name}.exe"));
 		let out_path = unsafe { str::from_utf8_unchecked(executable_path.as_os_str().as_encoded_bytes()) };
 
 		let mut command = Command::new(linker)
 			.arg("/nologo")
-			.arg("/subsystem:windows")
+			.arg("/subsystem:console")
 			.arg("kernel32.lib")
 			.arg("user32.lib")
 			.arg("msvcrt.lib")
