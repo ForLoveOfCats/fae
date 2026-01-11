@@ -86,8 +86,13 @@ when PlatformWindows {
 	fn dladdr(address: *void, info=: *mut DlInfo): i32
 }
 
-extern "close"
-fn close(file_descriptor=: i32): i32
+when PlatformWindows {
+	extern "_close"
+	fn close(file_descriptor=: i32): i32
+} else {
+	extern "close"
+	fn close(file_descriptor=: i32): i32
+}
 
 extern "exit"
 fn exit(code=: i32): noreturn
@@ -119,8 +124,13 @@ fn memmove(destination: *mut u8, source: *u8, size: usize): *mut u8
 extern "memset"
 fn memset(destination: *mut u8, value: u8, size: usize): *mut u8
 
-extern "open"
-fn open(pathname: *u8, flags: i32, ...): i32
+when PlatformWindows {
+	extern "_open"
+	fn open(pathname: *u8, flags: i32, ...): i32
+} else {
+	extern "open"
+	fn open(pathname: *u8, flags: i32, ...): i32
+}
 
 extern "printf"
 fn printf(pointer=: *u8, ...)
