@@ -22,6 +22,7 @@ impl Classifier for SysvClassifer {
 	}
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 struct ClassifyResult {
 	new_classes_len: usize,
@@ -29,6 +30,7 @@ struct ClassifyResult {
 }
 
 // Huge thanks to the Zig selfhost compiler for making the spec algorithm make sense
+#[allow(unused)]
 fn classify_type_internal<'buf>(
 	type_store: &mut TypeStore,
 	buffer: &'buf mut [Class; 9],
