@@ -2,11 +2,14 @@ static ArgC: i32
 static ArgV: **u8
 
 when ProvideMain {
-
-	when PlatformWindows {
-		export "main"
-		fn fae_runtime_main_redirect(argc: i32, argv: **u8): i32 {
-			return fae_runtime_main(argc, argv)
+	when WindowsSubsystemWindows {
+		export "WinMain"
+		fn fae_runtime_main_redirect(/* TODO */): i32 {
+			// TODO: At least provide the executable path
+			return fae_runtime_main(
+				argc: 0
+				argv: null_pointer<*u8>()
+			)
 		}
 	} else {
 		export "main"

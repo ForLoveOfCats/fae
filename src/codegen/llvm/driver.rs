@@ -309,8 +309,16 @@ pub fn generate_code<'a>(
 
 	#[cfg(target_os = "windows")]
 	{
+		use crate::frontend::project::WindowsSubsystem;
+
 		let default_linker = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe";
 		let linker = project_config.windows_linker.as_deref().unwrap_or(default_linker);
+
+		let subsystem = match project_config.windows_subsystem {
+			WindowsSubsystem::Console => "/subsystem:console",
+			WindowsSubsystem::Windows => "/subsystem:windows",
+		};
+
 		let additional_flags = project_config.windows_additional_linker_flags.clone().unwrap_or(Vec::new());
 		let additional_objects = if let Some(objects) = &project_config.windows_additional_linker_objects {
 			let mut additional_objects = Vec::with_capacity(objects.len());
@@ -328,27 +336,14 @@ pub fn generate_code<'a>(
 
 		let mut command = Command::new(linker)
 			.arg("/nologo")
-			.arg("/subsystem:console")
+			.arg(subsystem)
 			.arg("kernel32.lib")
 			.arg("user32.lib")
 			.arg("msvcrt.lib")
 			.arg("libucrt.lib")
 			.arg("libvcruntime.lib")
-			// .arg("-export-dynamic")
-			// .arg("--hash-style=gnu")
-			// .arg("--build-id")
-			// .arg("--eh-frame-hdr")
-			// .arg("-m")
-			// .arg("elf_x86_64")
-			// .arg("/usr/lib/crt1.o")
-			// .arg("/usr/lib/crti.o")
 			.args(additional_objects)
 			.arg(object_path)
-			// .arg("/usr/lib/crtn.o")
-			// .arg("/usr/lib/libc.so")
-			// .arg("/usr/lib/libm.so")
-			// .arg("-dynamic-linker")
-			// .arg("/lib64/ld-linux-x86-64.so.2")
 			.args(additional_flags)
 			.arg(format!("/out:{out_path}"))
 			.spawn()

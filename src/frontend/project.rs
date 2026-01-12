@@ -27,6 +27,15 @@ fn provide_main_default() -> bool {
 	return true;
 }
 
+#[derive(Debug, Deserialize, Default, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowsSubsystem {
+	#[default]
+	Console,
+	Windows,
+}
+
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
@@ -36,25 +45,18 @@ pub struct ProjectConfig {
 	#[serde(default = "provide_main_default")]
 	pub provide_main: bool,
 
-	#[allow(dead_code)]
 	pub linux_linker: Option<String>,
-	#[allow(dead_code)]
 	pub linux_additional_linker_flags: Option<Vec<String>>,
-	#[allow(dead_code)]
 	pub linux_additional_linker_objects: Option<Vec<String>>,
 
-	#[allow(dead_code)]
 	pub darwin_linker: Option<String>,
-	#[allow(dead_code)]
 	pub darwin_additional_linker_flags: Option<Vec<String>>,
-	#[allow(dead_code)]
 	pub darwin_additional_linker_objects: Option<Vec<String>>,
 
-	#[allow(dead_code)]
+	#[serde(default)]
+	pub windows_subsystem: WindowsSubsystem,
 	pub windows_linker: Option<String>,
-	#[allow(dead_code)]
 	pub windows_additional_linker_flags: Option<Vec<String>>,
-	#[allow(dead_code)]
 	pub windows_additional_linker_objects: Option<Vec<String>>,
 }
 
@@ -187,6 +189,7 @@ pub fn build_project(
 
 	let when_context = WhenContext {
 		target_platform,
+		windows_subsystem: project_config.windows_subsystem,
 		release_mode: cli_arguments.optimize_artifacts,
 		provide_main: project_config.provide_main,
 		in_compiler_test,

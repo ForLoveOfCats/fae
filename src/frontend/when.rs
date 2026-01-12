@@ -1,10 +1,11 @@
 use crate::frontend::error::Messages;
-use crate::frontend::project::TargetPlatform;
+use crate::frontend::project::{TargetPlatform, WindowsSubsystem};
 use crate::frontend::tree::{Block, Node, WhenElseChain};
 
 #[derive(Debug)]
 pub struct WhenContext {
 	pub target_platform: TargetPlatform,
+	pub windows_subsystem: WindowsSubsystem,
 	pub release_mode: bool,
 	pub provide_main: bool,
 	pub in_test: bool,
@@ -33,6 +34,10 @@ impl WhenContext {
 			"PlatformDarwin" => self.target_platform == TargetPlatform::Darwin,
 
 			"PlatformWindows" => self.target_platform == TargetPlatform::Windows,
+
+			"WindowsSubsystemConsole" => self.windows_subsystem == WindowsSubsystem::Console,
+
+			"WindowsSubsystemWindows" => self.windows_subsystem == WindowsSubsystem::Windows,
 
 			"DebugBuild" => !self.release_mode,
 

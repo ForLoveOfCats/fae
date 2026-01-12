@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::cli::CliArguments;
 use crate::color::*;
-use crate::frontend::project::{build_project, ProjectConfig};
+use crate::frontend::project::{build_project, ProjectConfig, WindowsSubsystem};
 
 pub fn run_tests(mut cli_arguments: CliArguments) -> ! {
 	let mut test_count: u64 = 0;
@@ -116,6 +116,7 @@ fn run_test(
 		darwin_linker: None,
 		darwin_additional_linker_flags: None,
 		darwin_additional_linker_objects: None,
+		windows_subsystem: WindowsSubsystem::Console,
 		windows_linker: None,
 		windows_additional_linker_flags: None,
 		windows_additional_linker_objects: None,
