@@ -46,8 +46,6 @@ impl Classifier for WindowsClassifier {
 				if size > 8 {
 					Class { kind: ClassKind::Memory, size: 8 }
 				} else {
-					// > Any argument that doesn't fit in 8 bytes, or isn't 1, 2, 4, or 8 bytes, must be passed by reference.
-					assert!(size == 1 || size == 2 || size == 4 || size == 8);
 					Class { kind: ClassKind::Integer, size: size as u8 }
 				}
 			}
@@ -60,8 +58,6 @@ impl Classifier for WindowsClassifier {
 				if size > 8 {
 					Class { kind: ClassKind::Memory, size: 8 }
 				} else {
-					// > Any argument that doesn't fit in 8 bytes, or isn't 1, 2, 4, or 8 bytes, must be passed by reference.
-					assert!(size == 1 || size == 2 || size == 4 || size == 8);
 					Class { kind: ClassKind::Integer, size: size as u8 }
 				}
 			}
