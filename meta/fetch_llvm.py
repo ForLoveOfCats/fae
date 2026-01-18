@@ -291,14 +291,14 @@ def windows_main():
 	input()
 	print()
 
-	# remove_llvm_folder_if_exists()
+	remove_llvm_folder_if_exists()
 
 	cpu_count = multiprocessing.cpu_count()
 	jobs = user_number("How many compiler processes to use when building LLVM?", cpu_count)
 	print("This script will require no further user input to continue; you can get a coffee now, this may take a while.")
 	print()
 
-	# clone_llvm()
+	clone_llvm()
 
 	print()
 	print("LLVM source files fetched, preparing to build libc++")
