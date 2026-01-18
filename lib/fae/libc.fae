@@ -169,5 +169,15 @@ fn strlen(string=: *u8): usize
 extern "time"
 fn time(tloc=: *mut TimeT): TimeT
 
-extern "write"
-fn write(file_descriptor=: i32, buffer: *u8, size: usize): isize
+when PlatformWindows {
+	extern "_write"
+	fn _write(file_descriptor=: i32, buffer: *u8, size: u32): i32
+
+	fn write(file_descriptor=: i32, buffer: *u8, size: usize): isize {
+		assert(size <= 4294967295) // Make sure the cast is sound
+		return _write(file_descriptor, buffer, size: size.(u32)).(isize)
+	}
+} else {
+	extern "write"
+	fn write(file_descriptor=: i32, buffer: *u8, size: usize): isize
+}
