@@ -17,6 +17,7 @@ use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
 use crate::frontend::when::WhenContext;
 use crate::lock::RwLock;
+use crate::path_utils::PathUtils;
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,
@@ -100,10 +101,7 @@ pub fn build_project(
 	};
 
 	let root_name = if project_path.is_dir() {
-		let source_directory = match project_path.join(project_config.source_directory.clone()).canonicalize() {
-			Ok(source_directory) => source_directory,
-			Err(err) => usage_error!("Unable to canonicalize source directory path: {err}"),
-		};
+		let source_directory = project_path.join(project_config.source_directory.clone()).flattened();
 
 		let cwd = match std::env::current_dir() {
 			Ok(cwd) => cwd,

@@ -12,6 +12,7 @@ mod codegen;
 mod color;
 mod frontend;
 mod lock;
+mod path_utils;
 mod reference;
 mod test;
 mod version;
