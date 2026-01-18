@@ -1,6 +1,42 @@
 import fae.libc.FileStream, fprintf, fwrite, fflush, snprintf
 import fae.collections.string.String
 
+when PlatformWindows {
+	const PrintfFormatI8 = "%hhd"
+	const PrintfFormatI16 = "%hd"
+	const PrintfFormatI32 = "%d"
+	const PrintfFormatI64 = "%lld"
+
+	const PrintfFormatU8 = "%hhu"
+	const PrintfFormatU16 = "%hu"
+	const PrintfFormatU32 = "%u"
+	const PrintfFormatU64 = "%llu"
+
+	const PrintfFormatIsize = "%lld"
+	const PrintfFormatUsize = "%llu"
+
+	const PrintfFormatF32 = "%f"
+	const PrintfFormatF64 = "%f"
+} else {
+	// TODO: These are probably wrong on macOS!
+
+	const PrintfFormatI8 = "%hhd"
+	const PrintfFormatI16 = "%hd"
+	const PrintfFormatI32 = "%d"
+	const PrintfFormatI64 = "%ld"
+
+	const PrintfFormatU8 = "%hhu"
+	const PrintfFormatU16 = "%hu"
+	const PrintfFormatU32 = "%u"
+	const PrintfFormatU64 = "%lu"
+
+	const PrintfFormatIsize = "%ld"
+	const PrintfFormatUsize = "%lu"
+
+	const PrintfFormatF32 = "%f"
+	const PrintfFormatF64 = "%f"
+}
+
 #lang "format_string_item_type"
 enum FormatStringItem {
 	I8(i8)
@@ -28,21 +64,21 @@ enum FormatStringItem {
 fn print_to_file_stream(message: fstr, stream: *FileStream) {
 	fn print_fstr(message=: fstr, stream=: *FileStream) {
 		for item in message.items => match item {
-			I8 => fprintf(stream, "%hhd".pointer, item)
-			I16 => fprintf(stream, "%hd".pointer, item)
-			I32 => fprintf(stream, "%d".pointer, item)	
-			I64 => fprintf(stream, "%ld".pointer, item)
+			I8 => fprintf(stream, PrintfFormatI8.pointer, item)
+			I16 => fprintf(stream, PrintfFormatI16.pointer, item)
+			I32 => fprintf(stream, PrintfFormatI32.pointer, item)
+			I64 => fprintf(stream, PrintfFormatI64.pointer, item)
 
-			U8 => fprintf(stream, "%hhu".pointer, item)
-			U16 => fprintf(stream, "%hu".pointer, item)
-			U32 => fprintf(stream, "%u".pointer, item)
-			U64 => fprintf(stream, "%lu".pointer, item)
+			U8 => fprintf(stream, PrintfFormatU8.pointer, item)
+			U16 => fprintf(stream, PrintfFormatU16.pointer, item)
+			U32 => fprintf(stream, PrintfFormatU32.pointer, item)
+			U64 => fprintf(stream, PrintfFormatU64.pointer, item)
 
-			Isize => fprintf(stream, "%ld".pointer, item)
-			Usize => fprintf(stream, "%lu".pointer, item)
+			Isize => fprintf(stream, PrintfFormatIsize.pointer, item)
+			Usize => fprintf(stream, PrintfFormatUsize.pointer, item)
 
-			F32 => fprintf(stream, "%f".pointer, item)
-			F64 => fprintf(stream, "%f".pointer, item)
+			F32 => fprintf(stream, PrintfFormatF32.pointer, item)
+			F64 => fprintf(stream, PrintfFormatF64.pointer, item)
 
 			Bool {
 				if item => fprintf(stream, "true".pointer)
@@ -87,28 +123,28 @@ fn print_to_string(message: fstr, buffer: *mut String) {
 
 			assertf(needed_space <= space, f"needed_space: {needed_space}, space: {space}")
 		}
-	
+
 		let added_length = needed_space - /* null terminator */ 1
 		buffer.set_length(original_length + added_length)
 	}
 
 	fn print_fstr(message=: fstr, buffer=: *mut String) {
 		for item in message.items => match item {
-			I8 => perform_print<i64>(buffer, "%ld", item.(i64))
-			I16 => perform_print<i64>(buffer, "%ld", item.(i64))
-			I32 => perform_print<i64>(buffer, "%ld", item.(i64))	
-			I64 => perform_print<i64>(buffer, "%ld", item)
+			I8 => perform_print<i64>(buffer, PrintfFormatI8, item.(i64))
+			I16 => perform_print<i64>(buffer, PrintfFormatI16, item.(i64))
+			I32 => perform_print<i64>(buffer, PrintfFormatI32, item.(i64))
+			I64 => perform_print<i64>(buffer, PrintfFormatI64, item)
 
-			U8 => perform_print<u64>(buffer, "%lu", item.(u64))
-			U16 => perform_print<u64>(buffer, "%lu", item.(u64))
-			U32 => perform_print<u64>(buffer, "%lu", item.(u64))
-			U64 => perform_print<u64>(buffer, "%lu", item)
+			U8 => perform_print<u64>(buffer, PrintfFormatU8, item.(u64))
+			U16 => perform_print<u64>(buffer, PrintfFormatU16, item.(u64))
+			U32 => perform_print<u64>(buffer, PrintfFormatU32, item.(u64))
+			U64 => perform_print<u64>(buffer, PrintfFormatU64, item)
 
-			Isize => perform_print<isize>(buffer, "%zd", item)
-			Usize => perform_print<usize>(buffer, "%zu", item)
+			Isize => perform_print<isize>(buffer, PrintfFormatIsize, item)
+			Usize => perform_print<usize>(buffer, PrintfFormatUsize, item)
 
-			F32 => perform_print<f64>(buffer, "%f", item.(f64))
-			F64 => perform_print<f64>(buffer, "%f", item)
+			F32 => perform_print<f64>(buffer, PrintfFormatF32, item.(f64))
+			F64 => perform_print<f64>(buffer, PrintfFormatF64, item)
 
 			Bool {
 				if item => buffer.push_str("true")
