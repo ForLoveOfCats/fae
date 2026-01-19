@@ -284,8 +284,10 @@ def windows_main():
 	print("To accomplish this it will clone LLVM, build libc++, and build LLVM against libc++.")
 	print("This process will be quite noisy and may take a while.")
 	print()
-	print("System dependencies required: a Clang+LLD toolchain, cmake, ninja, and git.")
-	print("If any of these dependencies are missing then the fetch and build will fail.")
+	print("System dependencies required: a Clang+LLD toolchain, Visual Studio installation, cmake, ninja,")
+	print("and git. If any of these dependencies are missing then the fetch and build will fail.")
+	print()
+	print("Note that this *MUST* be run from within the Visual Studio shell environment!")
 	print()
 	print("[press enter to continue]", end="")
 	input()
@@ -304,48 +306,9 @@ def windows_main():
 	print("LLVM source files fetched, preparing to build libc++")
 	print()
 
-	# os.chdir("./llvm/libcxx")
-	# os.makedirs("./build", exist_ok=True)
-	# os.chdir("./build")
-
-	# subprocess.run([
-	# 	"cmake",
-	# 	"-G",
-	# 	"Ninja",
-	# 	"-S",
-	# 	"../../runtimes",
-	# 	"-DLLVM_ENABLE_RUNTIMES=libcxx",
-	# 	# "-DCMAKE_C_COMPILER_TARGET=x86_64-pc-windows-msvc",
-	# 	"-DCMAKE_C_COMPILER=clang-cl",
-	# 	# f"-DCMAKE_C_FLAGS=-D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -DLIBCXX_BUILDING_LIBCXXABI",
-	# 	# "-DCMAKE_CXX_COMPILER_TARGET=x86_64-pc-windows-msvc",
-	# 	"-DCMAKE_CXX_COMPILER=clang-cl",
-	# 	# f"-DCMAKE_CXX_FLAGS=-nostdinc++ -D_LIBCPP_DISABLE_EXTERN_TEMPLATE -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER -DLIBCXX_BUILDING_LIBCXXABI",
-	# 	f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
-	# ])
-
-	# print()
-	# print("libc++ build files written")
-	# print()
-
-	# subprocess.run([
-	# 	"cmake",
-	# 	"--build",
-	# 	".",
-	# ])
-
-	# print()
-	# print("libc++ has been built!")
-	# print("Preparing to build LLVM itself")
-	# print()
-
 	os.chdir("./llvm/llvm")
 	os.makedirs("./build", exist_ok=True)
 	os.chdir("./build")
-
-	# include_dir = os.path.realpath("../../libcxx/build/include/c++/v1")
-	# libcxx = os.path.realpath("../../libcxx/build/lib/libc++.lib")
-	# libcxx_abi = os.path.realpath("../../libcxx/build/lib/libc++abi.a")
 
 	subprocess.run([
 		"cmake",
@@ -355,11 +318,6 @@ def windows_main():
 		"-DCMAKE_C_COMPILER_TARGET=x86_64-pc-windows-msvc",
 		"-DCMAKE_CXX_COMPILER=clang-cl",
 		"-DCMAKE_CXX_COMPILER_TARGET=x86_64-pc-windows-msvc",
-		# f"-DCMAKE_CXX_FLAGS=-nostdinc++ -nostdlib++ -I{include_dir}",
-		# f"-DCMAKE_EXE_LINKER_FLAGS={libcxx}",
-		# f"-DCMAKE_MODULE_LINKER_FLAGS={libcxx}",
-		# f"-DCMAKE_SHARED_LINKER_FLAGS={libcxx}",
-		# f"-DCMAKE_STATIC_LINKER_FLAGS={libcxx}",
 		"-DLLVM_ENABLE_LLD=ON",
 		"-DCMAKE_BUILD_TYPE=Release",
 		f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
