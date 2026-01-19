@@ -41,5 +41,8 @@ serde = { version = "1.0.145", default-features = false, features = ["derive"] }
 git-version = "0.3.9"
 tracy-client = { version = "0.18.3", features = ["manual-lifetime"], optional = true }
 
+[target.'cfg(windows)'.dependencies]
+find-msvc-tools = "0.1.8"
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6.0"

@@ -311,9 +311,6 @@ pub fn generate_code<'a>(
 	{
 		use crate::frontend::project::WindowsSubsystem;
 
-		let default_linker = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe";
-		let linker = project_config.windows_linker.as_deref().unwrap_or(default_linker);
-
 		let subsystem = match project_config.windows_subsystem {
 			WindowsSubsystem::Console => "/subsystem:console",
 			WindowsSubsystem::Windows => "/subsystem:windows",
@@ -334,7 +331,20 @@ pub fn generate_code<'a>(
 		let executable_path = PathBuf::from(format!("{TARGET_DIR}")).join(format!("{name}.exe"));
 		let out_path = unsafe { str::from_utf8_unchecked(executable_path.as_os_str().as_encoded_bytes()) };
 
-		let mut command = Command::new(linker)
+		let mut linker = match project_config.windows_linker.as_deref() {
+			Some(linker) => Command::new(linker),
+
+			// TODO: Do not hard-code "x64"
+			None => match find_msvc_tools::find_tool("x64", "link.exe") {
+				Some(tool) => tool.to_command(),
+				None => {
+					eprintln!("Unable to locate MSVC link.exe. Do you have Visual Studio installed?");
+					std::process::exit(-1);
+				}
+			},
+		};
+
+		let mut command = linker
 			.arg("/nologo")
 			.arg(subsystem)
 			.arg("kernel32.lib")
