@@ -450,7 +450,7 @@ impl<C: Classifier> Abi<C> {
 				format!("fae.function.{}", function_shape.name.item)
 			};
 
-			(CString::new(name).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
+			(CString::new(name).unwrap(), LLVMLinkage::LLVMInternalLinkage)
 		};
 
 		let llvm_function = unsafe {
