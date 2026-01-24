@@ -45,6 +45,8 @@ fn perform_setup(argc: i32, argv: **u8) {
 		fae.libc.StdInFile = acrt_iob_func(0)
 		fae.libc.StdOutFile = acrt_iob_func(1)
 		fae.libc.StdErrFile = acrt_iob_func(2)
+
+		fae.libc._set_fmode(fae.libc._O_BINARY)
 	}
 }
 

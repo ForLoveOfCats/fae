@@ -119,6 +119,14 @@ extern "memset"
 fn memset(destination: *mut u8, value: u8, size: usize): *mut u8
 
 when PlatformWindows {
+	const _O_TEXT: i32 = 0x4000
+	const _O_BINARY: i32 = 0x8000
+
+	extern "_set_fmode"
+	fn _set_fmode(mode=: i32): i32
+}
+
+when PlatformWindows {
 	extern "_open"
 	fn open(pathname: *u8, flags: i32, ...): i32
 } else {
