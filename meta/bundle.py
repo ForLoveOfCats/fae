@@ -132,6 +132,35 @@ def macos_main(args):
 			"./Fae-macOS.dmg",
 		])
 
+def windows_main():
+	print("Building Fae compiler in release mode")
+	print()
+
+	subprocess.run([
+		"cargo",
+		"build",
+		"--profile=bundled",
+		"--features=bundled",
+	])
+
+	print()
+	print("Copying files")
+
+	shutil.rmtree("./target/bundle", ignore_errors=True)
+	try: os.remove("./target/Fae-Windows.zip")
+	except: pass
+	os.makedirs("./target/bundle/fae", exist_ok=True)
+
+	shutil.copy("./target/bundled/fae.exe", "./target/bundle/fae/fae.exe")
+	copy_common_files()
+
+	print("Archiving bundle")
+
+	os.chdir("./target")
+	shutil.make_archive("Fae-Windows", "zip", "./bundle")
+
+	print("Produced `./target/Fae-Linux.zip`")
+
 def call_external(args):
 	process = subprocess.run(args, capture_output=True)
 	return process.stdout
@@ -157,5 +186,8 @@ elif platform == "darwin":
 	parser.add_argument("--notarization-keychain-profile", action="store", default=None)
 	args = parser.parse_args()
 	macos_main(args)
+elif platform == "windows":
+	args = parser.parse_args()
+	windows_main()
 else:
     print(f"Bundle script does not currently support {platform.system()}")
