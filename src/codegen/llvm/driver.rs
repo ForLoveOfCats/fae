@@ -348,6 +348,8 @@ pub fn generate_code<'a>(
 			.arg("/nologo")
 			.arg(subsystem)
 			.arg("/nodefaultlib")
+			.arg("/noimplib")
+			.arg("/noexp")
 			.arg("kernel32.lib")
 			.arg("msvcrt.lib")
 			.arg("ucrt.lib")
