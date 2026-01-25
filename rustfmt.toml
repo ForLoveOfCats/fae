@@ -1,4 +1,6 @@
 hard_tabs = true
+newline_style = "Unix"
+
 struct_lit_width = 60
 struct_variant_width = 60
 fn_call_width = 90

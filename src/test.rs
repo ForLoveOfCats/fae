@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::cli::CliArguments;
 use crate::color::*;
-use crate::frontend::project::{build_project, ProjectConfig};
+use crate::frontend::project::{build_project, ProjectConfig, WindowsSubsystem};
 
 pub fn run_tests(mut cli_arguments: CliArguments) -> ! {
 	let mut test_count: u64 = 0;
@@ -116,6 +116,10 @@ fn run_test(
 		darwin_linker: None,
 		darwin_additional_linker_flags: None,
 		darwin_additional_linker_objects: None,
+		windows_subsystem: WindowsSubsystem::Console,
+		windows_linker: None,
+		windows_additional_linker_flags: None,
+		windows_additional_linker_objects: None,
 	};
 
 	let test_config = if let Ok(config_file) = std::fs::read_to_string(&test_config_path) {
@@ -186,7 +190,7 @@ fn run_test(
 	}
 
 	if let Some(expected_stdout) = expected_stdout {
-		if actual_stdout != expected_stdout.as_bytes() {
+		if !compare_output_matching(&actual_stdout, expected_stdout.as_bytes()) {
 			stderr().lock().write_all(&actual_stdout).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got different stdout than expected{RESET}\n");
 			test_failed = true;
@@ -198,7 +202,7 @@ fn run_test(
 	}
 
 	if let Some(expected_stderr) = expected_stderr {
-		if actual_stderr != expected_stderr.as_bytes() {
+		if !compare_output_matching(&actual_stderr, expected_stderr.as_bytes()) {
 			stderr().lock().write_all(&actual_stderr).unwrap();
 			eprintln!("\n{RED}Compiler test harness: Got different stderr than expected{RESET}\n");
 			failures.push(test_name);
@@ -217,4 +221,36 @@ fn run_test(
 		*successes += 1;
 		true
 	}
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn compare_output_matching(actual: &[u8], expected: &[u8]) -> bool {
+	actual == expected
+}
+
+#[cfg(target_os = "windows")]
+fn compare_output_matching(actual: &[u8], expected: &[u8]) -> bool {
+	fn next_is(actual_iter: &mut impl Iterator<Item = u8>, expected_byte: u8) -> bool {
+		actual_iter.next().map_or(false, |b| b == expected_byte)
+	}
+
+	let mut actual_iter = actual.iter().copied();
+
+	for &expected_byte in expected {
+		if expected_byte == b'\n' {
+			if !(next_is(&mut actual_iter, b'\r') && next_is(&mut actual_iter, b'\n')) {
+				return false;
+			}
+		} else {
+			if !next_is(&mut actual_iter, expected_byte) {
+				return false;
+			}
+		}
+	}
+
+	if actual_iter.next().is_some() {
+		return false; // Some actual bytes left over once we have consumed all the expected
+	}
+
+	true
 }

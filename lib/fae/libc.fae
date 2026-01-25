@@ -32,6 +32,17 @@ when PlatformLinux {
 	const O_CREAT = 512
 	const O_APPEND = 8
 	const O_TRUNC = 1024
+} else when PlatformWindows {
+	// Initalized on startup by `fae.runtime.perform_setup`
+	static StdInFile: *FileStream
+	static StdOutFile: *FileStream
+	static StdErrFile: *FileStream
+
+	const O_RDONLY = 0
+	const O_RDWR = 2
+	const O_CREAT = 256
+	const O_APPEND = 8
+	const O_TRUNC = 512
 }
 
 struct DlInfo {
@@ -54,20 +65,28 @@ fn atoi(string=: *u8): i32
 extern "atol"
 fn atol(string=: *u8): i64
 
-extern "backtrace"
-fn backtrace(address_buffer: *mut *void, length: i32): i32
+when PlatformWindows {
+} else {
+	extern "backtrace"
+	fn backtrace(address_buffer: *mut *void, length: i32): i32
 
-extern "backtrace_symbols"
-fn backtrace_symbols(addresses: **void, length: i32): **u8
+	extern "backtrace_symbols"
+	fn backtrace_symbols(addresses: **void, length: i32): **u8
 
-extern "backtrace_symbols_fd"
-fn backtrace_symbols_fd(addresses: **void, length: i32, fd: i32)
+	extern "backtrace_symbols_fd"
+	fn backtrace_symbols_fd(addresses: **void, length: i32, fd: i32)
 
-extern "close"
-fn close(file_descriptor=: i32): i32
+	extern "dladdr"
+	fn dladdr(address: *void, info=: *mut DlInfo): i32
+}
 
-extern "dladdr"
-fn dladdr(address: *void, info=: *mut DlInfo): i32
+when PlatformWindows {
+	extern "_close"
+	fn close(file_descriptor=: i32): i32
+} else {
+	extern "close"
+	fn close(file_descriptor=: i32): i32
+}
 
 extern "exit"
 fn exit(code=: i32): noreturn
@@ -99,8 +118,21 @@ fn memmove(destination: *mut u8, source: *u8, size: usize): *mut u8
 extern "memset"
 fn memset(destination: *mut u8, value: u8, size: usize): *mut u8
 
-extern "open"
-fn open(pathname: *u8, flags: i32, ...): i32
+when PlatformWindows {
+	const _O_TEXT: i32 = 0x4000
+	const _O_BINARY: i32 = 0x8000
+
+	extern "_set_fmode"
+	fn _set_fmode(mode=: i32): i32
+}
+
+when PlatformWindows {
+	extern "_open"
+	fn open(pathname: *u8, flags: i32, ...): i32
+} else {
+	extern "open"
+	fn open(pathname: *u8, flags: i32, ...): i32
+}
 
 extern "printf"
 fn printf(pointer=: *u8, ...)
@@ -111,8 +143,18 @@ fn puts(pointer=: *u8)
 extern "rand"
 fn rand(): i32
 
-extern "read"
-fn read(file_descriptor=: i32, buffer: *mut u8, size: usize): isize
+when PlatformWindows {
+	extern "_read"
+	fn _read(file_descriptor=: i32, buffer: *mut u8, size: u32): i32
+
+	fn read(file_descriptor=: i32, buffer: *mut u8, size: usize): isize {
+		assert(size <= 4294967295) // Make sure the cast is sound
+		return _read(file_descriptor, buffer, size: size.(u32)).(isize)
+	}
+} else {
+	extern "read"
+	fn read(file_descriptor=: i32, buffer: *mut u8, size: usize): isize
+}
 
 extern "realloc"
 fn realloc(ptr=: *mut u8, new_size: usize): *mut u8
@@ -135,5 +177,15 @@ fn strlen(string=: *u8): usize
 extern "time"
 fn time(tloc=: *mut TimeT): TimeT
 
-extern "write"
-fn write(file_descriptor=: i32, buffer: *u8, size: usize): isize
+when PlatformWindows {
+	extern "_write"
+	fn _write(file_descriptor=: i32, buffer: *u8, size: u32): i32
+
+	fn write(file_descriptor=: i32, buffer: *u8, size: usize): isize {
+		assert(size <= 4294967295) // Make sure the cast is sound
+		return _write(file_descriptor, buffer, size: size.(u32)).(isize)
+	}
+} else {
+	extern "write"
+	fn write(file_descriptor=: i32, buffer: *u8, size: usize): isize
+}

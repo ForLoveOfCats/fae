@@ -1,60 +1,36 @@
+use crate::codegen::classification::{Class, ClassKind, Classifier};
 use crate::frontend::type_store::{Array, Layout, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
 
-#[derive(Debug, Clone, Copy)]
-pub struct Class {
-	pub kind: ClassKind,
-	pub size: u8,
+#[allow(unused)]
+pub struct SysvClassifer {
+	// Note: It is counterintuitive that this array has space for *nine* classes when
+	// there should never be more than eight. However the algorithm as implemented
+	// below can use up to one extra as a temporary spot to put a class which is about
+	// to be combined, bringing the total classes back down to eight.
+	buffer: [Class; 9],
 }
 
-impl std::default::Default for Class {
-	fn default() -> Self {
-		Class { kind: ClassKind::NoClass, size: 0 }
+impl Classifier for SysvClassifer {
+	fn new() -> Self {
+		SysvClassifer { buffer: Default::default() }
+	}
+
+	fn classify_type<'a>(&'a mut self, type_store: &mut TypeStore, type_id: TypeId) -> &'a [Class] {
+		let result = classify_type_internal(type_store, &mut self.buffer, 0, type_id);
+		assert!(result.new_classes_len <= 8);
+		&self.buffer[0..result.new_classes_len]
 	}
 }
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClassKind {
-	Integer,
-	Boolean,
-	Pointer,
-	SSE,
-	SSECombine,
-	SSEUp,
-	X87,
-	X87Up,
-	ComplexX87,
-	Memory,
-	NoClass,
-}
-
-// Note: It is counterintuitive that this array has space for *nine* classes when
-// there should never be more than eight. However the algorithm as implemented
-// below can use up to one extra as a temporary spot to put a class which is about
-// to be combined, bringing the total classes back down to eight.
-#[inline]
-pub fn classification_buffer() -> [Class; 9] {
-	Default::default()
-}
-
-pub fn classify_type<'buf>(
-	type_store: &mut TypeStore,
-	buffer: &'buf mut [Class; 9],
-	buffer_index: usize,
-	type_id: TypeId,
-) -> usize {
-	let result = classify_type_internal(type_store, buffer, buffer_index, type_id);
-	assert!(result.new_classes_len <= 8);
-	result.new_classes_len
-}
-
+#[allow(unused)]
 #[derive(Debug)]
-pub struct ClassifyResult {
-	pub new_classes_len: usize,
-	pub itself_may_be_combined: bool,
+struct ClassifyResult {
+	new_classes_len: usize,
+	itself_may_be_combined: bool,
 }
 
 // Huge thanks to the Zig selfhost compiler for making the spec algorithm make sense
+#[allow(unused)]
 fn classify_type_internal<'buf>(
 	type_store: &mut TypeStore,
 	buffer: &'buf mut [Class; 9],
@@ -149,11 +125,11 @@ fn classify_type_internal<'buf>(
 
 					let mut output_len = 0;
 					for field in specialization.fields.iter() {
-						let mut field_buffer = classification_buffer();
-						let result = classify_type_internal(type_store, &mut field_buffer, 0, field.type_id);
-						output_len = output_len.max(result.new_classes_len);
+						let mut field_classifier = SysvClassifer::new();
+						let field_buffer = field_classifier.classify_type(type_store, field.type_id);
+						output_len = output_len.max(field_buffer.len());
 
-						for (index, field_class) in field_buffer[..result.new_classes_len].iter().enumerate() {
+						for (index, field_class) in field_buffer.iter().enumerate() {
 							buffer[buffer_index + index] = merge_classes_union(buffer[buffer_index + index], *field_class);
 						}
 					}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import stat
 import shutil
 import subprocess
 import multiprocessing
@@ -278,10 +279,80 @@ def macos_main():
 	print()
 	print("LLVM has been fetched and built!")
 
+def windows_main():
+	print("This script will build a local copy of LLVM for use in developing and bundling the Fae compiler.")
+	print("To accomplish this it will clone LLVM, build libc++, and build LLVM against libc++.")
+	print("This process will be quite noisy and may take a while.")
+	print()
+	print("System dependencies required: a Clang+LLD toolchain, Visual Studio installation, cmake, ninja,")
+	print("and git. If any of these dependencies are missing then the fetch and build will fail.")
+	print()
+	print("Note that this *MUST* be run from within the Visual Studio shell environment!")
+	print()
+	print("[press enter to continue]", end="")
+	input()
+	print()
+
+	remove_llvm_folder_if_exists()
+
+	cpu_count = multiprocessing.cpu_count()
+	jobs = user_number("How many compiler processes to use when building LLVM?", cpu_count)
+	print("This script will require no further user input to continue; you can get a coffee now, this may take a while.")
+	print()
+
+	clone_llvm()
+
+	print()
+	print("LLVM source files fetched, preparing to build libc++")
+	print()
+
+	os.chdir("./llvm/llvm")
+	os.makedirs("./build", exist_ok=True)
+	os.chdir("./build")
+
+	subprocess.run([
+		"cmake",
+		"-G",
+		"Ninja",
+		"-DCMAKE_C_COMPILER=clang-cl",
+		"-DCMAKE_C_COMPILER_TARGET=x86_64-pc-windows-msvc",
+		"-DCMAKE_CXX_COMPILER=clang-cl",
+		"-DCMAKE_CXX_COMPILER_TARGET=x86_64-pc-windows-msvc",
+		"-DLLVM_ENABLE_LLD=ON",
+		"-DCMAKE_BUILD_TYPE=Release",
+		f"-DLLVM_PARALLEL_COMPILE_JOBS={jobs}",
+		"-DLLVM_PARALLEL_LINK_JOBS=1", # Linking can absolutely slurp memory
+		"-DLLVM_ENABLE_ZLIB=OFF",
+		"-DLLVM_ENABLE_ZSTD=OFF",
+		"-DLLVM_ENABLE_TERMINFO=OFF",
+		"-DLLVM_ENABLE_LIBXML2=OFF",
+		"-DLLVM_BUILD_BENCHMARKS=OFF",
+		"-DLLVM_INCLUDE_BENCHMARKS=OFF",
+		"-DLLVM_TARGETS_TO_BUILD=X86",
+		".."
+	])
+
+	print()
+	print("LLVM build files written")
+	print()
+
+	subprocess.run([
+		"cmake",
+		"--build",
+		".",
+	])
+
+	print()
+	print("LLVM has been fetched and built!")
+
 def remove_llvm_folder_if_exists():
+	def rm_readonly(action, name, exc):
+		os.chmod(name, stat.S_IWRITE)
+		os.remove(name)
+
 	if os.path.exists("./llvm"):
 		if user_confirm("LLVM folder already present, remove and continue?"):
-			shutil.rmtree("./llvm")
+			shutil.rmtree("./llvm", onerror=rm_readonly)
 			print("Existing LLVM folder removed")
 			print()
 		else:
@@ -335,5 +406,7 @@ elif platform.system().lower() == "linux":
 	linux_main()
 elif platform.system().lower() == "darwin":
 	macos_main()
+elif platform.system().lower() == "windows":
+	windows_main()
 else:
     print(f"Fetch LLVM script does not currently support {platform.system()}")

@@ -31,7 +31,7 @@ pub fn generate<'a, G: Generator>(
 	optimizing: bool,
 	_compile_command: CompileCommand,
 ) {
-	generator.register_type_descriptions(type_store);
+	generator.register_type_descriptions(type_store, lang_items);
 	generator.register_statics(type_store, statics);
 	generator.register_functions(parsed_files, type_store, function_store, optimizing);
 

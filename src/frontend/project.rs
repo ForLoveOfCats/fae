@@ -17,6 +17,7 @@ use crate::frontend::type_store::TypeStore;
 use crate::frontend::validator::validate;
 use crate::frontend::when::WhenContext;
 use crate::lock::RwLock;
+use crate::path_utils::PathUtils;
 
 pub struct BuiltProject {
 	pub binary_path: Option<PathBuf>,
@@ -27,6 +28,15 @@ fn provide_main_default() -> bool {
 	return true;
 }
 
+#[derive(Debug, Deserialize, Default, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowsSubsystem {
+	#[default]
+	Console,
+	Windows,
+}
+
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
@@ -36,25 +46,26 @@ pub struct ProjectConfig {
 	#[serde(default = "provide_main_default")]
 	pub provide_main: bool,
 
-	#[allow(dead_code)]
 	pub linux_linker: Option<String>,
-	#[allow(dead_code)]
 	pub linux_additional_linker_flags: Option<Vec<String>>,
-	#[allow(dead_code)]
 	pub linux_additional_linker_objects: Option<Vec<String>>,
 
-	#[allow(dead_code)]
 	pub darwin_linker: Option<String>,
-	#[allow(dead_code)]
 	pub darwin_additional_linker_flags: Option<Vec<String>>,
-	#[allow(dead_code)]
 	pub darwin_additional_linker_objects: Option<Vec<String>>,
+
+	#[serde(default)]
+	pub windows_subsystem: WindowsSubsystem,
+	pub windows_linker: Option<String>,
+	pub windows_additional_linker_flags: Option<Vec<String>>,
+	pub windows_additional_linker_objects: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetPlatform {
 	Linux,
 	Darwin,
+	Windows,
 }
 
 pub fn build_project(
@@ -90,10 +101,7 @@ pub fn build_project(
 	};
 
 	let root_name = if project_path.is_dir() {
-		let source_directory = match project_path.join(project_config.source_directory.clone()).canonicalize() {
-			Ok(source_directory) => source_directory,
-			Err(err) => usage_error!("Unable to canonicalize source directory path: {err}"),
-		};
+		let source_directory = project_path.join(project_config.source_directory.clone()).flattened();
 
 		let cwd = match std::env::current_dir() {
 			Ok(cwd) => cwd,
@@ -174,9 +182,12 @@ pub fn build_project(
 	let target_platform = TargetPlatform::Linux;
 	#[cfg(target_os = "macos")]
 	let target_platform = TargetPlatform::Darwin;
+	#[cfg(target_os = "windows")]
+	let target_platform = TargetPlatform::Windows;
 
 	let when_context = WhenContext {
 		target_platform,
+		windows_subsystem: project_config.windows_subsystem,
 		release_mode: cli_arguments.optimize_artifacts,
 		provide_main: project_config.provide_main,
 		in_compiler_test,
@@ -270,7 +281,7 @@ pub fn build_project(
 	assert!(!codegen_messages.any_messages());
 
 	if cli_arguments.command != CompileCommand::CompilerTest {
-		message_output.alertln("    Built executable", format_args!("{}", binary_path.display()));
+		message_output.alertln("    Built executable", format_args!("{}", binary_path.unix_path_display()));
 	}
 
 	#[cfg(not(feature = "measure-lock-contention"))]
@@ -291,8 +302,12 @@ fn std_path() -> PathBuf {
 		};
 
 		path.pop();
-		path.join("./lib")
+		path.join("lib")
 	} else {
-		PathBuf::from("./lib")
+		#[cfg(target_os = "windows")]
+		return PathBuf::from(".\\lib");
+
+		#[cfg(not(target_os = "windows"))]
+		return PathBuf::from("./lib");
 	}
 }

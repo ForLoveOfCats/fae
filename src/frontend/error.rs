@@ -6,6 +6,7 @@ use crate::frontend::file::SourceFile;
 use crate::frontend::project::ProjectConfig;
 use crate::frontend::span::Span;
 use crate::frontend::symbols::Externs;
+use crate::path_utils::PathUtils;
 
 pub const TABULATOR_SIZE: usize = 4;
 
@@ -413,14 +414,14 @@ impl Message {
 				MessageKind::Error => writeln!(
 					output,
 					"{error_label_color}{stage} {kind_name}: {path_color}{}:{}{reset_color}",
-					path.display(),
+					path.unix_path_display(),
 					line_num
 				),
 
 				MessageKind::Warning => writeln!(
 					output,
 					"{warning_label_color}{stage} {kind_name}: {path_color}{}:{}{reset_color}",
-					path.display(),
+					path.unix_path_display(),
 					line_num
 				),
 			}
@@ -428,7 +429,7 @@ impl Message {
 			writeln!(
 				output,
 				"{warning_label_color}{stage}: {path_color}{}:{}{reset_color}",
-				path.display(),
+				path.unix_path_display(),
 				line_num
 			);
 		}

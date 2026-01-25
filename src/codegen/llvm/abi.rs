@@ -13,51 +13,11 @@ use llvm_sys::core::{
 use llvm_sys::prelude::*;
 use llvm_sys::{self, LLVMLinkage};
 
-use crate::codegen::amd64::sysv_abi::{self, Class, ClassKind};
+use crate::codegen::classification::{Class, ClassKind, Classifier};
 use crate::codegen::codegen;
 use crate::codegen::llvm::generator::{self, AttributeKinds, BindingKind, LLVMGenerator, LLVMTypes};
 use crate::frontend::ir::{Function, FunctionShape};
 use crate::frontend::type_store::{Layout, NumericKind, TypeId, TypeStore};
-
-pub trait LLVMAbi
-where
-	Self: Sized,
-{
-	fn new() -> Self;
-
-	fn define_function(
-		&mut self,
-		type_store: &mut TypeStore,
-		context: LLVMContextRef,
-		module: LLVMModuleRef,
-		builder: LLVMBuilderRef,
-		attribute_kinds: &AttributeKinds,
-		llvm_types: &LLVMTypes,
-		function_shape: &FunctionShape,
-		function: &Function,
-		subroutine: LLVMMetadataRef,
-	) -> DefinedFunction;
-
-	fn call_function(
-		&mut self,
-		generator: &LLVMGenerator<Self>,
-		type_store: &mut TypeStore,
-		attribute_kinds: &AttributeKinds,
-		function: &DefinedFunction,
-		arguments: &[Option<generator::Binding>],
-	) -> Option<generator::Binding>
-	where
-		Self: Sized;
-
-	fn return_value<'a, 'b>(
-		codegen_context: &mut codegen::Context<'a, 'b>,
-		generator: &mut generator::LLVMGenerator<Self>,
-		llvm_function: LLVMValueRef,
-		return_type: FunctionReturnType,
-		value: Option<generator::Binding>,
-		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut generator::LLVMGenerator<Self>),
-	);
-}
 
 #[derive(Clone, Copy)]
 pub enum FunctionReturnType {
@@ -117,16 +77,29 @@ pub struct ParameterComposition {
 	pub layout: Layout,
 }
 
-pub struct SysvAbi {
+pub struct Abi<C: Classifier> {
 	return_type_buffer: Vec<LLVMTypeRef>,
 	parameter_type_buffer: Vec<LLVMTypeRef>,
 	parameter_composition_field_type_buffer: Vec<LLVMTypeRef>,
 	parameter_information_buffer: Vec<Option<ParameterInformation>>,
 	attribute_buffer: Vec<ParameterAttribute>,
 	argument_value_buffer: Vec<LLVMValueRef>,
+	_phantom: std::marker::PhantomData<C>,
 }
 
-impl SysvAbi {
+impl<C: Classifier> Abi<C> {
+	pub fn new() -> Self {
+		Abi {
+			return_type_buffer: Vec::new(),
+			parameter_type_buffer: Vec::new(),
+			parameter_composition_field_type_buffer: Vec::new(),
+			parameter_information_buffer: Vec::new(),
+			attribute_buffer: Vec::new(),
+			argument_value_buffer: Vec::new(),
+			_phantom: Default::default(),
+		}
+	}
+
 	fn map_classes_into_llvm_type_buffer<'a>(
 		context: LLVMContextRef,
 		buffer: &mut Vec<LLVMTypeRef>,
@@ -134,7 +107,7 @@ impl SysvAbi {
 	) {
 		for class in iterator {
 			match class.kind {
-				sysv_abi::ClassKind::Integer => {
+				ClassKind::Integer => {
 					let llvm_type = unsafe {
 						match class.size {
 							1 => LLVMInt8TypeInContext(context),
@@ -148,13 +121,13 @@ impl SysvAbi {
 					buffer.push(llvm_type);
 				}
 
-				sysv_abi::ClassKind::Boolean => {
+				ClassKind::Boolean => {
 					assert_eq!(class.size, 1);
 					let llvm_type = unsafe { LLVMInt1TypeInContext(context) };
 					buffer.push(llvm_type);
 				}
 
-				sysv_abi::ClassKind::SSE | sysv_abi::ClassKind::SSEUp => {
+				ClassKind::SSE | ClassKind::SSEUp => {
 					let llvm_type = unsafe {
 						match class.size {
 							2 => LLVMHalfTypeInContext(context),
@@ -166,7 +139,7 @@ impl SysvAbi {
 					buffer.push(llvm_type);
 				}
 
-				sysv_abi::ClassKind::SSECombine => {
+				ClassKind::SSECombine => {
 					// The element type doesn't really matter, it's going to be reinterpreted anyway
 					let llvm_type = unsafe {
 						match class.size {
@@ -178,16 +151,13 @@ impl SysvAbi {
 					buffer.push(llvm_type);
 				}
 
-				sysv_abi::ClassKind::Pointer | sysv_abi::ClassKind::Memory => {
+				ClassKind::Pointer | ClassKind::Memory => {
 					assert_eq!(class.size, 8);
 					let ptr_type = unsafe { LLVMPointerTypeInContext(context, 0) };
 					buffer.push(ptr_type);
 				}
 
-				sysv_abi::ClassKind::X87
-				| sysv_abi::ClassKind::X87Up
-				| sysv_abi::ClassKind::ComplexX87
-				| sysv_abi::ClassKind::NoClass => {
+				ClassKind::X87 | ClassKind::X87Up | ClassKind::ComplexX87 | ClassKind::NoClass => {
 					unreachable!("{class:?}");
 				}
 			}
@@ -209,9 +179,8 @@ impl SysvAbi {
 			return None;
 		}
 
-		let mut classes_buffer = sysv_abi::classification_buffer();
-		let classes_len = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, parameter_type_id);
-		let classes = &classes_buffer[..classes_len];
+		let mut classifier = C::new();
+		let classes = classifier.classify_type(type_store, parameter_type_id);
 		Self::map_classes_into_llvm_type_buffer(context, &mut self.parameter_type_buffer, classes.iter());
 
 		self.parameter_composition_field_type_buffer.clear();
@@ -225,7 +194,7 @@ impl SysvAbi {
 			assert_eq!(self.parameter_composition_field_type_buffer.len(), 1);
 			let llvm_type = llvm_types.type_to_llvm_type(context, type_store, parameter_type_id);
 			Some(ParameterInformation {
-				expanded_count: classes_len as u32,
+				expanded_count: classes.len() as u32,
 				kind: ParameterInformationKind::BareValue {
 					llvm_type,
 					type_id: parameter_type_id,
@@ -242,7 +211,7 @@ impl SysvAbi {
 			}
 
 			Some(ParameterInformation {
-				expanded_count: classes_len as u32,
+				expanded_count: classes.len() as u32,
 				kind: ParameterInformationKind::ByPointer {
 					pointed_type,
 					pointed_type_id: parameter_type_id,
@@ -262,7 +231,7 @@ impl SysvAbi {
 			let actual_type_id = parameter_type_id;
 			let composition = ParameterComposition { composition_struct, actual_type, actual_type_id, layout };
 			Some(ParameterInformation {
-				expanded_count: classes_len as u32,
+				expanded_count: classes.len() as u32,
 				kind: ParameterInformationKind::Composition(composition),
 			})
 		}
@@ -270,7 +239,7 @@ impl SysvAbi {
 
 	fn generate_argument(
 		&mut self,
-		generator: &LLVMGenerator<Self>,
+		generator: &LLVMGenerator<C>,
 		attribute_kinds: &AttributeKinds,
 		value: generator::Binding,
 		information: &ParameterInformation,
@@ -342,21 +311,8 @@ impl SysvAbi {
 
 		return composition_field_count;
 	}
-}
 
-impl LLVMAbi for SysvAbi {
-	fn new() -> Self {
-		SysvAbi {
-			return_type_buffer: Vec::new(),
-			parameter_type_buffer: Vec::new(),
-			parameter_composition_field_type_buffer: Vec::new(),
-			parameter_information_buffer: Vec::new(),
-			attribute_buffer: Vec::new(),
-			argument_value_buffer: Vec::new(),
-		}
-	}
-
-	fn define_function(
+	pub fn define_function(
 		&mut self,
 		type_store: &mut TypeStore,
 		context: LLVMContextRef,
@@ -378,9 +334,8 @@ impl LLVMAbi for SysvAbi {
 		let return_type = if type_store.type_layout(function.return_type).size > 0 {
 			let return_type = llvm_types.type_to_llvm_type(context, type_store, function.return_type);
 
-			let mut classes_buffer = sysv_abi::classification_buffer();
-			let classes_len = sysv_abi::classify_type(type_store, &mut classes_buffer, 0, function.return_type);
-			let classes = &classes_buffer[..classes_len];
+			let mut classifier = C::new();
+			let classes = classifier.classify_type(type_store, function.return_type);
 			Self::map_classes_into_llvm_type_buffer(context, &mut self.return_type_buffer, classes.iter());
 
 			if let Some(Class { kind: ClassKind::Memory, .. }) = classes.first() {
@@ -495,7 +450,7 @@ impl LLVMAbi for SysvAbi {
 				format!("fae.function.{}", function_shape.name.item)
 			};
 
-			(CString::new(name).unwrap(), LLVMLinkage::LLVMDLLExportLinkage)
+			(CString::new(name).unwrap(), LLVMLinkage::LLVMInternalLinkage)
 		};
 
 		let llvm_function = unsafe {
@@ -619,9 +574,9 @@ impl LLVMAbi for SysvAbi {
 		}
 	}
 
-	fn call_function(
+	pub fn call_function(
 		&mut self,
-		generator: &LLVMGenerator<Self>,
+		generator: &LLVMGenerator<C>,
 		type_store: &mut TypeStore,
 		attribute_kinds: &AttributeKinds,
 		function: &DefinedFunction,
@@ -764,13 +719,13 @@ impl LLVMAbi for SysvAbi {
 		}
 	}
 
-	fn return_value<'a, 'b>(
+	pub fn return_value<'a, 'b>(
 		codegen_context: &mut codegen::Context<'a, 'b>,
-		generator: &mut LLVMGenerator<Self>,
+		generator: &mut LLVMGenerator<C>,
 		llvm_function: LLVMValueRef,
 		return_type: FunctionReturnType,
 		value: Option<generator::Binding>,
-		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut generator::LLVMGenerator<Self>),
+		defer_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut generator::LLVMGenerator<C>),
 	) {
 		match return_type {
 			FunctionReturnType::Void => {

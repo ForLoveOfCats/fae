@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::os::unix::ffi::OsStrExt;
 
 use llvm_sys::core::{
 	LLVMAddAttributeAtIndex, LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddIncoming, LLVMAppendBasicBlockInContext,
@@ -35,9 +34,10 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
+use crate::codegen::classification::Classifier;
 use crate::codegen::codegen;
 use crate::codegen::generator::Generator;
-use crate::codegen::llvm::abi::{DefinedFunction, LLVMAbi};
+use crate::codegen::llvm::abi::{Abi, DefinedFunction};
 use crate::codegen::llvm::debug_scope::DebugScope;
 use crate::frontend::function_store::FunctionStore;
 use crate::frontend::ir::{Block, CheckIs, Expression, ForKind, Function, FunctionId, IfElseChain, Match};
@@ -116,8 +116,7 @@ pub struct LLVMTypes {
 	pub opaque_pointer: LLVMTypeRef,
 	pub void_struct: LLVMTypeRef,
 	pub slice_struct: LLVMTypeRef,
-	pub range_struct: LLVMTypeRef,
-
+	pub range_struct: Option<LLVMTypeRef>,
 	user_type_structs: Vec<Vec<UserTypeStruct>>,
 	array_types: Vec<FxHashMap<u64, LLVMTypeRef>>,
 }
@@ -130,13 +129,12 @@ impl LLVMTypes {
 
 			let void_struct = LLVMStructTypeInContext(context, [].as_mut_ptr(), 0, false as _);
 			let slice_struct = LLVMStructTypeInContext(context, [opaque_pointer, i64_type].as_mut_ptr(), 2, false as _);
-			let range_struct = LLVMStructTypeInContext(context, [i64_type, i64_type].as_mut_ptr(), 2, false as _);
 
 			LLVMTypes {
 				opaque_pointer,
 				void_struct,
 				slice_struct,
-				range_struct,
+				range_struct: None,
 				user_type_structs: Vec::new(),
 				array_types: Vec::new(),
 			}
@@ -363,14 +361,14 @@ enum InCheckIs {
 	WhileLoop,
 }
 
-pub struct LLVMGenerator<ABI: LLVMAbi> {
+pub struct LLVMGenerator<C: Classifier> {
 	pub context: LLVMContextRef,
 	pub module: LLVMModuleRef,
 	pub builder: LLVMBuilderRef,
 	pub di_builder: LLVMDIBuilderRef,
 
 	architecture: Architecture,
-	abi: Option<ABI>, // I really dislike the lease pattern, oh well
+	abi: Option<Abi<C>>, // I really dislike the lease pattern, oh well
 	pub attribute_kinds: AttributeKinds,
 	pub llvm_types: LLVMTypes,
 	pub llvm_intrinsics: LLVMIntrinsics,
@@ -389,10 +387,10 @@ pub struct LLVMGenerator<ABI: LLVMAbi> {
 	statics: Vec<Binding>,
 	readables: Vec<Option<Binding>>,
 
-	_marker: std::marker::PhantomData<ABI>,
+	_classifer_marker: std::marker::PhantomData<C>,
 }
 
-impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
+impl<C: Classifier> LLVMGenerator<C> {
 	pub fn new(context: LLVMContextRef, architecture: Architecture, optimize_artifacts: bool) -> Self {
 		let module = unsafe { LLVMModuleCreateWithNameInContext(c"fae_translation_unit_module".as_ptr(), context) };
 		let builder = unsafe { LLVMCreateBuilderInContext(context) };
@@ -428,14 +426,14 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			di_builder
 		};
 
-		LLVMGenerator::<ABI> {
+		LLVMGenerator {
 			context,
 			module,
 			builder,
 			di_builder,
 
 			architecture,
-			abi: Some(ABI::new()),
+			abi: Some(Abi::new()),
 			attribute_kinds: AttributeKinds::new(),
 			llvm_types,
 			llvm_intrinsics,
@@ -454,7 +452,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			statics: Vec::new(),
 			readables: Vec::new(),
 
-			_marker: std::marker::PhantomData,
+			_classifer_marker: std::marker::PhantomData,
 		}
 	}
 
@@ -593,7 +591,7 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 		Binding { type_id, kind }
 	}
 
-	fn create_user_type_descriptions(&mut self, type_store: &mut TypeStore) {
+	fn create_user_type_descriptions(&mut self, type_store: &mut TypeStore, lang_items: &LangItems) {
 		assert_eq!(self.llvm_types.user_type_structs.len(), 0);
 
 		for user_type in type_store.user_types.read().iter() {
@@ -615,6 +613,11 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 			}));
 			self.llvm_types.user_type_structs.push(specializations);
 		}
+
+		assert_eq!(self.llvm_types.range_struct, None);
+		let range_type_id = lang_items.range_type.unwrap();
+		let range_struct = self.llvm_types.type_to_llvm_type(self.context, type_store, range_type_id);
+		self.llvm_types.range_struct = Some(range_struct);
 	}
 
 	fn create_array_type_descriptions(&mut self, type_store: &mut TypeStore) {
@@ -818,11 +821,11 @@ impl<ABI: LLVMAbi> LLVMGenerator<ABI> {
 	}
 }
 
-impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
+impl<C: Classifier> Generator for LLVMGenerator<C> {
 	type Binding = Binding;
 
-	fn register_type_descriptions(&mut self, type_store: &mut TypeStore) {
-		self.create_user_type_descriptions(type_store);
+	fn register_type_descriptions(&mut self, type_store: &mut TypeStore, lang_items: &LangItems) {
+		self.create_user_type_descriptions(type_store, lang_items);
 		self.create_array_type_descriptions(type_store);
 
 		self.fill_user_type_descriptions(type_store);
@@ -895,9 +898,9 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 				let file = unsafe {
 					LLVMDIBuilderCreateFile(
 						self.di_builder,
-						file_name.as_bytes().as_ptr() as _,
+						file_name.as_encoded_bytes().as_ptr() as _,
 						file_name.len(),
-						directory.as_os_str().as_bytes().as_ptr() as _,
+						directory.as_os_str().as_encoded_bytes().as_ptr() as _,
 						directory.as_os_str().len(),
 					)
 				};
@@ -1611,11 +1614,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
 			let i1_type = LLVMInt1TypeInContext(self.context);
+			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(initializer);
-			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 0, c"".as_ptr());
 			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"for_range.range_start".as_ptr());
-			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 1, c"".as_ptr());
 			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"for_range.range_end".as_ptr());
 
 			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
@@ -2601,11 +2605,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let end_in_bounds_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
+			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(range);
-			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 0, c"".as_ptr());
 			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"generate_array_slice.range_start".as_ptr());
-			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 1, c"".as_ptr());
 			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"generate_array_slice.range_end".as_ptr());
 
 			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
@@ -2746,11 +2751,12 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 			let end_in_bounds_block = LLVMAppendBasicBlockInContext(self.context, function, c"".as_ptr());
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
+			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(range);
-			let start_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 0, c"".as_ptr());
+			let start_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 0, c"".as_ptr());
 			let start = LLVMBuildLoad2(self.builder, i64_type, start_pointer, c"generate_slice_slice.range_start".as_ptr());
-			let end_pointer = LLVMBuildStructGEP2(self.builder, self.llvm_types.range_struct, range_pointer, 1, c"".as_ptr());
+			let end_pointer = LLVMBuildStructGEP2(self.builder, range_struct, range_pointer, 1, c"".as_ptr());
 			let end = LLVMBuildLoad2(self.builder, i64_type, end_pointer, c"generate_slice_slice.range_end".as_ptr());
 
 			let inverted = LLVMBuildICmp(self.builder, LLVMIntSGT, start, end, c"".as_ptr());
@@ -3191,7 +3197,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 
 		if op == BinaryOperator::Range {
 			unsafe {
-				let llvm_type = self.llvm_types.range_struct;
+				let llvm_type = self.llvm_types.range_struct.unwrap();
 				let alloca = self.build_alloca(llvm_type, c"generate_binary_operation.range_alloca");
 
 				let start_name = c"generate_binary_operation.range_start_pointer".as_ptr();
@@ -3644,7 +3650,7 @@ impl<ABI: LLVMAbi> Generator for LLVMGenerator<ABI> {
 		let maybe_function = &self.functions[function_id.function_shape_index][function_id.specialization_index];
 		let function = maybe_function.as_ref().unwrap();
 
-		ABI::return_value(context, self, function.llvm_function, function.return_type, value, defer_callback);
+		Abi::return_value(context, self, function.llvm_function, function.return_type, value, defer_callback);
 	}
 
 	fn generate_slice(

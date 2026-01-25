@@ -4,6 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::frontend::error::WriteFmt;
+use crate::path_utils::PathUtils;
 
 pub type Result<T> = std::result::Result<T, std::io::Error>;
 
@@ -105,7 +106,10 @@ pub fn load_all_files(
 			let reserved = &disallowed.module_path[index];
 			let module_path = disallowed.module_path.join("::");
 			let path = &disallowed.path;
-			let error = error!("Reserved word `{reserved}` may not be part of module path `{module_path}` for file {path:?}");
+			let error = error!(
+				"Reserved word `{reserved}` may not be part of module path `{module_path}` for file \"{}\"",
+				path.unix_path_display()
+			);
 			error.print(error_output, &[], "Project");
 
 			print_newline_above = true;
