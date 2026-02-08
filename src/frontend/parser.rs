@@ -28,7 +28,7 @@ pub fn parse_root_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 }
 
 fn parse_braceless_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Block<'a>>> {
-	let fat_arrow = tokens.next(messages)?;
+	let fat_arrow = tokens.expect(messages, TokenKind::FatArrow)?;
 
 	let statement = parse_statement(bump, messages, tokens, Attributes::blank());
 	if let Some(Statement::Block(_)) = &statement {

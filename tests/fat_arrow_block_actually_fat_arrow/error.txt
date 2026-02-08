@@ -1,0 +1,4 @@
+Parse error: ./tests/fat_arrow_block_actually_fat_arrow/fat_arrow_block_actually_fat_arrow.fae:3
+ Expected '=>' but found "abcd"
+  3|         abcd println("Hello")
+             ^^^^

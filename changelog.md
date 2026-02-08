@@ -8,6 +8,7 @@
 ## Compiler Usability Improvements
 
 ## Compiler Bugfixes
+- Fixed a bug where single-line braceless blocks could be parsed with a garbage token
 
 ## VSCode Extension
 

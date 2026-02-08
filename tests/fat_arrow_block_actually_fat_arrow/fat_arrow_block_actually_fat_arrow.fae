@@ -1,0 +1,4 @@
+fn main() {
+	if true
+		abcd println("Hello")
+}
