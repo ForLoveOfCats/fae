@@ -34,6 +34,18 @@ fn equals(other=: str): bool {
 	return true
 }
 
+method str
+fn starts_with(other=: str): bool {
+	if self.length < other.length => return false
+
+	for index in 0..other.length {
+		if self.bytes[index] != other.bytes[index]
+			=> return false
+	}
+
+	return true
+}
+
 struct LinesIterator {
 	string: str internal
 	offset: isize internal

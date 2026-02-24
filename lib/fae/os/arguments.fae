@@ -1,14 +1,242 @@
-import fae.runtime.ArgC, ArgV
+import fae.runtime.ArgC, ArgV, UserArgs
 import fae.intrinsics.create_slice, create_str
 import fae.libc.strlen
 import fae.collections.list.List
+
+// TODO: Add "action" flags once we have function pointers
+struct ArgumentsParser {
+	program: str readonly
+	version: str readonly
+	descriptions: List<ArgumentDescription> internal
+	help_requested: bool internal
+}
+
+method static ArgumentsParser
+fn new(program: str, version: str): ArgumentsParser {
+	return ArgumentsParser {
+		program
+		version
+		descriptions: List<ArgumentDescription>.new()
+		help_requested: false
+	}
+}
+
+method ArgumentsParser
+fn free() {
+	self.descriptions.free()
+}
+
+method mut ArgumentsParser
+fn bool_flag(name=: str, ptr=: *mut bool) {
+	self.descriptions.push(.Bool {
+		name
+		ptr
+		invert: false
+	})
+}
+
+method mut ArgumentsParser
+fn inverted_bool_flag(name=: str, ptr=: *mut bool) {
+	self.descriptions.push(.Bool {
+		name
+		ptr
+		invert: true
+	})
+}
+
+method mut ArgumentsParser
+fn i64_flag(name=: str, ptr=: *mut i64) {
+	self.descriptions.push(.I64 {
+		name
+		ptr
+	})
+}
+
+method mut ArgumentsParser
+fn parse() {
+	mut failed = false
+
+	mut tokens = Tokens {
+		args: UserArgs.items
+		next_index: 0
+	}
+
+	while tokens.maybe_next() is arg: Some {
+		let result = if arg.starts_with("--") {
+			yield self.parse_double_tag(arg, tokens: tokens.&mut)
+		} else {
+			// TODO: parse positional/sub-commands
+			println(f"Positional arguments unsupported: '{arg}'")
+			failed = true
+			continue
+		}
+
+		if result is NoSuch
+			=> eprintln(f"Error: No such flag '{arg}'")
+		failed |= (result is Okay).!
+	}
+
+	if self.help_requested {
+		self.print_help()
+		exit_success()
+	}
+
+	if failed => exit_error()
+}
+
+struct Tokens {
+	args: []str
+	next_index: isize
+}
+
+method mut Tokens
+fn maybe_next(): Option<str> {
+	if self.next_index >= self.args.length
+		=> return .None
+	defer self.next_index += 1
+	return .Some(self.args[self.next_index])
+}
+
+method mut Tokens
+fn expect_next(message: fstr): str {
+	if self.next_index >= self.args.length
+		=> exit_errorf(message)
+	defer self.next_index += 1
+	return self.args[self.next_index]
+}
+
+enum ParseResult {
+	Okay
+	NoSuch
+	Malformed
+}
+
+method mut ArgumentsParser
+fn parse_double_tag(arg: str, tokens: *mut Tokens): ParseResult {
+	let arg = SplitArg.split_new(arg[2..arg.length])
+
+	if arg.name.equals("h") or arg.name.equals("help") {
+		arg.disallow_value() // Intentionally ignore return value
+		self.help_requested = true
+		return .Okay
+	}
+
+	for description of self.descriptions.items {
+		if arg.name.equals(description.name)
+			=> return description.parse(arg, tokens)
+	}
+
+	return .NoSuch
+}
+
+method ArgumentsParser
+fn print_help() {
+	println(f"{self.program} {self.version}")
+	println("")
+	println("Flags:")
+
+	const Indentation = "    "
+	println(f"{Indentation}--help")
+	for description in self.descriptions.items {
+		match description {
+			Bool => println(f"{Indentation}--{description.name}")
+			I64 => println(f"{Indentation}--{description.name}")
+		}
+	}
+}
+
+enum ArgumentDescription {
+	name: str
+
+	Bool { ptr: *mut bool, invert: bool }
+	I64 { ptr: *mut i64 }
+	// U64 { ptr: *mut u64 }
+	// F64 { ptr: *mut f64 }
+}
+
+method mut ArgumentDescription
+fn parse(arg: SplitArg, tokens: *mut Tokens): ParseResult {
+	match self {
+		Bool {
+			let value = if arg.assignment is assignment: Some {
+				if assignment.equals("true") => yield true
+				else if assignment.equals("false") => yield false
+				else {
+					eprintln(f"Error: Unknown argument '{assignment}' to boolean flag '{self.name}'")
+					return .Malformed
+				}
+			} else {
+				yield true
+			}
+
+			if self.invert => self.ptr.* = value.!
+			else => self.ptr.* = value
+		}
+
+		I64 {
+			let value_str = arg.expect_value(tokens, f"Error: Missing value for integer flag '{self.name}'")
+			match value_str.parse_i64() {
+				value: Some => self.ptr.* = value
+
+				None {
+					eprintln(f"Error: Invalid value '{value_str}' to integer flag '{self.name}'")
+					return .Malformed
+				}
+			}
+		}
+	}
+
+	return .Okay
+}
+
+struct SplitArg {
+	name: str
+	assignment: Option<str>
+}
+
+method static SplitArg
+fn split_new(arg=: str): SplitArg {
+	for byte, index in arg.bytes {
+		if byte == b'=' and index + 1 < arg.length {
+			return SplitArg {
+				name: arg[0..index]
+				assignment: .Some(arg[index + 1..arg.length])
+			}
+		}
+	}
+
+	return SplitArg { name: arg, assignment: .None }
+}
+
+method SplitArg
+fn expect_value(tokens: *mut Tokens, message=: fstr): str {
+	if self.assignment is assignment: Some
+		=> return assignment
+	return tokens.expect_next(message)
+}
+
+// TODO: This really wants to be anonymous
+enum ValueStatus {
+	HasValue
+	NoValue
+}
+
+method SplitArg
+fn disallow_value(): ValueStatus {
+	if self.assignment is Some {
+		eprintln(f"Error: Flag '{self.name}' does not accept values")
+		return .HasValue
+	}
+
+	return .NoValue
+}
 
 struct Arguments {
 	items: []str
 }
 
 method static Arguments
-fn parse_user_arguments(): Arguments {
+fn load_user_arguments(): Arguments {
 	let argv = create_slice<*u8>(ArgV, length: ArgC.(isize))
 	mut parsed = List<str>.new()
 
@@ -22,7 +250,7 @@ fn parse_user_arguments(): Arguments {
 }
 
 method static Arguments
-fn parse_all_arguments(): Arguments {
+fn load_all_arguments(): Arguments {
 	let argv = create_slice<*u8>(ArgV, length: ArgC.(isize))
 	mut parsed = List<str>.new()
 
@@ -39,4 +267,3 @@ method Arguments
 fn free() {
 	fae.memory.free_slice<str>(self.items)
 }
-
