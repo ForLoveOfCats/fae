@@ -115,15 +115,8 @@ fn panic_impl(message: fstr): noreturn {
 
 		eprintln("Function backtrace:")
 
-		let null = null_pointer<void>()
-		// 50 items
-		mut addresses = [_]*void {
-			null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null,
-			null, null, null, null, null, null, null, null, null, null,
-		}
+		mut addresses_buffer: [50]*void ---
+		mut addresses = addresses_buffer.slice
 
 		let symbol_count = backtrace(address_buffer: addresses.pointer, length: addresses.length.(i32)).(isize)
 		let addresses = addresses[0..symbol_count]
