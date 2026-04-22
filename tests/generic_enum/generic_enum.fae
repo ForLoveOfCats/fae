@@ -8,7 +8,7 @@ fn divide(value=: i32, by=: i32): Enum<i32, str> {
 
 fn main() {
 	match divide(4, 0) {
-		result: Ok {
+		result: Ok => {
 			println(f"{result.value}")
 		}
 
@@ -23,7 +23,7 @@ fn main() {
 	}
 
 	match divide(4, 2) {
-		result: Ok {
+		result: Ok => {
 			println(f"{result.value}")
 		}
 

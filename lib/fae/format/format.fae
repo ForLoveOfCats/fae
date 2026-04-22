@@ -80,7 +80,7 @@ fn print_to_file_stream(message: fstr, stream: *FileStream) {
 			F32 => fprintf(stream, PrintfFormatF32.pointer, item)
 			F64 => fprintf(stream, PrintfFormatF64.pointer, item)
 
-			Bool {
+			Bool => {
 				if item => fprintf(stream, "true".pointer)
 				else => fprintf(stream, "false".pointer)
 			}
@@ -146,7 +146,7 @@ fn print_to_string(message: fstr, buffer: *mut String) {
 			F32 => perform_print<f64>(buffer, PrintfFormatF32, item.(f64))
 			F64 => perform_print<f64>(buffer, PrintfFormatF64, item)
 
-			Bool {
+			Bool => {
 				if item => buffer.push_str("true")
 				else => buffer.push_str("false")
 			}

@@ -1072,6 +1072,27 @@ fn parse_if_else_chain<'a>(
 	Ok(Node::new(value, span))
 }
 
+fn parse_match_arm_body<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Block<'a>>> {
+	let fat_arrow = tokens.expect(messages, TokenKind::FatArrow)?;
+
+	if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+		return parse_block(bump, messages, tokens, false);
+	}
+
+	let statement = parse_statement(bump, messages, tokens, Attributes::blank());
+	let statements = if let Some(statement) = statement {
+		bump_vec![in bump; statement]
+	} else {
+		BumpVec::new_in(bump)
+	};
+
+	let newline = tokens.expect_peek(messages, TokenKind::Newline)?;
+
+	let block = Block { statements: statements.into_bump_slice() };
+	let span = fat_arrow.span + newline.span; // TODO: Think about this some more
+	return Ok(Node::new(block, span));
+}
+
 fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Match<'a>>> {
 	let match_token = tokens.expect_word(messages, "match")?;
 
@@ -1090,7 +1111,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 			let first = tokens.expect(messages, TokenKind::Word)?;
 
 			if first.text == "else" {
-				let block = parse_block(bump, messages, tokens, true)?;
+				let block = parse_match_arm_body(bump, messages, tokens)?;
 				tokens.consume_newlines();
 
 				if let Some(else_arm) = &else_arm {
@@ -1132,7 +1153,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 			}
 		};
 
-		let block = parse_block(bump, messages, tokens, true)?;
+		let block = parse_match_arm_body(bump, messages, tokens)?;
 		tokens.consume_newlines();
 
 		let arm = MatchArm { binding_name, variant_names, block };

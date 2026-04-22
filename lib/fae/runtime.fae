@@ -182,18 +182,18 @@ fn panic_impl(message: fstr): noreturn {
 		for symbol in symbols {
 			mut current_width: isize = 0
 			let path = match symbol {
-				Error {
+				Error => {
 					eprintln(f"{Indentation}{Error}")
 					continue
 				}
 
-				Unknown {
+				Unknown => {
 					eprint(f"{Indentation}{Unknown}")
 					current_width = Unknown.length
 					yield symbol.path
 				}
 
-				Found {
+				Found => {
 					eprint(f"{Indentation}{symbol.name}")
 					current_width = symbol.name.length
 					yield symbol.path

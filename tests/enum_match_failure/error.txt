@@ -5,11 +5,11 @@ Validation error: ./tests/enum_match_failure/enum_match_failure.fae:13
 
 Validation error: ./tests/enum_match_failure/enum_match_failure.fae:16
  Duplicate match arm for enum variant `Enum.A`
-  16|         A {}
+  16|         A => {}
               ^
 Note: ./tests/enum_match_failure/enum_match_failure.fae:12
  Existing arm here
-  12|         B, A {
+  12|         B, A => {
                  ^
 
 Validation error: ./tests/enum_match_failure/enum_match_failure.fae:18

@@ -66,11 +66,11 @@ fn dump_enum(arg=: Enum) {
 
 		B => println("B")
 
-		C {
+		C => {
 			println(f"C: {arg.something}")
 		}
 
-		D {
+		D => {
 			println(f"D: {arg.another}")
 		}
 	}

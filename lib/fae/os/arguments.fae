@@ -157,7 +157,7 @@ enum ArgumentDescription {
 method mut ArgumentDescription
 fn parse(arg: SplitArg, tokens: *mut Tokens): ParseResult {
 	match self {
-		Bool {
+		Bool => {
 			let value = if arg.assignment is assignment: Some {
 				if assignment.equals("true") => yield true
 				else if assignment.equals("false") => yield false
@@ -173,12 +173,12 @@ fn parse(arg: SplitArg, tokens: *mut Tokens): ParseResult {
 			else => self.ptr.* = value
 		}
 
-		I64 {
+		I64 => {
 			let value_str = arg.expect_value(tokens, f"Error: Missing value for integer flag '{self.name}'")
 			match value_str.parse_i64() {
 				value: Some => self.ptr.* = value
 
-				None {
+				None => {
 					eprintln(f"Error: Invalid value '{value_str}' to integer flag '{self.name}'")
 					return .Malformed
 				}

@@ -9,11 +9,11 @@ fn function(arg=: Enum) {
 	match arg {
 		C => println("C")
 
-		B, A {
+		B, A => {
 			println(f"{arg.field} is B")
 		}
 
-		A {}
+		A => {}
 
 		C => println("other C")
 	}

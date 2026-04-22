@@ -17,6 +17,7 @@
 ## Standard Library Bugfixes
 
 ## New Language Changes
+- Match arm bodies now always require a "fat arrow" `=>`
 
 ## Compiler Usability Improvements
 - Added initial support for compiling Fae programs for Windows x86_64

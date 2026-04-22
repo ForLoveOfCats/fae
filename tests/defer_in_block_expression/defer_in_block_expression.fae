@@ -21,7 +21,7 @@ fn main() {
 	let condition: Option<void> = .None
 	let yielded = match condition {
 		Some => yield index
-		None {
+		None => {
 			defer index += 1
 			yield index
 		}

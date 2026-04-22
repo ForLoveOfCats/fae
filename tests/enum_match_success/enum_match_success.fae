@@ -9,11 +9,11 @@ fn func(arg=: Enum) {
 	match arg {
 		A, C => println("A or C")
 
-		B {
+		B => {
 			println(f"{arg.field} is B")
 		}
 
-		d: D {
+		d: D => {
 			println(f"{d.other} is D")
 		}
 	}
