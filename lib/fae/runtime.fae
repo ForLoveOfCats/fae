@@ -107,7 +107,9 @@ fn panic_impl(message: fstr): noreturn {
 	// Backtraces can differ between platforms, optimization level, and change
 	// when code is refactored. Therefore they should not be included in panic
 	// messages when in compiler tests
-	when InCompilerTest => exit(-1)
+	when InCompilerTest {
+		exit(-1)
+	}
 
 	when PlatformWindows {
 	} else {
@@ -144,11 +146,15 @@ fn panic_impl(message: fstr): noreturn {
 
 		mut longest_width: isize = 0
 		fn handle_width(longest_width=: *mut isize, width: isize) {
-			if width > longest_width.* => longest_width.* = width
+			if width > longest_width.* {
+				longest_width.* = width
+			}
 		}
 
 		fn print_width(width: isize) {
-			for _ in 0..width => eprint(" ")
+			for _ in 0..width {
+				eprint(" ")
+			}
 		}
 
 		for address, index in addresses {
@@ -182,25 +188,27 @@ fn panic_impl(message: fstr): noreturn {
 		for symbol in symbols {
 			mut current_width: isize = 0
 			let path = match symbol {
-				Error {
+				Error => {
 					eprintln(f"{Indentation}{Error}")
 					continue
 				}
 
-				Unknown {
+				Unknown => {
 					eprint(f"{Indentation}{Unknown}")
 					current_width = Unknown.length
 					yield symbol.path
 				}
 
-				Found {
+				Found => {
 					eprint(f"{Indentation}{symbol.name}")
 					current_width = symbol.name.length
 					yield symbol.path
 				}
 			}
 
-			for _ in 0..longest_width - current_width => eprint(" ")
+			for _ in 0..longest_width - current_width {
+				eprint(" ")
+			}
 			eprintln(f"{Spacer}({path})")
 		}
 

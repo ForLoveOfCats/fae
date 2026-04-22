@@ -27,49 +27,8 @@ pub fn parse_root_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mu
 	Block { statements }
 }
 
-fn parse_braceless_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Block<'a>>> {
-	let fat_arrow = tokens.expect(messages, TokenKind::FatArrow)?;
-
-	let statement = parse_statement(bump, messages, tokens, Attributes::blank());
-	if let Some(Statement::Block(_)) = &statement {
-		let warning =
-			warning!("A single statement block is extraneous if it only contains another block, consider removing the `=>`");
-		messages.message(warning.span(fat_arrow.span))
-	}
-
-	let statements = if let Some(statement) = statement {
-		bump_vec![in bump; statement]
-	} else {
-		BumpVec::new_in(bump)
-	};
-
-	let newline = tokens.expect_peek(messages, TokenKind::Newline)?;
-
-	let block = Block { statements: statements.into_bump_slice() };
-	let span = fat_arrow.span + newline.span;
-	return Ok(Node::new(block, span));
-}
-
 // TODO: Does anywhere actually need this return to be a Node?
-pub fn parse_block<'a>(
-	bump: &'a Bump,
-	messages: &mut Messages,
-	tokens: &mut Tokens<'a>,
-	allow_braceless: bool,
-) -> ParseResult<Node<Block<'a>>> {
-	if allow_braceless {
-		match tokens.peek_kind() {
-			Ok(TokenKind::FatArrow) => return parse_braceless_block(bump, messages, tokens),
-
-			Ok(TokenKind::Newline) => {
-				tokens.next(messages)?;
-				return parse_braceless_block(bump, messages, tokens);
-			}
-
-			_ => {}
-		}
-	}
-
+pub fn parse_block<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Block<'a>>> {
 	let open = tokens.expect(messages, TokenKind::OpenBrace)?;
 	let statements = parse_statements(bump, messages, tokens);
 	let close = tokens.expect(messages, TokenKind::CloseBrace)?;
@@ -355,7 +314,7 @@ fn parse_statement<'a>(
 
 		Token { kind: TokenKind::OpenBrace, .. } => {
 			disallow_all_attributes(messages, attributes, peeked.span, "A block");
-			if let Ok(statement) = parse_block(bump, messages, tokens, false) {
+			if let Ok(statement) = parse_block(bump, messages, tokens) {
 				return Some(Statement::Block(statement));
 			} else {
 				consume_error_syntax(messages, tokens);
@@ -716,7 +675,7 @@ fn parse_expression_atom<'a>(
 		}
 
 		TokenKind::OpenBrace => {
-			let parsed_block = parse_block(bump, messages, tokens, false)?;
+			let parsed_block = parse_block(bump, messages, tokens)?;
 
 			let span = parsed_block.span;
 			let block = parsed_block.item;
@@ -1007,7 +966,7 @@ fn parse_when_else_chain<'a>(
 
 	let condition_token = tokens.expect(messages, TokenKind::Word)?;
 	let condition = Node::from_token(condition_token.text, condition_token);
-	let body = parse_block(bump, messages, tokens, true)?;
+	let body = parse_block(bump, messages, tokens)?;
 	span += body.span;
 	entries.push(WhenElseChainEntry { condition, body });
 
@@ -1019,11 +978,11 @@ fn parse_when_else_chain<'a>(
 			tokens.next(messages)?;
 			let condition_token = tokens.expect(messages, TokenKind::Word)?;
 			let condition = Node::from_token(condition_token.text, condition_token);
-			let body = parse_block(bump, messages, tokens, true)?;
+			let body = parse_block(bump, messages, tokens)?;
 			span += body.span;
 			entries.push(WhenElseChainEntry { condition, body });
 		} else {
-			let body = parse_block(bump, messages, tokens, true)?;
+			let body = parse_block(bump, messages, tokens)?;
 			span += body.span;
 			else_body = Some(body);
 			break;
@@ -1046,7 +1005,7 @@ fn parse_if_else_chain<'a>(
 	let mut span = if_token.span;
 
 	let condition = parse_expression(bump, messages, tokens, false)?;
-	let body = parse_block(bump, messages, tokens, true)?;
+	let body = parse_block(bump, messages, tokens)?;
 	span += body.span;
 	entries.push(IfElseChainEntry { condition, body });
 
@@ -1057,11 +1016,11 @@ fn parse_if_else_chain<'a>(
 		if let Ok(Token { text: "if", .. }) = tokens.peek() {
 			tokens.next(messages)?;
 			let condition = parse_expression(bump, messages, tokens, false)?;
-			let body = parse_block(bump, messages, tokens, true)?;
+			let body = parse_block(bump, messages, tokens)?;
 			span += body.span;
 			entries.push(IfElseChainEntry { condition, body });
 		} else {
-			let body = parse_block(bump, messages, tokens, true)?;
+			let body = parse_block(bump, messages, tokens)?;
 			span += body.span;
 			else_body = Some(body);
 			break;
@@ -1070,6 +1029,27 @@ fn parse_if_else_chain<'a>(
 
 	let value = IfElseChain { entries: entries.into_bump_slice(), else_body };
 	Ok(Node::new(value, span))
+}
+
+fn parse_match_arm_body<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Block<'a>>> {
+	let fat_arrow = tokens.expect(messages, TokenKind::FatArrow)?;
+
+	if tokens.peek_kind() == Ok(TokenKind::OpenBrace) {
+		return parse_block(bump, messages, tokens);
+	}
+
+	let statement = parse_statement(bump, messages, tokens, Attributes::blank());
+	let statements = if let Some(statement) = statement {
+		bump_vec![in bump; statement]
+	} else {
+		BumpVec::new_in(bump)
+	};
+
+	let newline = tokens.expect_peek(messages, TokenKind::Newline)?;
+
+	let block = Block { statements: statements.into_bump_slice() };
+	let span = fat_arrow.span + newline.span; // TODO: Think about this some more
+	return Ok(Node::new(block, span));
 }
 
 fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'a>) -> ParseResult<Node<Match<'a>>> {
@@ -1090,7 +1070,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 			let first = tokens.expect(messages, TokenKind::Word)?;
 
 			if first.text == "else" {
-				let block = parse_block(bump, messages, tokens, true)?;
+				let block = parse_match_arm_body(bump, messages, tokens)?;
 				tokens.consume_newlines();
 
 				if let Some(else_arm) = &else_arm {
@@ -1132,7 +1112,7 @@ fn parse_match<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<
 			}
 		};
 
-		let block = parse_block(bump, messages, tokens, true)?;
+		let block = parse_match_arm_body(bump, messages, tokens)?;
 		tokens.consume_newlines();
 
 		let arm = MatchArm { binding_name, variant_names, block };
@@ -1150,7 +1130,7 @@ fn parse_while_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &m
 	let while_token = tokens.expect_word(messages, "while")?;
 
 	let condition = parse_expression(bump, messages, tokens, false)?;
-	let body = parse_block(bump, messages, tokens, true)?;
+	let body = parse_block(bump, messages, tokens)?;
 
 	let span = while_token.span + body.span;
 	let value = While { condition, body };
@@ -1198,7 +1178,7 @@ fn parse_for_statement<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut
 
 	let initializer = parse_expression(bump, messages, tokens, false)?;
 
-	let body = parse_block(bump, messages, tokens, true)?;
+	let body = parse_block(bump, messages, tokens)?;
 
 	let span = for_token.span + body.span;
 	let value = For { item, index, is_last, iteration_kind, initializer, body };
@@ -1940,7 +1920,7 @@ fn parse_function_declaration<'a>(
 	let block = if extern_attribute.is_some() || intrinsic_attribute.is_some() {
 		None
 	} else {
-		Some(parse_block(bump, messages, tokens, false)?.item)
+		Some(parse_block(bump, messages, tokens)?.item)
 	};
 
 	tokens.expect(messages, TokenKind::Newline)?;
@@ -2038,7 +2018,7 @@ fn parse_test<'a>(bump: &'a Bump, messages: &mut Messages, tokens: &mut Tokens<'
 	tokens.expect_word(messages, "test")?;
 	let name_string = tokens.expect(messages, TokenKind::String)?;
 
-	let block = parse_block(bump, messages, tokens, false)?.item;
+	let block = parse_block(bump, messages, tokens)?.item;
 
 	Ok(Test { name: Node::from_token(name_string.text, name_string), block })
 }

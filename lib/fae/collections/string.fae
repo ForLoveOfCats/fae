@@ -57,7 +57,10 @@ fn clear() {
 
 method mut String
 fn truncate(to_length=to: isize) {
-	if to_length >= self.contents.length => return
+	if to_length >= self.contents.length {
+		return
+	}
+
 	self.contents.length = to_length
 }
 
@@ -74,7 +77,9 @@ fn length(): isize {
 method mut String
 fn reserve_exact(new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
-	if new_capacity <= self.capacity => return
+	if new_capacity <= self.capacity {
+		return
+	}
 
 	reallocate_region<u8>(self.contents.bytes.pointer.&mut, old_length: self.capacity, new_length: new_capacity)
 	self.capacity = new_capacity
@@ -83,9 +88,14 @@ fn reserve_exact(new_capacity=: isize) {
 method mut String
 fn reserve_at_least(mut new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
-	if new_capacity <= self.capacity => return
+	if new_capacity <= self.capacity {
+		return
+	}
 
-	if new_capacity < InitialGrowth => new_capacity = InitialGrowth
+	if new_capacity < InitialGrowth {
+		new_capacity = InitialGrowth
+	}
+
 	if new_capacity < self.capacity * GrowthFactor {
 		new_capacity = self.capacity * GrowthFactor
 	}

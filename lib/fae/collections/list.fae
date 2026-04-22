@@ -73,7 +73,10 @@ fn clear() {
 
 method mut List
 fn truncate(to_length=to: isize) {
-	if to_length >= self.items.length => return
+	if to_length >= self.items.length {
+		return
+	}
+
 	self.items.length = to_length
 }
 
@@ -90,7 +93,9 @@ fn length(): isize {
 method mut List
 fn reserve_exact(new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
-	if new_capacity <= self.capacity => return
+	if new_capacity <= self.capacity {
+		return
+	}
 
 	reallocate_region<T>(self.items.pointer.&mut, old_length: self.capacity, new_length: new_capacity)
 	self.capacity = new_capacity
@@ -99,9 +104,14 @@ fn reserve_exact(new_capacity=: isize) {
 method mut List
 fn reserve_at_least(mut new_capacity=: isize) {
 	assertf(new_capacity > 0, f"{new_capacity}")
-	if new_capacity <= self.capacity => return
+	if new_capacity <= self.capacity {
+		return
+	}
 
-	if new_capacity < InitialGrowth => new_capacity = InitialGrowth
+	if new_capacity < InitialGrowth {
+		new_capacity = InitialGrowth
+	}
+
 	if new_capacity < self.capacity * GrowthFactor {
 		new_capacity = self.capacity * GrowthFactor
 	}
@@ -133,46 +143,67 @@ fn is_not_empty(): bool {
 
 method List
 fn first(): Option<T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	return .Some(self.items[0])
 }
 
 method List
 fn first_ref(): Option<*T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	return .Some(self.items[0].&)
 }
 
 method mut List
 fn first_mut(): Option<*mut T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	return .Some(self.items[0].&mut)
 }
 
 method List
 fn last(): Option<T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	let value = self.items[self.items.length - 1]
 	return .Some(value)
 }
 
 method List
 fn last_ref(): Option<*T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	let value = self.items[self.items.length - 1].&
 	return .Some(value)
 }
 
 method mut List
 fn last_mut(): Option<*mut T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	let value = self.items[self.items.length - 1].&mut
 	return .Some(value)
 }
 
 method mut List
 fn pop(): Option<T> {
-	if self.is_empty() => return .None
+	if self.is_empty() {
+		return .None
+	}
+
 	let value = self.items[self.items.length - 1]
 	self.items.length -= 1
 	return .Some(value)
