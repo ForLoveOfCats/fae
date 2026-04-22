@@ -19,6 +19,7 @@
 ## New Language Changes
 
 ## Compiler Usability Improvements
+- Added initial support for compiling Fae programs for Windows x86_64
 
 ## Compiler Bugfixes
 - Fixed a bug where single-line braceless blocks could be parsed with a garbage token
