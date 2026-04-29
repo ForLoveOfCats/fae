@@ -24,6 +24,7 @@
 
 ## Compiler Bugfixes
 - Fixed a bug where single-line braceless blocks could be parsed with a garbage token
+- Fixed a bug where returning a large array from a function would crash the compiler
 
 ## VSCode Extension
 

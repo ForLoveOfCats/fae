@@ -589,7 +589,6 @@ pub struct UserType<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct ArrayType {
 	pub array_type_id: TypeId,
-	pub item_type_id: TypeId,
 }
 
 #[derive(Debug)]
@@ -929,7 +928,6 @@ impl TypeEntryKind {
 pub struct Array {
 	pub item_type_id: TypeId,
 	pub length: u64,
-	pub array_type_index: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2025,10 +2023,10 @@ impl<'a> TypeStore<'a> {
 		array_types
 			.entry(length)
 			.or_insert_with(|| {
-				let kind = TypeEntryKind::Array(Array { item_type_id: type_id, length, array_type_index });
+				let kind = TypeEntryKind::Array(Array { item_type_id: type_id, length });
 				let entry = TypeEntry::new(self, kind);
 				let array_type_id = self.type_entries.push_entry(entry);
-				ArrayType { array_type_id, item_type_id: type_id }
+				ArrayType { array_type_id }
 			})
 			.array_type_id
 	}

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 
 use llvm_sys::core::{
@@ -32,7 +31,6 @@ use llvm_sys::{
 };
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::codegen::classification::Classifier;
 use crate::codegen::codegen;
@@ -118,7 +116,6 @@ pub struct LLVMTypes {
 	pub slice_struct: LLVMTypeRef,
 	pub range_struct: Option<LLVMTypeRef>,
 	user_type_structs: Vec<Vec<UserTypeStruct>>,
-	array_types: Vec<FxHashMap<u64, LLVMTypeRef>>,
 }
 
 impl LLVMTypes {
@@ -136,7 +133,6 @@ impl LLVMTypes {
 				slice_struct,
 				range_struct: None,
 				user_type_structs: Vec::new(),
-				array_types: Vec::new(),
 			}
 		}
 	}
@@ -178,8 +174,9 @@ impl LLVMTypes {
 
 			TypeEntryKind::Slice(_) => self.slice_struct,
 
-			TypeEntryKind::Array(Array { length, array_type_index, .. }) => {
-				*self.array_types[array_type_index].get(&length).unwrap()
+			TypeEntryKind::Array(Array { item_type_id, length, .. }) => {
+				let element_type = self.type_to_llvm_type(context, type_store, item_type_id);
+				unsafe { LLVMArrayType2(element_type, length) }
 			}
 
 			TypeEntryKind::Module
@@ -620,22 +617,6 @@ impl<C: Classifier> LLVMGenerator<C> {
 		self.llvm_types.range_struct = Some(range_struct);
 	}
 
-	fn create_array_type_descriptions(&mut self, type_store: &mut TypeStore) {
-		assert_eq!(self.llvm_types.array_types.len(), 0);
-
-		for array_catagory_lock in type_store.array_types.read().iter() {
-			let array_catagory = array_catagory_lock.read();
-			let mut type_catagory = HashMap::with_capacity_and_hasher(100, FxBuildHasher);
-
-			for &array_length in array_catagory.keys() {
-				let named = unsafe { LLVMStructCreateNamed(self.context, c"ArrayType".as_ptr()) };
-				type_catagory.insert(array_length, named);
-			}
-
-			self.llvm_types.array_types.push(type_catagory);
-		}
-	}
-
 	fn fill_user_type_descriptions(&mut self, type_store: &mut TypeStore) {
 		let mut field_types_buffer = Vec::new();
 		let mut shared_field_types_buffer = Vec::new();
@@ -788,37 +769,6 @@ impl<C: Classifier> LLVMGenerator<C> {
 			}
 		}
 	}
-
-	fn fill_array_type_descriptions(&mut self, type_store: &mut TypeStore) {
-		let mut field_types_buffer = Vec::new();
-
-		let array_types = type_store.array_types.clone();
-		for (array_index, array_catagory_lock) in array_types.read().iter().enumerate() {
-			let array_catagory = array_catagory_lock.read();
-			let array_types = &self.llvm_types.array_types[array_index];
-
-			let mut item_layout = None;
-
-			for (&array_length, &array_type) in array_catagory.iter() {
-				let item_layout = item_layout.get_or_insert_with(|| type_store.type_layout(array_type.item_type_id));
-
-				field_types_buffer.clear();
-				if item_layout.size > 0 && array_length > 0 {
-					assert_eq!(item_layout.size % item_layout.alignment, 0);
-					let item_integer_count = item_layout.size / item_layout.alignment;
-					let item = LLVMTypes::size_to_int_type(self.context, item_layout.alignment);
-					for _ in 0..item_integer_count as u64 * array_length {
-						field_types_buffer.push(item);
-					}
-				}
-
-				let type_ref = *array_types.get(&array_length).unwrap();
-				unsafe {
-					LLVMStructSetBody(type_ref, field_types_buffer.as_mut_ptr(), field_types_buffer.len() as u32, false as _);
-				}
-			}
-		}
-	}
 }
 
 impl<C: Classifier> Generator for LLVMGenerator<C> {
@@ -826,10 +776,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 	fn register_type_descriptions(&mut self, type_store: &mut TypeStore, lang_items: &LangItems) {
 		self.create_user_type_descriptions(type_store, lang_items);
-		self.create_array_type_descriptions(type_store);
-
 		self.fill_user_type_descriptions(type_store);
-		self.fill_array_type_descriptions(type_store);
 	}
 
 	fn register_statics(&mut self, type_store: &mut TypeStore, statics: &Statics) {

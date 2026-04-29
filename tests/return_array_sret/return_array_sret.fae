@@ -1,0 +1,10 @@
+fn get_image_paths(): [6]u64 {
+	return [_]u64 { 0, 1, 2, 3, 4, 5 }
+}
+
+fn main() {
+	let paths = get_image_paths()
+	for path in paths {
+		println(f"{path}")
+	}
+}
