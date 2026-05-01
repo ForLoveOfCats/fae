@@ -110,6 +110,7 @@ fn run_test(
 		project_name: test_name.to_string(),
 		source_directory: PathBuf::from(""),
 		provide_main: true,
+		library_roots: Vec::new(),
 		linux_linker: None,
 		linux_additional_linker_flags: None,
 		linux_additional_linker_objects: None,

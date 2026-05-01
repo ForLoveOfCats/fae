@@ -25,7 +25,11 @@ pub struct BuiltProject {
 }
 
 fn provide_main_default() -> bool {
-	return true;
+	true
+}
+
+fn library_roots_default() -> Vec<PathBuf> {
+	Vec::new()
 }
 
 #[derive(Debug, Deserialize, Default, PartialEq, Eq, Clone, Copy)]
@@ -45,6 +49,9 @@ pub struct ProjectConfig {
 
 	#[serde(default = "provide_main_default")]
 	pub provide_main: bool,
+
+	#[serde(default = "library_roots_default")]
+	pub library_roots: Vec<PathBuf>,
 
 	pub linux_linker: Option<String>,
 	pub linux_additional_linker_flags: Option<Vec<String>>,
@@ -79,7 +86,7 @@ pub fn build_project(
 
 	if cli_arguments.std_enabled {
 		let std_path = std_path();
-		match load_all_files(message_output, &std_path, &mut files, in_compiler_test) {
+		match load_all_files(message_output, &std_path, &[], &mut files, in_compiler_test) {
 			Ok(false) => {}
 			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
 			Err(err) => usage_error!("Failed to load standard library files at {std_path:?}: {}", err),
@@ -100,6 +107,21 @@ pub fn build_project(
 		}
 	};
 
+	for library_root in &project_config.library_roots {
+		let root_file_name = match library_root.file_name() {
+			Some(root_file_name) => root_file_name,
+			None => usage_error!("Specified library {library_root:?}, has no root name"),
+		};
+
+		let absolute_root = project_path.join(library_root).flattened();
+		let module_prefix = vec![root_file_name.to_string_lossy().to_string()];
+		match load_all_files(message_output, &absolute_root, &module_prefix, &mut files, in_compiler_test) {
+			Ok(false) => {}
+			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
+			Err(err) => usage_error!("Failed to load specified library files at {library_root:?}: {}", err),
+		}
+	}
+
 	let root_name = if project_path.is_dir() {
 		let source_directory = project_path.join(project_config.source_directory.clone()).flattened();
 
@@ -113,7 +135,7 @@ pub fn build_project(
 			.map(|dir| Path::new("./").join(dir))
 			.unwrap_or(source_directory);
 
-		match load_all_files(message_output, &source_directory, &mut files, in_compiler_test) {
+		match load_all_files(message_output, &source_directory, &[], &mut files, in_compiler_test) {
 			Ok(false) => {}
 			Ok(true) => return BuiltProject { binary_path: None, any_messages: true },
 			Err(err) => usage_error!("Failed to load source files: {}", err),

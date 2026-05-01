@@ -50,6 +50,7 @@ pub fn load_single_file(path: PathBuf, files: &mut Vec<SourceFile>) -> Result<St
 pub fn load_all_files(
 	error_output: &mut impl WriteFmt,
 	path: &Path,
+	module_prefix: &[String],
 	files: &mut Vec<SourceFile>,
 	in_compiler_test: bool,
 ) -> Result<bool> {
@@ -59,7 +60,7 @@ pub fn load_all_files(
 		disallowed_indicies: Vec<usize>,
 	}
 
-	let mut walker = FileWalker::new(path)?;
+	let mut walker = FileWalker::new(path, module_prefix)?;
 	let mut disallowed = Vec::new();
 
 	loop {
@@ -131,15 +132,16 @@ struct WalkedFile {
 	module_path: Vec<String>,
 }
 
-struct FileWalker {
+struct FileWalker<'a> {
+	module_prefix: &'a [String],
 	stack: Vec<Directory>,
 }
 
-impl FileWalker {
-	fn new(path: &Path) -> Result<FileWalker> {
+impl<'a> FileWalker<'a> {
+	fn new(path: &Path, module_prefix: &'a [String]) -> Result<FileWalker<'a>> {
 		let reader = read_dir(path)?;
 		let directory = Directory { name: String::new(), reader };
-		Ok(FileWalker { stack: vec![directory] })
+		Ok(FileWalker { module_prefix, stack: vec![directory] })
 	}
 
 	fn next_file(&mut self) -> Result<Option<WalkedFile>> {
@@ -164,7 +166,7 @@ impl FileWalker {
 						self.stack.push(directory);
 					}
 				} else if file_type.is_file() && extension == Some(OsStr::new("fae")) {
-					let mut module_path = Vec::new();
+					let mut module_path = self.module_prefix.to_vec();
 					for item in &self.stack {
 						if !item.name.is_empty() {
 							module_path.push(item.name.to_owned());
