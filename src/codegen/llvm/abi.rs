@@ -6,9 +6,9 @@ use llvm_sys::core::{
 	LLVMBuildCall2, LLVMBuildFPCast, LLVMBuildLoad2, LLVMBuildMemCpy, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSExt,
 	LLVMBuildStore, LLVMBuildStructGEP2, LLVMBuildZExt, LLVMConstInt, LLVMCountStructElementTypes, LLVMCreateTypeAttribute,
 	LLVMDoubleTypeInContext, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetParam, LLVMHalfTypeInContext,
-	LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
-	LLVMIntTypeInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetLinkage, LLVMStructGetTypeAtIndex,
-	LLVMStructTypeInContext, LLVMTypeOf, LLVMVectorType, LLVMVoidTypeInContext,
+	LLVMInt16TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMIntTypeInContext,
+	LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMSetLinkage, LLVMStructGetTypeAtIndex, LLVMStructTypeInContext,
+	LLVMTypeOf, LLVMVectorType, LLVMVoidTypeInContext,
 };
 use llvm_sys::prelude::*;
 use llvm_sys::{self, LLVMLinkage};
@@ -123,7 +123,7 @@ impl<C: Classifier> Abi<C> {
 
 				ClassKind::Boolean => {
 					assert_eq!(class.size, 1);
-					let llvm_type = unsafe { LLVMInt1TypeInContext(context) };
+					let llvm_type = unsafe { LLVMInt8TypeInContext(context) };
 					buffer.push(llvm_type);
 				}
 

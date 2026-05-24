@@ -157,7 +157,7 @@ impl LLVMTypes {
 			TypeEntryKind::BuiltinType { kind, .. } => match kind {
 				PrimitiveKind::Numeric(numeric_kind) => numeric_kind_to_llvm_type(context, numeric_kind),
 
-				PrimitiveKind::Bool => unsafe { LLVMInt1TypeInContext(context) },
+				PrimitiveKind::Bool => unsafe { LLVMInt8TypeInContext(context) },
 
 				PrimitiveKind::String | PrimitiveKind::StringMut | PrimitiveKind::FormatString => self.slice_struct,
 
@@ -1249,7 +1249,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			self.loop_follow_blocks.push(following_block);
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
-			let i1_type = LLVMInt1TypeInContext(self.context);
+			let i8_type = LLVMInt8TypeInContext(self.context);
 
 			let pointer = self.value_pointer(initializer);
 			let len = LLVMConstInt(i64_type, as_array.length, false as _);
@@ -1284,11 +1284,11 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			};
 
 			let is_last_alloca = if let Some(is_last) = statement.is_last {
-				let false_value = LLVMConstInt(i1_type, 0, false as _);
+				let false_value = LLVMConstInt(i8_type, 0, false as _);
 				let is_last_alloca = self.build_alloca(i64_type, c"for_slice.is_last_alloca");
 				LLVMBuildStore(self.builder, false_value, is_last_alloca);
 
-				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i1_type };
+				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i8_type };
 				let binding = Binding { type_id: is_last.type_id, kind };
 				assert_eq!(self.readables.len(), is_last.readable_index);
 				self.readables.push(Some(binding));
@@ -1406,7 +1406,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			self.loop_follow_blocks.push(following_block);
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
-			let i1_type = LLVMInt1TypeInContext(self.context);
+			let i8_type = LLVMInt8TypeInContext(self.context);
 			let opaque_pointer_type = self.llvm_types.opaque_pointer;
 
 			let slice_pointer = self.value_pointer(initializer);
@@ -1445,11 +1445,11 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			};
 
 			let is_last_alloca = if let Some(is_last) = statement.is_last {
-				let false_value = LLVMConstInt(i1_type, 0, false as _);
+				let false_value = LLVMConstInt(i8_type, 0, false as _);
 				let is_last_alloca = self.build_alloca(i64_type, c"for_slice.is_last_alloca");
 				LLVMBuildStore(self.builder, false_value, is_last_alloca);
 
-				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i1_type };
+				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i8_type };
 				let binding = Binding { type_id: is_last.type_id, kind };
 				assert_eq!(self.readables.len(), is_last.readable_index);
 				self.readables.push(Some(binding));
@@ -1560,7 +1560,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			self.loop_follow_blocks.push(following_block);
 
 			let i64_type = LLVMInt64TypeInContext(self.context);
-			let i1_type = LLVMInt1TypeInContext(self.context);
+			let i8_type = LLVMInt8TypeInContext(self.context);
 			let range_struct = self.llvm_types.range_struct.unwrap();
 
 			let range_pointer = self.value_pointer(initializer);
@@ -1608,11 +1608,11 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			};
 
 			let is_last_alloca = if let Some(is_last) = statement.is_last {
-				let false_value = LLVMConstInt(i1_type, 0, false as _);
+				let false_value = LLVMConstInt(i8_type, 0, false as _);
 				let is_last_alloca = self.build_alloca(i64_type, c"for_range.is_last_alloca");
 				LLVMBuildStore(self.builder, false_value, is_last_alloca);
 
-				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i1_type };
+				let kind = BindingKind::Pointer { pointer: is_last_alloca, pointed_type: i8_type };
 				let binding = Binding { type_id: is_last.type_id, kind };
 				assert_eq!(self.readables.len(), is_last.readable_index);
 				self.readables.push(Some(binding));
@@ -1705,7 +1705,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 	}
 
 	fn generate_boolean_literal(&mut self, type_store: &TypeStore, literal: bool) -> Self::Binding {
-		let value = unsafe { LLVMConstInt(LLVMInt1TypeInContext(self.context), literal as u64, false as _) };
+		let value = unsafe { LLVMConstInt(LLVMInt8TypeInContext(self.context), literal as u64, false as _) };
 		let kind = BindingKind::Value(value);
 		Binding { type_id: type_store.bool_type_id(), kind }
 	}
@@ -2185,7 +2185,19 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 		let type_id = value.type_id;
 		let value = value.to_value(self.builder);
-		let inverted = unsafe { LLVMBuildNot(self.builder, value, c"invert.inverted".as_ptr()) };
+		unsafe { assert_eq!(LLVMGetIntTypeWidth(LLVMTypeOf(value)), 8) }
+
+		let inverted = unsafe {
+			let tuncated = LLVMBuildTrunc(self.builder, value, LLVMInt1TypeInContext(self.context), c"invert.trunc".as_ptr());
+			let notted = LLVMBuildNot(self.builder, tuncated, c"invert.inverted".as_ptr());
+			LLVMBuildIntCast2(
+				self.builder,
+				notted,
+				LLVMInt8TypeInContext(self.context),
+				false as _,
+				c"invert.widened".as_ptr(),
+			)
+		};
 		let kind = BindingKind::Value(inverted);
 		Binding { type_id, kind }
 	}
@@ -2867,19 +2879,18 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 				LLVMPositionBuilderAtEnd(self.builder, left_block);
 				let left_binding = codegen::generate_expression(context, self, left).unwrap();
-				let mut left = left_binding.to_value(self.builder);
-				if LLVMGetIntTypeWidth(LLVMTypeOf(left)) > 1 {
-					left = LLVMBuildTrunc(
-						self.builder,
-						left,
-						LLVMInt1TypeInContext(self.context),
-						c"binary_operation.logical.left_truncated".as_ptr(),
-					);
-				}
+				let left_full = left_binding.to_value(self.builder);
+				assert_eq!(LLVMGetIntTypeWidth(LLVMTypeOf(left_full)), 8);
+				let left_trunc = LLVMBuildTrunc(
+					self.builder,
+					left_full,
+					LLVMInt1TypeInContext(self.context),
+					c"binary_operation.logical.left_truncated".as_ptr(),
+				);
 				left_block = LLVMGetInsertBlock(self.builder);
 
 				match op {
-					BinaryOperator::LogicalAnd => LLVMBuildCondBr(self.builder, left, right_block, following_block),
+					BinaryOperator::LogicalAnd => LLVMBuildCondBr(self.builder, left_trunc, right_block, following_block),
 
 					BinaryOperator::LogicalIsAnd => {
 						let following_block = match self.in_check_is {
@@ -2896,25 +2907,18 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 							InCheckIs::None => following_block,
 						};
 
-						LLVMBuildCondBr(self.builder, left, right_block, following_block)
+						LLVMBuildCondBr(self.builder, left_trunc, right_block, following_block)
 					}
 
-					BinaryOperator::LogicalOr => LLVMBuildCondBr(self.builder, left, following_block, right_block),
+					BinaryOperator::LogicalOr => LLVMBuildCondBr(self.builder, left_trunc, following_block, right_block),
 
 					_ => unreachable!("{op:?}"),
 				};
 
 				LLVMPositionBuilderAtEnd(self.builder, right_block);
 				let right_binding = codegen::generate_expression(context, self, right).unwrap();
-				let mut right = right_binding.to_value(self.builder);
-				if LLVMGetIntTypeWidth(LLVMTypeOf(right)) > 1 {
-					right = LLVMBuildTrunc(
-						self.builder,
-						right,
-						LLVMInt1TypeInContext(self.context),
-						c"binary_operation.logical.right_truncated".as_ptr(),
-					);
-				}
+				let right = right_binding.to_value(self.builder);
+				assert_eq!(LLVMGetIntTypeWidth(LLVMTypeOf(right)), 8);
 				right_block = LLVMGetInsertBlock(self.builder);
 
 				LLVMBuildBr(self.builder, following_block);
@@ -2923,10 +2927,10 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 				let value = if should_phi_left_and_right {
 					let phi = LLVMBuildPhi(
 						self.builder,
-						LLVMInt1TypeInContext(self.context),
+						LLVMInt8TypeInContext(self.context),
 						c"binary_operation.logical.result_phi".as_ptr(),
 					);
-					LLVMAddIncoming(phi, [left, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
+					LLVMAddIncoming(phi, [left_full, right].as_mut_ptr(), [left_block, right_block].as_mut_ptr(), 2);
 					phi
 				} else {
 					right
@@ -3327,7 +3331,16 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			unreachable!("{left_type_kind:?}")
 		};
 
-		let kind = BindingKind::Value(value);
+		let widened = unsafe {
+			if LLVMGetIntTypeWidth(LLVMTypeOf(value)) == 1 {
+				let i8_type = LLVMInt8TypeInContext(self.context);
+				LLVMBuildIntCast2(self.builder, value, i8_type, false as _, c"generate_binary_operation.i1_widened".as_ptr())
+			} else {
+				value
+			}
+		};
+
+		let kind = BindingKind::Value(widened);
 		Some(Binding { type_id: result_type_id, kind })
 	}
 
@@ -3373,7 +3386,8 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 				result = LLVMBuildOr(self.builder, result, flag, c"".as_ptr());
 			}
 
-			result
+			let i8_type = LLVMInt8TypeInContext(self.context);
+			LLVMBuildIntCast2(self.builder, result, i8_type, false as _, c"check_is.i1_widened".as_ptr())
 		};
 
 		if let Some(new_binding) = &check_expression.binding {
