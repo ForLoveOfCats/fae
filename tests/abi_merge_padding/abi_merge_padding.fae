@@ -1,0 +1,49 @@
+struct WorldId {
+	index1: u16
+	generation: u16
+}
+
+struct World {
+	a: WorldId
+	b: WorldId
+
+	r: bool
+}
+
+struct GameContext {
+	world: World
+	first_frame: bool
+}
+
+fn func(world=: World): GameContext {
+	println(f"{world.a.index1}, {world.a.generation}")
+	println(f"{world.b.index1}, {world.b.generation}")
+	println(f"{world.r}")
+	println("")
+
+	return GameContext {
+		world
+		first_frame: true
+	}
+}
+
+fn main() {
+	let w = World {
+		a: WorldId {
+			index1: 1
+			generation: 2
+		}
+		b: WorldId {
+			index1: 3
+			generation: 4
+		}
+		r: true
+	}
+
+	let c = func(w)
+
+	println(f"{c.world.a.index1}, {c.world.a.generation}")
+	println(f"{c.world.b.index1}, {c.world.b.generation}")
+	println(f"{c.world.r}")
+	println(f"{c.first_frame}")
+}

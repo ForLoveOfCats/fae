@@ -1,5 +1,7 @@
 use crate::codegen::classification::{Class, ClassKind, Classifier};
-use crate::frontend::type_store::{Array, Layout, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind};
+use crate::frontend::type_store::{
+	align_size_to, Array, Layout, NumericKind, PrimitiveKind, TypeEntryKind, TypeId, TypeStore, UserTypeKind,
+};
 
 #[allow(unused)]
 pub struct SysvClassifer {
@@ -16,7 +18,7 @@ impl Classifier for SysvClassifer {
 	}
 
 	fn classify_type<'a>(&'a mut self, type_store: &mut TypeStore, type_id: TypeId) -> &'a [Class] {
-		let result = classify_type_internal(type_store, &mut self.buffer, 0, type_id);
+		let result = classify_type_internal(type_store, &mut self.buffer, 0, &mut 0, type_id);
 		assert!(result.new_classes_len <= 8);
 		&self.buffer[0..result.new_classes_len]
 	}
@@ -35,6 +37,7 @@ fn classify_type_internal<'buf>(
 	type_store: &mut TypeStore,
 	buffer: &'buf mut [Class; 9],
 	buffer_index: usize,
+	combine_size: &mut i64,
 	type_id: TypeId,
 ) -> ClassifyResult {
 	let old_length = buffer_index;
@@ -91,6 +94,7 @@ fn classify_type_internal<'buf>(
 			match &user_type.kind {
 				UserTypeKind::Struct { shape } => {
 					let specialization = &shape.specializations[specialization_index];
+					let layout = specialization.layout.unwrap();
 
 					// 2. If a C++ object is non-trivial for the purpose of calls, as specified in the C++ ABI, it is passed by
 					// invisible reference (the object is replaced in the parameter list by a pointer that has class INTEGER).
@@ -98,10 +102,24 @@ fn classify_type_internal<'buf>(
 					// initialized to class NO_CLASS.
 					// 4. Each field of an object is classified recursively so that always two fields 18 are considered. The resulting
 					// class is calculated according to the classes of the fields in the eightbyte:
-					classify_merge_fields(type_store, buffer, buffer_index, specialization.fields.iter().map(|f| f.type_id));
+					classify_merge_fields(
+						type_store,
+						buffer,
+						buffer_index,
+						combine_size,
+						specialization.fields.iter().map(|f| f.type_id),
+					);
 
 					// 5. Then a post merger cleanup is done:
 					let new_classes_len = post_merge_cleanup(aggregate_layout, buffer, old_length);
+
+					let content_len = find_contents_len(buffer);
+					if content_len > 0 {
+						// Round up last class to the struct's alignment
+						let last_class = &mut buffer[content_len - 1];
+						last_class.size = align_size_to(last_class.size as i64, layout.alignment) as u8;
+					}
+
 					return ClassifyResult { new_classes_len, itself_may_be_combined: false };
 				}
 
@@ -152,7 +170,7 @@ fn classify_type_internal<'buf>(
 				return ClassifyResult { new_classes_len: 1, itself_may_be_combined: false };
 			}
 
-			classify_merge_fields(type_store, buffer, buffer_index, (0..length).map(|_| item_type_id));
+			classify_merge_fields(type_store, buffer, buffer_index, combine_size, (0..length).map(|_| item_type_id));
 			let new_classes_len = post_merge_cleanup(array_layout, buffer, old_length);
 			return ClassifyResult { new_classes_len, itself_may_be_combined: false };
 		}
@@ -175,21 +193,16 @@ fn classify_merge_fields<I: Iterator<Item = TypeId>>(
 	type_store: &mut TypeStore,
 	buffer: &mut [Class; 9],
 	mut buffer_index: usize,
+	combine_size: &mut i64,
 	field_type_ids: I,
 ) {
-	let mut combine_size = 0;
-	if buffer_index > 0 {
-		let final_class = buffer[buffer_index - 1];
-		combine_size = final_class.size as i64;
-	}
-
 	for field_type_id in field_type_ids {
 		let field_layout = type_store.type_layout(field_type_id);
 		if field_layout.size <= 0 {
 			continue;
 		}
 
-		let result = classify_type_internal(type_store, buffer, buffer_index, field_type_id);
+		let result = classify_type_internal(type_store, buffer, buffer_index, combine_size, field_type_id);
 
 		// This is counter-intuitive but the nested type can entirely merge itself into
 		// an already existing item in the buffer, leaving the index class untouched
@@ -201,7 +214,8 @@ fn classify_merge_fields<I: Iterator<Item = TypeId>>(
 			buffer[buffer_index].kind = ClassKind::Integer;
 		}
 
-		if result.itself_may_be_combined && combine_size > 0 && field_layout.size + combine_size <= 8 {
+		let possible_size = align_size_to(*combine_size, field_layout.alignment) + field_layout.size;
+		if result.itself_may_be_combined && *combine_size > 0 && possible_size <= 8 {
 			// Combine with prior fields to make an eightbyte
 
 			assert_eq!(result.new_classes_len, 1);
@@ -209,22 +223,26 @@ fn classify_merge_fields<I: Iterator<Item = TypeId>>(
 			buffer[buffer_index] = Class::default();
 			let result_class = buffer[buffer_index - 1];
 
-			combine_size += field_layout.size;
-			assert!(combine_size <= 8, "{combine_size}");
+			*combine_size = possible_size;
+			assert!(*combine_size <= 8, "{combine_size}");
 			assert!(result_class.size <= 8, "{}", result_class.size);
-			if combine_size == 8 {
-				combine_size = 0;
+			if *combine_size == 8 {
+				*combine_size = 0;
 			}
 		} else {
 			// To large to combine
+
+			if buffer_index > 0 {
+				buffer[buffer_index - 1].size = 8;
+			}
 
 			buffer_index += result.new_classes_len;
 			let final_class = buffer[buffer_index - 1];
 
 			if final_class.size >= 8 {
-				combine_size = 0;
+				*combine_size = 0;
 			} else {
-				combine_size = final_class.size as i64;
+				*combine_size = final_class.size as i64;
 			}
 		}
 	}
@@ -237,8 +255,8 @@ fn merge_classes_struct(mut a: Class, b: Class) -> Class {
 			// Doesn't get confused by SSEUP as that can never be less than 8 bytes
 			a.kind = ClassKind::SSECombine;
 		}
+		assert!(a.size + b.size <= 8, "a: {:?}, b: {:?}, s: {}", a, b, a.size + b.size);
 		a.size += b.size;
-		assert!(a.size <= 8, "{:?}", a.size);
 		return a;
 	}
 	// (b) If one of the classes is NO_CLASS, the resulting class is the other class.
@@ -359,6 +377,10 @@ fn post_merge_cleanup<'buf>(aggregate_layout: Layout, buffer: &'buf mut [Class; 
 		}
 	}
 
+	find_contents_len(buffer) - old_length
+}
+
+fn find_contents_len(buffer: &[Class]) -> usize {
 	let mut contents_len = buffer.len();
 	for (index, &class) in buffer.iter().enumerate() {
 		if class.kind == ClassKind::NoClass {
@@ -367,5 +389,5 @@ fn post_merge_cleanup<'buf>(aggregate_layout: Layout, buffer: &'buf mut [Class; 
 		}
 	}
 
-	contents_len - old_length
+	contents_len
 }

@@ -252,7 +252,7 @@ impl Layout {
 	}
 }
 
-fn align_size_to(size: i64, alignment: i64) -> i64 {
+pub fn align_size_to(size: i64, alignment: i64) -> i64 {
 	debug_assert!(alignment & (alignment - 1) == 0);
 	(size + alignment - 1) & !(alignment - 1)
 }
