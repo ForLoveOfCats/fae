@@ -1,0 +1,23 @@
+fn func(): [1]void {
+	return [_]void { void }
+}
+
+fn print_pointer(pointer=: *void) {
+	println(f"pointer = {pointer.(usize)}")
+}
+
+fn print_length(length=: isize) {
+	println(f"length = {length}")
+}
+
+fn print_slice_details(slice=: []void) {
+	println(f"slice.pointer = {slice.pointer.(usize)}")
+	println(f"slice.length = {slice.length}")
+}
+
+fn main() {
+	let a = func()
+	print_pointer(a.pointer)
+	print_length(a.length)
+	print_slice_details(a.slice)
+}

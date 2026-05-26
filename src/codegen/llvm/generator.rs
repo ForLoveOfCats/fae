@@ -2160,6 +2160,63 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 		Some(Binding { type_id, kind })
 	}
 
+	fn generate_empty_array_field_read(
+		&mut self,
+		type_store: &mut TypeStore,
+		array: Array,
+		field_index: usize,
+		debug_location: DebugLocation,
+	) -> Self::Binding {
+		match field_index {
+			// Pointer
+			0 => {
+				let pointer_type_id = type_store.pointer_to(array.item_type_id, true);
+				return self.generate_non_null_invalid_pointer(pointer_type_id, debug_location);
+			}
+
+			// Length
+			1 => {
+				let _debug_scope = self.create_debug_scope(debug_location);
+				let value = unsafe { LLVMConstInt(LLVMInt64TypeInContext(self.context), array.length, false as _) };
+				let kind = BindingKind::Value(value);
+				return Binding { type_id: type_store.isize_type_id(), kind };
+			}
+
+			// Slice
+			2 => {
+				let _debug_scope = self.create_debug_scope(debug_location);
+
+				unsafe {
+					let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
+
+					let pointer_type = self.llvm_types.opaque_pointer;
+					let pointer =
+						LLVMBuildIntToPtr(self.builder, one, pointer_type, c"empty_array_field_access_slice.pointer".as_ptr());
+
+					let llvm_type = self.llvm_types.slice_struct;
+					let alloca = self.build_alloca(llvm_type, c"empty_array_field_access_slice.slice_alloca");
+
+					let pointer_name = c"empty_array_field_access_slice.pointer_pointer".as_ptr();
+					let pointer_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 0, pointer_name);
+
+					let length_name = c"empty_array_field_access_slice.length_pointer".as_ptr();
+					let length_pointer = LLVMBuildStructGEP2(self.builder, llvm_type, alloca, 1, length_name);
+
+					LLVMBuildStore(self.builder, pointer, pointer_pointer);
+
+					let length_value = LLVMConstInt(LLVMInt64TypeInContext(self.context), array.length, false as _);
+					LLVMBuildStore(self.builder, length_value, length_pointer);
+
+					let slice_type_id = type_store.slice_of(array.item_type_id, true);
+					let kind = BindingKind::Pointer { pointer: alloca, pointed_type: llvm_type };
+					Binding { type_id: slice_type_id, kind }
+				}
+			}
+
+			_ => unreachable!("Array field index {field_index}"),
+		}
+	}
+
 	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId, debug_location: DebugLocation) -> Self::Binding {
 		let _debug_scope = self.create_debug_scope(debug_location);
 

@@ -1,0 +1,4 @@
+pointer = 1
+length = 0
+slice.pointer = 1
+slice.length = 0

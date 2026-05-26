@@ -7,7 +7,7 @@ use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
 use crate::frontend::tree::{self, BinaryOperator};
-use crate::frontend::type_store::{NumericKind, TypeId, TypeStore};
+use crate::frontend::type_store::{Array, NumericKind, TypeId, TypeStore};
 
 // TODO: Rip out this abstraction, it's causing more touble than it's worth. It didn't end up moving
 // very much common logic out of the generator and resulted in plenty of complications
@@ -163,6 +163,14 @@ pub trait Generator {
 		field_index: usize,
 		debug_location: DebugLocation,
 	) -> Option<Self::Binding>;
+
+	fn generate_empty_array_field_read(
+		&mut self,
+		type_store: &mut TypeStore,
+		array: Array,
+		field_index: usize,
+		debug_location: DebugLocation,
+	) -> Self::Binding;
 
 	fn generate_negate(&mut self, value: Self::Binding, type_id: TypeId, debug_location: DebugLocation) -> Self::Binding;
 

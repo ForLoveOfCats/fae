@@ -914,7 +914,14 @@ fn generate_field_read<'a, 'b, G: Generator>(
 		}
 	}
 
-	let base = maybe_base?;
+	let Some(base) = maybe_base else {
+		if let TypeEntryKind::Array(array) = entry.kind {
+			return Some(generator.generate_empty_array_field_read(context.type_store, array, read.field_index, debug_location));
+		}
+
+		return None;
+	};
+
 	let mut field_index = read.field_index;
 
 	if let TypeEntryKind::UserType { shape_index, specialization_index, .. } = entry.kind {
