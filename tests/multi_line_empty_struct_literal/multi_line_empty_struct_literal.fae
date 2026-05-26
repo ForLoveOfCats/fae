@@ -1,0 +1,14 @@
+struct Abc {
+}
+
+method Abc
+fn abc() {
+	println("Abc")
+}
+
+fn main() {
+	let a = Abc {
+	}
+
+	a.abc()
+}

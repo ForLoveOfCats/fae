@@ -1311,6 +1311,7 @@ fn parse_struct_initializer<'a>(
 	tokens: &mut Tokens<'a>,
 ) -> ParseResult<Node<StructInitializer<'a>>> {
 	let open_brace_token = tokens.expect(messages, TokenKind::OpenBrace)?;
+	tokens.consume_newlines();
 
 	let mut field_initializers = BumpVec::new_in(bump);
 
