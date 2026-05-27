@@ -1213,7 +1213,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 		&mut self,
 		context: &mut codegen::Context<'a, 'b>,
 		statement: &'b crate::frontend::ir::For<'a>,
-		initializer: Self::Binding,
+		initializer: Option<Self::Binding>,
 		debug_location: DebugLocation,
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	) {
@@ -1251,7 +1251,7 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 			let i64_type = LLVMInt64TypeInContext(self.context);
 			let i8_type = LLVMInt8TypeInContext(self.context);
 
-			let pointer = self.value_pointer(initializer);
+			let value_pointer = initializer.map(|i| self.value_pointer(i));
 			let len = LLVMConstInt(i64_type, as_array.length, false as _);
 
 			let zero = LLVMConstNull(i64_type);
@@ -1263,11 +1263,29 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 				.llvm_types
 				.type_to_llvm_type(self.context, context.type_store, item_type_id);
 
-			let item_alloca = self.build_alloca(item_type, c"for_array.item");
-			let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
-			let binding = Binding { type_id: item_type_id, kind };
 			assert_eq!(self.readables.len(), statement.item.readable_index);
-			self.readables.push(Some(binding));
+			let item_alloca = if initializer.is_some() {
+				let item_alloca = self.build_alloca(item_type, c"for_array.item");
+				let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
+				let binding = Binding { type_id: item_type_id, kind };
+
+				self.readables.push(Some(binding));
+				Some(item_alloca)
+			} else if by_pointer {
+				let item_alloca = self.build_alloca(self.llvm_types.opaque_pointer, c"for_array.item");
+
+				let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
+				LLVMBuildStore(self.builder, one, item_alloca);
+
+				let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
+				let binding = Binding { type_id: item_type_id, kind };
+
+				self.readables.push(Some(binding));
+				Some(item_alloca)
+			} else {
+				self.readables.push(None);
+				None
+			};
 
 			let index_alloca = if let Some(index) = statement.index {
 				let index_alloca = self.build_alloca(i64_type, c"for_array.index_alloca");
@@ -1332,22 +1350,24 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 			LLVMPositionBuilderAtEnd(self.builder, body_block);
 
-			let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
-			let indicies = &mut [iteration];
-			let adjusted = LLVMBuildGEP2(
-				self.builder,
-				array_entry_type,
-				pointer,
-				indicies.as_mut_ptr(),
-				indicies.len() as u32,
-				c"".as_ptr(),
-			);
+			if let Some(value_pointer) = value_pointer {
+				let iteration = LLVMBuildLoad2(self.builder, i64_type, iteration_alloca, c"".as_ptr());
+				let indicies = &mut [iteration];
+				let adjusted = LLVMBuildGEP2(
+					self.builder,
+					array_entry_type,
+					value_pointer,
+					indicies.as_mut_ptr(),
+					indicies.len() as u32,
+					c"".as_ptr(),
+				);
 
-			if by_pointer {
-				LLVMBuildStore(self.builder, adjusted, item_alloca);
-			} else {
-				let value = LLVMBuildLoad2(self.builder, item_type, adjusted, c"".as_ptr());
-				LLVMBuildStore(self.builder, value, item_alloca);
+				if by_pointer {
+					LLVMBuildStore(self.builder, adjusted, item_alloca.unwrap());
+				} else {
+					let value = LLVMBuildLoad2(self.builder, item_type, adjusted, c"".as_ptr());
+					LLVMBuildStore(self.builder, value, item_alloca.unwrap());
+				}
 			}
 
 			body_callback(context, self);

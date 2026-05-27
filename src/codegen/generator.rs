@@ -68,7 +68,7 @@ pub trait Generator {
 		&mut self,
 		context: &mut codegen::Context<'a, 'b>,
 		statement: &'b For<'a>,
-		initializer: Self::Binding,
+		initializer: Option<Self::Binding>,
 		debug_location: DebugLocation,
 		body_callback: impl FnOnce(&mut codegen::Context<'a, 'b>, &mut Self),
 	);

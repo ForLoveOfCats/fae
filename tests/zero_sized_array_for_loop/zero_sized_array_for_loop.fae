@@ -1,0 +1,30 @@
+struct ZeroStruct {}
+
+method ZeroStruct
+fn my_method() {
+	println("ZeroStruct.my_method()")
+}
+
+fn main() {
+	let struct_array = [_]{ ZeroStruct {}, ZeroStruct {} }
+	for value in struct_array {
+		value.my_method()
+	}	
+
+	println("")
+
+	for value of struct_array {
+		value.my_method()
+		println(f"pointer = {value.(usize)}")
+	}
+
+	let empty_array = [_]i32 {}
+	for _value in empty_array {
+		println("value in")
+	}
+
+	for value of empty_array {
+		println("value of")
+		println(f"pointer = {value.(usize)}")
+	}
+}

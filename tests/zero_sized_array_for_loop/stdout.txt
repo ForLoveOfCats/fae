@@ -1,0 +1,7 @@
+ZeroStruct.my_method()
+ZeroStruct.my_method()
+
+ZeroStruct.my_method()
+pointer = 1
+ZeroStruct.my_method()
+pointer = 1

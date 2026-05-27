@@ -554,7 +554,7 @@ fn generate_for<'a, 'b, G: Generator>(
 ) {
 	match statement.kind {
 		ForKind::InArray | ForKind::OfArray => {
-			let initializer = generate_expression(context, generator, &statement.initializer).unwrap();
+			let initializer = generate_expression(context, generator, &statement.initializer);
 			generator.generate_for_array(context, statement, initializer, debug_location, |context, generator| {
 				generate_block(context, generator, &statement.body);
 			});
