@@ -1,0 +1,27 @@
+struct Struct {
+	field: i32
+}
+
+enum Enum {
+	A
+}
+
+fn main() {
+	let struct_array = [_]Struct {}
+	for value in struct_array {
+		value.field == 0
+	}
+
+	for value of struct_array {
+		value.field == 0
+	}
+
+	let enum_array = [_]Enum {}
+	for value in enum_array {
+		value.tag == 0
+	}
+
+	for value of enum_array {
+		value.tag == 0
+	}
+}

@@ -1264,14 +1264,11 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 				.type_to_llvm_type(self.context, context.type_store, item_type_id);
 
 			assert_eq!(self.readables.len(), statement.item.readable_index);
-			let item_alloca = if initializer.is_some() {
-				let item_alloca = self.build_alloca(item_type, c"for_array.item");
-				let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
-				let binding = Binding { type_id: item_type_id, kind };
+			let item_alloca = if initializer.is_none() && by_pointer {
+				// Initializer is ZST, either empty array or array of ZST items
+				// Value binding is by pointer, so give it a constant pointer value and leave it
+				// We will NOT update this alloca anywhere beyond this point
 
-				self.readables.push(Some(binding));
-				Some(item_alloca)
-			} else if by_pointer {
 				let item_alloca = self.build_alloca(self.llvm_types.opaque_pointer, c"for_array.item");
 
 				let one = LLVMConstInt(LLVMInt64TypeInContext(self.context), 1, false as _);
@@ -1283,8 +1280,22 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 				self.readables.push(Some(binding));
 				Some(item_alloca)
 			} else {
-				self.readables.push(None);
-				None
+				// If the initializer is ZST then while we won't ever write to this alloca, we won't
+				// ever read from it either, but we need to have it around so we have an actual readable.
+				// However if the item type is itself a ZST then we don't need the readable
+
+				let item_layout = context.type_store.type_layout(item_type_id);
+				if item_layout.size == 0 {
+					self.readables.push(None);
+					None
+				} else {
+					let item_alloca = self.build_alloca(item_type, c"for_array.item");
+					let kind = BindingKind::Pointer { pointer: item_alloca, pointed_type: item_type };
+					let binding = Binding { type_id: item_type_id, kind };
+
+					self.readables.push(Some(binding));
+					Some(item_alloca)
+				}
 			};
 
 			let index_alloca = if let Some(index) = statement.index {
