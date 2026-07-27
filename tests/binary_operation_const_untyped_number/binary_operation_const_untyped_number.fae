@@ -1,0 +1,31 @@
+fn main() {
+	const Constant = 6
+
+	println(f"{Constant == 6}")
+	println(f"{Constant == 7}")
+
+	println("")
+
+	println(f"{Constant != 6}")
+	println(f"{Constant != 7}")
+
+	println("")
+
+	println(f"{Constant > 5}")
+	println(f"{Constant > 6}")
+
+	println("")
+
+	println(f"{Constant >= 6}")
+	println(f"{Constant >= 7}")
+
+	println("")
+
+	println(f"{Constant < 7}")
+	println(f"{Constant < 6}")
+
+	println("")
+
+	println(f"{Constant <= 6}")
+	println(f"{Constant <= 5}")
+}

@@ -756,6 +756,30 @@ impl NumberValue {
 		self.collapse
 	}
 
+	pub fn compare_equals(self, other: NumberValue) -> bool {
+		self.value == other.value
+	}
+
+	pub fn compare_not_equals(self, other: NumberValue) -> bool {
+		self.value != other.value
+	}
+
+	pub fn compare_greater_than(self, other: NumberValue) -> bool {
+		self.value > other.value
+	}
+
+	pub fn compare_greater_than_equal(self, other: NumberValue) -> bool {
+		self.value >= other.value
+	}
+
+	pub fn compare_less_than(self, other: NumberValue) -> bool {
+		self.value < other.value
+	}
+
+	pub fn compare_less_than_equal(self, other: NumberValue) -> bool {
+		self.value <= other.value
+	}
+
 	pub fn negate(&mut self, sign_span: Span) {
 		assert_not_collapsed(self.collapse);
 		self.value.set_sign_positive(self.value.is_sign_negative());

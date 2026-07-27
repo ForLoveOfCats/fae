@@ -8564,6 +8564,32 @@ fn perform_constant_binary_operation<'a>(
 			_ => return None,
 		};
 
+		let comparison = match op {
+			BinaryOperator::Equals => Some(left.compare_equals(right)),
+			BinaryOperator::NotEquals => Some(left.compare_not_equals(right)),
+			BinaryOperator::GreaterThan => Some(left.compare_greater_than(right)),
+			BinaryOperator::GreaterThanEquals => Some(left.compare_greater_than_equal(right)),
+			BinaryOperator::LessThan => Some(left.compare_less_than(right)),
+			BinaryOperator::LessThanEquals => Some(left.compare_less_than_equal(right)),
+			_ => None,
+		};
+
+		if let Some(comparison) = comparison {
+			let span = left.span + right.span;
+			let kind = ExpressionKind::BooleanLiteral(comparison);
+			let type_id = context.type_store.bool_type_id();
+			return Some(Expression {
+				span,
+				type_id,
+				is_itself_mutable: true,
+				is_pointer_access_mutable: true,
+				yields: false,
+				returns: false,
+				kind,
+				debug_location: span.debug_location(context.parsed_files),
+			});
+		}
+
 		if left.is_integer() || right.is_integer() {
 			let value = match op {
 				BinaryOperator::Add => left.add(context.messages, right),
