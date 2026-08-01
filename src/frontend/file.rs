@@ -105,7 +105,7 @@ pub fn load_all_files(
 			}
 
 			let reserved = &disallowed.module_path[index];
-			let module_path = disallowed.module_path.join("::");
+			let module_path = disallowed.module_path.join(".");
 			let path = &disallowed.path;
 			let error = error!(
 				"Reserved word `{reserved}` may not be part of module path `{module_path}` for file \"{}\"",
