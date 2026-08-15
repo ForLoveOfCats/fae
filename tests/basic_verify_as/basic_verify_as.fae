@@ -1,0 +1,15 @@
+fn main() {
+	let a = first() as Some else => panic()
+	println(f"Hello {a}")
+
+	let b = second() as Some else => yield "Fae"
+	println(f"Hello {b}")
+}
+
+fn first(): Option<str> {
+	return .Some("computer")
+}
+
+fn second(): Option<str> {
+	return .None
+}

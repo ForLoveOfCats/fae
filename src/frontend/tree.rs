@@ -544,6 +544,13 @@ pub struct CheckIs<'a> {
 }
 
 #[derive(Debug)]
+pub struct VerifyAs<'a> {
+	pub left: Node<Expression<'a>>,
+	pub variant_name: Node<&'a str>,
+	pub else_block: Node<Block<'a>>,
+}
+
+#[derive(Debug)]
 pub struct Call<'a> {
 	pub base: Option<Node<Expression<'a>>>,
 	pub name: Node<&'a str>,
@@ -794,6 +801,7 @@ pub enum Expression<'a> {
 	UnaryOperation(&'a UnaryOperation<'a>),
 	BinaryOperation(&'a BinaryOperation<'a>),
 	CheckIs(&'a CheckIs<'a>),
+	VerifyAs(&'a VerifyAs<'a>),
 }
 
 #[derive(Debug)]

@@ -38,7 +38,7 @@ use crate::codegen::generator::Generator;
 use crate::codegen::llvm::abi::{Abi, DefinedFunction};
 use crate::codegen::llvm::debug_scope::DebugScope;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIs, Expression, ForKind, Function, FunctionId, IfElseChain, Match};
+use crate::frontend::ir::{Block, CheckIs, Expression, ForKind, Function, FunctionId, IfElseChain, Match, VerifyAs};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
@@ -1950,6 +1950,11 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 		let binding = abi.call_function(self, type_store, &self.attribute_kinds, function, arguments);
 		self.abi = Some(abi);
 
+		if function.return_type_id.is_noreturn(type_store) {
+			assert!(binding.is_none());
+			unsafe { LLVMBuildUnreachable(self.builder) };
+		}
+
 		binding
 	}
 
@@ -3502,6 +3507,135 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 		Binding { type_id: context.type_store.bool_type_id(), kind }
 	}
 
+	fn generate_verify_as<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		full_left: Self::Binding,
+		enum_shape_index: usize,
+		enum_specialization_index: usize,
+		verify_expression: &'b VerifyAs<'a>,
+		debug_location: DebugLocation,
+	) -> Option<Self::Binding> {
+		let _debug_scope = self.create_debug_scope(debug_location);
+
+		let result_type_id = context.specialize_type_id(verify_expression.type_id);
+		let result_layout = context.type_store.type_layout(result_type_id);
+		let result_llvm_type = if result_layout.size > 0 {
+			Some(
+				self.llvm_types
+					.type_to_llvm_type(self.context, context.type_store, result_type_id),
+			)
+		} else {
+			None
+		};
+
+		let (tag_type, is_bitflags) = {
+			let user_types = context.type_store.user_types.read();
+			let user_type = user_types[enum_shape_index].read();
+			let UserTypeKind::Enum { shape } = &user_type.kind else {
+				unreachable!();
+			};
+
+			let tag_type = numeric_kind_to_llvm_type(self.context, shape.tag.kind);
+			(tag_type, shape.is_bitflags)
+		};
+
+		let full_left_pointer = self.value_pointer(full_left);
+		let flag = unsafe {
+			let expected = LLVMConstInt(tag_type, verify_expression.variant_tag_value as _, false as _);
+
+			let tag = LLVMBuildLoad2(self.builder, tag_type, full_left_pointer, c"verify_as.tag".as_ptr());
+
+			if is_bitflags {
+				let zero = LLVMConstInt(tag_type, 0, false as _);
+				let bitwise_result = LLVMBuildAnd(self.builder, tag, expected, c"".as_ptr());
+				LLVMBuildICmp(self.builder, LLVMIntNE, bitwise_result, zero, c"".as_ptr())
+			} else {
+				LLVMBuildICmp(self.builder, LLVMIntEQ, tag, expected, c"".as_ptr())
+			}
+		};
+
+		let original_block = unsafe { LLVMGetInsertBlock(self.builder) };
+		let function = unsafe { LLVMGetBasicBlockParent(original_block) };
+
+		let left_extract_block =
+			unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"verify_as.left_extract_block".as_ptr()) };
+		let else_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"verify_as.else_block".as_ptr()) };
+		let following_block = unsafe { LLVMAppendBasicBlockInContext(self.context, function, c"verify_as.following".as_ptr()) };
+
+		unsafe { LLVMBuildCondBr(self.builder, flag, left_extract_block, else_block) };
+
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, else_block) };
+		let else_binding = crate::codegen::codegen::generate_block(context, self, &verify_expression.else_block);
+		let else_value = else_binding.map(|b| b.to_value(self.builder));
+
+		let else_ending_block = unsafe {
+			let current_block = LLVMGetInsertBlock(self.builder);
+			if LLVMGetBasicBlockTerminator(current_block).is_null() {
+				LLVMBuildBr(self.builder, following_block);
+			}
+			current_block
+		};
+
+		let left_result = unsafe {
+			LLVMPositionBuilderAtEnd(self.builder, left_extract_block);
+
+			let left_result = if let Some(result_llvm_type) = result_llvm_type {
+				let shape = &self.llvm_types.user_type_structs[enum_shape_index];
+				let llvm_struct = shape[enum_specialization_index].actual;
+
+				let variant_pointer = LLVMBuildStructGEP2(
+					self.builder,
+					llvm_struct,
+					full_left_pointer,
+					1,
+					c"verify_is.left_variant_pointer".as_ptr(),
+				);
+
+				Some(LLVMBuildLoad2(
+					self.builder,
+					result_llvm_type,
+					variant_pointer,
+					c"verify_as.left_extracted".as_ptr(),
+				))
+			} else {
+				None
+			};
+
+			LLVMBuildBr(self.builder, following_block);
+			left_result
+		};
+
+		unsafe { LLVMPositionBuilderAtEnd(self.builder, following_block) };
+
+		// The else block must either return or yield
+		// If it yielded *and* the result type is not a ZST then we will have a binding here
+		if let Some(else_value) = else_value {
+			let phi = unsafe {
+				let phi = LLVMBuildPhi(self.builder, result_llvm_type.unwrap(), c"verify_as.phi".as_ptr());
+				LLVMAddIncoming(
+					phi,
+					[left_result.unwrap(), else_value].as_mut_ptr(),
+					[left_extract_block, else_ending_block].as_mut_ptr(),
+					2,
+				);
+				phi
+			};
+
+			let kind = BindingKind::Value(phi);
+			return Some(Binding { type_id: result_type_id, kind });
+		}
+
+		/* Either else block didn't yield, or the result type is a ZST as those are the two conditions
+		to not get a binding from the else block. So return the left side if not a ZST */
+		if let Some(left_result) = left_result {
+			let kind = BindingKind::Value(left_result);
+			Some(Binding { type_id: result_type_id, kind })
+		} else {
+			None
+		}
+	}
+
 	fn generate_enum_variant_to_enum(
 		&mut self,
 		type_store: &mut TypeStore,
@@ -3589,8 +3723,9 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 
 	fn generate_initialized_binding(
 		&mut self,
+		type_store: &mut TypeStore,
 		readable_index: usize,
-		value: Option<Self::Binding>,
+		value_binding: Option<Self::Binding>,
 		type_id: TypeId,
 		name: &str,
 		debug_location: DebugLocation,
@@ -3598,23 +3733,27 @@ impl<C: Classifier> Generator for LLVMGenerator<C> {
 		let _debug_scope = self.create_debug_scope(debug_location);
 
 		assert_eq!(self.readables.len(), readable_index);
-		let Some(value) = value else {
+		let Some(value_binding) = value_binding else {
 			self.readables.push(None);
 			return;
 		};
 
-		let (pointer, pointed_type) = match value.kind {
-			BindingKind::Value(value) => unsafe {
-				let llvm_type = LLVMTypeOf(value);
+		let (pointer, pointed_type) = match value_binding.kind {
+			BindingKind::Value(inner_value) => unsafe {
+				// Value binding type should already be specialized
+				let llvm_type = self
+					.llvm_types
+					.type_to_llvm_type(self.context, type_store, value_binding.type_id);
 				// This format hurts my soul
-				let alloca = self.build_alloca(llvm_type, CString::new(format!("generate_binding.{}", name)).unwrap());
-				LLVMBuildStore(self.builder, value, alloca);
+				let alloca = self.build_alloca(llvm_type, CString::new(format!("generate_binding.from_value.{}", name)).unwrap());
+				LLVMBuildStore(self.builder, inner_value, alloca);
 				(alloca, llvm_type)
 			},
 
 			BindingKind::Pointer { pointer, pointed_type } => {
 				// This format hurts my soul
-				let alloca = self.build_alloca(pointed_type, CString::new(format!("generate_binding.{}", name)).unwrap());
+				let alloca =
+					self.build_alloca(pointed_type, CString::new(format!("generate_binding.from_ptr.{}", name)).unwrap());
 				unsafe {
 					let value = LLVMBuildLoad2(self.builder, pointed_type, pointer, c"generate_binding.pointer.load".as_ptr());
 					LLVMBuildStore(self.builder, value, alloca);

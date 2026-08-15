@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 
 use crate::codegen::codegen;
 use crate::frontend::function_store::FunctionStore;
-use crate::frontend::ir::{Block, CheckIs, Expression, For, Function, FunctionId, IfElseChain, Match};
+use crate::frontend::ir::{Block, CheckIs, Expression, For, Function, FunctionId, IfElseChain, Match, VerifyAs};
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
 use crate::frontend::symbols::Statics;
@@ -268,6 +268,16 @@ pub trait Generator {
 		debug_location: DebugLocation,
 	) -> Self::Binding;
 
+	fn generate_verify_as<'a, 'b>(
+		&mut self,
+		context: &mut codegen::Context<'a, 'b>,
+		full_left: Self::Binding,
+		enum_shape_index: usize,
+		enum_specialization_index: usize,
+		verify_expression: &'b VerifyAs<'a>,
+		debug_location: DebugLocation,
+	) -> Option<Self::Binding>;
+
 	fn generate_enum_variant_to_enum(
 		&mut self,
 		type_store: &mut TypeStore,
@@ -289,6 +299,7 @@ pub trait Generator {
 
 	fn generate_initialized_binding(
 		&mut self,
+		type_store: &mut TypeStore,
 		readable_index: usize,
 		value: Option<Self::Binding>,
 		type_id: TypeId,

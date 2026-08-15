@@ -18,6 +18,7 @@
 
 ## New Language Changes
 - Match arm bodies now always require a "fat arrow" `=>`
+- Added new `as` to verify an enum is of a specific variant, with an else block if not
 
 ## Compiler Usability Improvements
 - Added initial support for compiling Fae programs for Windows x86_64

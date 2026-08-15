@@ -9,7 +9,7 @@ use crate::frontend::ir::{
 	EnumVariantToEnum, Expression, ExpressionKind, FieldRead, For, ForKind, FormatStringItem, FormatStringLiteral, Function,
 	FunctionId, FunctionShape, GenericParameters, IfElseChain, IntegerBitflagsLiteral, Match, MethodCall, NumberValue, Read,
 	SliceLiteral, SliceMutableToImmutable, Statement, StatementKind, StaticRead, StringLiteral, StringToFormatString,
-	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, UnionVariantToUnion, While,
+	StructLiteral, TypeArguments, UnaryOperation, UnaryOperator, UnionVariantToUnion, VerifyAs, While,
 };
 use crate::frontend::lang_items::LangItems;
 use crate::frontend::span::DebugLocation;
@@ -160,7 +160,7 @@ pub fn generate_function<'a, G: Generator>(
 	generate_block(&mut context, generator, block.as_ref());
 }
 
-fn generate_block<'a, 'b, G: Generator>(
+pub fn generate_block<'a, 'b, G: Generator>(
 	context: &mut Context<'a, 'b>,
 	generator: &mut G,
 	block: &'b Block<'a>,
@@ -212,6 +212,20 @@ fn generate_statement<'a, 'b, G: Generator>(
 	match &statement.kind {
 		StatementKind::Expression(expression) => {
 			generate_statement_expression(context, generator, expression);
+
+			if let ExpressionKind::Call(call) = &expression.kind {
+				let is_noreturn = context.function_store.shapes.read()[call.function_id.function_shape_index]
+					.as_ref()
+					.unwrap()
+					.read()
+					.return_type
+					.item
+					.is_noreturn(context.type_store);
+
+				if is_noreturn {
+					return true;
+				}
+			}
 		}
 
 		StatementKind::When(block) => {
@@ -434,6 +448,8 @@ fn generate_expression_impl<'a, 'b, G: Generator, const IS_STATEMENT: bool>(
 		ExpressionKind::BinaryOperation(operation) => generate_binary_operation(context, generator, operation, debug_location),
 
 		ExpressionKind::CheckIs(check_is) => generate_check_is(context, generator, check_is, debug_location),
+
+		ExpressionKind::VerifyAs(verify_as) => generate_verify_as(context, generator, verify_as, debug_location),
 
 		ExpressionKind::SliceMutableToImmutable(conversion) => {
 			generate_mutable_slice_to_immutable(context, generator, conversion)
@@ -1161,6 +1177,36 @@ fn generate_check_is<'a, 'b, G: Generator>(
 	Some(generator.generate_check_is(context, value, enum_shape_index, enum_specialization_index, &check_is, debug_location))
 }
 
+fn generate_verify_as<'a, 'b, G: Generator>(
+	context: &mut Context<'a, 'b>,
+	generator: &mut G,
+	verify_as: &'b VerifyAs<'a>,
+	debug_location: DebugLocation,
+) -> Option<G::Binding> {
+	// Must produce a binding as an enum definitely at least has the tag
+	let left = generate_expression(context, generator, &verify_as.left).unwrap();
+
+	let left_type_id = context.specialize_type_id(verify_as.left.type_id);
+	let entry = context.type_store.type_entries.get(left_type_id);
+	let TypeEntryKind::UserType {
+		shape_index: enum_shape_index,
+		specialization_index: enum_specialization_index,
+		..
+	} = entry.kind
+	else {
+		unreachable!("{:?}", entry.kind);
+	};
+
+	let start_index = context.defer_stack.len();
+	context.yield_target_stack.push(DeferMarker { start_index });
+
+	let result =
+		generator.generate_verify_as(context, left, enum_shape_index, enum_specialization_index, &verify_as, debug_location);
+
+	context.yield_target_stack.pop();
+	result
+}
+
 fn generate_mutable_slice_to_immutable<'a, 'b, G: Generator>(
 	context: &mut Context<'a, 'b>,
 	generator: &mut G,
@@ -1282,7 +1328,14 @@ fn generate_binding<'a, 'b, G: Generator>(
 
 	if let Some(expression) = &binding.expression {
 		let value = generate_expression(context, generator, expression);
-		generator.generate_initialized_binding(binding.readable_index, value, type_id, binding.name, debug_location);
+		generator.generate_initialized_binding(
+			context.type_store,
+			binding.readable_index,
+			value,
+			type_id,
+			binding.name,
+			debug_location,
+		);
 	} else {
 		generator.generate_zero_initialized_binding(
 			context.type_store,

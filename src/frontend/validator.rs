@@ -5301,7 +5301,6 @@ pub fn validate_expression<'a>(
 	match &expression.item {
 		tree::Expression::Block(block) => {
 			let mut scope = context.child_scope();
-			scope.can_is_bind = false;
 			let index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
@@ -5316,7 +5315,6 @@ pub fn validate_expression<'a>(
 
 		tree::Expression::IfElseChain(chain_expression) => {
 			let mut scope = context.child_scope();
-			scope.can_is_bind = false;
 			let index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
@@ -5331,7 +5329,6 @@ pub fn validate_expression<'a>(
 
 		tree::Expression::Match(match_expression) => {
 			let mut scope = context.child_scope();
-			scope.can_is_bind = false;
 			let index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
 			scope.current_yield_target_index = Some(index);
 
@@ -5429,6 +5426,8 @@ pub fn validate_expression<'a>(
 		}
 
 		tree::Expression::CheckIs(check) => validate_check_is(context, check, span),
+
+		tree::Expression::VerifyAs(verify) => validate_verify_as(context, verify, span),
 	}
 }
 
@@ -5765,8 +5764,8 @@ fn validate_match_expression<'a>(
 
 	let yields = expression.yields | arms_yield;
 	let returns = expression.returns | arms_return;
-	let match_expression = Box::new(Match { type_id, yield_target_index, expression, arms, else_arm });
-	let kind = ExpressionKind::Match(match_expression);
+	let match_expression = Match { type_id, yield_target_index, expression, arms, else_arm };
+	let kind = ExpressionKind::Match(Box::new(match_expression));
 	Expression {
 		span,
 		type_id,
@@ -8787,6 +8786,7 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	}
 
 	let binding = if let Some(binding_name) = binding_name {
+		// `is` with a binding name does not parse multiple variants
 		assert_eq!(check.variant_names.len(), 1);
 
 		let type_id = if let Some(info) = variant_infos.last() {
@@ -8821,6 +8821,107 @@ fn validate_check_is<'a>(context: &mut Context<'a, '_, '_>, check: &'a tree::Che
 	let returns = left.returns;
 	let check_is = CheckIs { left, binding, variant_infos };
 	let kind = ExpressionKind::CheckIs(Box::new(check_is));
+	Expression {
+		span,
+		type_id,
+		is_itself_mutable: true,
+		is_pointer_access_mutable: true,
+		yields,
+		returns,
+		kind,
+		debug_location: span.debug_location(context.parsed_files),
+	}
+}
+
+fn validate_verify_as<'a>(context: &mut Context<'a, '_, '_>, verify: &'a tree::VerifyAs<'a>, span: Span) -> Expression<'a> {
+	let left = validate_expression(context, &verify.left);
+
+	let else_block = {
+		let mut scope = context.child_scope();
+		let yield_target_index = scope.yield_targets.push(scope.expected_type, scope.current_loop_index);
+		scope.current_yield_target_index = Some(yield_target_index);
+		let mut else_block = validate_block(scope, &verify.else_block.item, false);
+		else_block.yield_target_index = Some(yield_target_index);
+
+		if !else_block.yields {
+			let error = error!("Not all code paths for verify as else block yield a value");
+			context.message(error.span(verify.else_block.span));
+		}
+
+		else_block
+	};
+
+	if left.type_id.is_any_collapse(context.type_store) {
+		return Expression::any_collapse(context.type_store, span);
+	}
+
+	let report_not_enum = |context: &mut Context| {
+		let found = context.type_name(left.type_id);
+		let error = error!("Cannot verify as on type {found} as it is not an enum");
+		context.messages.message(error.span(left.span));
+	};
+
+	let base_entry = context.type_store.type_entries.get(left.type_id);
+	let (shape_index, specialization_index) = match base_entry.kind {
+		TypeEntryKind::UserType { shape_index, specialization_index, .. } => (shape_index, specialization_index),
+
+		_ => {
+			report_not_enum(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	let user_type = context.type_store.user_types.read()[shape_index].clone();
+	let user_type = user_type.read();
+	let base_specialization = match &user_type.kind {
+		UserTypeKind::Enum { shape } => {
+			let base = &shape.specializations[specialization_index];
+			Some((base.variants.clone(), base.variants_by_name.clone()))
+		}
+
+		UserTypeKind::Struct { .. } | UserTypeKind::Union { .. } => {
+			report_not_enum(context);
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+	drop(user_type);
+
+	let Some((variants, variants_by_name)) = base_specialization else {
+		report_not_enum(context);
+		return Expression::any_collapse(context.type_store, span);
+	};
+
+	let (type_id, variant_tag_value) = match variants_by_name.get(verify.variant_name.item) {
+		Some(&variant_index) => {
+			let variant = &variants[variant_index];
+			let type_id = variant
+				.type_id
+				.as_struct(&mut context.type_store, |shape, specialization| {
+					if shape.is_transparent_variant {
+						assert_eq!(specialization.fields.len(), 1);
+						specialization.fields.first().unwrap().type_id
+					} else {
+						variant.type_id
+					}
+				})
+				.unwrap();
+
+			(type_id, variant.tag_value)
+		}
+
+		None => {
+			let found = context.type_name(left.type_id);
+			let error = error!("No variant `{}` found on enum {found}", verify.variant_name.item);
+			context.messages.message(error.span(verify.variant_name.span));
+			return Expression::any_collapse(context.type_store, span);
+		}
+	};
+
+	// Else block yields to this expression, so a yield there does not make this expression itself yield
+	let yields = left.yields;
+	let returns = left.returns | else_block.returns;
+	let verify_as = VerifyAs { type_id, left, variant_tag_value, else_block };
+	let kind = ExpressionKind::VerifyAs(Box::new(verify_as));
 	Expression {
 		span,
 		type_id,

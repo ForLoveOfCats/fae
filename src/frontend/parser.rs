@@ -498,6 +498,21 @@ fn parse_expression_climb<'a>(
 			let expression = Expression::CheckIs(bump.alloc(check_is));
 
 			atom = Node::new(expression, left_span + right_span);
+		} else if let Ok(Token { text: "as", .. }) = tokens.peek() {
+			tokens.next(messages)?;
+
+			let variant_token = tokens.expect(messages, TokenKind::Word)?;
+			let variant_name = Node::from_token(variant_token.text, variant_token);
+
+			tokens.expect_word(messages, "else")?;
+
+			let else_block = parse_block(bump, messages, tokens, true)?;
+
+			let span = atom.span + else_block.span;
+			let verify_as = VerifyAs { left: atom, variant_name, else_block };
+			let expression = Expression::VerifyAs(bump.alloc(verify_as));
+
+			atom = Node::new(expression, span);
 		} else {
 			break;
 		}
@@ -2653,9 +2668,9 @@ pub fn is_word_reserved(word: &str) -> bool {
 			| "while" | "for"
 			| "match" | "or"
 			| "and" | "is"
-			| "in" | "of"
-			| "defer" | "break"
-			| "continue"
+			| "as" | "in"
+			| "of" | "defer"
+			| "break" | "continue"
 			| "yield" | "true"
 			| "false" | "test"
 	)

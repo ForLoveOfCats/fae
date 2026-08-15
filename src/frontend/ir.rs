@@ -623,6 +623,7 @@ pub enum ExpressionKind<'a> {
 	UnaryOperation(Box<UnaryOperation<'a>>),
 	BinaryOperation(Box<BinaryOperation<'a>>),
 	CheckIs(Box<CheckIs<'a>>),
+	VerifyAs(Box<VerifyAs<'a>>),
 
 	EnumVariantToEnum(Box<EnumVariantToEnum<'a>>),
 	UnionVariantToUnion(Box<UnionVariantToUnion<'a>>),
@@ -659,6 +660,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::UnaryOperation(_) => "unary operation",
 			ExpressionKind::BinaryOperation(_) => "binary operation",
 			ExpressionKind::CheckIs(_) => "check is operation",
+			ExpressionKind::VerifyAs(_) => "verify as operation",
 			ExpressionKind::EnumVariantToEnum(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::UnionVariantToUnion(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
@@ -694,6 +696,7 @@ impl<'a> ExpressionKind<'a> {
 			ExpressionKind::UnaryOperation(_) => "an unary operation",
 			ExpressionKind::BinaryOperation(_) => "a binary operation",
 			ExpressionKind::CheckIs(_) => "a check is operation",
+			ExpressionKind::VerifyAs(_) => "a verify as operation",
 			ExpressionKind::EnumVariantToEnum(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::UnionVariantToUnion(inner) => inner.expression.kind.name_with_article(),
 			ExpressionKind::SliceMutableToImmutable(inner) => inner.expression.kind.name_with_article(),
@@ -1133,6 +1136,14 @@ pub struct CheckIs<'a> {
 pub struct ResultBinding {
 	pub type_id: TypeId,
 	pub readable_index: usize,
+}
+
+#[derive(Debug)]
+pub struct VerifyAs<'a> {
+	pub type_id: TypeId,
+	pub left: Expression<'a>,
+	pub variant_tag_value: i128,
+	pub else_block: Block<'a>,
 }
 
 #[derive(Debug)]

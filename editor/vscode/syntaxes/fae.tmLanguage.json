@@ -30,7 +30,7 @@
 				},
 				{
 					"name": "keyword.default.fae",
-					"match": "\\b(const|let|mut|fn|import|self|and|or|is|in|of)\\b"
+					"match": "\\b(const|let|mut|fn|import|self|and|or|is|in|of|as)\\b"
 				},
 				{
 					"name": "keyword.structure.fae",

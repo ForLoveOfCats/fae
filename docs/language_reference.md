@@ -127,6 +127,7 @@ The Fae language contains four keywords different categories, each allowed in di
 - `and`
 - `or`
 - `is`
+- `as`
 
 **Attribute keywords** may optionally precede some statements, providing additional semantically significant information.
 - `generic`
