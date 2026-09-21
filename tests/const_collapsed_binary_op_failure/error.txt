@@ -1,0 +1,12 @@
+Validation error: ./tests/const_collapsed_binary_op_failure/const_collapsed_binary_op_failure.fae:3
+ Addition type mismatch
+  3| const C = A + B
+               ^^^^^
+Note: ./tests/const_collapsed_binary_op_failure/const_collapsed_binary_op_failure.fae:3
+ Left type `u32`
+  3| const C = A + B
+               ^
+Note: ./tests/const_collapsed_binary_op_failure/const_collapsed_binary_op_failure.fae:3
+ Right type `i32`
+  3| const C = A + B
+                   ^

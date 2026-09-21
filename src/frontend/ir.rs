@@ -720,6 +720,19 @@ fn assert_not_collapsed(collapse: Option<TypeId>) {
 	}
 }
 
+fn verify_binary_op_collapse(left: Option<TypeId>, right: Option<TypeId>) -> Option<TypeId> {
+	match (left, right) {
+		(Some(left), Some(right)) => {
+			assert_eq!(left.index(), right.index());
+			Some(left)
+		}
+
+		(Some(left), None) => Some(left),
+		(None, Some(right)) => Some(right),
+		(None, None) => None,
+	}
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct NumberValue {
 	value: Decimal,
@@ -790,8 +803,7 @@ impl NumberValue {
 	}
 
 	pub fn add(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
+		let collapse = verify_binary_op_collapse(self.collapse, other.collapse);
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_add(other.value) else {
@@ -800,13 +812,11 @@ impl NumberValue {
 			return None;
 		};
 
-		Some(NumberValue { value, span, collapse: None })
+		Some(NumberValue { value, span, collapse })
 	}
 
 	pub fn sub(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
-
+		let collapse = verify_binary_op_collapse(self.collapse, other.collapse);
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_sub(other.value) else {
@@ -815,12 +825,11 @@ impl NumberValue {
 			return None;
 		};
 
-		Some(NumberValue { value, span, collapse: None })
+		Some(NumberValue { value, span, collapse })
 	}
 
 	pub fn mul(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
+		let collapse = verify_binary_op_collapse(self.collapse, other.collapse);
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_mul(other.value) else {
@@ -829,12 +838,11 @@ impl NumberValue {
 			return None;
 		};
 
-		Some(NumberValue { value, span, collapse: None })
+		Some(NumberValue { value, span, collapse })
 	}
 
 	pub fn div(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
+		let collapse = verify_binary_op_collapse(self.collapse, other.collapse);
 		let span = self.span + other.span;
 
 		let Some(value) = self.value.checked_div(other.value) else {
@@ -843,13 +851,12 @@ impl NumberValue {
 			return None;
 		};
 
-		Some(NumberValue { value, span, collapse: None })
+		Some(NumberValue { value, span, collapse })
 	}
 
 	// TODO: These error messages should be thought out a bit better
 	pub fn modulo(self, messages: &mut Messages, other: NumberValue) -> Option<NumberValue> {
-		assert_not_collapsed(self.collapse);
-		assert_not_collapsed(other.collapse);
+		let collapse = verify_binary_op_collapse(self.collapse, other.collapse);
 		let span = self.span + other.span;
 
 		let truncated_remainder = self.value % other.value;
@@ -866,7 +873,7 @@ impl NumberValue {
 			truncated_remainder
 		};
 
-		Some(NumberValue { value, span, collapse: None })
+		Some(NumberValue { value, span, collapse })
 	}
 
 	fn check_not_integer_error(&self, messages: &mut Messages, other: NumberValue, op: &str, side: &str) -> bool {
