@@ -152,8 +152,6 @@ const LIB_NAMES: &[&str] = &[
 	"LLVMMCDisassembler",
 	"LLVMLTO",
 	"LLVMFrontendOpenACC",
-	"LLVMFrontendHLSL",
-	"LLVMFrontendDriver",
 	"LLVMExtensions",
 	"LLVMPasses",
 	"LLVMHipStdPar",
