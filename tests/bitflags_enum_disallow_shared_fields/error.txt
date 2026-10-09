@@ -1,0 +1,14 @@
+Validation error: ./tests/bitflags_enum_disallow_shared_fields/bitflags_enum_disallow_shared_fields.fae:2
+ Bitflag enum may not have shared fields
+  2|     field: i32
+         ^^^^^
+
+Validation error: ./tests/bitflags_enum_disallow_shared_fields/bitflags_enum_disallow_shared_fields.fae:8
+ Unexpected extra field initalizer
+  8|     let a: A = .Variant { field: 6 }
+                               ^^^^^
+
+Validation error: ./tests/bitflags_enum_disallow_shared_fields/bitflags_enum_disallow_shared_fields.fae:10
+ No field `field` on `A`
+  10|     println(f"field = {a.field}")
+                               ^^^^^

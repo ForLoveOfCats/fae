@@ -1,0 +1,4 @@
+Validation error: ./tests/transparent_enum_disallow_shared_fields/transparent_enum_disallow_shared_fields.fae:4
+ Enum with shared fields may not have a transparent variant
+  4|     Variant(f32)
+         ^^^^^^^

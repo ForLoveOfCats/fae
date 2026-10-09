@@ -2911,7 +2911,11 @@ fn fill_block_enum<'a>(context: &mut Context<'a, '_, '_>, statement: &tree::Enum
 		};
 		let span = shared_field.name.span + shared_field.parsed_type.span;
 		let node = Node::new(field_shape, span);
-		shared_fields.push(node);
+
+		// Makes error virality a bit less weird from the user's perspective
+		if !statement.is_bitflags {
+			shared_fields.push(node);
+		}
 	}
 
 	let user_type = lock.read();
@@ -3035,32 +3039,42 @@ fn fill_struct_like_enum_variant<'a>(
 
 	let mut fields = Vec::new();
 
-	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
-	for shared_field in statement.shared_fields {
-		let field_type = match type_store.lookup_type(
-			messages,
-			function_store,
-			module_path,
-			generic_usages,
-			root_layers,
-			scope.symbols,
-			function_initial_symbols_length,
-			&blank_generic_parameters,
-			&shared_field.parsed_type,
-		) {
-			Some(type_id) => type_id,
-			None => type_store.any_collapse_type_id(),
-		};
+	if is_bitflags {
+		if let Some(shared_field) = statement.shared_fields.first() {
+			let error = error!("Bitflag enum may not have shared fields");
+			messages.message(error.span(shared_field.name.span));
+		}
+	}
 
-		let field_shape = FieldShape {
-			name: shared_field.name.item,
-			field_type,
-			attribute: shared_field.attribute,
-			read_only: shared_field.read_only,
-		};
-		let span = shared_field.name.span + shared_field.parsed_type.span;
-		let node = Node::new(field_shape, span);
-		fields.push(node);
+	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
+	// Makes error virality a bit less weird from the user's perspective
+	if !is_bitflags && !variant_shape.is_transparent {
+		for shared_field in statement.shared_fields {
+			let field_type = match type_store.lookup_type(
+				messages,
+				function_store,
+				module_path,
+				generic_usages,
+				root_layers,
+				scope.symbols,
+				function_initial_symbols_length,
+				&blank_generic_parameters,
+				&shared_field.parsed_type,
+			) {
+				Some(type_id) => type_id,
+				None => type_store.any_collapse_type_id(),
+			};
+
+			let field_shape = FieldShape {
+				name: shared_field.name.item,
+				field_type,
+				attribute: shared_field.attribute,
+				read_only: shared_field.read_only,
+			};
+			let span = shared_field.name.span + shared_field.parsed_type.span;
+			let node = Node::new(field_shape, span);
+			fields.push(node);
+		}
 	}
 
 	let blank_generic_parameters = GenericParameters::new_from_explicit(Vec::new());
@@ -3112,6 +3126,11 @@ fn fill_struct_like_enum_variant<'a>(
 		tree::VariantKind::Transparent(transparent) => {
 			if is_bitflags {
 				let error = error!("Bitflags enum may not have a transparent variant");
+				messages.message(error.span(transparent.name.span));
+			}
+
+			if !statement.shared_fields.is_empty() {
+				let error = error!("Enum with shared fields may not have a transparent variant");
 				messages.message(error.span(transparent.name.span));
 			}
 

@@ -1,0 +1,13 @@
+enum A {
+	field: i32
+
+	Variant(f32)
+}
+
+fn main() {
+	let a: A = .Variant(6)
+	match a {
+		Variant => println(f"Variant = {a}")
+	}
+	println(f"field = {a.field}")
+}

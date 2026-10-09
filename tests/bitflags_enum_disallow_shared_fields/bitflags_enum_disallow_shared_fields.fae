@@ -1,0 +1,11 @@
+enum(bitflags) A {
+	field: i32
+
+	Variant
+}
+
+fn main() {
+	let a: A = .Variant { field: 6 }
+	println(f"{a is Variant}")
+	println(f"field = {a.field}")
+}
