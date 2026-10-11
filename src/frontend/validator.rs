@@ -6737,9 +6737,9 @@ fn lookup_name_on_base<'a>(
 			false,
 		);
 	} else if !base.type_id.is_any_collapse(context.type_store) {
-		let on = base.kind.name();
-		let error = error!("No such thing named `{}` on this {on}", name.item);
-		context.message(error.span(base.span + name.span));
+		let type_name = context.type_name(base.type_id);
+		let error = error!("No such thing named `{}` on this value of type {type_name}", name.item);
+		context.message(error.span(name.span));
 	}
 
 	None
