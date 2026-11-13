@@ -139,9 +139,34 @@ enum Option {
 }
 
 method Option
+fn as_ref(): Option<*T> {
+	match self {
+		some: Some => return .Some(some.&)
+		None => return .None
+	}
+}
+
+
+method mut Option
+fn as_mut(): Option<*mut T> {
+	match self {
+		some: Some => return .Some(some.&mut)
+		None => return .None
+	}
+}
+
+method Option
 fn unwrap(): T {
 	match self {
 		some: Some => return some
 		None => panicf("Attempted to unwrap an empty Option")
+	}
+}
+
+method Option
+fn expect(message=: fstr): T {
+	match self {
+		some: Some => return some
+		None => panicf(f"Attempted to unwrap an empty Option: {message}")
 	}
 }
